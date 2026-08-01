@@ -5,6 +5,14 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [2.8.0] - 2026-08-01
+
+Esta versão adiciona a criação inline de contas no cadastro de lançamentos, permitindo cadastrar uma conta diretamente do formulário quando não houver nenhuma disponível e já utilizá-la no lançamento em andamento.
+
+### Adicionado
+- Lançamentos: quando o seletor de conta está vazio, um botão `Criar conta` abre o cadastro de nova conta sem sair do formulário — a conta criada é adicionada à lista e selecionada automaticamente no lançamento.
+- Lançamentos: ao usar as formas de pagamento `Dinheiro` ou `Pré-Pago | VR/VA`, o cadastro inline pré-seleciona o tipo de conta correspondente.
+
 ## [2.7.12] - 2026-06-30
 
 Esta versão corrige a seleção de faturas e períodos em popovers usados dentro de diálogos, alinhando esses componentes ao mesmo comportamento seguro aplicado recentemente aos seletores de data.
