@@ -51,13 +51,9 @@ export function groupAndSortCategories(
 		...Object.keys(groups).filter((key) => !preferredOrder.includes(key)),
 	];
 
-	// Map to final structure with normalized labels and sorted options
+	// Preserve tree order from the option builder (depth-first).
 	return orderedKeys.map((key) => ({
 		label: normalizeCategoryGroupLabel(key),
-		options: groups[key]
-			.slice()
-			.sort((a, b) =>
-				a.label.localeCompare(b.label, "pt-BR", { sensitivity: "base" }),
-			),
+		options: groups[key],
 	}));
 }

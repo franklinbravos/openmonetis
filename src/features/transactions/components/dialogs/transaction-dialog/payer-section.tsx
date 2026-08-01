@@ -4,22 +4,19 @@ import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
 import { RiSliceFill } from "@remixicon/react";
 import { useState } from "react";
 import {
+	applyPayerSelection,
+	getSelectedPayerIds,
+} from "@/features/transactions/lib/form-helpers";
+import {
 	Avatar,
 	AvatarFallback,
 	AvatarImage,
 } from "@/shared/components/ui/avatar";
 import { Button } from "@/shared/components/ui/button";
 import { Label } from "@/shared/components/ui/label";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/shared/components/ui/select";
 import { getAvatarSrc } from "@/shared/lib/payers/utils";
 import { cn } from "@/shared/utils/ui";
-import { PayerSelectContent } from "../../select-items";
+import { PayerTagsSelect } from "./payer-tags-select";
 import { getSplitSummaryData, SplitConfigDialog } from "./split-config-dialog";
 import type { PayerSectionProps } from "./transaction-dialog-types";
 
@@ -71,13 +68,27 @@ export function PayerSection({
 	totalAmount,
 }: PayerSectionProps) {
 	const [splitConfigOpen, setSplitConfigOpen] = useState(false);
+	const selectedPayerIds = getSelectedPayerIds(formState);
+	const hasMultiplePayers = selectedPayerIds.length > 1;
 	const splitSummary = getSplitSummaryData(
 		formState,
 		payerOptions,
 		totalAmount,
 	);
 
+	const applySelection = (selectedIds: string[]) => {
+		const updates = applyPayerSelection(selectedIds, formState);
+		for (const [key, value] of Object.entries(updates)) {
+			onFieldChange(key as keyof typeof formState, value as never);
+		}
+	};
+
 	const handleSplitToggle = (checked: boolean) => {
+		if (!checked && hasMultiplePayers && formState.payerId) {
+			applySelection([formState.payerId]);
+			return;
+		}
+
 		onFieldChange("isSplit", checked);
 
 		if (checked) {
@@ -98,37 +109,13 @@ export function PayerSection({
 		<div className="space-y-3">
 			<div className="space-y-1">
 				<Label htmlFor="payer">Pessoa</Label>
-				<Select
-					value={formState.payerId ?? ""}
-					onValueChange={(value) => onFieldChange("payerId", value)}
-				>
-					<SelectTrigger id="payer" className="w-full">
-						<SelectValue placeholder="Selecione">
-							{formState.payerId &&
-								(() => {
-									const selectedOption = payerOptions.find(
-										(opt) => opt.value === formState.payerId,
-									);
-									return selectedOption ? (
-										<PayerSelectContent
-											label={selectedOption.label}
-											avatarUrl={selectedOption.avatarUrl}
-										/>
-									) : null;
-								})()}
-						</SelectValue>
-					</SelectTrigger>
-					<SelectContent>
-						{payerOptions.map((option) => (
-							<SelectItem key={option.value} value={option.value}>
-								<PayerSelectContent
-									label={option.label}
-									avatarUrl={option.avatarUrl}
-								/>
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
+				<PayerTagsSelect
+					id="payer"
+					options={payerOptions}
+					selectedIds={selectedPayerIds}
+					onChange={applySelection}
+					placeholder="Adicionar pessoa"
+				/>
 			</div>
 
 			<div

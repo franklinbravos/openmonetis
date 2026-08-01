@@ -220,6 +220,12 @@ export const categories = pgTable(
 		name: text("nome").notNull(),
 		type: text("tipo").notNull(),
 		icon: text("icone"),
+		parentId: uuid("categoria_pai_id").references(
+			(): AnyPgColumn => categories.id,
+			{
+				onDelete: "set null",
+			},
+		),
 		createdAt: timestamp("created_at", {
 			mode: "date",
 			withTimezone: true,
@@ -235,6 +241,7 @@ export const categories = pgTable(
 			table.userId,
 			table.type,
 		),
+		parentIdIdx: index("categorias_categoria_pai_id_idx").on(table.parentId),
 	}),
 );
 
@@ -793,6 +800,14 @@ export const categoriesRelations = relations(categories, ({ one, many }) => ({
 	user: one(user, {
 		fields: [categories.userId],
 		references: [user.id],
+	}),
+	parent: one(categories, {
+		fields: [categories.parentId],
+		references: [categories.id],
+		relationName: "categoryHierarchy",
+	}),
+	children: many(categories, {
+		relationName: "categoryHierarchy",
 	}),
 	transactions: many(transactions),
 	budgets: many(budgets),

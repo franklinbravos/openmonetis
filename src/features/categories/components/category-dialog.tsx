@@ -20,25 +20,44 @@ import { useControlledState } from "@/shared/hooks/use-controlled-state";
 import { useFormState } from "@/shared/hooks/use-form-state";
 import { CATEGORY_TYPES } from "@/shared/lib/categories/constants";
 import { getDefaultIconForType } from "@/shared/lib/categories/icons";
+import {
+	buildCategoryTree,
+	flattenCategoryTree,
+	getCategoryDescendantIds,
+	isValidCategoryParent,
+} from "@/shared/lib/categories/tree";
 
 import { CategoryFormFields } from "./category-form-fields";
 import type { Category, CategoryFormValues } from "./types";
+
+export type CreatedCategory = {
+	id: string;
+	name: string;
+	type: CategoryFormValues["type"];
+	icon: string | null;
+	parentId: string | null;
+};
 
 interface CategoryDialogProps {
 	mode: "create" | "update";
 	trigger?: React.ReactNode;
 	category?: Category;
+	allCategories?: Category[];
 	defaultType?: CategoryFormValues["type"];
+	defaultParentId?: string | null;
 	open?: boolean;
 	onOpenChange?: (open: boolean) => void;
+	onCreated?: (category: CreatedCategory) => void;
 }
 
 const buildInitialValues = ({
 	category,
 	defaultType,
+	defaultParentId,
 }: {
 	category?: Category;
 	defaultType?: CategoryFormValues["type"];
+	defaultParentId?: string | null;
 }): CategoryFormValues => {
 	const initialType = category?.type ?? defaultType ?? CATEGORY_TYPES[0];
 	const fallbackIcon = getDefaultIconForType();
@@ -49,21 +68,51 @@ const buildInitialValues = ({
 		name: category?.name ?? "",
 		type: initialType,
 		icon,
+		parentId: category?.parentId ?? defaultParentId ?? "",
 	};
 };
+
+function buildParentOptions(
+	allCategories: Category[],
+	formState: CategoryFormValues,
+	categoryId?: string,
+) {
+	const sameTypeCategories = allCategories.filter(
+		(category) => category.type === formState.type,
+	);
+	const excludedIds = new Set<string>();
+
+	if (categoryId) {
+		excludedIds.add(categoryId);
+		for (const descendantId of getCategoryDescendantIds(
+			categoryId,
+			sameTypeCategories,
+		)) {
+			excludedIds.add(descendantId);
+		}
+	}
+
+	const eligibleCategories = sameTypeCategories.filter(
+		(category) => !excludedIds.has(category.id),
+	);
+
+	return flattenCategoryTree(buildCategoryTree(eligibleCategories));
+}
 
 export function CategoryDialog({
 	mode,
 	trigger,
 	category,
+	allCategories = [],
 	defaultType,
+	defaultParentId,
 	open,
 	onOpenChange,
+	onCreated,
 }: CategoryDialogProps) {
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [isPending, startTransition] = useTransition();
 
-	// Use controlled state hook for dialog open state
 	const [dialogOpen, setDialogOpen] = useControlledState(
 		open,
 		false,
@@ -75,15 +124,19 @@ export function CategoryDialog({
 			buildInitialValues({
 				category,
 				defaultType,
+				defaultParentId,
 			}),
-		[category, defaultType],
+		[category, defaultParentId, defaultType],
 	);
 
-	// Use form state hook for form management
-	const { formState, resetForm, updateField } =
+	const { formState, resetForm, updateField, updateFields } =
 		useFormState<CategoryFormValues>(initialState);
 
-	// Reset form when dialog opens
+	const parentOptions = useMemo(
+		() => buildParentOptions(allCategories, formState, category?.id),
+		[allCategories, category?.id, formState],
+	);
+
 	useEffect(() => {
 		if (dialogOpen) {
 			resetForm(initialState);
@@ -91,12 +144,37 @@ export function CategoryDialog({
 		}
 	}, [dialogOpen, initialState, resetForm]);
 
-	// Clear error when dialog closes
 	useEffect(() => {
 		if (!dialogOpen) {
 			setErrorMessage(null);
 		}
 	}, [dialogOpen]);
+
+	const handleFieldChange = (
+		field: keyof CategoryFormValues,
+		value: string,
+	) => {
+		if (field === "type") {
+			const nextParentId =
+				formState.parentId &&
+				isValidCategoryParent(
+					category?.id ?? null,
+					formState.parentId,
+					allCategories,
+					value,
+				)
+					? formState.parentId
+					: "";
+
+			updateFields({
+				type: value as CategoryFormValues["type"],
+				parentId: nextParentId,
+			});
+			return;
+		}
+
+		updateField(field, value);
+	};
 
 	const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
@@ -113,6 +191,7 @@ export function CategoryDialog({
 			name: formState.name.trim(),
 			type: formState.type,
 			icon: formState.icon.trim(),
+			parentId: formState.parentId.trim() || null,
 		};
 
 		startTransition(async () => {
@@ -128,6 +207,9 @@ export function CategoryDialog({
 				toast.success(result.message);
 				setDialogOpen(false);
 				resetForm(initialState);
+				if (mode === "create" && result.data && onCreated) {
+					onCreated(result.data);
+				}
 				return;
 			}
 
@@ -139,7 +221,7 @@ export function CategoryDialog({
 	const title = mode === "create" ? "Nova categoria" : "Atualizar categoria";
 	const description =
 		mode === "create"
-			? "Crie uma categoria para organizar seus lançamentos."
+			? "Crie uma categoria ou subcategoria para organizar seus lançamentos."
 			: "Atualize os detalhes da categoria selecionada.";
 	const submitLabel = mode === "create" ? "Salvar" : "Atualizar";
 
@@ -153,7 +235,11 @@ export function CategoryDialog({
 				</DialogHeader>
 
 				<form className="flex flex-col gap-5" onSubmit={handleSubmit}>
-					<CategoryFormFields values={formState} onChange={updateField} />
+					<CategoryFormFields
+						values={formState}
+						onChange={handleFieldChange}
+						parentOptions={parentOptions}
+					/>
 
 					{errorMessage && (
 						<p className="text-sm text-destructive">{errorMessage}</p>

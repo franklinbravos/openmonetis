@@ -38,6 +38,11 @@ import {
 	INITIAL_BALANCE_TRANSACTION_TYPE,
 } from "@/shared/lib/accounts/constants";
 import {
+	buildCategoryTree,
+	flattenCategoryTree,
+	getCategoryPathLabel,
+} from "@/shared/lib/categories/tree";
+import {
 	PAYER_ROLE_ADMIN,
 	PAYER_ROLE_THIRD_PARTY,
 } from "@/shared/lib/payers/constants";
@@ -87,6 +92,9 @@ type PayerSluggedOption = BaseSluggedOption & {
 type CategorySluggedOption = BaseSluggedOption & {
 	type: string | null;
 	icon: string | null;
+	parentId: string | null;
+	categoryPath?: string;
+	categoryDepth?: number;
 };
 
 type AccountSluggedOption = BaseSluggedOption & {
@@ -308,6 +316,7 @@ export const buildSluggedFilters = ({
 			slug: categorySlugger(label),
 			type: category.type ?? null,
 			icon: category.icon ?? null,
+			parentId: category.parentId ?? null,
 		};
 	});
 
@@ -615,6 +624,59 @@ const sortByLabel = <T extends { label: string }>(items: T[]) =>
 		a.label.localeCompare(b.label, "pt-BR", { sensitivity: "base" }),
 	);
 
+const buildOrderedCategoryOptions = (
+	categoryFiltersRaw: CategorySluggedOption[],
+) => {
+	const categoriesById = new Map(
+		categoryFiltersRaw.map((category) => [
+			category.id,
+			{ name: category.label, parentId: category.parentId },
+		]),
+	);
+
+	const categoriesByType = categoryFiltersRaw.reduce<
+		Record<string, CategorySluggedOption[]>
+	>((groups, category) => {
+		const type = category.type ?? "outros";
+		if (!groups[type]) {
+			groups[type] = [];
+		}
+		groups[type].push(category);
+		return groups;
+	}, {});
+
+	const orderedCategories: CategorySluggedOption[] = [];
+
+	for (const typeCategories of Object.values(categoriesByType)) {
+		const flattened = flattenCategoryTree(
+			buildCategoryTree(
+				typeCategories.map((category) => ({
+					id: category.id,
+					name: category.label,
+					parentId: category.parentId,
+					type: category.type ?? undefined,
+				})),
+			),
+		);
+
+		for (const category of flattened) {
+			const source = typeCategories.find((item) => item.id === category.id);
+			if (!source) {
+				continue;
+			}
+
+			orderedCategories.push({
+				...source,
+				label: category.name,
+				categoryPath: getCategoryPathLabel(category.id, categoriesById),
+				categoryDepth: category.depth,
+			});
+		}
+	}
+
+	return orderedCategories;
+};
+
 export const buildOptionSets = ({
 	payerFiltersRaw,
 	categoryFiltersRaw,
@@ -691,19 +753,35 @@ export const buildOptionSets = ({
 		),
 	);
 
-	const categoryOptions = sortByLabel(
-		categoryFiltersRaw.map(({ id, label, type, slug, icon }) =>
-			toOption(id, label, undefined, type, slug, undefined, undefined, icon),
-		),
-	);
+	const orderedCategoryFilters =
+		buildOrderedCategoryOptions(categoryFiltersRaw);
 
-	const categoryFilterOptions = sortByLabel(
-		categoryFiltersRaw.map(({ slug, label, type, icon }) => ({
-			slug,
+	const categoryOptions = orderedCategoryFilters.map(
+		({
+			id,
 			label,
 			type,
+			slug,
 			icon,
-		})),
+			parentId,
+			categoryPath,
+			categoryDepth,
+		}) => ({
+			...toOption(id, label, undefined, type, slug, undefined, undefined, icon),
+			parentId,
+			categoryPath: categoryPath ?? label,
+			categoryDepth,
+		}),
+	);
+
+	const categoryFilterOptions = orderedCategoryFilters.map(
+		({ slug, label, type, icon, categoryPath, categoryDepth }) => ({
+			slug,
+			label: categoryPath ?? label,
+			type,
+			icon,
+			categoryDepth,
+		}),
 	);
 
 	const accountCardFilterOptions = sortByLabel(

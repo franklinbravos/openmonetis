@@ -10,9 +10,15 @@ import {
 } from "@/shared/lib/actions/helpers";
 import { getUser } from "@/shared/lib/auth/server";
 import { CATEGORY_TYPES } from "@/shared/lib/categories/constants";
+import { isValidCategoryParent } from "@/shared/lib/categories/tree";
 import { db } from "@/shared/lib/db";
 import { uuidSchema } from "@/shared/lib/schemas/common";
 import { normalizeIconInput } from "@/shared/utils/string";
+
+const parentIdSchema = z
+	.union([uuidSchema("Parent category"), z.literal(""), z.null()])
+	.optional()
+	.transform((value) => (value ? value : null));
 
 const categoryBaseSchema = z.object({
 	name: z
@@ -28,6 +34,7 @@ const categoryBaseSchema = z.object({
 		.max(100, "O ícone deve ter no máximo 100 caracteres.")
 		.nullish()
 		.transform((value) => normalizeIconInput(value)),
+	parentId: parentIdSchema,
 });
 
 const createCategorySchema = categoryBaseSchema;
@@ -42,25 +49,98 @@ type CategoryCreateInput = z.infer<typeof createCategorySchema>;
 type CategoryUpdateInput = z.infer<typeof updateCategorySchema>;
 type CategoryDeleteInput = z.infer<typeof deleteCategorySchema>;
 
+type CreatedCategoryResult = {
+	id: string;
+	name: string;
+	type: (typeof CATEGORY_TYPES)[number];
+	icon: string | null;
+	parentId: string | null;
+};
+
+async function fetchUserCategoriesForValidation(userId: string) {
+	return db.query.categories.findMany({
+		columns: {
+			id: true,
+			parentId: true,
+			type: true,
+		},
+		where: eq(categories.userId, userId),
+	});
+}
+
+function validateCategoryParent(
+	categoryId: string | null,
+	parentId: string | null,
+	type: (typeof CATEGORY_TYPES)[number],
+	userCategories: Awaited<ReturnType<typeof fetchUserCategoriesForValidation>>,
+): { success: false; error: string } | null {
+	if (isValidCategoryParent(categoryId, parentId, userCategories, type)) {
+		return null;
+	}
+
+	return {
+		success: false,
+		error: "Categoria pai inválida para esta categoria.",
+	};
+}
+
 export async function createCategoryAction(
 	input: CategoryCreateInput,
-): Promise<ActionResult> {
+): Promise<ActionResult<CreatedCategoryResult>> {
 	try {
 		const user = await getUser();
 		const data = createCategorySchema.parse(input);
+		const userCategories = await fetchUserCategoriesForValidation(user.id);
+		const parentValidation = validateCategoryParent(
+			null,
+			data.parentId ?? null,
+			data.type,
+			userCategories,
+		);
 
-		await db.insert(categories).values({
-			name: data.name,
-			type: data.type,
-			icon: data.icon,
-			userId: user.id,
-		});
+		if (parentValidation) {
+			return parentValidation;
+		}
+
+		const [created] = await db
+			.insert(categories)
+			.values({
+				name: data.name,
+				type: data.type,
+				icon: data.icon,
+				parentId: data.parentId ?? null,
+				userId: user.id,
+			})
+			.returning({
+				id: categories.id,
+				name: categories.name,
+				type: categories.type,
+				icon: categories.icon,
+				parentId: categories.parentId,
+			});
+
+		if (!created) {
+			return {
+				success: false,
+				error: "Falha ao criar categoria.",
+			};
+		}
 
 		revalidateForEntity("categories", user.id);
 
-		return { success: true, message: "Category criada com sucesso." };
+		return {
+			success: true,
+			message: "Category criada com sucesso.",
+			data: {
+				id: created.id,
+				name: created.name,
+				type: created.type as CreatedCategoryResult["type"],
+				icon: created.icon,
+				parentId: created.parentId ?? null,
+			},
+		};
 	} catch (error) {
-		return handleActionError(error);
+		return handleActionError(error) as ActionResult<CreatedCategoryResult>;
 	}
 }
 
@@ -97,12 +177,25 @@ export async function updateCategoryAction(
 			};
 		}
 
+		const userCategories = await fetchUserCategoriesForValidation(user.id);
+		const parentValidation = validateCategoryParent(
+			data.id,
+			data.parentId ?? null,
+			data.type,
+			userCategories,
+		);
+
+		if (parentValidation) {
+			return parentValidation;
+		}
+
 		const [updated] = await db
 			.update(categories)
 			.set({
 				name: data.name,
 				type: data.type,
 				icon: data.icon,
+				parentId: data.parentId ?? null,
 			})
 			.where(and(eq(categories.id, data.id), eq(categories.userId, user.id)))
 			.returning();
@@ -152,6 +245,22 @@ export async function deleteCategoryAction(
 			return {
 				success: false,
 				error: `A categoria '${categoria.name}' é protegida e não pode ser removida.`,
+			};
+		}
+
+		const childCategory = await db.query.categories.findFirst({
+			columns: { id: true },
+			where: and(
+				eq(categories.userId, user.id),
+				eq(categories.parentId, data.id),
+			),
+		});
+
+		if (childCategory) {
+			return {
+				success: false,
+				error:
+					"Remova ou reassocie as subcategorias antes de excluir esta categoria.",
 			};
 		}
 

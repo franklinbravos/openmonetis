@@ -1,4 +1,5 @@
 import { connection } from "next/server";
+import { fetchAllAccountsForUser } from "@/features/accounts/queries";
 import { fetchUserPreferences } from "@/features/settings/queries";
 import { TransactionsPage } from "@/features/transactions/components/page/transactions-page";
 import {
@@ -40,10 +41,12 @@ export default async function Page({ searchParams }: PageProps) {
 	const searchFilters = extractTransactionSearchFilters(resolvedSearchParams);
 	const pagination = resolveTransactionPagination(resolvedSearchParams);
 
-	const [filterSources, userPreferences] = await Promise.all([
-		fetchTransactionFilterSources(userId),
-		fetchUserPreferences(userId),
-	]);
+	const [filterSources, userPreferences, { activeAccounts }] =
+		await Promise.all([
+			fetchTransactionFilterSources(userId),
+			fetchUserPreferences(userId),
+			fetchAllAccountsForUser(userId),
+		]);
 
 	const sluggedFilters = buildSluggedFilters(filterSources);
 	const slugMaps = buildSlugMaps(sluggedFilters);
@@ -118,6 +121,7 @@ export default async function Page({ searchParams }: PageProps) {
 						userPreferences?.groupTransactionsByDate ?? true
 					}
 					attachmentMaxSizeMb={userPreferences?.attachmentMaxSizeMb ?? 50}
+					transferAccounts={activeAccounts}
 				/>
 			</LogoPrefetchProvider>
 		</main>

@@ -33,6 +33,11 @@ import {
 	CATEGORY_TYPES,
 	type CategoryType,
 } from "@/shared/lib/categories/constants";
+import {
+	buildCategoryTree,
+	flattenCategoryTree,
+} from "@/shared/lib/categories/tree";
+import { cn } from "@/shared/utils/ui";
 import { CategoryDialog } from "./category-dialog";
 import type { Category } from "./types";
 
@@ -56,6 +61,8 @@ export function CategoriesPage({ categories }: CategoriesPageProps) {
 	const [categoryToRemove, setCategoryToRemove] = useState<Category | null>(
 		null,
 	);
+	const [createParentId, setCreateParentId] = useState<string | null>(null);
+	const [createOpen, setCreateOpen] = useState(false);
 
 	const categoriesByType = useMemo(() => {
 		const base = Object.fromEntries(
@@ -66,14 +73,17 @@ export function CategoriesPage({ categories }: CategoriesPageProps) {
 			base[category.type]?.push(category);
 		});
 
-		CATEGORY_TYPES.forEach((type) => {
-			base[type].sort((a, b) =>
-				a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" }),
-			);
-		});
-
 		return base;
 	}, [categories]);
+
+	const orderedCategoriesByType = useMemo(() => {
+		return Object.fromEntries(
+			CATEGORY_TYPES.map((type) => [
+				type,
+				flattenCategoryTree(buildCategoryTree(categoriesByType[type])),
+			]),
+		) as Record<CategoryType, Array<Category & { depth: number }>>;
+	}, [categoriesByType]);
 
 	const handleEdit = (category: Category) => {
 		setSelectedCategory(category);
@@ -84,6 +94,18 @@ export function CategoriesPage({ categories }: CategoriesPageProps) {
 		setEditOpen(open);
 		if (!open) {
 			setSelectedCategory(null);
+		}
+	};
+
+	const handleCreateSubcategory = (category: Category) => {
+		setCreateParentId(category.id);
+		setCreateOpen(true);
+	};
+
+	const handleCreateOpenChange = (open: boolean) => {
+		setCreateOpen(open);
+		if (!open) {
+			setCreateParentId(null);
 		}
 	};
 
@@ -126,6 +148,7 @@ export function CategoriesPage({ categories }: CategoriesPageProps) {
 					<CategoryDialog
 						mode="create"
 						defaultType={activeType}
+						allCategories={categories}
 						trigger={
 							<Button className="w-full sm:w-auto">
 								<RiAddFill className="size-4" />
@@ -150,7 +173,7 @@ export function CategoriesPage({ categories }: CategoriesPageProps) {
 
 					{CATEGORY_TYPES.map((type) => (
 						<TabsContent key={type} value={type} className="mt-4">
-							{categoriesByType[type].length === 0 ? (
+							{orderedCategoriesByType[type].length === 0 ? (
 								<div className="flex min-h-[280px] items-center justify-center rounded-lg border border-dashed bg-muted/10 p-10 text-center text-sm text-muted-foreground">
 									Ainda não há categorias de{" "}
 									{CATEGORY_TYPE_LABEL[type].toLowerCase()}.
@@ -167,7 +190,7 @@ export function CategoriesPage({ categories }: CategoriesPageProps) {
 												</TableRow>
 											</TableHeader>
 											<TableBody>
-												{categoriesByType[type].map((category, index) => {
+												{orderedCategoriesByType[type].map((category) => {
 													const isProtegida = CATEGORIAS_PROTEGIDAS.includes(
 														category.name,
 													);
@@ -184,7 +207,13 @@ export function CategoriesPage({ categories }: CategoriesPageProps) {
 															<TableCell className="font-medium">
 																<Link
 																	href={`/categories/${category.id}`}
-																	className="inline-flex items-center gap-1 underline-offset-2 hover:text-primary hover:underline font-semibold"
+																	className={cn(
+																		"inline-flex items-center gap-1 font-semibold underline-offset-2 hover:text-primary hover:underline",
+																		category.depth > 0 && "text-sm",
+																	)}
+																	style={{
+																		paddingLeft: `${category.depth * 1.25}rem`,
+																	}}
 																>
 																	{category.name}
 																	<RiExternalLinkLine
@@ -195,6 +224,17 @@ export function CategoriesPage({ categories }: CategoriesPageProps) {
 															</TableCell>
 															<TableCell>
 																<div className="flex items-center justify-end gap-3 text-sm">
+																	{!isProtegida && (
+																		<button
+																			type="button"
+																			onClick={() =>
+																				handleCreateSubcategory(category)
+																			}
+																			className="font-medium text-muted-foreground transition-opacity hover:text-primary hover:opacity-80"
+																		>
+																			subcategoria
+																		</button>
+																	)}
 																	{!isProtegida && (
 																		<button
 																			type="button"
@@ -239,8 +279,18 @@ export function CategoriesPage({ categories }: CategoriesPageProps) {
 			</div>
 
 			<CategoryDialog
+				mode="create"
+				defaultType={activeType}
+				defaultParentId={createParentId}
+				allCategories={categories}
+				open={createOpen}
+				onOpenChange={handleCreateOpenChange}
+			/>
+
+			<CategoryDialog
 				mode="update"
 				category={selectedCategory ?? undefined}
+				allCategories={categories}
 				open={editOpen && !!selectedCategory}
 				onOpenChange={handleEditOpenChange}
 			/>

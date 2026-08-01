@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { transferBetweenAccountsAction } from "@/features/accounts/actions";
 import type { AccountData } from "@/features/accounts/queries";
@@ -32,7 +32,7 @@ import { getTodayDateString } from "@/shared/utils/date";
 interface TransferDialogProps {
 	trigger?: React.ReactNode;
 	accounts: AccountData[];
-	fromAccountId: string;
+	fromAccountId?: string;
 	currentPeriod: string;
 	open?: boolean;
 	onOpenChange?: (open: boolean) => void;
@@ -54,6 +54,10 @@ export function TransferDialog({
 
 	const [isPending, startTransition] = useTransition();
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+	const isFromAccountFixed = Boolean(fromAccountId);
+	const [selectedFromAccountId, setSelectedFromAccountId] = useState(
+		fromAccountId ?? accounts[0]?.id ?? "",
+	);
 
 	// Form state
 	const [toAccountId, setToAccountId] = useState("");
@@ -61,13 +65,40 @@ export function TransferDialog({
 	const [date, setDate] = useState(getTodayDateString());
 	const [period, setPeriod] = useState(currentPeriod);
 
+	useEffect(() => {
+		if (!dialogOpen) {
+			return;
+		}
+
+		setErrorMessage(null);
+		setToAccountId("");
+		setAmount("");
+		setDate(getTodayDateString());
+		setPeriod(currentPeriod);
+
+		if (fromAccountId) {
+			setSelectedFromAccountId(fromAccountId);
+			return;
+		}
+
+		setSelectedFromAccountId((current) => {
+			if (current && accounts.some((account) => account.id === current)) {
+				return current;
+			}
+
+			return accounts[0]?.id ?? "";
+		});
+	}, [accounts, currentPeriod, dialogOpen, fromAccountId]);
+
 	// Available destination accounts (exclude source account)
 	const availableAccounts = accounts.filter(
-		(account) => account.id !== fromAccountId,
+		(account) => account.id !== selectedFromAccountId,
 	);
 
 	// Source account info
-	const fromAccount = accounts.find((account) => account.id === fromAccountId);
+	const fromAccount = accounts.find(
+		(account) => account.id === selectedFromAccountId,
+	);
 
 	const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
@@ -78,7 +109,7 @@ export function TransferDialog({
 			return;
 		}
 
-		if (toAccountId === fromAccountId) {
+		if (toAccountId === selectedFromAccountId) {
 			setErrorMessage("Selecione uma conta de destino diferente da origem.");
 			return;
 		}
@@ -90,7 +121,7 @@ export function TransferDialog({
 
 		startTransition(async () => {
 			const result = await transferBetweenAccountsAction({
-				fromAccountId,
+				fromAccountId: selectedFromAccountId,
 				toAccountId,
 				amount,
 				date: new Date(date),
@@ -158,30 +189,69 @@ export function TransferDialog({
 
 						<div className="flex flex-col gap-2 sm:col-span-2">
 							<Label htmlFor="from-account">Conta de origem</Label>
-							<Select value={fromAccountId} disabled>
-								<SelectTrigger id="from-account" className="w-full">
-									<SelectValue>
+							{isFromAccountFixed ? (
+								<Select value={selectedFromAccountId} disabled>
+									<SelectTrigger id="from-account" className="w-full">
+										<SelectValue>
+											{fromAccount && (
+												<AccountCardSelectContent
+													label={fromAccount.name}
+													logo={fromAccount.logo}
+													isCartao={false}
+												/>
+											)}
+										</SelectValue>
+									</SelectTrigger>
+									<SelectContent>
 										{fromAccount && (
-											<AccountCardSelectContent
-												label={fromAccount.name}
-												logo={fromAccount.logo}
-												isCartao={false}
-											/>
+											<SelectItem value={fromAccount.id}>
+												<AccountCardSelectContent
+													label={fromAccount.name}
+													logo={fromAccount.logo}
+													isCartao={false}
+												/>
+											</SelectItem>
 										)}
-									</SelectValue>
-								</SelectTrigger>
-								<SelectContent>
-									{fromAccount && (
-										<SelectItem value={fromAccount.id}>
-											<AccountCardSelectContent
-												label={fromAccount.name}
-												logo={fromAccount.logo}
-												isCartao={false}
-											/>
-										</SelectItem>
-									)}
-								</SelectContent>
-							</Select>
+									</SelectContent>
+								</Select>
+							) : accounts.length === 0 ? (
+								<div className="rounded-md border border-border bg-muted p-3 text-muted-foreground text-sm">
+									Cadastre ao menos uma conta para realizar transferências.
+								</div>
+							) : (
+								<Select
+									value={selectedFromAccountId}
+									onValueChange={(value) => {
+										setSelectedFromAccountId(value);
+										if (value === toAccountId) {
+											setToAccountId("");
+										}
+									}}
+								>
+									<SelectTrigger id="from-account" className="w-full">
+										<SelectValue placeholder="Selecione a conta de origem">
+											{fromAccount ? (
+												<AccountCardSelectContent
+													label={fromAccount.name}
+													logo={fromAccount.logo}
+													isCartao={false}
+												/>
+											) : null}
+										</SelectValue>
+									</SelectTrigger>
+									<SelectContent className="w-full">
+										{accounts.map((account) => (
+											<SelectItem key={account.id} value={account.id}>
+												<AccountCardSelectContent
+													label={account.name}
+													logo={account.logo}
+													isCartao={false}
+												/>
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							)}
 						</div>
 
 						<div className="flex flex-col gap-2 sm:col-span-2">
@@ -241,7 +311,12 @@ export function TransferDialog({
 						</Button>
 						<Button
 							type="submit"
-							disabled={isPending || availableAccounts.length === 0}
+							disabled={
+								isPending ||
+								accounts.length < 2 ||
+								!selectedFromAccountId ||
+								availableAccounts.length === 0
+							}
 						>
 							{isPending ? "Processando..." : "Confirmar transferência"}
 						</Button>

@@ -321,7 +321,7 @@ const baseFields = z.object({
 		.array(
 			z.object({
 				payerId: uuidSchema("Pessoa"),
-				amount: z.coerce.number().min(0.01, "Informe um valor maior que zero."),
+				amount: z.coerce.number().min(0),
 			}),
 		)
 		.optional(),
@@ -462,26 +462,6 @@ const refineLancamento = (
 				path: ["splitShares"],
 				message: "Escolha pessoas diferentes para dividir o lançamento.",
 			});
-		}
-
-		if (shares.some((share) => share.amount <= 0)) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				path: ["splitShares"],
-				message: "Informe um valor maior que zero para cada pessoa.",
-			});
-		}
-
-		if (shares.length > 0) {
-			const sum = shares.reduce((total, share) => total + share.amount, 0);
-			const total = Math.abs(data.amount);
-			if (Math.abs(sum - total) > 0.01) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					path: ["splitShares"],
-					message: "A soma das divisões deve ser igual ao valor total.",
-				});
-			}
 		}
 	}
 };
@@ -644,10 +624,26 @@ export const buildShares = ({
 }): Share[] => {
 	if (isSplit) {
 		if (splitShares && splitShares.length > 0) {
-			return splitShares.map((share) => ({
+			const mappedShares = splitShares.map((share) => ({
 				payerId: share.payerId,
 				amountCents: Math.round(share.amount * 100),
 			}));
+			const sum = mappedShares.reduce(
+				(total, share) => total + share.amountCents,
+				0,
+			);
+			const needsAutoSplit =
+				sum <= 0 || Math.abs(sum - totalCents) > 1;
+
+			if (needsAutoSplit) {
+				const amounts = splitAmount(totalCents, mappedShares.length);
+				return mappedShares.map((share, index) => ({
+					payerId: share.payerId,
+					amountCents: amounts[index] ?? 0,
+				}));
+			}
+
+			return mappedShares;
 		}
 
 		if (!payerId || !secondaryPayerId) {

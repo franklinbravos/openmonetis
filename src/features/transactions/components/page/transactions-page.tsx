@@ -1,8 +1,10 @@
 "use client";
 
-import { RiAddFill } from "@remixicon/react";
+import { RiAddFill, RiExchangeLine } from "@remixicon/react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { TransferDialog } from "@/features/accounts/components/transfer-dialog";
+import type { AccountData } from "@/features/accounts/queries";
 import {
 	convertTransactionToInstallmentAction,
 	convertTransactionToRecurringAction,
@@ -90,6 +92,7 @@ interface TransactionsPageProps {
 	pagination?: TransactionsPaginationState;
 	exportContext?: TransactionsExportContext;
 	attachmentMaxSizeMb?: number;
+	transferAccounts?: AccountData[];
 	// Opções específicas para o dialog de importação (quando visualizando dados de outro usuário)
 	importPayerOptions?: SelectOption[];
 	importSplitPayerOptions?: SelectOption[];
@@ -128,6 +131,7 @@ export function TransactionsPage({
 	pagination,
 	exportContext,
 	attachmentMaxSizeMb,
+	transferAccounts,
 	importPayerOptions,
 	importSplitPayerOptions,
 	importDefaultPayerId,
@@ -737,6 +741,19 @@ export function TransactionsPage({
 					</Button>
 				}
 			/>
+			{transferAccounts && transferAccounts.length > 0 ? (
+				<TransferDialog
+					accounts={transferAccounts}
+					currentPeriod={selectedPeriod}
+					fromAccountId={defaultAccountId ?? undefined}
+					trigger={
+						<Button variant="outline" className="w-full sm:w-auto">
+							<RiExchangeLine className="size-4" />
+							Nova transferência
+						</Button>
+					}
+				/>
+			) : null}
 		</>
 	) : null;
 

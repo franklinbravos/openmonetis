@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 import { DashboardGridEditable } from "@/features/dashboard/components/dashboard-grid-editable";
 import { DashboardMetricsCards } from "@/features/dashboard/components/dashboard-metrics-cards";
+import { DashboardQuickActions } from "@/features/dashboard/components/dashboard-quick-actions";
 import { DashboardWelcome } from "@/features/dashboard/components/dashboard-welcome";
 import { extractDashboardLogoNames } from "@/features/dashboard/lib/extract-logo-names";
 import { fetchDashboardPageData } from "@/features/dashboard/page-data-queries";
@@ -41,6 +42,11 @@ export default async function Page({ searchParams }: PageProps) {
 		<main className="flex flex-col gap-4">
 			<DashboardWelcome name={user.name} />
 			<MonthNavigation />
+			<DashboardQuickActions
+				period={selectedPeriod}
+				accounts={dashboardData.accountsSnapshot.accounts}
+				quickActionOptions={quickActionOptions}
+			/>
 			<DashboardMetricsCards
 				metrics={dashboardData.metrics}
 				period={selectedPeriod}

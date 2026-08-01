@@ -92,6 +92,7 @@ export interface CategorySectionProps extends BaseFieldSectionProps {
 	}>;
 	isUpdateMode: boolean;
 	hideTransactionType?: boolean;
+	onCreateCategory?: () => void;
 }
 
 export interface PayerSectionProps extends BaseFieldSectionProps {

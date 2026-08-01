@@ -16,13 +16,11 @@ import {
 	sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import {
-	RiAddFill,
 	RiCheckLine,
 	RiCloseLine,
 	RiDragMove2Line,
 	RiEyeOffLine,
 	RiSettings4Line,
-	RiTodoLine,
 } from "@remixicon/react";
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -39,15 +37,7 @@ import {
 	type WidgetConfig,
 	widgetsConfig,
 } from "@/features/dashboard/widget-registry/widget-config";
-import { NoteDialog } from "@/features/notes/components/note-dialog";
-import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
 import { Button } from "@/shared/components/ui/button";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "@/shared/components/ui/dropdown-menu";
 import { ExpandableWidgetCard } from "@/shared/components/widgets/expandable-widget-card";
 
 type DashboardGridEditableProps = {
@@ -67,9 +57,6 @@ export function DashboardGridEditable({
 }: DashboardGridEditableProps) {
 	const [isEditing, setIsEditing] = useState(false);
 	const [isPending, startTransition] = useTransition();
-	const [isMobileIncomeOpen, setIsMobileIncomeOpen] = useState(false);
-	const [isMobileExpenseOpen, setIsMobileExpenseOpen] = useState(false);
-	const [isMobileNoteOpen, setIsMobileNoteOpen] = useState(false);
 
 	// Initialize widget order and hidden state
 	const [widgetOrder, setWidgetOrder] = useState<string[]>(
@@ -196,184 +183,46 @@ export function DashboardGridEditable({
 	return (
 		<div className="space-y-4">
 			{/* Toolbar */}
-			<div className="flex flex-wrap items-center justify-between gap-2">
-				{!isEditing ? (
-					<div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto sm:flex-row sm:items-center sm:gap-2">
-						<div className="sm:hidden">
-							<DropdownMenu>
-								<DropdownMenuTrigger asChild>
-									<Button size="sm" variant="outline" className="w-full gap-2">
-										<RiAddFill className="size-4 text-primary" />
-										Adicionar
-									</Button>
-								</DropdownMenuTrigger>
-								<DropdownMenuContent align="start" className="w-48">
-									<DropdownMenuItem
-										onSelect={() => setIsMobileIncomeOpen(true)}
-									>
-										<RiAddFill className="text-success/80" />
-										Nova receita
-									</DropdownMenuItem>
-									<DropdownMenuItem
-										onSelect={() => setIsMobileExpenseOpen(true)}
-									>
-										<RiAddFill className="text-destructive/80" />
-										Nova despesa
-									</DropdownMenuItem>
-									<DropdownMenuItem onSelect={() => setIsMobileNoteOpen(true)}>
-										<RiTodoLine className="text-info/80" />
-										Nova anotação
-									</DropdownMenuItem>
-								</DropdownMenuContent>
-							</DropdownMenu>
-							<TransactionDialog
-								mode="create"
-								open={isMobileIncomeOpen}
-								onOpenChange={setIsMobileIncomeOpen}
-								payerOptions={quickActionOptions.payerOptions}
-								splitPayerOptions={quickActionOptions.splitPayerOptions}
-								defaultPayerId={quickActionOptions.defaultPayerId}
-								accountOptions={quickActionOptions.accountOptions}
-								cardOptions={quickActionOptions.cardOptions}
-								categoryOptions={quickActionOptions.categoryOptions}
-								estabelecimentos={quickActionOptions.estabelecimentos}
-								defaultPeriod={period}
-								defaultTransactionType="Receita"
-							/>
-							<TransactionDialog
-								mode="create"
-								open={isMobileExpenseOpen}
-								onOpenChange={setIsMobileExpenseOpen}
-								payerOptions={quickActionOptions.payerOptions}
-								splitPayerOptions={quickActionOptions.splitPayerOptions}
-								defaultPayerId={quickActionOptions.defaultPayerId}
-								accountOptions={quickActionOptions.accountOptions}
-								cardOptions={quickActionOptions.cardOptions}
-								categoryOptions={quickActionOptions.categoryOptions}
-								estabelecimentos={quickActionOptions.estabelecimentos}
-								defaultPeriod={period}
-								defaultTransactionType="Despesa"
-							/>
-							<NoteDialog
-								mode="create"
-								open={isMobileNoteOpen}
-								onOpenChange={setIsMobileNoteOpen}
-							/>
-						</div>
-						<div className="hidden items-center gap-2 sm:flex">
-							<TransactionDialog
-								mode="create"
-								payerOptions={quickActionOptions.payerOptions}
-								splitPayerOptions={quickActionOptions.splitPayerOptions}
-								defaultPayerId={quickActionOptions.defaultPayerId}
-								accountOptions={quickActionOptions.accountOptions}
-								cardOptions={quickActionOptions.cardOptions}
-								categoryOptions={quickActionOptions.categoryOptions}
-								estabelecimentos={quickActionOptions.estabelecimentos}
-								defaultPeriod={period}
-								defaultTransactionType="Receita"
-								trigger={
-									<Button
-										size="sm"
-										variant="outline"
-										className="h-12 w-full min-w-0 flex-col justify-center gap-0.5 px-1.5 text-sm whitespace-normal sm:h-8 sm:w-auto sm:flex-row sm:gap-2 sm:px-3 sm:whitespace-nowrap"
-									>
-										<span className="flex items-center gap-0.5">
-											<RiAddFill className="size-3.5 shrink-0 text-success/80" />
-										</span>
-										<span className="sm:hidden">Receita</span>
-										<span className="hidden sm:inline">Nova receita</span>
-									</Button>
-								}
-							/>
-							<TransactionDialog
-								mode="create"
-								payerOptions={quickActionOptions.payerOptions}
-								splitPayerOptions={quickActionOptions.splitPayerOptions}
-								defaultPayerId={quickActionOptions.defaultPayerId}
-								accountOptions={quickActionOptions.accountOptions}
-								cardOptions={quickActionOptions.cardOptions}
-								categoryOptions={quickActionOptions.categoryOptions}
-								estabelecimentos={quickActionOptions.estabelecimentos}
-								defaultPeriod={period}
-								defaultTransactionType="Despesa"
-								trigger={
-									<Button
-										size="sm"
-										variant="outline"
-										className="h-12 w-full min-w-0 flex-col justify-center gap-0.5 px-1.5 text-sm whitespace-normal sm:h-8 sm:w-auto sm:flex-row sm:gap-2 sm:px-3 sm:whitespace-nowrap"
-									>
-										<span className="flex items-center gap-0.5">
-											<RiAddFill className="size-3.5 shrink-0 text-destructive/80" />
-										</span>
-										<span className="sm:hidden">Despesa</span>
-										<span className="hidden sm:inline">Nova despesa</span>
-									</Button>
-								}
-							/>
-							<NoteDialog
-								mode="create"
-								trigger={
-									<Button
-										size="sm"
-										variant="outline"
-										className="h-12 w-full min-w-0 flex-col justify-center gap-0.5 px-1.5 text-sm whitespace-normal sm:h-8 sm:w-auto sm:flex-row sm:gap-2 sm:px-3 sm:whitespace-nowrap"
-									>
-										<RiTodoLine className="size-3.5 shrink-0 text-info/80" />
-										<span className="sm:hidden">Anotação</span>
-										<span className="hidden sm:inline">Nova anotação</span>
-									</Button>
-								}
-							/>
-						</div>
-					</div>
+			<div className="flex flex-wrap items-center justify-end gap-2">
+				{isEditing ? (
+					<>
+						<WidgetSettingsDialog
+							hiddenWidgets={hiddenWidgets}
+							onToggleWidget={handleToggleWidget}
+							onReset={handleReset}
+							triggerLabel="Visibilidade"
+						/>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={handleCancelEditing}
+							disabled={isPending}
+							className="gap-2"
+						>
+							<RiCloseLine className="size-4" />
+							Cancelar
+						</Button>
+						<Button
+							size="sm"
+							onClick={handleSave}
+							disabled={isPending}
+							className="gap-2"
+						>
+							<RiCheckLine className="size-4" />
+							Salvar
+						</Button>
+					</>
 				) : (
-					<div />
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={handleStartEditing}
+						className="w-full gap-2 sm:w-auto"
+					>
+						<RiSettings4Line className="size-4" />
+						Personalizar
+					</Button>
 				)}
-
-				<div className="flex w-full items-center justify-end gap-2 sm:w-auto">
-					{isEditing ? (
-						<>
-							<WidgetSettingsDialog
-								hiddenWidgets={hiddenWidgets}
-								onToggleWidget={handleToggleWidget}
-								onReset={handleReset}
-								triggerLabel="Visibilidade"
-							/>
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={handleCancelEditing}
-								disabled={isPending}
-								className="gap-2"
-							>
-								<RiCloseLine className="size-4" />
-								Cancelar
-							</Button>
-							<Button
-								size="sm"
-								onClick={handleSave}
-								disabled={isPending}
-								className="gap-2"
-							>
-								<RiCheckLine className="size-4" />
-								Salvar
-							</Button>
-						</>
-					) : (
-						<div className="w-full sm:w-auto">
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={handleStartEditing}
-								className="w-full gap-2 sm:w-auto"
-							>
-								<RiSettings4Line className="size-4" />
-								Personalizar
-							</Button>
-						</div>
-					)}
-				</div>
 			</div>
 
 			{/* Grid */}

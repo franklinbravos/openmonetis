@@ -5,10 +5,12 @@ export type Category = {
 	name: string;
 	type: CategoryType;
 	icon: string | null;
+	parentId: string | null;
 };
 
 export type CategoryFormValues = {
 	name: string;
 	type: CategoryType;
 	icon: string;
+	parentId: string;
 };

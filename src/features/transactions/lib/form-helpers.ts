@@ -342,7 +342,16 @@ export function applyFieldDependencies(
 	// When split is enabled and amount exists, calculate initial split amounts
 	if (key === "isSplit" && value === true) {
 		const totalAmount = Number.parseFloat(currentState.amount) || 0;
-		if (totalAmount > 0) {
+		const payerIds = getSelectedPayerIds(currentState);
+
+		if (payerIds.length >= 2 && totalAmount > 0) {
+			const amounts = getEqualSplitAmounts(payerIds.length, totalAmount);
+			updates.primarySplitAmount = amounts[0] ?? "0.00";
+			updates.splitShares = payerIds.slice(1).map((payerId, index) => ({
+				payerId,
+				amount: amounts[index + 1] ?? "0.00",
+			}));
+		} else if (totalAmount > 0) {
 			updates.primarySplitAmount = totalAmount.toFixed(2);
 			updates.secondarySplitAmount = "";
 		}
@@ -405,4 +414,134 @@ export function applyFieldDependencies(
 	}
 
 	return updates;
+}
+
+export function getEqualSplitAmounts(count: number, totalAmount: number) {
+	if (count <= 0 || totalAmount <= 0) return [];
+
+	const centsTotal = Math.round(totalAmount * 100);
+	const baseCents = Math.floor(centsTotal / count);
+	let remainder = centsTotal - baseCents * count;
+
+	return Array.from({ length: count }, () => {
+		const cents = baseCents + (remainder > 0 ? 1 : 0);
+		remainder -= 1;
+		return (cents / 100).toFixed(2);
+	});
+}
+
+export function getSelectedPayerIds(state: TransactionFormState): string[] {
+	const ids: string[] = [];
+
+	if (state.payerId) {
+		ids.push(state.payerId);
+	}
+
+	for (const share of state.splitShares) {
+		if (share.payerId && !ids.includes(share.payerId)) {
+			ids.push(share.payerId);
+		}
+	}
+
+	return ids;
+}
+
+export function applyPayerSelection(
+	selectedIds: string[],
+	currentState: TransactionFormState,
+): Partial<TransactionFormState> {
+	const uniqueIds = [...new Set(selectedIds.filter(Boolean))];
+	const payerId = uniqueIds[0];
+	const isSplit = uniqueIds.length > 1;
+	const totalAmount = Number.parseFloat(currentState.amount) || 0;
+
+	if (!isSplit) {
+		return {
+			payerId,
+			isSplit: false,
+			splitShares: [],
+			primarySplitAmount: "",
+			secondarySplitAmount: "",
+			secondaryPayerId: undefined,
+		};
+	}
+
+	const existingAmounts = new Map<string, string>();
+	if (currentState.payerId) {
+		existingAmounts.set(
+			currentState.payerId,
+			currentState.primarySplitAmount,
+		);
+	}
+	for (const share of currentState.splitShares) {
+		existingAmounts.set(share.payerId, share.amount);
+	}
+
+	const amounts =
+		totalAmount > 0
+			? getEqualSplitAmounts(uniqueIds.length, totalAmount)
+			: uniqueIds.map(() => "");
+
+	return {
+		payerId,
+		isSplit: true,
+		primarySplitAmount: amounts[0] ?? existingAmounts.get(payerId ?? "") ?? "",
+		splitShares: uniqueIds.slice(1).map((id, index) => ({
+			payerId: id,
+			amount:
+				amounts[index + 1] ?? existingAmounts.get(id) ?? "",
+		})),
+		secondarySplitAmount: "",
+		secondaryPayerId: undefined,
+	};
+}
+
+export function normalizeSplitStateForSubmit(
+	state: TransactionFormState,
+	totalAmount: number,
+): TransactionFormState {
+	if (!state.isSplit) {
+		return state;
+	}
+
+	const payerIds = getSelectedPayerIds(state);
+	if (payerIds.length < 2) {
+		return {
+			...state,
+			isSplit: false,
+			splitShares: [],
+			primarySplitAmount: "",
+			secondarySplitAmount: "",
+		};
+	}
+
+	const currentTotal =
+		(Number.parseFloat(state.primarySplitAmount) || 0) +
+		state.splitShares.reduce(
+			(sum, share) => sum + (Number.parseFloat(share.amount) || 0),
+			0,
+		);
+
+	const needsAutoSplit =
+		totalAmount <= 0 ||
+		currentTotal <= 0 ||
+		Math.abs(currentTotal - totalAmount) > 0.01;
+
+	if (!needsAutoSplit) {
+		return state;
+	}
+
+	const amounts = getEqualSplitAmounts(payerIds.length, totalAmount);
+
+	return {
+		...state,
+		payerId: payerIds[0],
+		isSplit: true,
+		primarySplitAmount: amounts[0] ?? "0.00",
+		splitShares: payerIds.slice(1).map((payerId, index) => ({
+			payerId,
+			amount: amounts[index + 1] ?? "0.00",
+		})),
+		secondarySplitAmount: "",
+	};
 }

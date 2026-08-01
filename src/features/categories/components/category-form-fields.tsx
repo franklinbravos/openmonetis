@@ -16,16 +16,18 @@ import {
 	CATEGORY_TYPES,
 } from "@/shared/lib/categories/constants";
 import { getCategoryIconOptions } from "@/shared/lib/categories/icons";
+import { formatIndentedCategoryLabel } from "@/shared/lib/categories/tree";
 import { cn } from "@/shared/utils/ui";
 
 import { CategoryIcon } from "./category-icon";
 import { CategoryPickerDialog } from "./category-picker-dialog";
 import { TypeSelectContent } from "./category-select-items";
-import type { CategoryFormValues } from "./types";
+import type { Category, CategoryFormValues } from "./types";
 
 interface CategoryFormFieldsProps {
 	values: CategoryFormValues;
 	onChange: (field: keyof CategoryFormValues, value: string) => void;
+	parentOptions: Array<Category & { depth: number }>;
 }
 
 const iconOptions = getCategoryIconOptions();
@@ -33,6 +35,7 @@ const iconOptions = getCategoryIconOptions();
 export function CategoryFormFields({
 	values,
 	onChange,
+	parentOptions,
 }: CategoryFormFieldsProps) {
 	const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -74,6 +77,31 @@ export function CategoryFormFields({
 						))}
 					</SelectContent>
 				</Select>
+			</div>
+
+			<div className="flex flex-col gap-2">
+				<Label htmlFor="category-parent">Categoria pai</Label>
+				<Select
+					value={values.parentId || "none"}
+					onValueChange={(value) =>
+						onChange("parentId", value === "none" ? "" : value)
+					}
+				>
+					<SelectTrigger id="category-parent" className="w-full">
+						<SelectValue placeholder="Selecione a categoria pai" />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectItem value="none">Nenhuma (categoria principal)</SelectItem>
+						{parentOptions.map((option) => (
+							<SelectItem key={option.id} value={option.id}>
+								{formatIndentedCategoryLabel(option.name, option.depth)}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+				<p className="text-muted-foreground text-xs">
+					Deixe em branco para manter a categoria no nível principal.
+				</p>
 			</div>
 
 			<div className="flex flex-col gap-2">

@@ -40,11 +40,29 @@ export function PayerSelectContent({
 	);
 }
 
-export function CategorySelectContent({ label, icon }: SelectItemContentProps) {
+export function CategorySelectContent({
+	label,
+	icon,
+	depth = 0,
+	pathLabel,
+}: SelectItemContentProps & {
+	depth?: number;
+	pathLabel?: string | null;
+}) {
 	return (
-		<span className="flex items-center gap-2">
-			<CategoryIcon name={icon} className="size-4" />
-			<span>{label}</span>
+		<span
+			className="flex min-w-0 items-center gap-2"
+			style={{ paddingLeft: depth > 0 ? `${depth * 0.75}rem` : undefined }}
+		>
+			<CategoryIcon name={icon} className="size-4 shrink-0" />
+			<span className="flex min-w-0 flex-col">
+				<span className="truncate">{label}</span>
+				{pathLabel && depth > 0 ? (
+					<span className="truncate text-muted-foreground text-xs">
+						{pathLabel}
+					</span>
+				) : null}
+			</span>
 		</span>
 	);
 }

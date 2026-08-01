@@ -1,9 +1,11 @@
 "use client";
 
+import { RiAddFill } from "@remixicon/react";
 import { useEffect, useRef, useState } from "react";
 import { getCategoryBudgetSummaryAction } from "@/features/budgets/actions";
 import type { CategoryBudgetSummary } from "@/features/budgets/queries";
 import { TRANSACTION_TYPES } from "@/features/transactions/lib/constants";
+import { Button } from "@/shared/components/ui/button";
 import { Label } from "@/shared/components/ui/label";
 import {
 	Select,
@@ -11,6 +13,7 @@ import {
 	SelectGroup,
 	SelectItem,
 	SelectLabel,
+	SelectSeparator,
 	SelectTrigger,
 	SelectValue,
 } from "@/shared/components/ui/select";
@@ -38,6 +41,60 @@ const formatCompactCurrency = (value: number) =>
 		maximumFractionDigits: 0,
 	});
 
+function SelectFieldHeader({
+	htmlFor,
+	label,
+	actionLabel,
+	onAction,
+}: {
+	htmlFor: string;
+	label: string;
+	actionLabel?: string;
+	onAction?: () => void;
+}) {
+	return (
+		<div className="flex items-center justify-between gap-2">
+			<Label htmlFor={htmlFor}>{label}</Label>
+			{onAction ? (
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon-sm"
+					className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
+					aria-label={actionLabel}
+					onClick={onAction}
+				>
+					<RiAddFill className="size-4" />
+				</Button>
+			) : null}
+		</div>
+	);
+}
+
+function SelectCreateAction({
+	label,
+	onClick,
+}: {
+	label: string;
+	onClick: () => void;
+}) {
+	return (
+		<>
+			<SelectSeparator />
+			<div className="p-1">
+				<button
+					type="button"
+					className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-primary text-sm hover:bg-accent"
+					onClick={onClick}
+				>
+					<RiAddFill className="size-4" />
+					{label}
+				</button>
+			</div>
+		</>
+	);
+}
+
 export function CategorySection({
 	formState,
 	onFieldChange,
@@ -45,8 +102,10 @@ export function CategorySection({
 	categoryGroups,
 	isUpdateMode,
 	hideTransactionType = false,
+	onCreateCategory,
 }: CategorySectionProps) {
 	const showTransactionTypeField = !isUpdateMode && !hideTransactionType;
+	const [categorySelectOpen, setCategorySelectOpen] = useState(false);
 
 	const [budgetSummary, setBudgetSummary] =
 		useState<CategoryBudgetSummary | null>(null);
@@ -94,7 +153,7 @@ export function CategorySection({
 			<span
 				title={`${formatCurrency(spent)} de ${formatCurrency(amount)} (${percent}%)`}
 				className={cn(
-					"shrink-0 text-xs font-semibold leading-none whitespace-nowrap font-mono",
+					"shrink-0 font-mono font-semibold text-xs leading-none whitespace-nowrap",
 					getBudgetTone(ratio),
 				)}
 			>
@@ -102,6 +161,11 @@ export function CategorySection({
 				<span className="ml-1 opacity-70">({percent}%)</span>
 			</span>
 		);
+	};
+
+	const handleCreateCategory = () => {
+		setCategorySelectOpen(false);
+		onCreateCategory?.();
 	};
 
 	return (
@@ -141,8 +205,15 @@ export function CategorySection({
 					showTransactionTypeField ? "md:w-1/2" : "md:w-full",
 				)}
 			>
-				<Label htmlFor="categoria">Categoria</Label>
+				<SelectFieldHeader
+					htmlFor="categoria"
+					label="Categoria"
+					actionLabel="Nova categoria"
+					onAction={onCreateCategory ? handleCreateCategory : undefined}
+				/>
 				<Select
+					open={categorySelectOpen}
+					onOpenChange={setCategorySelectOpen}
 					value={formState.categoryId ?? ""}
 					onValueChange={(value) => onFieldChange("categoryId", value)}
 				>
@@ -159,6 +230,8 @@ export function CategorySection({
 											<CategorySelectContent
 												label={selectedOption.label}
 												icon={selectedOption.icon}
+												depth={selectedOption.categoryDepth}
+												pathLabel={selectedOption.categoryPath}
 											/>
 											{renderBudgetBadge()}
 										</span>
@@ -175,11 +248,19 @@ export function CategorySection({
 										<CategorySelectContent
 											label={option.label}
 											icon={option.icon}
+											depth={option.categoryDepth}
+											pathLabel={option.categoryPath}
 										/>
 									</SelectItem>
 								))}
 							</SelectGroup>
 						))}
+						{onCreateCategory ? (
+							<SelectCreateAction
+								label="Nova categoria"
+								onClick={handleCreateCategory}
+							/>
+						) : null}
 					</SelectContent>
 				</Select>
 			</div>

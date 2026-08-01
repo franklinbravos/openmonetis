@@ -50,6 +50,9 @@ export type SelectOption = {
 	accountType?: string | null;
 	closingDay?: string | null;
 	dueDay?: string | null;
+	parentId?: string | null;
+	categoryPath?: string | null;
+	categoryDepth?: number;
 };
 
 export type TransactionFilterOption = {

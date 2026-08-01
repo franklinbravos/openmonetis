@@ -11,6 +11,11 @@ import {
 	type CreatedCard,
 } from "@/features/cards/components/create-card-inline-dialog";
 import {
+	CreateCategoryInlineDialog,
+	type CreatedCategory,
+} from "@/features/categories/components/create-category-inline-dialog";
+import type { Category } from "@/features/categories/components/types";
+import {
 	createTransactionAction,
 	updateTransactionAction,
 } from "@/features/transactions/actions";
@@ -24,6 +29,8 @@ import {
 	applyFieldDependencies,
 	buildTransactionInitialState,
 	deriveCreditCardPeriod,
+	getSelectedPayerIds,
+	normalizeSplitStateForSubmit,
 } from "@/features/transactions/lib/form-helpers";
 import { useAppPreferences } from "@/shared/components/providers/app-preferences-provider";
 import { Button } from "@/shared/components/ui/button";
@@ -43,6 +50,7 @@ import {
 } from "@/shared/components/ui/dialog";
 import { Label } from "@/shared/components/ui/label";
 import { useControlledState } from "@/shared/hooks/use-controlled-state";
+import type { CategoryType } from "@/shared/lib/categories/constants";
 import { AttachmentFilePicker } from "../../attachments/attachment-file-picker";
 import { AttachmentSection } from "../../attachments/attachment-section";
 import type { SelectOption } from "../../types";
@@ -76,6 +84,20 @@ function mergeSelectOptions(
 	}
 
 	return merged;
+}
+
+function transactionTypeToCategoryType(transactionType: string): CategoryType {
+	return transactionType.toLowerCase() === "receita" ? "receita" : "despesa";
+}
+
+function mapSelectOptionsToCategories(options: SelectOption[]): Category[] {
+	return options.map((option) => ({
+		id: option.value,
+		name: option.label,
+		type: option.group === "receita" ? "receita" : "despesa",
+		icon: option.icon ?? null,
+		parentId: option.parentId ?? null,
+	}));
 }
 
 export function TransactionDialog({
@@ -136,8 +158,12 @@ export function TransactionDialog({
 		SelectOption[]
 	>([]);
 	const [extraCardOptions, setExtraCardOptions] = useState<SelectOption[]>([]);
+	const [extraCategoryOptions, setExtraCategoryOptions] = useState<
+		SelectOption[]
+	>([]);
 	const [accountCreateOpen, setAccountCreateOpen] = useState(false);
 	const [cardCreateOpen, setCardCreateOpen] = useState(false);
+	const [categoryCreateOpen, setCategoryCreateOpen] = useState(false);
 	const [accountCreateTypeHint, setAccountCreateTypeHint] = useState<
 		string | undefined
 	>(undefined);
@@ -187,6 +213,7 @@ export function TransactionDialog({
 			setExtrasOpen(initial.condition !== "À vista");
 			setExtraAccountOptions([]);
 			setExtraCardOptions([]);
+			setExtraCategoryOptions([]);
 		}
 	}, [
 		dialogOpen,
@@ -225,13 +252,34 @@ export function TransactionDialog({
 		);
 	}, [cardOptions]);
 
+	useEffect(() => {
+		setExtraCategoryOptions((prev) =>
+			prev.filter(
+				(option) =>
+					!categoryOptions.some(
+						(baseOption) => baseOption.value === option.value,
+					),
+			),
+		);
+	}, [categoryOptions]);
+
+	const mergedCategoryOptions = useMemo(
+		() => mergeSelectOptions(categoryOptions, extraCategoryOptions),
+		[categoryOptions, extraCategoryOptions],
+	);
+
+	const allCategoriesForDialog = useMemo(
+		() => mapSelectOptionsToCategories(mergedCategoryOptions),
+		[mergedCategoryOptions],
+	);
+
 	const categoryGroups = useMemo(() => {
-		const filtered = categoryOptions.filter(
+		const filtered = mergedCategoryOptions.filter(
 			(option) =>
 				option.group?.toLowerCase() === formState.transactionType.toLowerCase(),
 		);
 		return groupAndSortCategories(filtered);
-	}, [categoryOptions, formState.transactionType]);
+	}, [mergedCategoryOptions, formState.transactionType]);
 
 	type CreateTransactionInput = Parameters<typeof createTransactionAction>[0];
 	type UpdateTransactionInput = Parameters<typeof updateTransactionAction>[0];
@@ -319,6 +367,36 @@ export function TransactionDialog({
 		setCardCreateOpen(false);
 	}
 
+	function handleCategoryCreated(category: CreatedCategory) {
+		const parentOption = mergedCategoryOptions.find(
+			(option) => option.value === category.parentId,
+		);
+		const categoryPath = parentOption
+			? `${parentOption.categoryPath ?? parentOption.label} › ${category.name}`
+			: category.name;
+		const categoryDepth = (parentOption?.categoryDepth ?? -1) + 1;
+
+		setExtraCategoryOptions((prev) =>
+			prev.some((option) => option.value === category.id)
+				? prev
+				: [
+						...prev,
+						{
+							value: category.id,
+							label: category.name,
+							group: category.type,
+							icon: category.icon,
+							parentId: category.parentId,
+							categoryPath,
+							categoryDepth,
+						},
+					],
+		);
+
+		handleFieldChange("categoryId", category.id);
+		setCategoryCreateOpen(false);
+	}
+
 	function handleExtrasOpenChange(nextOpen: boolean) {
 		setExtrasOpen(nextOpen);
 
@@ -353,8 +431,8 @@ export function TransactionDialog({
 			return;
 		}
 
-		if (formState.isSplit && !formState.payerId) {
-			const message = "Selecione a pessoa principal para dividir o lançamento.";
+		if (formState.isSplit && getSelectedPayerIds(formState).length < 2) {
+			const message = "Adicione pelo menos duas pessoas para dividir o lançamento.";
 			setErrorMessage(message);
 			toast.error(message);
 			return;
@@ -369,44 +447,19 @@ export function TransactionDialog({
 		}
 
 		const sanitizedAmount = Math.abs(amountValue);
-		const normalizedSplitShares = formState.isSplit
+		const submitState = normalizeSplitStateForSubmit(formState, sanitizedAmount);
+		const normalizedSplitShares = submitState.isSplit
 			? [
 					{
-						payerId: formState.payerId ?? "",
-						amount: Number.parseFloat(formState.primarySplitAmount) || 0,
+						payerId: submitState.payerId ?? "",
+						amount: Number.parseFloat(submitState.primarySplitAmount) || 0,
 					},
-					...formState.splitShares.map((share) => ({
+					...submitState.splitShares.map((share) => ({
 						payerId: share.payerId,
 						amount: Number.parseFloat(share.amount) || 0,
 					})),
 				]
 			: undefined;
-
-		if (formState.isSplit) {
-			if (formState.splitShares.length === 0) {
-				const message = "Selecione pelo menos uma pessoa para dividir.";
-				setErrorMessage(message);
-				toast.error(message);
-				return;
-			}
-
-			if (normalizedSplitShares?.some((share) => share.amount <= 0)) {
-				const message = "Informe um valor maior que zero para cada pessoa.";
-				setErrorMessage(message);
-				toast.error(message);
-				return;
-			}
-
-			const splitTotal =
-				normalizedSplitShares?.reduce((sum, share) => sum + share.amount, 0) ??
-				0;
-			if (Math.abs(splitTotal - sanitizedAmount) > 0.01) {
-				const message = "A soma das divisões deve ser igual ao valor total.";
-				setErrorMessage(message);
-				toast.error(message);
-				return;
-			}
-		}
 
 		if (!formState.categoryId) {
 			const message = "Selecione uma categoria.";
@@ -439,14 +492,14 @@ export function TransactionDialog({
 			condition: formState.condition as CreateTransactionInput["condition"],
 			paymentMethod:
 				formState.paymentMethod as CreateTransactionInput["paymentMethod"],
-			payerId: formState.payerId ?? null,
+			payerId: submitState.payerId ?? null,
 			splitShares: normalizedSplitShares,
-			isSplit: formState.isSplit,
-			primarySplitAmount: formState.isSplit
-				? Number.parseFloat(formState.primarySplitAmount) || undefined
+			isSplit: submitState.isSplit,
+			primarySplitAmount: submitState.isSplit
+				? Number.parseFloat(submitState.primarySplitAmount) || undefined
 				: undefined,
-			secondarySplitAmount: formState.isSplit
-				? Number.parseFloat(formState.secondarySplitAmount) || undefined
+			secondarySplitAmount: submitState.isSplit
+				? Number.parseFloat(submitState.secondarySplitAmount) || undefined
 				: undefined,
 			accountId: formState.accountId ?? null,
 			cardId: formState.cardId ?? null,
@@ -711,12 +764,13 @@ export function TransactionDialog({
 							<CategorySection
 								formState={formState}
 								onFieldChange={handleFieldChange}
-								categoryOptions={categoryOptions}
+								categoryOptions={mergedCategoryOptions}
 								categoryGroups={categoryGroups}
 								isUpdateMode={isUpdateMode}
 								hideTransactionType={
 									Boolean(isNewWithType) && !forceShowTransactionType
 								}
+								onCreateCategory={() => setCategoryCreateOpen(true)}
 							/>
 						</div>
 
@@ -888,6 +942,13 @@ export function TransactionDialog({
 				open={cardCreateOpen}
 				onOpenChange={setCardCreateOpen}
 				onCreated={handleCardCreated}
+			/>
+			<CreateCategoryInlineDialog
+				open={categoryCreateOpen}
+				onOpenChange={setCategoryCreateOpen}
+				onCreated={handleCategoryCreated}
+				allCategories={allCategoriesForDialog}
+				defaultType={transactionTypeToCategoryType(formState.transactionType)}
 			/>
 		</Dialog>
 	);
