@@ -1,0 +1,97 @@
+name: Docker (Coolify)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Tag da imagem no Docker Hub
+        required: true
+        default: latest
+      skip_quality:
+        description: Pular lint/typecheck (rebuild mais rápido em hotfixes)
+        type: boolean
+        default: false
+
+concurrency:
+  group: docker-coolify-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCKER_IMAGE_NAME: openmonetis
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_quality }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Next.js types
+        run: pnpm exec next typegen
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
+
+      - name: Lint
+        run: pnpm run lint
+
+  docker:
+    needs: quality
+    if: ${{ always() && (needs.quality.result == 'success' || needs.quality.result == 'skipped') }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ inputs.image_tag }}
+          cache-from: |
+            type=gha
+            type=registry,ref=${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:buildcache
+          cache-to: |
+            type=gha,mode=max
+            type=registry,ref=${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:buildcache,mode=max
+          platforms: linux/amd64
+
+      - name: Resumo para o Coolify
+        run: |
+          echo "Imagem publicada: ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ inputs.image_tag }}"
+          echo "Digest: ${{ steps.build.outputs.digest }}"
+          echo ""
+          echo "No Coolify: Docker Image → porta 3000 → Redeploy"
+
+      - name: Image digest
+        run: echo "${{ steps.build.outputs.digest }}"

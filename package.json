@@ -27,6 +27,10 @@
 		"//docker:logs": "Acompanha logs de todos os containers em tempo real",
 		"docker:update": "docker compose pull && docker compose up -d",
 		"//docker:update": "Atualiza para a imagem mais recente do Docker Hub e reinicia",
+		"docker:build:push": "bash scripts/docker-build-push.sh --push",
+		"//docker:build:push": "Build local da imagem e push para Docker Hub (com cache de registry)",
+		"docker:build:local": "bash scripts/docker-build-push.sh --load",
+		"//docker:build:local": "Build local da imagem e carrega no Docker da máquina (teste)",
 		"backup": "bash scripts/backup.sh",
 		"mockup": "tsx scripts/mock-data.ts"
 	},

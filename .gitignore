@@ -101,9 +101,12 @@ docker-compose.override.yml
 
 # === AI Assistants (Claude, Gemini, Cursor, etc) ===
 # Arquivos de configuração de assistentes de IA
+.agents/
+.memory/
 .claude/
 .gemini/
 .cursor/
+opencode.json
 QWEN.md
 .codex
 # === Backups locais ===
