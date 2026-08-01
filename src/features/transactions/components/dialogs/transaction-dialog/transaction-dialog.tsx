@@ -3,6 +3,10 @@ import { RiArrowDropDownLine } from "@remixicon/react";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
+	CreateAccountInlineDialog,
+	type CreatedAccount,
+} from "@/features/accounts/components/create-account-inline-dialog";
+import {
 	createTransactionAction,
 	updateTransactionAction,
 } from "@/features/transactions/actions";
@@ -37,6 +41,7 @@ import { Label } from "@/shared/components/ui/label";
 import { useControlledState } from "@/shared/hooks/use-controlled-state";
 import { AttachmentFilePicker } from "../../attachments/attachment-file-picker";
 import { AttachmentSection } from "../../attachments/attachment-section";
+import type { SelectOption } from "../../types";
 import { BasicFieldsSection } from "./basic-fields-section";
 import { BoletoFieldsSection } from "./boleto-fields-section";
 import { CategorySection } from "./category-section";
@@ -104,6 +109,13 @@ export function TransactionDialog({
 	const [pendingDetachIds, setPendingDetachIds] = useState<string[]>([]);
 	const [pendingUploadFiles, setPendingUploadFiles] = useState<File[]>([]);
 	const [extrasOpen, setExtrasOpen] = useState(false);
+	const [extraAccountOptions, setExtraAccountOptions] = useState<
+		SelectOption[]
+	>([]);
+	const [accountCreateOpen, setAccountCreateOpen] = useState(false);
+	const [accountCreateTypeHint, setAccountCreateTypeHint] = useState<
+		string | undefined
+	>(undefined);
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const { showTransactionSummary } = useAppPreferences();
 
@@ -182,6 +194,11 @@ export function TransactionDialog({
 		return Number.isNaN(parsed) ? 0 : Math.abs(parsed);
 	}, [formState.amount]);
 
+	const mergedAccountOptions = useMemo(
+		() => [...accountOptions, ...extraAccountOptions],
+		[accountOptions, extraAccountOptions],
+	);
+
 	function getCardInfo(cardId: string | undefined) {
 		if (!cardId) return null;
 		const card = cardOptions.find((opt) => opt.value === cardId);
@@ -209,6 +226,25 @@ export function TransactionDialog({
 				...dependencies,
 			};
 		});
+	}
+
+	function handleAccountCreated(account: CreatedAccount) {
+		setExtraAccountOptions((prev) =>
+			prev.some((option) => option.value === account.id)
+				? prev
+				: [
+						...prev,
+						{
+							value: account.id,
+							label: account.name,
+							logo: account.logo,
+							accountType: account.accountType,
+						},
+					],
+		);
+
+		handleFieldChange("accountId", account.id);
+		setAccountCreateOpen(false);
 	}
 
 	function handleExtrasOpenChange(nextOpen: boolean) {
@@ -630,12 +666,16 @@ export function TransactionDialog({
 							<PaymentMethodSection
 								formState={formState}
 								onFieldChange={handleFieldChange}
-								accountOptions={accountOptions}
+								accountOptions={mergedAccountOptions}
 								cardOptions={cardOptions}
 								isUpdateMode={isUpdateMode}
 								disablePaymentMethod={disablePaymentMethod}
 								disableCardSelect={disableCardSelect}
 								showSettledToggle={showSettledToggle}
+								onCreateAccount={(hint) => {
+									setAccountCreateTypeHint(hint);
+									setAccountCreateOpen(true);
+								}}
 							/>
 
 							{showDueDate ? (
@@ -737,7 +777,7 @@ export function TransactionDialog({
 								<TransactionSummaryCard
 									formState={formState}
 									payerOptions={payerOptions}
-									accountOptions={accountOptions}
+									accountOptions={mergedAccountOptions}
 									cardOptions={cardOptions}
 									categoryOptions={categoryOptions}
 								/>
@@ -764,6 +804,13 @@ export function TransactionDialog({
 					</DialogFooter>
 				</form>
 			</DialogContent>
+
+			<CreateAccountInlineDialog
+				open={accountCreateOpen}
+				onOpenChange={setAccountCreateOpen}
+				onCreated={handleAccountCreated}
+				defaultAccountType={accountCreateTypeHint}
+			/>
 		</Dialog>
 	);
 }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
+	type AccountCreateResultData,
 	createAccountAction,
 	updateAccountAction,
 } from "@/features/accounts/actions";
@@ -44,6 +45,8 @@ const DEFAULT_ACCOUNT_TYPES = [
 
 const DEFAULT_ACCOUNT_STATUS = ["Ativa", "Inativa"] as const;
 
+export type CreatedAccount = AccountCreateResultData;
+
 interface AccountDialogProps {
 	mode: "create" | "update";
 	trigger?: React.ReactNode;
@@ -51,6 +54,10 @@ interface AccountDialogProps {
 	account?: Account;
 	open?: boolean;
 	onOpenChange?: (open: boolean) => void;
+	/** Called after a successful account creation (create mode only). */
+	onCreated?: (account: CreatedAccount) => void;
+	/** Tipo de conta pré-selecionado na criação (ex.: "Dinheiro"). */
+	defaultAccountType?: string;
 }
 
 const buildInitialValues = ({
@@ -58,11 +65,13 @@ const buildInitialValues = ({
 	logoOptions,
 	accountTypes,
 	accountStatuses,
+	defaultAccountType,
 }: {
 	account?: Account;
 	logoOptions: string[];
 	accountTypes: string[];
 	accountStatuses: string[];
+	defaultAccountType?: string;
 }): AccountFormValues => {
 	const fallbackLogo = logoOptions[0] ?? "";
 	const selectedLogo = normalizeLogo(account?.logo) || fallbackLogo;
@@ -70,7 +79,8 @@ const buildInitialValues = ({
 
 	return {
 		name: account?.name ?? derivedName,
-		accountType: account?.accountType ?? accountTypes[0] ?? "",
+		accountType:
+			account?.accountType ?? defaultAccountType ?? accountTypes[0] ?? "",
 		status: account?.status ?? accountStatuses[0] ?? "",
 		note: account?.note ?? "",
 		logo: selectedLogo,
@@ -88,6 +98,8 @@ export function AccountDialog({
 	account,
 	open,
 	onOpenChange,
+	onCreated,
+	defaultAccountType,
 }: AccountDialogProps) {
 	const [logoDialogOpen, setLogoDialogOpen] = useState(false);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -105,8 +117,11 @@ export function AccountDialog({
 		if (account?.accountType) {
 			values.add(account.accountType);
 		}
+		if (defaultAccountType) {
+			values.add(defaultAccountType);
+		}
 		return Array.from(values);
-	}, [account?.accountType]);
+	}, [account?.accountType, defaultAccountType]);
 
 	const accountStatuses = useMemo(() => {
 		const values = new Set<string>(DEFAULT_ACCOUNT_STATUS);
@@ -123,8 +138,9 @@ export function AccountDialog({
 				logoOptions,
 				accountTypes,
 				accountStatuses,
+				defaultAccountType,
 			}),
-		[account, logoOptions, accountTypes, accountStatuses],
+		[account, logoOptions, accountTypes, accountStatuses, defaultAccountType],
 	);
 
 	// Use form state hook for form management
@@ -200,6 +216,9 @@ export function AccountDialog({
 					toast.success(result.message);
 					setDialogOpen(false);
 					resetForm(initialState);
+					if (result.data && onCreated) {
+						onCreated(result.data);
+					}
 					return;
 				}
 

@@ -107,6 +107,8 @@ export interface PaymentMethodSectionProps extends BaseFieldSectionProps {
 	disablePaymentMethod: boolean;
 	disableCardSelect: boolean;
 	showSettledToggle: boolean;
+	/** Abre a criação inline de conta quando não há contas disponíveis. */
+	onCreateAccount?: (accountTypeHint?: string) => void;
 }
 
 export interface BoletoFieldsSectionProps extends BaseFieldSectionProps {

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+	RiAddFill,
 	RiCheckboxBlankCircleLine,
 	RiCheckboxCircleFill,
 } from "@remixicon/react";
@@ -77,6 +78,7 @@ export function PaymentMethodSection({
 	disablePaymentMethod,
 	disableCardSelect,
 	showSettledToggle,
+	onCreateAccount,
 }: PaymentMethodSectionProps) {
 	const isCartaoSelected = formState.paymentMethod === "Cartão de crédito";
 	const showContaSelect = [
@@ -96,6 +98,13 @@ export function PaymentMethodSection({
 			: formState.paymentMethod === "Dinheiro"
 				? accountOptions.filter((option) => option.accountType === "Dinheiro")
 				: accountOptions;
+
+	// Sugere o tipo de conta que casa com o filtro atual (ex.: "Dinheiro").
+	const contaCreateTypeHint =
+		formState.paymentMethod === "Pré-Pago | VR/VA" ||
+		formState.paymentMethod === "Dinheiro"
+			? formState.paymentMethod
+			: undefined;
 
 	const hasSecondaryColumn = isCartaoSelected || showContaSelect;
 
@@ -233,10 +242,22 @@ export function PaymentMethodSection({
 							</SelectTrigger>
 							<SelectContent>
 								{filteredContaOptions.length === 0 ? (
-									<div className="px-2 py-6 text-center">
+									<div className="space-y-3 px-2 py-4 text-center">
 										<p className="text-sm text-muted-foreground">
 											Nenhuma conta cadastrada
 										</p>
+										{onCreateAccount ? (
+											<Button
+												type="button"
+												variant="outline"
+												size="sm"
+												className="w-full"
+												onClick={() => onCreateAccount?.(contaCreateTypeHint)}
+											>
+												<RiAddFill className="size-4" />
+												Criar conta
+											</Button>
+										) : null}
 									</div>
 								) : (
 									filteredContaOptions.map((option) => (
@@ -251,6 +272,23 @@ export function PaymentMethodSection({
 								)}
 							</SelectContent>
 						</Select>
+						{filteredContaOptions.length === 0 && onCreateAccount ? (
+							<div className="space-y-2 rounded-md border border-dashed px-3 py-2.5 text-center">
+								<p className="text-sm text-muted-foreground">
+									Nenhuma conta cadastrada
+								</p>
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									className="w-full"
+									onClick={() => onCreateAccount?.(contaCreateTypeHint)}
+								>
+									<RiAddFill className="size-4" />
+									Criar conta
+								</Button>
+							</div>
+						) : null}
 					</div>
 				) : null}
 			</div>

@@ -19,6 +19,7 @@ import {
 import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
 import { PERIOD_FORMAT_REGEX } from "@/shared/lib/invoices";
+import { loadLogoOptions } from "@/shared/lib/logo/options";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { noteSchema, uuidSchema } from "@/shared/lib/schemas/common";
 import {
@@ -98,9 +99,16 @@ type AccountCreateInput = z.infer<typeof createAccountSchema>;
 type AccountUpdateInput = z.infer<typeof updateAccountSchema>;
 type AccountDeleteInput = z.infer<typeof deleteAccountSchema>;
 
+export type AccountCreateResultData = {
+	id: string;
+	name: string;
+	accountType: string;
+	logo: string | null;
+};
+
 export async function createAccountAction(
 	input: AccountCreateInput,
-): Promise<ActionResult> {
+): Promise<ActionResult<AccountCreateResultData>> {
 	try {
 		const user = await getUser();
 		const data = createAccountSchema.parse(input);
@@ -119,8 +127,8 @@ export async function createAccountAction(
 			);
 		}
 
-		await db.transaction(async (tx: typeof db) => {
-			const [createdAccount] = await tx
+		const createdAccount = await db.transaction(async (tx: typeof db) => {
+			const [created] = await tx
 				.insert(financialAccounts)
 				.values({
 					name: data.name,
@@ -135,12 +143,12 @@ export async function createAccountAction(
 				})
 				.returning({ id: financialAccounts.id, name: financialAccounts.name });
 
-			if (!createdAccount) {
+			if (!created) {
 				throw new Error("Não foi possível criar a conta.");
 			}
 
 			if (!hasInitialBalance) {
-				return;
+				return created;
 			}
 
 			const [category] = await Promise.all([
@@ -163,7 +171,7 @@ export async function createAccountAction(
 
 			await tx.insert(transactions).values({
 				condition: INITIAL_BALANCE_CONDITION,
-				name: `Saldo inicial - ${createdAccount.name}`,
+				name: `Saldo inicial - ${created.name}`,
 				paymentMethod: INITIAL_BALANCE_PAYMENT_METHOD,
 				note: INITIAL_BALANCE_NOTE,
 				amount: formatDecimalForDbRequired(normalizedInitialBalance),
@@ -172,10 +180,12 @@ export async function createAccountAction(
 				period,
 				isSettled: true,
 				userId: user.id,
-				accountId: createdAccount.id,
+				accountId: created.id,
 				categoryId: category.id,
 				payerId: adminPayerId,
 			});
+
+			return created;
 		});
 
 		revalidateForEntity("accounts", user.id);
@@ -183,10 +193,27 @@ export async function createAccountAction(
 		return {
 			success: true,
 			message: "Conta criada com sucesso.",
+			data: {
+				id: createdAccount.id,
+				name: createdAccount.name,
+				accountType: data.accountType,
+				logo: logoFile,
+			},
 		};
 	} catch (error) {
-		return handleActionError(error);
+		const result = handleActionError(error);
+		return {
+			success: false,
+			error: result.success ? "Ocorreu um erro inesperado." : result.error,
+		};
 	}
+}
+
+export async function fetchAccountFormOptionsAction(): Promise<{
+	logoOptions: string[];
+}> {
+	const logoOptions = await loadLogoOptions();
+	return { logoOptions };
 }
 
 export async function updateAccountAction(
