@@ -10,19 +10,14 @@ import { Label } from "@/shared/components/ui/label";
 import {
 	Select,
 	SelectContent,
-	SelectGroup,
 	SelectItem,
-	SelectLabel,
-	SelectSeparator,
 	SelectTrigger,
 	SelectValue,
 } from "@/shared/components/ui/select";
 import { formatCurrency } from "@/shared/utils/currency";
 import { cn } from "@/shared/utils/ui";
-import {
-	CategorySelectContent,
-	TransactionTypeSelectContent,
-} from "../../select-items";
+import { TransactionTypeSelectContent } from "../../select-items";
+import { CategorySearchSelect } from "./category-search-select";
 import type { CategorySectionProps } from "./transaction-dialog-types";
 
 const BUDGET_DANGER_RATIO = 1;
@@ -68,30 +63,6 @@ function SelectFieldHeader({
 				</Button>
 			) : null}
 		</div>
-	);
-}
-
-function SelectCreateAction({
-	label,
-	onClick,
-}: {
-	label: string;
-	onClick: () => void;
-}) {
-	return (
-		<>
-			<SelectSeparator />
-			<div className="p-1">
-				<button
-					type="button"
-					className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-primary text-sm hover:bg-accent"
-					onClick={onClick}
-				>
-					<RiAddFill className="size-4" />
-					{label}
-				</button>
-			</div>
-		</>
 	);
 }
 
@@ -211,58 +182,19 @@ export function CategorySection({
 					actionLabel="Nova categoria"
 					onAction={onCreateCategory ? handleCreateCategory : undefined}
 				/>
-				<Select
+				<CategorySearchSelect
+					id="categoria"
 					open={categorySelectOpen}
 					onOpenChange={setCategorySelectOpen}
 					value={formState.categoryId ?? ""}
 					onValueChange={(value) => onFieldChange("categoryId", value)}
-				>
-					<SelectTrigger id="categoria" className="w-full">
-						<SelectValue placeholder="Selecione">
-							{formState.categoryId &&
-								(() => {
-									const selectedOption = categoryOptions.find(
-										(opt) => opt.value === formState.categoryId,
-									);
-									if (!selectedOption) return null;
-									return (
-										<span className="flex items-center gap-2">
-											<CategorySelectContent
-												label={selectedOption.label}
-												icon={selectedOption.icon}
-												depth={selectedOption.categoryDepth}
-												pathLabel={selectedOption.categoryPath}
-											/>
-											{renderBudgetBadge()}
-										</span>
-									);
-								})()}
-						</SelectValue>
-					</SelectTrigger>
-					<SelectContent>
-						{categoryGroups.map((group) => (
-							<SelectGroup key={group.label}>
-								<SelectLabel>{group.label}</SelectLabel>
-								{group.options.map((option) => (
-									<SelectItem key={option.value} value={option.value}>
-										<CategorySelectContent
-											label={option.label}
-											icon={option.icon}
-											depth={option.categoryDepth}
-											pathLabel={option.categoryPath}
-										/>
-									</SelectItem>
-								))}
-							</SelectGroup>
-						))}
-						{onCreateCategory ? (
-							<SelectCreateAction
-								label="Nova categoria"
-								onClick={handleCreateCategory}
-							/>
-						) : null}
-					</SelectContent>
-				</Select>
+					categoryGroups={categoryGroups}
+					categoryOptions={categoryOptions}
+					triggerExtra={renderBudgetBadge()}
+					onCreateCategory={
+						onCreateCategory ? handleCreateCategory : undefined
+					}
+				/>
 			</div>
 		</div>
 	);
