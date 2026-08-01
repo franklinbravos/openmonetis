@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
+import type { CardCreateResultData } from "@/features/cards/actions";
 import { createCardAction, updateCardAction } from "@/features/cards/actions";
 import {
 	LogoPickerDialog,
@@ -38,6 +39,8 @@ type AccountOption = {
 	logo: string | null;
 };
 
+export type CreatedCard = CardCreateResultData;
+
 interface CardDialogProps {
 	mode: "create" | "update";
 	trigger?: React.ReactNode;
@@ -46,6 +49,7 @@ interface CardDialogProps {
 	card?: Card;
 	open?: boolean;
 	onOpenChange?: (open: boolean) => void;
+	onCreated?: (card: CreatedCard) => void;
 }
 
 const buildInitialValues = ({
@@ -82,6 +86,7 @@ export function CardDialog({
 	card,
 	open,
 	onOpenChange,
+	onCreated,
 }: CardDialogProps) {
 	const [logoDialogOpen, setLogoDialogOpen] = useState(false);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -194,6 +199,9 @@ export function CardDialog({
 				toast.success(result.message);
 				setDialogOpen(false);
 				resetForm(initialState);
+				if (mode === "create" && result.data && onCreated) {
+					onCreated(result.data);
+				}
 				return;
 			}
 

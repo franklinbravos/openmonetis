@@ -1,5 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { apiTokens } from "@/db/schema";
+import { fetchUserAiProviderSettings } from "@/shared/lib/ai/user-provider-config";
 import { db, schema } from "@/shared/lib/db";
 
 interface UserPreferences {
@@ -69,15 +70,18 @@ async function fetchApiTokens(userId: string): Promise<ApiToken[]> {
 }
 
 export async function fetchSettingsPageData(userId: string) {
-	const [authProvider, userPreferences, userApiTokens] = await Promise.all([
-		fetchAuthProvider(userId),
-		fetchUserPreferences(userId),
-		fetchApiTokens(userId),
-	]);
+	const [authProvider, userPreferences, userApiTokens, aiProviderSettings] =
+		await Promise.all([
+			fetchAuthProvider(userId),
+			fetchUserPreferences(userId),
+			fetchApiTokens(userId),
+			fetchUserAiProviderSettings(userId),
+		]);
 
 	return {
 		authProvider,
 		userPreferences,
 		userApiTokens,
+		aiProviderSettings: aiProviderSettings.view,
 	};
 }

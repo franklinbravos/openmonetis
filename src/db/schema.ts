@@ -168,6 +168,10 @@ export const userPreferences = pgTable("preferencias_usuario", {
 		hidden: string[];
 		myAccountsShowExcluded?: boolean;
 	}>(),
+	insightsDefaultModelId: text("insights_default_model_id"),
+	aiProviderSettings: jsonb("ai_provider_settings").$type<
+		import("@/shared/lib/ai/types").StoredAiProviderSettings | null
+	>(),
 	createdAt: timestamp("created_at", {
 		mode: "date",
 		withTimezone: true,

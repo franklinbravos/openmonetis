@@ -2,7 +2,7 @@ import { RiAndroidLine, RiArrowRightSLine } from "@remixicon/react";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
-
+import { AiProvidersTab } from "@/features/settings/components/ai-providers-tab";
 import { CompanionTab } from "@/features/settings/components/companion-tab";
 import { DeleteAccountForm } from "@/features/settings/components/delete-account-form";
 import { PasskeysForm } from "@/features/settings/components/passkeys-form";
@@ -21,8 +21,26 @@ import {
 } from "@/shared/components/ui/tabs";
 import { auth } from "@/shared/lib/auth/config";
 
-export default async function Page() {
+type PageSearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+type PageProps = {
+	searchParams?: PageSearchParams;
+};
+
+const getSingleParam = (
+	params: Record<string, string | string[] | undefined> | undefined,
+	key: string,
+) => {
+	const value = params?.[key];
+	if (!value) return null;
+	return Array.isArray(value) ? (value[0] ?? null) : value;
+};
+
+export default async function Page({ searchParams }: PageProps) {
 	await connection();
+	const resolvedSearchParams = searchParams ? await searchParams : undefined;
+	const abaParam = getSingleParam(resolvedSearchParams, "aba");
+	const defaultTab = abaParam === "ia" ? "ia" : "preferencias";
 	const session = await auth.api.getSession({
 		headers: await headers(),
 	});
@@ -34,17 +52,18 @@ export default async function Page() {
 	const userName = session.user.name || "";
 	const userEmail = session.user.email || "";
 
-	const { authProvider, userPreferences, userApiTokens } =
+	const { authProvider, userPreferences, userApiTokens, aiProviderSettings } =
 		await fetchSettingsPageData(session.user.id);
 
 	return (
 		<div className="w-full">
-			<Tabs defaultValue="preferencias" className="w-full">
+			<Tabs defaultValue={defaultTab} className="w-full">
 				{/* No mobile: rolagem horizontal + seta indicando mais opções à direita */}
 				<div className="relative -mx-6 px-6 md:mx-0 md:px-0">
 					<div className="overflow-x-auto overflow-y-hidden scroll-smooth md:overflow-visible [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
 						<TabsList className="inline-flex w-max flex-nowrap md:w-full">
 							<TabsTrigger value="preferencias">Preferências</TabsTrigger>
+							<TabsTrigger value="ia">Inteligência artificial</TabsTrigger>
 							<TabsTrigger value="companion">Companion</TabsTrigger>
 							<TabsTrigger value="nome">Alterar nome</TabsTrigger>
 							<TabsTrigger value="senha">Alterar senha</TabsTrigger>
@@ -92,6 +111,25 @@ export default async function Page() {
 									userPreferences?.hideAnticipatedInstallments ?? false
 								}
 							/>
+						</div>
+					</Card>
+				</TabsContent>
+
+				<TabsContent value="ia" className="mt-4">
+					<Card className="p-6">
+						<div className="space-y-4">
+							<div>
+								<h2 className="text-xl font-semibold mb-1">
+									Inteligência artificial
+								</h2>
+								<p className="text-sm text-muted-foreground">
+									Configure chaves de API, URLs e modelos padrão para gerar
+									insights. As chaves salvas aqui têm prioridade sobre o arquivo{" "}
+									<code>.env</code>.
+								</p>
+							</div>
+							<Separator />
+							<AiProvidersTab settings={aiProviderSettings} />
 						</div>
 					</Card>
 				</TabsContent>

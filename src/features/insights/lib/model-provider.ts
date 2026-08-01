@@ -1,40 +1,216 @@
-import { anthropic } from "@ai-sdk/anthropic";
-import { google } from "@ai-sdk/google";
-import { openai } from "@ai-sdk/openai";
+import { anthropic, createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI, google } from "@ai-sdk/google";
+import { createOpenAI, openai } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { LanguageModel } from "ai";
-import { minimax } from "vercel-minimax-ai-provider";
+import { createMinimax, minimax } from "vercel-minimax-ai-provider";
+import { getEnvProviderCredential } from "@/shared/lib/ai/env-credentials";
+import { OPENCODE_PLAN_ZEN_URL } from "@/shared/lib/ai/opencode-plans";
+import type { ResolvedAiCredentials } from "@/shared/lib/ai/types";
+import { resolveAllProviderCredentials } from "@/shared/lib/ai/user-provider-config";
 import { AVAILABLE_MODELS } from "../constants";
 
 const OPENROUTER_MODEL_REGEX = /^[a-zA-Z0-9_-]+\/[a-zA-Z0-9._:-]+$/;
+const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1";
 
 type ResolveInsightsModelResult =
 	| { success: true; model: LanguageModel }
 	| { success: false; error: string };
 
-function stripProviderPrefix(
-	modelId: string,
-	provider: "openrouter" | "ollama",
-) {
+type CustomProviderPrefix = "openrouter" | "opencode" | "ollama";
+
+function stripProviderPrefix(modelId: string, provider: CustomProviderPrefix) {
 	return modelId.startsWith(`${provider}:`)
 		? modelId.slice(`${provider}:`.length).trim()
 		: modelId.trim();
 }
 
+function getOpenCodeZenRoot(baseURL: string) {
+	return baseURL.replace(/\/v1\/?$/, "");
+}
+
+function resolveOpenCodeModel(
+	opencodeModelId: string,
+	credentials: ResolvedAiCredentials,
+): ResolveInsightsModelResult {
+	const opencodeCredential = credentials.opencode;
+	const apiKey = opencodeCredential.apiKey;
+
+	if (!apiKey) {
+		return {
+			success: false,
+			error:
+				"OpenCode não configurado. Adicione OPENCODE_API_KEY no .env ou em Ajustes → Inteligência artificial.",
+		};
+	}
+
+	if (!opencodeModelId) {
+		return {
+			success: false,
+			error: "Informe um modelo válido do OpenCode.",
+		};
+	}
+
+	const baseURL = opencodeCredential.baseUrl ?? OPENCODE_PLAN_ZEN_URL;
+	const zenRoot = getOpenCodeZenRoot(baseURL);
+
+	if (opencodeModelId.startsWith("claude-")) {
+		const anthropicProvider = createAnthropic({
+			baseURL: `${zenRoot}/v1`,
+			apiKey,
+		});
+
+		return { success: true, model: anthropicProvider(opencodeModelId) };
+	}
+
+	if (opencodeModelId.startsWith("gpt-")) {
+		const openaiProvider = createOpenAI({
+			baseURL,
+			apiKey,
+		});
+
+		return { success: true, model: openaiProvider.responses(opencodeModelId) };
+	}
+
+	if (opencodeModelId.startsWith("gemini-")) {
+		const googleProvider = createGoogleGenerativeAI({
+			baseURL: `${zenRoot}/v1beta`,
+			apiKey,
+		});
+
+		return { success: true, model: googleProvider(opencodeModelId) };
+	}
+
+	const opencode = createOpenAICompatible({
+		name: "opencode",
+		baseURL,
+		apiKey,
+		supportsStructuredOutputs: false,
+	});
+
+	return { success: true, model: opencode.chatModel(opencodeModelId) };
+}
+
+function resolveOpenAiModel(
+	modelId: string,
+	credentials: ResolvedAiCredentials,
+): ResolveInsightsModelResult {
+	const apiKey = credentials.openai.apiKey;
+	if (!apiKey) {
+		return {
+			success: false,
+			error:
+				"OpenAI não configurado. Adicione OPENAI_API_KEY no .env ou em Ajustes → Inteligência artificial.",
+		};
+	}
+
+	if (credentials.openai.source === "database") {
+		return { success: true, model: createOpenAI({ apiKey })(modelId) };
+	}
+
+	return { success: true, model: openai(modelId) };
+}
+
+function resolveAnthropicModel(
+	modelId: string,
+	credentials: ResolvedAiCredentials,
+): ResolveInsightsModelResult {
+	const apiKey = credentials.anthropic.apiKey;
+	if (!apiKey) {
+		return {
+			success: false,
+			error:
+				"Anthropic não configurado. Adicione ANTHROPIC_API_KEY no .env ou em Ajustes → Inteligência artificial.",
+		};
+	}
+
+	if (credentials.anthropic.source === "database") {
+		return { success: true, model: createAnthropic({ apiKey })(modelId) };
+	}
+
+	return { success: true, model: anthropic(modelId) };
+}
+
+function resolveGoogleModel(
+	modelId: string,
+	credentials: ResolvedAiCredentials,
+): ResolveInsightsModelResult {
+	const apiKey = credentials.google.apiKey;
+	if (!apiKey) {
+		return {
+			success: false,
+			error:
+				"Google AI não configurado. Adicione GOOGLE_GENERATIVE_AI_API_KEY no .env ou em Ajustes → Inteligência artificial.",
+		};
+	}
+
+	if (credentials.google.source === "database") {
+		return {
+			success: true,
+			model: createGoogleGenerativeAI({ apiKey })(modelId),
+		};
+	}
+
+	return { success: true, model: google(modelId) };
+}
+
+function resolveMinimaxModel(
+	modelId: string,
+	credentials: ResolvedAiCredentials,
+): ResolveInsightsModelResult {
+	const apiKey = credentials.minimax.apiKey;
+	if (!apiKey) {
+		return {
+			success: false,
+			error:
+				"MiniMax não configurado. Adicione MINIMAX_API_KEY no .env ou em Ajustes → Inteligência artificial.",
+		};
+	}
+
+	if (credentials.minimax.source === "database") {
+		return { success: true, model: createMinimax({ apiKey })(modelId) };
+	}
+
+	return { success: true, model: minimax(modelId) };
+}
+
 export function resolveInsightsModel(
 	modelId: string,
+	credentials: ResolvedAiCredentials = resolveAllProviderCredentials(null),
 ): ResolveInsightsModelResult {
 	const normalizedModelId = modelId.trim();
 	const selectedModel = AVAILABLE_MODELS.find(
-		(m) => m.id === normalizedModelId,
+		(model) => model.id === normalizedModelId,
 	);
 	const isOpenRouterModel =
 		normalizedModelId.startsWith("openrouter:") ||
 		(!selectedModel && OPENROUTER_MODEL_REGEX.test(normalizedModelId));
+	const isOpenCodeModel = normalizedModelId.startsWith("opencode:");
 	const isOllamaModel = normalizedModelId.startsWith("ollama:");
 
-	if (!selectedModel && !isOpenRouterModel && !isOllamaModel) {
+	if (
+		!selectedModel &&
+		!isOpenRouterModel &&
+		!isOpenCodeModel &&
+		!isOllamaModel
+	) {
+		if (/^(gpt-|o\d)/.test(normalizedModelId)) {
+			return resolveOpenAiModel(normalizedModelId, credentials);
+		}
+
+		if (normalizedModelId.startsWith("gemini-")) {
+			return resolveGoogleModel(normalizedModelId, credentials);
+		}
+
+		if (normalizedModelId.startsWith("claude-")) {
+			return resolveAnthropicModel(normalizedModelId, credentials);
+		}
+
+		if (normalizedModelId.startsWith("MiniMax-")) {
+			return resolveMinimaxModel(normalizedModelId, credentials);
+		}
+
 		return {
 			success: false,
 			error: "Modelo inválido.",
@@ -42,12 +218,12 @@ export function resolveInsightsModel(
 	}
 
 	if (isOpenRouterModel) {
-		const apiKey = process.env.OPENROUTER_API_KEY;
+		const apiKey = credentials.openrouter.apiKey;
 		if (!apiKey) {
 			return {
 				success: false,
 				error:
-					"OPENROUTER_API_KEY não configurada. Adicione a chave no arquivo .env",
+					"OpenRouter não configurado. Adicione OPENROUTER_API_KEY no .env ou em Ajustes → Inteligência artificial.",
 			};
 		}
 
@@ -67,6 +243,13 @@ export function resolveInsightsModel(
 		return { success: true, model: openrouter.chat(openrouterModelId) };
 	}
 
+	if (isOpenCodeModel) {
+		return resolveOpenCodeModel(
+			stripProviderPrefix(normalizedModelId, "opencode"),
+			credentials,
+		);
+	}
+
 	if (isOllamaModel || selectedModel?.provider === "ollama") {
 		const ollamaModelId = stripProviderPrefix(normalizedModelId, "ollama");
 		if (!ollamaModelId) {
@@ -76,10 +259,12 @@ export function resolveInsightsModel(
 			};
 		}
 
+		const ollamaCredential = credentials.ollama;
 		const ollama = createOpenAICompatible({
 			name: "ollama",
-			baseURL: process.env.OLLAMA_BASE_URL ?? "http://localhost:11434/v1",
-			apiKey: process.env.OLLAMA_API_KEY || "ollama",
+			baseURL: ollamaCredential.baseUrl ?? DEFAULT_OLLAMA_BASE_URL,
+			apiKey:
+				ollamaCredential.apiKey ?? getEnvProviderCredential("ollama").apiKey,
 			supportsStructuredOutputs: false,
 		});
 
@@ -87,19 +272,19 @@ export function resolveInsightsModel(
 	}
 
 	if (selectedModel?.provider === "openai") {
-		return { success: true, model: openai(normalizedModelId) };
+		return resolveOpenAiModel(normalizedModelId, credentials);
 	}
 
 	if (selectedModel?.provider === "anthropic") {
-		return { success: true, model: anthropic(normalizedModelId) };
+		return resolveAnthropicModel(normalizedModelId, credentials);
 	}
 
 	if (selectedModel?.provider === "google") {
-		return { success: true, model: google(normalizedModelId) };
+		return resolveGoogleModel(normalizedModelId, credentials);
 	}
 
 	if (selectedModel?.provider === "minimax") {
-		return { success: true, model: minimax(normalizedModelId) };
+		return resolveMinimaxModel(normalizedModelId, credentials);
 	}
 
 	return {

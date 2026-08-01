@@ -7,6 +7,7 @@ const providers = [
 	"google",
 	"minimax",
 	"openrouter",
+	"opencode",
 	"ollama",
 ];
 

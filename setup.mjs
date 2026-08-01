@@ -231,15 +231,22 @@ let openaiKey = "";
 let googleAiKey = "";
 let minimaxKey = "";
 let openrouterKey = "";
+let opencodeKey = "";
+let opencodeBaseUrl = "";
 let ollamaBaseUrl = "";
 let ollamaApiKey = "";
-if (await askYesNo("  Insights com IA (Claude, GPT, Gemini, MiniMax, OpenRouter)?")) {
+if (await askYesNo("  Insights com IA (Claude, GPT, Gemini, MiniMax, OpenRouter, OpenCode)?")) {
   console.log(`  ${c.dim}Deixe em branco o que não for usar${c.reset}`);
   anthropicKey = await ask("  ANTHROPIC_API_KEY: ");
   openaiKey = await ask("  OPENAI_API_KEY: ");
   googleAiKey = await ask("  GOOGLE_GENERATIVE_AI_API_KEY: ");
   minimaxKey = await ask("  MINIMAX_API_KEY: ");
   openrouterKey = await ask("  OPENROUTER_API_KEY: ");
+  opencodeKey = await ask("  OPENCODE_API_KEY: ");
+  opencodeBaseUrl = await askDefault(
+    "  OPENCODE_BASE_URL",
+    "https://opencode.ai/zen/v1",
+  );
 }
 if (await askYesNo("  Insights locais com Ollama?")) {
   ollamaBaseUrl = await askDefault("  OLLAMA_BASE_URL", "http://localhost:11434/v1");
@@ -323,6 +330,8 @@ const envContent = [
   opt("GOOGLE_GENERATIVE_AI_API_KEY", googleAiKey),
   opt("MINIMAX_API_KEY", minimaxKey),
   opt("OPENROUTER_API_KEY", openrouterKey),
+  opt("OPENCODE_API_KEY", opencodeKey),
+  opt("OPENCODE_BASE_URL", opencodeBaseUrl),
   opt("OLLAMA_BASE_URL", ollamaBaseUrl),
   opt("OLLAMA_API_KEY", ollamaApiKey),
 ].join("\n");

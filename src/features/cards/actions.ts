@@ -10,6 +10,7 @@ import {
 } from "@/shared/lib/actions/helpers";
 import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import { loadLogoOptions } from "@/shared/lib/logo/options";
 import {
 	dayOfMonthSchema,
 	noteSchema,
@@ -55,6 +56,14 @@ type CardCreateInput = z.infer<typeof createCardSchema>;
 type CardUpdateInput = z.infer<typeof updateCardSchema>;
 type CardDeleteInput = z.infer<typeof deleteCardSchema>;
 
+export type CardCreateResultData = {
+	id: string;
+	name: string;
+	logo: string | null;
+	closingDay: string;
+	dueDay: string;
+};
+
 async function assertAccountOwnership(userId: string, accountId: string) {
 	const account = await db.query.financialAccounts.findFirst({
 		columns: { id: true },
@@ -71,7 +80,7 @@ async function assertAccountOwnership(userId: string, accountId: string) {
 
 export async function createCardAction(
 	input: CardCreateInput,
-): Promise<ActionResult> {
+): Promise<ActionResult<CardCreateResultData>> {
 	try {
 		const user = await getUser();
 		const data = createCardSchema.parse(input);
@@ -80,25 +89,76 @@ export async function createCardAction(
 
 		const logoFile = normalizeFilePath(data.logo);
 
-		await db.insert(cards).values({
-			name: data.name,
-			brand: data.brand,
-			status: data.status,
-			closingDay: data.closingDay,
-			dueDay: data.dueDay,
-			note: data.note ?? null,
-			limit: formatDecimalForDbRequired(data.limit),
-			logo: logoFile,
-			accountId: data.accountId,
-			userId: user.id,
-		});
+		const [created] = await db
+			.insert(cards)
+			.values({
+				name: data.name,
+				brand: data.brand,
+				status: data.status,
+				closingDay: data.closingDay,
+				dueDay: data.dueDay,
+				note: data.note ?? null,
+				limit: formatDecimalForDbRequired(data.limit),
+				logo: logoFile,
+				accountId: data.accountId,
+				userId: user.id,
+			})
+			.returning({
+				id: cards.id,
+				name: cards.name,
+				logo: cards.logo,
+				closingDay: cards.closingDay,
+				dueDay: cards.dueDay,
+			});
+
+		if (!created) {
+			throw new Error("Não foi possível criar o cartão.");
+		}
 
 		revalidateForEntity("cards", user.id);
 
-		return { success: true, message: "Cartão criado com sucesso." };
+		return {
+			success: true,
+			message: "Cartão criado com sucesso.",
+			data: {
+				id: created.id,
+				name: created.name,
+				logo: created.logo,
+				closingDay: created.closingDay,
+				dueDay: created.dueDay,
+			},
+		};
 	} catch (error) {
-		return handleActionError(error);
+		const result = handleActionError(error);
+		return {
+			success: false,
+			error: result.success ? "Ocorreu um erro inesperado." : result.error,
+		};
 	}
+}
+
+export async function fetchCardFormOptionsAction(): Promise<{
+	logoOptions: string[];
+	accounts: Array<{ id: string; name: string; logo: string | null }>;
+}> {
+	const user = await getUser();
+	const [logoOptions, accountRows] = await Promise.all([
+		loadLogoOptions(),
+		db.query.financialAccounts.findMany({
+			columns: {
+				id: true,
+				name: true,
+				logo: true,
+			},
+			orderBy: (table, { desc }) => [desc(table.name)],
+			where: and(
+				eq(financialAccounts.userId, user.id),
+				eq(financialAccounts.status, "Ativa"),
+			),
+		}),
+	]);
+
+	return { logoOptions, accounts: accountRows };
 }
 
 export async function updateCardAction(

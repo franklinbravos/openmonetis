@@ -1,6 +1,9 @@
 import { connection } from "next/server";
 import { InsightsPage } from "@/features/insights/components/insights-page";
+import { DEFAULT_MODEL } from "@/features/insights/constants";
 import MonthNavigation from "@/shared/components/month-picker/month-navigation";
+import { fetchUserAiProviderSettings } from "@/shared/lib/ai/user-provider-config";
+import { getUser } from "@/shared/lib/auth/server";
 import { parsePeriodParam } from "@/shared/utils/period";
 
 type PageSearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -20,6 +23,8 @@ const getSingleParam = (
 
 export default async function Page({ searchParams }: PageProps) {
 	await connection();
+	const user = await getUser();
+	const aiSettings = await fetchUserAiProviderSettings(user.id);
 	const resolvedSearchParams = searchParams ? await searchParams : undefined;
 	const periodoParam = getSingleParam(resolvedSearchParams, "periodo");
 	const { period: selectedPeriod } = parsePeriodParam(periodoParam);
@@ -27,7 +32,11 @@ export default async function Page({ searchParams }: PageProps) {
 	return (
 		<main className="flex flex-col gap-6">
 			<MonthNavigation />
-			<InsightsPage period={selectedPeriod} />
+			<InsightsPage
+				period={selectedPeriod}
+				defaultModelId={aiSettings.insightsDefaultModelId ?? DEFAULT_MODEL}
+				providerSettings={aiSettings.view.providers}
+			/>
 		</main>
 	);
 }

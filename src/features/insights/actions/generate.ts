@@ -1,24 +1,50 @@
 "use server";
 
 import { generateObject } from "ai";
+import { z } from "zod";
+import { applyProviderCredentialOverride } from "@/shared/lib/ai/list-provider-models";
+import { fetchUserAiProviderSettings } from "@/shared/lib/ai/user-provider-config";
 import { getUser } from "@/shared/lib/auth/server";
 import {
 	type InsightsResponse,
 	InsightsResponseSchema,
 } from "@/shared/lib/schemas/insights";
+import type { AIProvider } from "../constants";
 import { INSIGHTS_SYSTEM_PROMPT } from "../constants";
 import { resolveInsightsModel } from "../lib/model-provider";
 import { USER_INSTRUCTIONS_MAX_LENGTH } from "../lib/user-instructions";
 import { aggregateMonthData } from "./aggregate";
+import { persistSavedInsights } from "./storage";
 import type { ActionResult } from "./types";
 
+export type GeneratedInsightsResult = {
+	insights: InsightsResponse;
+	modelId: string;
+	createdAt: string;
+};
+
 const PERIOD_REGEX = /^\d{4}-\d{2}$/;
+
+const credentialOverrideSchema = z.object({
+	provider: z.enum([
+		"openai",
+		"anthropic",
+		"google",
+		"minimax",
+		"openrouter",
+		"opencode",
+		"ollama",
+	]),
+	apiKey: z.string().optional(),
+	baseUrl: z.string().optional(),
+});
 
 export async function generateInsightsAction(
 	period: string,
 	modelId: string,
 	userInstructions?: string,
-): Promise<ActionResult<InsightsResponse>> {
+	credentialOverride?: z.infer<typeof credentialOverrideSchema>,
+): Promise<ActionResult<GeneratedInsightsResult>> {
 	try {
 		const user = await getUser();
 
@@ -37,7 +63,21 @@ export async function generateInsightsAction(
 			};
 		}
 
-		const resolvedModel = resolveInsightsModel(modelId);
+		const { credentials } = await fetchUserAiProviderSettings(user.id);
+		const validatedOverride = credentialOverride
+			? credentialOverrideSchema.parse(credentialOverride)
+			: undefined;
+		const resolvedCredentials = validatedOverride
+			? applyProviderCredentialOverride(
+					credentials,
+					validatedOverride.provider as AIProvider,
+					{
+						apiKey: validatedOverride.apiKey,
+						baseUrl: validatedOverride.baseUrl,
+					},
+				)
+			: credentials;
+		const resolvedModel = resolveInsightsModel(modelId, resolvedCredentials);
 		if (!resolvedModel.success) {
 			return resolvedModel;
 		}
@@ -88,9 +128,24 @@ Responda APENAS com um JSON válido seguindo exatamente o schema especificado.`,
 
 		const validatedData = InsightsResponseSchema.parse(result.object);
 
+		const saveResult = await persistSavedInsights(
+			user.id,
+			period,
+			modelId,
+			validatedData,
+		);
+
+		if (!saveResult.success) {
+			return saveResult;
+		}
+
 		return {
 			success: true,
-			data: validatedData,
+			data: {
+				insights: validatedData,
+				modelId,
+				createdAt: saveResult.data.createdAt.toISOString(),
+			},
 		};
 	} catch (error) {
 		console.error("Error generating insights:", error);

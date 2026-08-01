@@ -282,6 +282,62 @@ Suba apenas o app e aponte para o banco externo via `DATABASE_URL` no `.env`:
 docker compose up -d app
 ```
 
+### Deploy no Coolify (imagem pronta)
+
+Quando o servidor não aguenta o build do Next.js, publique a imagem no Docker Hub e use **Docker Image** no Coolify (não Dockerfile).
+
+#### 1. Secrets no GitHub (fork)
+
+Em **Settings → Secrets and variables → Actions**, crie:
+
+| Secret | Valor |
+|---|---|
+| `DOCKER_USERNAME` | seu usuário Docker Hub (ex: `franklinbravos`) |
+| `DOCKER_PASSWORD` | token de acesso do Docker Hub |
+
+#### 2. Publicar a imagem
+
+No GitHub: **Actions → Docker (Coolify) → Run workflow**
+
+- **image_tag:** `latest` (ou `2.8.0` para fixar versão)
+- **skip_quality:** desmarque na primeira vez; marque em hotfixes para rebuild mais rápido
+
+A action publica `SEU_USUARIO/openmonetis:latest` no Docker Hub.
+
+#### 3. Configurar no Coolify
+
+| Campo | Valor |
+|---|---|
+| Tipo | Docker Image |
+| Imagem | `franklinbravos/openmonetis:latest` |
+| Porta | `3000` |
+
+Env vars obrigatórias: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`.
+
+#### 4. Atualizar depois de mudanças
+
+1. Rode o workflow **Docker (Coolify)** no GitHub
+2. No Coolify: **Redeploy** do recurso
+
+#### Builds mais rápidos em alterações pequenas
+
+O workflow usa cache em duas camadas:
+
+1. **GitHub Actions cache** — layers do BuildKit entre execuções
+2. **Registry cache** (`openmonetis:buildcache`) — cache persistente no Docker Hub
+
+O `Dockerfile` separa estágios para reaproveitar o máximo possível:
+
+| O que mudou | O que reconstrói |
+|---|---|
+| Só código em `src/` | estágio `builder` + `runner` |
+| `package.json` / `pnpm-lock.yaml` | `deps` + `builder` + `runner` |
+| `Dockerfile` | imagem inteira |
+
+Para hotfix urgente: rode o workflow com **skip_quality** marcado (pula lint/typecheck).
+
+Build local (alternativa): `pnpm docker:build:push` — usa cache de registry quando `USE_REGISTRY_CACHE=true` (padrão).
+
 ### Comandos úteis
 
 ```bash
@@ -479,6 +535,8 @@ OPENAI_API_KEY=
 GOOGLE_GENERATIVE_AI_API_KEY=
 MINIMAX_API_KEY=
 OPENROUTER_API_KEY=
+OPENCODE_API_KEY=
+OPENCODE_BASE_URL=https://opencode.ai/zen/v1
 OLLAMA_BASE_URL=http://localhost:11434/v1
 OLLAMA_API_KEY=
 
@@ -519,6 +577,19 @@ OLLAMA_API_KEY=
 ```
 
 Se o OpenMonetis estiver rodando dentro de um container Docker e o Ollama estiver no host, `localhost` aponta para o próprio container. Nesse caso, use uma URL acessível a partir do container, como `http://host.docker.internal:11434/v1` quando disponível, ou o endereço da rede Docker/host configurado no seu ambiente.
+
+### OpenCode Zen
+
+O provider OpenCode permite gerar insights usando o gateway [OpenCode Zen](https://opencode.ai/zen), com acesso a vários modelos via um único endpoint. Funciona de forma parecida com o OpenRouter: informe o ID do modelo na interface de Insights.
+
+Obtenha sua chave em [opencode.ai/auth](https://opencode.ai/auth) e configure no `.env`:
+
+```env
+OPENCODE_API_KEY=
+OPENCODE_BASE_URL=https://opencode.ai/zen/v1
+```
+
+Para o plano OpenCode Go, use `https://opencode.ai/zen/go/v1` em `OPENCODE_BASE_URL`. A lista de modelos disponíveis está em `https://opencode.ai/zen/v1/models`.
 
 ---
 

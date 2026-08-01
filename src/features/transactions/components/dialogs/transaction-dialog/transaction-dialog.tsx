@@ -7,6 +7,10 @@ import {
 	type CreatedAccount,
 } from "@/features/accounts/components/create-account-inline-dialog";
 import {
+	CreateCardInlineDialog,
+	type CreatedCard,
+} from "@/features/cards/components/create-card-inline-dialog";
+import {
 	createTransactionAction,
 	updateTransactionAction,
 } from "@/features/transactions/actions";
@@ -54,6 +58,25 @@ import type {
 	TransactionDialogProps,
 } from "./transaction-dialog-types";
 import { TransactionSummaryCard } from "./transaction-summary-card";
+
+function mergeSelectOptions(
+	base: SelectOption[],
+	extra: SelectOption[],
+): SelectOption[] {
+	const seen = new Set(base.map((option) => option.value));
+	const merged = [...base];
+
+	for (const option of extra) {
+		if (seen.has(option.value)) {
+			continue;
+		}
+
+		seen.add(option.value);
+		merged.push(option);
+	}
+
+	return merged;
+}
 
 export function TransactionDialog({
 	mode,
@@ -112,7 +135,9 @@ export function TransactionDialog({
 	const [extraAccountOptions, setExtraAccountOptions] = useState<
 		SelectOption[]
 	>([]);
+	const [extraCardOptions, setExtraCardOptions] = useState<SelectOption[]>([]);
 	const [accountCreateOpen, setAccountCreateOpen] = useState(false);
+	const [cardCreateOpen, setCardCreateOpen] = useState(false);
 	const [accountCreateTypeHint, setAccountCreateTypeHint] = useState<
 		string | undefined
 	>(undefined);
@@ -160,6 +185,8 @@ export function TransactionDialog({
 			setPendingDetachIds([]);
 			setPendingUploadFiles([]);
 			setExtrasOpen(initial.condition !== "À vista");
+			setExtraAccountOptions([]);
+			setExtraCardOptions([]);
 		}
 	}, [
 		dialogOpen,
@@ -178,6 +205,26 @@ export function TransactionDialog({
 		mode,
 	]);
 
+	useEffect(() => {
+		setExtraAccountOptions((prev) =>
+			prev.filter(
+				(option) =>
+					!accountOptions.some(
+						(baseOption) => baseOption.value === option.value,
+					),
+			),
+		);
+	}, [accountOptions]);
+
+	useEffect(() => {
+		setExtraCardOptions((prev) =>
+			prev.filter(
+				(option) =>
+					!cardOptions.some((baseOption) => baseOption.value === option.value),
+			),
+		);
+	}, [cardOptions]);
+
 	const categoryGroups = useMemo(() => {
 		const filtered = categoryOptions.filter(
 			(option) =>
@@ -195,13 +242,18 @@ export function TransactionDialog({
 	}, [formState.amount]);
 
 	const mergedAccountOptions = useMemo(
-		() => [...accountOptions, ...extraAccountOptions],
+		() => mergeSelectOptions(accountOptions, extraAccountOptions),
 		[accountOptions, extraAccountOptions],
+	);
+
+	const mergedCardOptions = useMemo(
+		() => mergeSelectOptions(cardOptions, extraCardOptions),
+		[cardOptions, extraCardOptions],
 	);
 
 	function getCardInfo(cardId: string | undefined) {
 		if (!cardId) return null;
-		const card = cardOptions.find((opt) => opt.value === cardId);
+		const card = mergedCardOptions.find((opt) => opt.value === cardId);
 		if (!card) return null;
 		return {
 			closingDay: card.closingDay ?? null,
@@ -245,6 +297,26 @@ export function TransactionDialog({
 
 		handleFieldChange("accountId", account.id);
 		setAccountCreateOpen(false);
+	}
+
+	function handleCardCreated(card: CreatedCard) {
+		setExtraCardOptions((prev) =>
+			prev.some((option) => option.value === card.id)
+				? prev
+				: [
+						...prev,
+						{
+							value: card.id,
+							label: card.name,
+							logo: card.logo,
+							closingDay: card.closingDay,
+							dueDay: card.dueDay,
+						},
+					],
+		);
+
+		handleFieldChange("cardId", card.id);
+		setCardCreateOpen(false);
 	}
 
 	function handleExtrasOpenChange(nextOpen: boolean) {
@@ -667,7 +739,7 @@ export function TransactionDialog({
 								formState={formState}
 								onFieldChange={handleFieldChange}
 								accountOptions={mergedAccountOptions}
-								cardOptions={cardOptions}
+								cardOptions={mergedCardOptions}
 								isUpdateMode={isUpdateMode}
 								disablePaymentMethod={disablePaymentMethod}
 								disableCardSelect={disableCardSelect}
@@ -676,6 +748,7 @@ export function TransactionDialog({
 									setAccountCreateTypeHint(hint);
 									setAccountCreateOpen(true);
 								}}
+								onCreateCard={() => setCardCreateOpen(true)}
 							/>
 
 							{showDueDate ? (
@@ -778,7 +851,7 @@ export function TransactionDialog({
 									formState={formState}
 									payerOptions={payerOptions}
 									accountOptions={mergedAccountOptions}
-									cardOptions={cardOptions}
+									cardOptions={mergedCardOptions}
 									categoryOptions={categoryOptions}
 								/>
 							</div>
@@ -810,6 +883,11 @@ export function TransactionDialog({
 				onOpenChange={setAccountCreateOpen}
 				onCreated={handleAccountCreated}
 				defaultAccountType={accountCreateTypeHint}
+			/>
+			<CreateCardInlineDialog
+				open={cardCreateOpen}
+				onOpenChange={setCardCreateOpen}
+				onCreated={handleCardCreated}
 			/>
 		</Dialog>
 	);

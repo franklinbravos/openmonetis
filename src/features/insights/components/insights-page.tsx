@@ -7,7 +7,6 @@ import {
 	RiLightbulbLine,
 	RiLoader4Line,
 	RiRocketLine,
-	RiSaveLine,
 } from "@remixicon/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -17,9 +16,7 @@ import { toast } from "sonner";
 import {
 	deleteSavedInsightsAction,
 	generateInsightsAction,
-	saveInsightsAction,
 } from "@/features/insights/actions";
-import { DEFAULT_MODEL } from "@/features/insights/constants";
 import {
 	savedInsightsQueryKey,
 	useSavedInsights,
@@ -27,40 +24,38 @@ import {
 import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/shared/components/ui/card";
 import { Skeleton } from "@/shared/components/ui/skeleton";
-import type { InsightsResponse } from "@/shared/lib/schemas/insights";
+import type { AiProviderSettingsView } from "@/shared/lib/ai/types";
+import { InsightsGeneratePanel } from "./insights-generate-panel";
 import { InsightsGrid } from "./insights-grid";
-import { ModelSelector } from "./model-selector";
 
 interface InsightsPageProps {
 	period: string;
+	defaultModelId: string;
+	providerSettings?: AiProviderSettingsView["providers"];
 	onAnalyze?: () => void;
 }
 
-export function InsightsPage({ period, onAnalyze }: InsightsPageProps) {
+export function InsightsPage({
+	period,
+	defaultModelId,
+	providerSettings,
+	onAnalyze,
+}: InsightsPageProps) {
 	const queryClient = useQueryClient();
 	const savedInsightsQuery = useSavedInsights(period);
 	const [isPending, startTransition] = useTransition();
-	const [isSaving, startSaveTransition] = useTransition();
-	const [draftInsights, setDraftInsights] = useState<InsightsResponse | null>(
-		null,
-	);
-	const [selectedModelOverride, setSelectedModelOverride] = useState<
-		string | null
-	>(null);
+	const [isDeleting, startDeleteTransition] = useTransition();
 	const [error, setError] = useState<string | null>(null);
 	const [userInstructions, setUserInstructions] = useState("");
 	const [shouldScrollToAnalysis, setShouldScrollToAnalysis] = useState(false);
 	const analysisAreaRef = useRef<HTMLDivElement>(null);
 	const savedInsights = savedInsightsQuery.data ?? null;
-	const insights = draftInsights ?? savedInsights?.insights ?? null;
-	const selectedModel =
-		selectedModelOverride ?? savedInsights?.modelId ?? DEFAULT_MODEL;
-	const isSaved = draftInsights === null && savedInsights !== null;
-	const savedDate = isSaved ? (savedInsights?.createdAt ?? null) : null;
-	const isLoadingSavedInsights =
-		savedInsightsQuery.isLoading && draftInsights === null;
+	const insights = savedInsights?.insights ?? null;
+	const selectedModel = savedInsights?.modelId ?? defaultModelId;
+	const savedDate = savedInsights?.createdAt ?? null;
+	const isLoadingSavedInsights = savedInsightsQuery.isLoading;
 	const savedInsightsError =
-		draftInsights === null && savedInsightsQuery.error instanceof Error
+		savedInsightsQuery.error instanceof Error
 			? savedInsightsQuery.error.message
 			: null;
 	const shouldShowAnalysisArea = Boolean(
@@ -73,8 +68,6 @@ export function InsightsPage({ period, onAnalyze }: InsightsPageProps) {
 
 	useEffect(() => {
 		void period;
-		setDraftInsights(null);
-		setSelectedModelOverride(null);
 		setError(null);
 		setShouldScrollToAnalysis(false);
 	}, [period]);
@@ -104,9 +97,12 @@ export function InsightsPage({ period, onAnalyze }: InsightsPageProps) {
 				);
 
 				if (result.success) {
-					setDraftInsights(result.data);
-					setSelectedModelOverride(selectedModel);
-					toast.success("Insights gerados com sucesso!");
+					queryClient.setQueryData(savedInsightsQueryKey(period), {
+						insights: result.data.insights,
+						modelId: result.data.modelId,
+						createdAt: result.data.createdAt,
+					});
+					toast.success("Insights gerados e salvos com sucesso!");
 				} else {
 					setError(result.error);
 					toast.error(result.error);
@@ -120,47 +116,15 @@ export function InsightsPage({ period, onAnalyze }: InsightsPageProps) {
 		});
 	};
 
-	const handleSave = () => {
-		if (!insights) return;
-
-		startSaveTransition(async () => {
-			try {
-				const result = await saveInsightsAction(
-					period,
-					selectedModel,
-					insights,
-				);
-
-				if (result.success) {
-					queryClient.setQueryData(savedInsightsQueryKey(period), {
-						insights,
-						modelId: selectedModel,
-						createdAt: result.data.createdAt.toISOString(),
-					});
-					setDraftInsights(null);
-					setSelectedModelOverride(null);
-					toast.success("Análise salva com sucesso!");
-				} else {
-					toast.error(result.error);
-				}
-			} catch (err) {
-				toast.error("Erro ao salvar análise.");
-				console.error("Error saving insights:", err);
-			}
-		});
-	};
-
 	const handleDelete = () => {
 		if (!insights) return;
 
-		startSaveTransition(async () => {
+		startDeleteTransition(async () => {
 			try {
 				const result = await deleteSavedInsightsAction(period);
 
 				if (result.success) {
 					queryClient.setQueryData(savedInsightsQueryKey(period), null);
-					setDraftInsights(insights);
-					setSelectedModelOverride(selectedModel);
 					toast.success("Análise removida com sucesso!");
 				} else {
 					toast.error(result.error);
@@ -174,17 +138,13 @@ export function InsightsPage({ period, onAnalyze }: InsightsPageProps) {
 
 	return (
 		<div className="flex flex-col gap-6">
-			<ModelSelector
-				value={selectedModel}
-				onValueChange={setSelectedModelOverride}
+			<InsightsGeneratePanel
 				period={period}
-				onAnalyze={handleAnalyze}
+				selectedModelId={selectedModel}
+				providerSettings={providerSettings}
 				userInstructions={userInstructions}
 				onUserInstructionsChange={setUserInstructions}
-				onCancel={() => {
-					setSelectedModelOverride(null);
-					setError(null);
-				}}
+				onAnalyze={handleAnalyze}
 				disabled={isPending}
 				isLoadingSavedInsights={isLoadingSavedInsights}
 			/>
@@ -219,30 +179,23 @@ export function InsightsPage({ period, onAnalyze }: InsightsPageProps) {
 								action={
 									<div className="flex flex-col items-start sm:items-end">
 										<Button
-											onClick={isSaved ? handleDelete : handleSave}
-											disabled={isSaving || isPending || isLoadingSavedInsights}
-											variant={isSaved ? "destructive" : "secondary"}
+											onClick={handleDelete}
+											disabled={
+												isDeleting || isPending || isLoadingSavedInsights
+											}
+											variant="destructive"
 										>
-											{isSaved ? (
-												<>
-													<RiDeleteBinLine className="mr-2 size-4" />
-													{isSaving ? "Removendo..." : "Remover análise"}
-												</>
-											) : (
-												<>
-													<RiSaveLine className="mr-2 size-4" />
-													{isSaving ? "Salvando..." : "Salvar análise"}
-												</>
-											)}
+											<RiDeleteBinLine className="mr-2 size-4" />
+											{isDeleting ? "Removendo..." : "Remover análise"}
 										</Button>
-										{isSaved && savedDate && (
+										{savedDate ? (
 											<span className="text-muted-foreground text-xs">
 												Salva em{" "}
 												{format(new Date(savedDate), "dd/MM/yyyy 'às' HH:mm", {
 													locale: ptBR,
 												})}
 											</span>
-										)}
+										) : null}
 									</div>
 								}
 							/>

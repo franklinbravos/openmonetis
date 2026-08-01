@@ -1,153 +1,269 @@
-import { RiExternalLinkLine, RiSparklingLine } from "@remixicon/react";
+import {
+	RiCheckLine,
+	RiExternalLinkLine,
+	RiSaveLine,
+	RiSparklingLine,
+} from "@remixicon/react";
 import Link from "next/link";
-import type {
-	AIProvider,
-	AVAILABLE_MODELS,
-} from "@/features/insights/constants";
+import { useEffect, useState } from "react";
+import type { AIProvider } from "@/features/insights/constants";
 import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent } from "@/shared/components/ui/card";
 import { Input } from "@/shared/components/ui/input";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/shared/components/ui/select";
+import { Label } from "@/shared/components/ui/label";
+import { Skeleton } from "@/shared/components/ui/skeleton";
+import { getEnvVariableName } from "@/shared/lib/ai/env-credentials";
+import type { ListedProviderModel } from "@/shared/lib/ai/list-provider-models";
+import { cn } from "@/shared/utils/ui";
+import { ModelSearchCombobox } from "./model-search-combobox";
+import { OpenCodePlanCards } from "./opencode-plan-cards";
 
 interface ModelSelectionCardProps {
 	currentProvider: AIProvider;
-	providerModels: Array<(typeof AVAILABLE_MODELS)[number]>;
-	selectValue: string;
-	customModel: string;
-	isCustomModelActive: boolean;
-	canUseCustomModel: boolean;
-	canAnalyze: boolean;
+	providerModels: ListedProviderModel[];
+	apiKey: string;
+	onApiKeyChange: (value: string) => void;
+	baseUrl: string;
+	onBaseUrlChange: (value: string) => void;
+	configuredKeyHint: string | null;
+	hasConfiguredCredential: boolean;
+	credentialValidated: boolean;
+	isLoadingModels: boolean;
+	modelsError: string | null;
+	canAnalyze?: boolean;
 	disabled?: boolean;
+	selectValue: string;
 	onModelSelect: (modelId: string) => void;
-	onCustomModelChange: (modelName: string) => void;
 	onCancel?: () => void;
-	onAnalyze: () => void;
+	onAnalyze?: () => void;
+	onSave?: () => void;
+	isSaving?: boolean;
+	canSave?: boolean;
+	variant?: "insights" | "settings";
 }
 
-export const CUSTOM_MODEL_VALUE = "custom";
+function providerShowsApiKey(provider: AIProvider) {
+	return provider !== "ollama";
+}
 
 export function ModelSelectionCard({
 	currentProvider,
 	providerModels,
-	selectValue,
-	customModel,
-	isCustomModelActive,
-	canUseCustomModel,
+	apiKey,
+	onApiKeyChange,
+	baseUrl,
+	onBaseUrlChange,
+	configuredKeyHint,
+	hasConfiguredCredential,
+	credentialValidated,
+	isLoadingModels,
+	modelsError,
 	canAnalyze,
 	disabled,
+	selectValue,
 	onModelSelect,
-	onCustomModelChange,
 	onCancel,
 	onAnalyze,
+	onSave,
+	isSaving,
+	canSave,
+	variant = "insights",
 }: ModelSelectionCardProps) {
+	const isSettings = variant === "settings";
+	const showsApiKey = providerShowsApiKey(currentProvider);
+	const envVariableName = getEnvVariableName(currentProvider);
+	const [isEditingApiKey, setIsEditingApiKey] = useState(false);
+
+	useEffect(() => {
+		setIsEditingApiKey(false);
+	}, [currentProvider, configuredKeyHint]);
+
+	const hasSavedKeyHint = Boolean(configuredKeyHint);
+	const isShowingSavedKeyHint =
+		hasSavedKeyHint && !apiKey.trim() && !isEditingApiKey;
+	const apiKeyDisplayValue = isShowingSavedKeyHint
+		? (configuredKeyHint ?? "")
+		: apiKey;
+	const canListModels =
+		currentProvider === "ollama" ||
+		currentProvider === "opencode" ||
+		apiKey.trim().length > 0 ||
+		hasConfiguredCredential;
+
 	return (
 		<Card className="border-border/70 bg-card/95 shadow-sm">
 			<CardContent className="space-y-6">
-				<div className="space-y-3">
+				<div className="space-y-4">
 					<div className="space-y-1">
 						<h3 className="font-semibold text-sm">2. Modelo específico</h3>
 						<p className="text-muted-foreground text-xs">
-							Escolha o modelo do provedor selecionado para esta análise.
+							{isSettings
+								? "Informe a chave do provedor e escolha o modelo padrão dos insights."
+								: "Informe a chave do provedor e escolha o modelo para esta análise."}
 						</p>
 					</div>
 
-					<div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-						<div className="flex min-w-0 flex-col gap-2 lg:flex-row">
-							<div className="w-full lg:w-72">
-								{currentProvider === "openrouter" ? (
-									<Input
-										value={customModel}
-										onChange={(event) =>
-											onCustomModelChange(event.target.value)
-										}
-										placeholder="anthropic/claude-opus-4.8-fast"
-										disabled={disabled}
-										className="h-9 w-full border-border/70 bg-background"
-									/>
-								) : (
-									<Select
-										value={selectValue}
-										onValueChange={onModelSelect}
-										disabled={disabled}
-									>
-										<SelectTrigger className="h-9 w-full border-border/70 bg-background">
-											<SelectValue placeholder="Selecione um modelo" />
-										</SelectTrigger>
-										<SelectContent>
-											{providerModels.map((model) => (
-												<SelectItem key={model.id} value={model.id}>
-													{model.name}
-													{model.id === "gpt-5.5" ? " (Recomendado)" : ""}
-												</SelectItem>
-											))}
-											{canUseCustomModel && (
-												<SelectItem value={CUSTOM_MODEL_VALUE}>
-													Modelo customizado
-												</SelectItem>
-											)}
-										</SelectContent>
-									</Select>
-								)}
+					{showsApiKey ? (
+						<div className="space-y-2">
+							<div className="flex items-center justify-between gap-2">
+								<Label htmlFor="provider-api-key">Chave API</Label>
+								{credentialValidated &&
+								(apiKey.trim().length > 0 || hasConfiguredCredential) ? (
+									<span className="inline-flex items-center gap-1 text-emerald-600 text-xs dark:text-emerald-400">
+										<RiCheckLine className="size-3.5" />
+										Chave validada
+									</span>
+								) : null}
 							</div>
-
-							{isCustomModelActive && currentProvider === "ollama" && (
-								<div className="w-full lg:w-72">
-									<Input
-										value={customModel}
-										onChange={(event) =>
-											onCustomModelChange(event.target.value)
-										}
-										placeholder="Ex: llama3.2"
-										disabled={disabled}
-										className="h-9 w-full border-border/70 bg-background"
-									/>
-								</div>
-							)}
+							<Input
+								id="provider-api-key"
+								type={isShowingSavedKeyHint ? "text" : "password"}
+								value={apiKeyDisplayValue}
+								onChange={(event) => {
+									if (isShowingSavedKeyHint) {
+										setIsEditingApiKey(true);
+									}
+									onApiKeyChange(event.target.value);
+								}}
+								onFocus={() => {
+									if (hasSavedKeyHint && !apiKey.trim()) {
+										setIsEditingApiKey(true);
+									}
+								}}
+								onBlur={() => {
+									if (!apiKey.trim()) {
+										setIsEditingApiKey(false);
+									}
+								}}
+								placeholder={
+									isEditingApiKey
+										? "Digite nova chave ou deixe em branco para manter"
+										: envVariableName
+											? `Cole sua chave ou configure ${envVariableName} no .env`
+											: "Cole sua chave API"
+								}
+								disabled={disabled}
+								className={cn(
+									"h-9 w-full border-border/70 bg-background",
+									isShowingSavedKeyHint && "font-mono text-muted-foreground",
+								)}
+								autoComplete="off"
+							/>
+							<p className="text-muted-foreground text-xs">
+								{isSettings
+									? "Valide a chave e clique em Salvar para persistir as alterações."
+									: "A chave é salva automaticamente quando validada. Também é possível configurar em Ajustes → Inteligência artificial."}
+							</p>
 						</div>
+					) : null}
 
-						<div className="flex min-h-9 shrink-0 items-center text-muted-foreground text-xs lg:max-w-none">
-							{currentProvider === "openrouter" && (
-								<Link
-									href="https://openrouter.ai/models"
-									target="_blank"
-									rel="noopener noreferrer"
-									className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
-								>
-									<RiExternalLinkLine className="size-3" />
-									Ver modelos do OpenRouter
-								</Link>
-							)}
+					{currentProvider === "opencode" ? (
+						<div className="space-y-2">
+							<Label>Plano OpenCode</Label>
+							<OpenCodePlanCards
+								baseUrl={baseUrl}
+								disabled={disabled}
+								onPlanChange={onBaseUrlChange}
+							/>
+						</div>
+					) : null}
 
-							{currentProvider === "ollama" && (
-								<span>
-									O modelo precisa estar instalado na instância Ollama
-									configurada.
+					{currentProvider === "ollama" ? (
+						<div className="space-y-2">
+							<Label htmlFor="provider-base-url">URL da instância Ollama</Label>
+							<Input
+								id="provider-base-url"
+								value={baseUrl}
+								onChange={(event) => onBaseUrlChange(event.target.value)}
+								placeholder="http://localhost:11434/v1"
+								disabled={disabled}
+								className="h-9 w-full border-border/70 bg-background"
+							/>
+						</div>
+					) : null}
+
+					<div className="space-y-2">
+						<div className="flex items-center justify-between gap-2">
+							<Label htmlFor="provider-model">Modelo</Label>
+							{credentialValidated && providerModels.length > 0 ? (
+								<span className="inline-flex items-center gap-1 text-emerald-600 text-xs dark:text-emerald-400">
+									<RiCheckLine className="size-3.5" />
+									{providerModels.length} modelos disponíveis
 								</span>
-							)}
+							) : null}
 						</div>
+						{isLoadingModels ? (
+							<Skeleton className="h-9 w-full" />
+						) : (
+							<ModelSearchCombobox
+								id="provider-model"
+								value={selectValue}
+								models={providerModels}
+								onValueChange={onModelSelect}
+								disabled={
+									disabled || !canListModels || providerModels.length === 0
+								}
+								placeholder={
+									canListModels
+										? "Selecione um modelo"
+										: "Informe a chave API para listar modelos"
+								}
+								className={cn(credentialValidated && "border-emerald-500/40")}
+							/>
+						)}
+
+						{modelsError ? (
+							<p className="text-destructive text-xs">{modelsError}</p>
+						) : null}
+
+						{currentProvider === "ollama" ? (
+							<p className="text-muted-foreground text-xs">
+								O modelo precisa estar instalado na instância Ollama
+								configurada.
+							</p>
+						) : null}
+
+						{currentProvider === "openrouter" ? (
+							<Link
+								href="https://openrouter.ai/models"
+								target="_blank"
+								rel="noopener noreferrer"
+								className="inline-flex items-center gap-1.5 text-muted-foreground text-xs transition-colors hover:text-foreground"
+							>
+								<RiExternalLinkLine className="size-3" />
+								Ver catálogo do OpenRouter
+							</Link>
+						) : null}
 					</div>
 				</div>
 
-				<div className="flex items-center justify-between gap-3">
-					<Button
-						disabled={disabled}
-						onClick={onCancel}
-						type="button"
-						variant="outline"
-					>
-						Cancelar
-					</Button>
-					<Button onClick={onAnalyze} disabled={!canAnalyze}>
-						<RiSparklingLine className="size-4" />
-						{disabled ? "Analisando..." : "Gerar insights"}
-					</Button>
-				</div>
+				{isSettings ? (
+					<div className="flex justify-end">
+						<Button
+							type="button"
+							onClick={onSave}
+							disabled={disabled || isSaving || !canSave}
+						>
+							<RiSaveLine className="size-4" />
+							{isSaving ? "Salvando..." : "Salvar"}
+						</Button>
+					</div>
+				) : (
+					<div className="flex items-center justify-between gap-3">
+						<Button
+							disabled={disabled}
+							onClick={onCancel}
+							type="button"
+							variant="outline"
+						>
+							Cancelar
+						</Button>
+						<Button onClick={onAnalyze} disabled={!canAnalyze}>
+							<RiSparklingLine className="size-4" />
+							{disabled ? "Analisando..." : "Gerar insights"}
+						</Button>
+					</div>
+				)}
 			</CardContent>
 		</Card>
 	);

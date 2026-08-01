@@ -19,6 +19,7 @@ import {
 	Select,
 	SelectContent,
 	SelectItem,
+	SelectSeparator,
 	SelectTrigger,
 	SelectValue,
 } from "@/shared/components/ui/select";
@@ -69,6 +70,60 @@ function InlinePeriodPicker({
 	);
 }
 
+function SelectFieldHeader({
+	htmlFor,
+	label,
+	actionLabel,
+	onAction,
+}: {
+	htmlFor: string;
+	label: string;
+	actionLabel?: string;
+	onAction?: () => void;
+}) {
+	return (
+		<div className="flex items-center justify-between gap-2">
+			<Label htmlFor={htmlFor}>{label}</Label>
+			{onAction ? (
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon-sm"
+					className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
+					aria-label={actionLabel}
+					onClick={onAction}
+				>
+					<RiAddFill className="size-4" />
+				</Button>
+			) : null}
+		</div>
+	);
+}
+
+function SelectCreateAction({
+	label,
+	onClick,
+}: {
+	label: string;
+	onClick: () => void;
+}) {
+	return (
+		<>
+			<SelectSeparator />
+			<div className="p-1">
+				<button
+					type="button"
+					className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-primary hover:bg-accent"
+					onClick={onClick}
+				>
+					<RiAddFill className="size-4" />
+					{label}
+				</button>
+			</div>
+		</>
+	);
+}
+
 export function PaymentMethodSection({
 	formState,
 	onFieldChange,
@@ -79,6 +134,7 @@ export function PaymentMethodSection({
 	disableCardSelect,
 	showSettledToggle,
 	onCreateAccount,
+	onCreateCard,
 }: PaymentMethodSectionProps) {
 	const isCartaoSelected = formState.paymentMethod === "Cartão de crédito";
 	const showContaSelect = [
@@ -99,7 +155,6 @@ export function PaymentMethodSection({
 				? accountOptions.filter((option) => option.accountType === "Dinheiro")
 				: accountOptions;
 
-	// Sugere o tipo de conta que casa com o filtro atual (ex.: "Dinheiro").
 	const contaCreateTypeHint =
 		formState.paymentMethod === "Pré-Pago | VR/VA" ||
 		formState.paymentMethod === "Dinheiro"
@@ -155,7 +210,12 @@ export function PaymentMethodSection({
 							!isUpdateMode ? "md:w-1/2" : "md:w-full",
 						)}
 					>
-						<Label htmlFor="cartao">Cartão</Label>
+						<SelectFieldHeader
+							htmlFor="cartao"
+							label="Cartão"
+							actionLabel="Adicionar cartão"
+							onAction={onCreateCard}
+						/>
 						<Select
 							value={formState.cardId ?? ""}
 							onValueChange={(value) => onFieldChange("cardId", value)}
@@ -184,10 +244,8 @@ export function PaymentMethodSection({
 							</SelectTrigger>
 							<SelectContent>
 								{cardOptions.length === 0 ? (
-									<div className="px-2 py-6 text-center">
-										<p className="text-sm text-muted-foreground">
-											Nenhum cartão cadastrado
-										</p>
+									<div className="px-2 py-4 text-center text-sm text-muted-foreground">
+										Nenhum cartão cadastrado
 									</div>
 								) : (
 									cardOptions.map((option) => (
@@ -200,6 +258,12 @@ export function PaymentMethodSection({
 										</SelectItem>
 									))
 								)}
+								{onCreateCard ? (
+									<SelectCreateAction
+										label="Adicionar cartão"
+										onClick={onCreateCard}
+									/>
+								) : null}
 							</SelectContent>
 						</Select>
 						{formState.cardId ? (
@@ -218,7 +282,16 @@ export function PaymentMethodSection({
 							!isUpdateMode ? "md:w-1/2" : "md:w-full",
 						)}
 					>
-						<Label htmlFor="conta">Conta</Label>
+						<SelectFieldHeader
+							htmlFor="conta"
+							label="Conta"
+							actionLabel="Adicionar conta"
+							onAction={
+								onCreateAccount
+									? () => onCreateAccount(contaCreateTypeHint)
+									: undefined
+							}
+						/>
 						<Select
 							value={formState.accountId ?? ""}
 							onValueChange={(value) => onFieldChange("accountId", value)}
@@ -242,22 +315,8 @@ export function PaymentMethodSection({
 							</SelectTrigger>
 							<SelectContent>
 								{filteredContaOptions.length === 0 ? (
-									<div className="space-y-3 px-2 py-4 text-center">
-										<p className="text-sm text-muted-foreground">
-											Nenhuma conta cadastrada
-										</p>
-										{onCreateAccount ? (
-											<Button
-												type="button"
-												variant="outline"
-												size="sm"
-												className="w-full"
-												onClick={() => onCreateAccount?.(contaCreateTypeHint)}
-											>
-												<RiAddFill className="size-4" />
-												Criar conta
-											</Button>
-										) : null}
+									<div className="px-2 py-4 text-center text-sm text-muted-foreground">
+										Nenhuma conta cadastrada
 									</div>
 								) : (
 									filteredContaOptions.map((option) => (
@@ -270,25 +329,14 @@ export function PaymentMethodSection({
 										</SelectItem>
 									))
 								)}
+								{onCreateAccount ? (
+									<SelectCreateAction
+										label="Adicionar conta"
+										onClick={() => onCreateAccount(contaCreateTypeHint)}
+									/>
+								) : null}
 							</SelectContent>
 						</Select>
-						{filteredContaOptions.length === 0 && onCreateAccount ? (
-							<div className="space-y-2 rounded-md border border-dashed px-3 py-2.5 text-center">
-								<p className="text-sm text-muted-foreground">
-									Nenhuma conta cadastrada
-								</p>
-								<Button
-									type="button"
-									variant="outline"
-									size="sm"
-									className="w-full"
-									onClick={() => onCreateAccount?.(contaCreateTypeHint)}
-								>
-									<RiAddFill className="size-4" />
-									Criar conta
-								</Button>
-							</div>
-						) : null}
 					</div>
 				) : null}
 			</div>

@@ -1,4 +1,7 @@
-import { RiCheckLine } from "@remixicon/react";
+"use client";
+
+import { RiCheckLine, RiExternalLinkLine } from "@remixicon/react";
+import Link from "next/link";
 import { type AIProvider, PROVIDERS } from "@/features/insights/constants";
 import { Card, CardContent } from "@/shared/components/ui/card";
 import { cn } from "@/shared/utils/ui";
@@ -20,6 +23,9 @@ const PROVIDER_DETAILS: Record<AIProvider, { description: string }> = {
 	openrouter: {
 		description: "Acesso a múltiplos modelos via API.",
 	},
+	opencode: {
+		description: "Modelos curados do OpenCode Zen com um único endpoint.",
+	},
 	ollama: {
 		description: "Execução local com privacidade total.",
 	},
@@ -29,24 +35,47 @@ interface ProviderSelectionCardProps {
 	currentProvider: AIProvider;
 	disabled?: boolean;
 	onProviderChange: (provider: AIProvider) => void;
+	variant?: "insights" | "settings";
 }
 
 export function ProviderSelectionCard({
 	currentProvider,
 	disabled,
 	onProviderChange,
+	variant = "insights",
 }: ProviderSelectionCardProps) {
+	const isSettings = variant === "settings";
+
 	return (
 		<Card className="border-border/70 bg-card/95 shadow-sm">
 			<CardContent className="space-y-6">
 				<div className="space-y-2">
 					<h2 className="font-semibold text-2xl tracking-tight">
-						Definir modelo de análise
+						{isSettings
+							? "Provedor e modelo de IA"
+							: "Definir modelo de análise"}
 					</h2>
 					<p className="max-w-2xl text-muted-foreground text-sm leading-relaxed">
-						Escolha o provedor de IA e o modelo específico que serão usados para
-						gerar insights sobre seus dados financeiros. Diferentes modelos
-						podem oferecer perspectivas variadas na análise.
+						{isSettings ? (
+							<>
+								Escolha o provedor de IA e o modelo específico usados para gerar
+								insights sobre seus dados financeiros. Diferentes modelos podem
+								oferecer perspectivas variadas na análise.
+							</>
+						) : (
+							<>
+								Escolha o provedor de IA e o modelo específico que serão usados
+								para gerar insights sobre seus dados financeiros. Diferentes
+								modelos podem oferecer perspectivas variadas na análise.{" "}
+								<Link
+									href="/settings?aba=ia"
+									className="inline-flex items-center gap-1 text-primary hover:underline"
+								>
+									Configurar chaves
+									<RiExternalLinkLine className="size-3" />
+								</Link>
+							</>
+						)}
 					</p>
 				</div>
 

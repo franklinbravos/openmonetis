@@ -7,7 +7,19 @@ export type AIProvider =
 	| "google"
 	| "minimax"
 	| "openrouter"
+	| "opencode"
 	| "ollama";
+
+export const CUSTOM_TEXT_INPUT_PROVIDERS = ["openrouter", "opencode"] as const;
+export type CustomTextInputProvider =
+	(typeof CUSTOM_TEXT_INPUT_PROVIDERS)[number];
+
+export const CUSTOM_MODEL_PROVIDERS = [
+	"openrouter",
+	"opencode",
+	"ollama",
+] as const;
+export type CustomModelProvider = (typeof CUSTOM_MODEL_PROVIDERS)[number];
 
 /**
  * Metadados dos providers
@@ -32,6 +44,10 @@ export const PROVIDERS = {
 	openrouter: {
 		id: "openrouter" as const,
 		name: "OpenRouter",
+	},
+	opencode: {
+		id: "opencode" as const,
+		name: "OpenCode",
 	},
 	ollama: {
 		id: "ollama" as const,

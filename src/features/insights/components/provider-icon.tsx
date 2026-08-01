@@ -24,6 +24,9 @@ const PROVIDER_ICON_PATHS: Partial<
 		light: "/providers/openrouter_light.svg",
 		dark: "/providers/openrouter_dark.svg",
 	},
+	opencode: {
+		light: "/providers/opencode.png",
+	},
 	ollama: {
 		light: "/providers/ollama_light.svg",
 		dark: "/providers/ollama_dark.svg",
