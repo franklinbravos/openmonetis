@@ -297,10 +297,12 @@ Em **Settings → Secrets and variables → Actions**, crie:
 
 #### 2. Publicar a imagem
 
-No GitHub: **Actions → Docker (Coolify) → Run workflow**
+**Automático (padrão):** cada `git push` na `main` que altere código, dependências ou Docker dispara o workflow e publica `latest`.
+
+**Manual (opcional):** **Actions → Docker (Coolify) → Run workflow**
 
 - **image_tag:** `latest` (ou `2.8.0` para fixar versão)
-- **skip_quality:** desmarque na primeira vez; marque em hotfixes para rebuild mais rápido
+- **skip_quality:** marque só em hotfixes para rebuild mais rápido
 
 A action publica `SEU_USUARIO/openmonetis:latest` no Docker Hub.
 
@@ -316,7 +318,7 @@ Env vars obrigatórias: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`.
 
 #### 4. Atualizar depois de mudanças
 
-1. Rode o workflow **Docker (Coolify)** no GitHub
+1. `git push` na `main` (o workflow roda sozinho quando arquivos relevantes mudam)
 2. No Coolify: **Redeploy** do recurso
 
 #### Builds mais rápidos em alterações pequenas

@@ -11,6 +11,20 @@ on:
         description: Pular lint/typecheck (rebuild mais rápido em hotfixes)
         type: boolean
         default: false
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/docker-coolify.yml"
+      - "Dockerfile"
+      - "docker-entrypoint.sh"
+      - "drizzle/**"
+      - "drizzle.config.ts"
+      - "next.config.ts"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "public/**"
+      - "src/**"
 
 concurrency:
   group: docker-coolify-${{ github.ref }}
@@ -18,6 +32,7 @@ concurrency:
 
 env:
   DOCKER_IMAGE_NAME: openmonetis
+  IMAGE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || 'latest' }}
 
 permissions:
   contents: read
@@ -77,7 +92,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ inputs.image_tag }}
+          tags: ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           cache-from: |
             type=gha
             type=registry,ref=${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:buildcache
@@ -88,7 +103,7 @@ jobs:
 
       - name: Resumo para o Coolify
         run: |
-          echo "Imagem publicada: ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ inputs.image_tag }}"
+          echo "Imagem publicada: ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
           echo "Digest: ${{ steps.build.outputs.digest }}"
           echo ""
           echo "No Coolify: Docker Image → porta 3000 → Redeploy"
