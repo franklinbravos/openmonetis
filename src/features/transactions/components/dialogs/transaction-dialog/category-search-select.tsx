@@ -57,7 +57,9 @@ export function CategorySearchSelect({
 	disabled,
 }: CategorySearchSelectProps) {
 	const [searchValue, setSearchValue] = useState("");
-	const selectedOption = categoryOptions.find((option) => option.value === value);
+	const selectedOption = categoryOptions.find(
+		(option) => option.value === value,
+	);
 
 	const handleOpenChange = (nextOpen: boolean) => {
 		if (!nextOpen) {

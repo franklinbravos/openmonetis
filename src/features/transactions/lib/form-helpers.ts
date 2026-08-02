@@ -468,10 +468,7 @@ export function applyPayerSelection(
 
 	const existingAmounts = new Map<string, string>();
 	if (currentState.payerId) {
-		existingAmounts.set(
-			currentState.payerId,
-			currentState.primarySplitAmount,
-		);
+		existingAmounts.set(currentState.payerId, currentState.primarySplitAmount);
 	}
 	for (const share of currentState.splitShares) {
 		existingAmounts.set(share.payerId, share.amount);
@@ -488,8 +485,7 @@ export function applyPayerSelection(
 		primarySplitAmount: amounts[0] ?? existingAmounts.get(payerId ?? "") ?? "",
 		splitShares: uniqueIds.slice(1).map((id, index) => ({
 			payerId: id,
-			amount:
-				amounts[index + 1] ?? existingAmounts.get(id) ?? "",
+			amount: amounts[index + 1] ?? existingAmounts.get(id) ?? "",
 		})),
 		secondarySplitAmount: "",
 		secondaryPayerId: undefined,

@@ -191,9 +191,7 @@ export function CategorySection({
 					categoryGroups={categoryGroups}
 					categoryOptions={categoryOptions}
 					triggerExtra={renderBudgetBadge()}
-					onCreateCategory={
-						onCreateCategory ? handleCreateCategory : undefined
-					}
+					onCreateCategory={onCreateCategory ? handleCreateCategory : undefined}
 				/>
 			</div>
 		</div>

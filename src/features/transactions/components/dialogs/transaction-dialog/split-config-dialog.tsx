@@ -1,5 +1,9 @@
 "use client";
 
+import {
+	getEqualSplitAmounts,
+	getSelectedPayerIds,
+} from "@/features/transactions/lib/form-helpers";
 import { Button } from "@/shared/components/ui/button";
 import { CurrencyInput } from "@/shared/components/ui/currency-input";
 import {
@@ -10,10 +14,6 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/shared/components/ui/dialog";
-import {
-	getEqualSplitAmounts,
-	getSelectedPayerIds,
-} from "@/features/transactions/lib/form-helpers";
 import { formatCurrency } from "@/shared/utils/currency";
 import { safeToNumber } from "@/shared/utils/number";
 import { cn } from "@/shared/utils/ui";
@@ -113,9 +113,7 @@ export function SplitConfigDialog({
 	const selectedPayerIds = getSelectedPayerIds(formState);
 	const participants = selectedPayerIds
 		.map((payerId) => payerOptions.find((option) => option.value === payerId))
-		.filter(Boolean) as NonNullable<
-		ReturnType<typeof payerOptions.find>
-	>[];
+		.filter(Boolean) as NonNullable<ReturnType<typeof payerOptions.find>>[];
 
 	const splitTotal =
 		safeToNumber(formState.primarySplitAmount) +
@@ -164,8 +162,8 @@ export function SplitConfigDialog({
 		}
 
 		return (
-			formState.splitShares.find((share) => share.payerId === payerId)?.amount ??
-			""
+			formState.splitShares.find((share) => share.payerId === payerId)
+				?.amount ?? ""
 		);
 	};
 

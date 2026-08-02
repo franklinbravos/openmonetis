@@ -632,8 +632,7 @@ export const buildShares = ({
 				(total, share) => total + share.amountCents,
 				0,
 			);
-			const needsAutoSplit =
-				sum <= 0 || Math.abs(sum - totalCents) > 1;
+			const needsAutoSplit = sum <= 0 || Math.abs(sum - totalCents) > 1;
 
 			if (needsAutoSplit) {
 				const amounts = splitAmount(totalCents, mappedShares.length);

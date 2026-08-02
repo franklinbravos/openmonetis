@@ -128,8 +128,8 @@ export function PayerTagsSelect({
 							selectedOptions.map((option) => (
 								<span
 									key={option.value}
-									onClick={(event) => event.stopPropagation()}
-									onKeyDown={(event) => event.stopPropagation()}
+									role="group"
+									onMouseDown={(event) => event.stopPropagation()}
 								>
 									<PayerTag
 										label={option.label}
@@ -146,7 +146,10 @@ export function PayerTagsSelect({
 					/>
 				</Button>
 			</PopoverTrigger>
-			<PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] p-0">
+			<PopoverContent
+				align="start"
+				className="w-[var(--radix-popover-trigger-width)] p-0"
+			>
 				<Command>
 					<CommandInput placeholder="Buscar pessoa..." />
 					<CommandList>

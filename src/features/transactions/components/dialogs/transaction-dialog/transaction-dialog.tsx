@@ -432,7 +432,8 @@ export function TransactionDialog({
 		}
 
 		if (formState.isSplit && getSelectedPayerIds(formState).length < 2) {
-			const message = "Adicione pelo menos duas pessoas para dividir o lançamento.";
+			const message =
+				"Adicione pelo menos duas pessoas para dividir o lançamento.";
 			setErrorMessage(message);
 			toast.error(message);
 			return;
@@ -447,7 +448,10 @@ export function TransactionDialog({
 		}
 
 		const sanitizedAmount = Math.abs(amountValue);
-		const submitState = normalizeSplitStateForSubmit(formState, sanitizedAmount);
+		const submitState = normalizeSplitStateForSubmit(
+			formState,
+			sanitizedAmount,
+		);
 		const normalizedSplitShares = submitState.isSplit
 			? [
 					{
