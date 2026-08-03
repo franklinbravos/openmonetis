@@ -315,6 +315,67 @@ export async function updatePasswordAction(
 	}
 }
 
+const requiredPasswordChangeSchema = z
+	.object({
+		newPassword: z
+			.string()
+			.min(7, "A senha deve ter pelo menos 7 caracteres.")
+			.max(23, "A senha deve ter no máximo 23 caracteres."),
+		confirmPassword: z.string(),
+	})
+	.refine((data) => data.newPassword === data.confirmPassword, {
+		message: "As senhas não coincidem.",
+		path: ["confirmPassword"],
+	});
+
+export async function completeRequiredPasswordChangeAction(
+	data: z.infer<typeof requiredPasswordChangeSchema>,
+): Promise<ActionResponse> {
+	try {
+		const session = await auth.api.getSession({
+			headers: await headers(),
+		});
+
+		if (!session?.user?.id) {
+			return { success: false, error: "Não autenticado" };
+		}
+
+		const validated = requiredPasswordChangeSchema.parse(data);
+
+		await auth.api.setPassword({
+			body: {
+				newPassword: validated.newPassword,
+			},
+			headers: await headers(),
+		});
+
+		await db
+			.update(schema.user)
+			.set({ mustChangePassword: false })
+			.where(eq(schema.user.id, session.user.id));
+
+		revalidatePath("/", "layout");
+
+		return {
+			success: true,
+			message: "Senha atualizada com sucesso.",
+		};
+	} catch (error) {
+		if (error instanceof z.ZodError) {
+			return {
+				success: false,
+				error: error.issues[0]?.message || "Dados inválidos",
+			};
+		}
+
+		console.error("Erro ao definir senha obrigatória:", error);
+		return {
+			success: false,
+			error: "Não foi possível atualizar a senha.",
+		};
+	}
+}
+
 export async function updateEmailAction(
 	data: z.infer<typeof updateEmailSchema>,
 ): Promise<ActionResponse> {

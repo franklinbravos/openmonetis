@@ -6,6 +6,7 @@ import { isSignupDisabled } from "@/shared/lib/auth/signup";
 import { seedDefaultCategoriesForUser } from "@/shared/lib/categories/defaults";
 import { db, schema } from "@/shared/lib/db";
 import { ensureDefaultPayerForUser } from "@/shared/lib/payers/defaults";
+import { hasPendingInviteForEmail } from "@/shared/lib/payers/share-invite-queries";
 import { normalizeNameFromEmail } from "@/shared/lib/payers/utils";
 
 // ============================================================================
@@ -58,18 +59,68 @@ function getNameFromGoogleProfile(profile: GoogleProfile): string {
 	return fromEmail ?? "Usuário";
 }
 
+function parseTrustedOriginsEnv(value: string | undefined): string[] {
+	if (!value?.trim()) {
+		return [];
+	}
+
+	return value
+		.split(",")
+		.map((origin) => origin.trim())
+		.filter(Boolean);
+}
+
+const LOCAL_DEV_PORT = process.env.APP_PORT || "3050";
+const DEFAULT_LOCAL_BASE_URL = `http://localhost:${LOCAL_DEV_PORT}`;
+
+function resolveTrustedOrigins(): string[] {
+	const baseURL = process.env.BETTER_AUTH_URL || DEFAULT_LOCAL_BASE_URL;
+	const origins = new Set<string>([
+		baseURL,
+		...parseTrustedOriginsEnv(process.env.BETTER_AUTH_TRUSTED_ORIGINS),
+	]);
+
+	if (process.env.NODE_ENV === "development") {
+		origins.add(`http://localhost:${LOCAL_DEV_PORT}`);
+		origins.add(`http://127.0.0.1:${LOCAL_DEV_PORT}`);
+	}
+
+	return Array.from(origins);
+}
+
 // ============================================================================
 // BETTER AUTH INSTANCE
 // ============================================================================
 
 export const auth = betterAuth({
 	// Base URL configuration
-	baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
+	baseURL: process.env.BETTER_AUTH_URL || DEFAULT_LOCAL_BASE_URL,
 
 	// Trust host configuration for production environments
-	trustedOrigins: process.env.BETTER_AUTH_URL
-		? [process.env.BETTER_AUTH_URL]
-		: [],
+	trustedOrigins: resolveTrustedOrigins(),
+
+	user: {
+		additionalFields: {
+			mustChangePassword: {
+				type: "boolean",
+				defaultValue: false,
+				input: false,
+			},
+		},
+	},
+
+	// Vincula Google a contas existentes com o mesmo e-mail (ex.: cadastro por senha)
+	account: {
+		accountLinking: {
+			enabled: true,
+			trustedProviders: ["google"],
+			requireLocalEmailVerified: false,
+		},
+	},
+
+	onAPIError: {
+		errorURL: `${process.env.BETTER_AUTH_URL || DEFAULT_LOCAL_BASE_URL}/login`,
+	},
 
 	// Email/Password authentication
 	emailAndPassword: {
@@ -144,18 +195,18 @@ export const auth = betterAuth({
 	databaseHooks: {
 		user: {
 			create: {
-				before: async () => {
+				before: async (userData) => {
 					if (!isSignupDisabled()) return;
+
+					const email = userData.email?.trim().toLowerCase();
+					if (email && (await hasPendingInviteForEmail(email))) {
+						return;
+					}
 
 					throw new APIError("FORBIDDEN", {
 						message: "Novos cadastros estão desativados.",
 					});
 				},
-				/**
-				 * Após criar novo usuário, inicializa:
-				 * 1. Categorias padrão (Receitas/Despesas)
-				 * 2. Payer padrão (vinculado ao usuário)
-				 */
 				after: async (user) => {
 					// Se falhar aqui, o usuário já foi criado - considere usar queue para retry
 					try {
@@ -178,9 +229,16 @@ export const auth = betterAuth({
 	},
 });
 
-// Aviso em desenvolvimento se Google OAuth não estiver configurado
-if (!googleClientId && process.env.NODE_ENV === "development") {
-	console.warn(
-		"[Auth] Google OAuth não configurado. Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET.",
-	);
+// Avisos em desenvolvimento
+if (process.env.NODE_ENV === "development") {
+	if (!googleClientId) {
+		console.warn(
+			"[Auth] Google OAuth não configurado. Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET.",
+		);
+	} else {
+		const baseURL = process.env.BETTER_AUTH_URL || DEFAULT_LOCAL_BASE_URL;
+		console.info(
+			`[Auth] Google OAuth ativo. Redirect URI no Google Cloud Console: ${baseURL}/api/auth/callback/google`,
+		);
+	}
 }

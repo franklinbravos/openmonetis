@@ -66,7 +66,7 @@ export async function fetchPayersForUser(
 			sharedByName: pagador.sharedByName ?? null,
 			sharedByEmail: pagador.sharedByEmail ?? null,
 			shareId: pagador.shareId ?? null,
-			shareCode: pagador.canEdit ? (pagador.shareCode ?? null) : null,
+			shareCode: pagador.canManageShares ? (pagador.shareCode ?? null) : null,
 		}))
 		.sort((a, b) => {
 			if (a.role === PAYER_ROLE_ADMIN && b.role !== PAYER_ROLE_ADMIN) return -1;

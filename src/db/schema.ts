@@ -21,6 +21,7 @@ export const user = pgTable("user", {
 	name: text("name").notNull(),
 	email: text("email").notNull().unique(),
 	emailVerified: boolean("emailVerified").notNull(),
+	mustChangePassword: boolean("must_change_password").notNull().default(false),
 	image: text("image"),
 	createdAt: timestamp("createdAt", {
 		mode: "date",
@@ -310,6 +311,49 @@ export const payerShares = pgTable(
 		createdByUserIdIdx: index(
 			"compartilhamentos_pagador_created_by_user_id_idx",
 		).on(table.createdByUserId),
+	}),
+);
+
+export const payerShareInvites = pgTable(
+	"convites_pagador",
+	{
+		id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+		payerId: uuid("pagador_id")
+			.notNull()
+			.references(() => payers.id, { onDelete: "cascade" }),
+		email: text("email").notNull(),
+		permission: text("permission").notNull().default("read"),
+		inviteType: text("tipo_convite").notNull(),
+		tokenHash: text("token_hash").notNull(),
+		mustChangePassword: boolean("must_change_password")
+			.notNull()
+			.default(false),
+		expiresAt: timestamp("expires_at", {
+			mode: "date",
+			withTimezone: true,
+		}).notNull(),
+		acceptedAt: timestamp("accepted_at", {
+			mode: "date",
+			withTimezone: true,
+		}),
+		createdByUserId: text("created_by_user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		createdAt: timestamp("created_at", {
+			mode: "date",
+			withTimezone: true,
+		})
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => ({
+		tokenHashKey: uniqueIndex("convites_pagador_token_hash_key").on(
+			table.tokenHash,
+		),
+		payerEmailIdx: index("convites_pagador_pagador_email_idx").on(
+			table.payerId,
+			table.email,
+		),
 	}),
 );
 
@@ -820,6 +864,7 @@ export const payersRelations = relations(payers, ({ one, many }) => ({
 	}),
 	transactions: many(transactions),
 	shares: many(payerShares),
+	shareInvites: many(payerShareInvites),
 }));
 
 export const payerSharesRelations = relations(payerShares, ({ one }) => ({
@@ -836,6 +881,20 @@ export const payerSharesRelations = relations(payerShares, ({ one }) => ({
 		references: [user.id],
 	}),
 }));
+
+export const payerShareInvitesRelations = relations(
+	payerShareInvites,
+	({ one }) => ({
+		payer: one(payers, {
+			fields: [payerShareInvites.payerId],
+			references: [payers.id],
+		}),
+		createdByUser: one(user, {
+			fields: [payerShareInvites.createdByUserId],
+			references: [user.id],
+		}),
+	}),
+);
 
 export const cardsRelations = relations(cards, ({ one, many }) => ({
 	user: one(user, {
@@ -1038,6 +1097,137 @@ export const importCategoryMappings = pgTable(
 	}),
 );
 
+export const reconciliationSessions = pgTable(
+	"reconciliacao_sessoes",
+	{
+		id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		mode: text("modo").notNull(),
+		targetType: text("tipo_alvo").notNull(),
+		targetId: uuid("alvo_id").notNull(),
+		period: text("periodo").notNull(),
+		sourceFileName: text("nome_arquivo").notNull(),
+		sourceType: text("tipo_arquivo").notNull(),
+		statementSource: text("origem_extrato"),
+		statementAccountNumber: text("numero_conta_extrato"),
+		statementPeriodFrom: text("periodo_extrato_de"),
+		statementPeriodTo: text("periodo_extrato_ate"),
+		statementTotal: numeric("total_extrato", { precision: 12, scale: 2 })
+			.notNull()
+			.default("0"),
+		systemTotal: numeric("total_sistema", { precision: 12, scale: 2 }),
+		difference: numeric("diferenca", { precision: 12, scale: 2 }),
+		status: text("status").notNull().default("draft"),
+		lineCount: integer("qtd_linhas").notNull().default(0),
+		createdAt: timestamp("created_at", {
+			mode: "date",
+			withTimezone: true,
+		})
+			.notNull()
+			.defaultNow(),
+		updatedAt: timestamp("updated_at", {
+			mode: "date",
+			withTimezone: true,
+		})
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => ({
+		userIdIdx: index("reconciliacao_sessoes_user_id_idx").on(table.userId),
+		userTargetPeriodIdx: index("reconciliacao_sessoes_alvo_periodo_idx").on(
+			table.userId,
+			table.targetType,
+			table.targetId,
+			table.period,
+		),
+	}),
+);
+
+export const reconciliationLines = pgTable(
+	"reconciliacao_linhas",
+	{
+		id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+		sessionId: uuid("sessao_id")
+			.notNull()
+			.references(() => reconciliationSessions.id, { onDelete: "cascade" }),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		lineIndex: integer("indice_linha").notNull(),
+		externalId: text("id_externo"),
+		purchaseDate: text("data_compra").notNull(),
+		description: text("descricao").notNull(),
+		amount: numeric("valor", { precision: 12, scale: 2 }).notNull(),
+		transactionType: text("tipo_transacao").notNull(),
+		matchStatus: text("status_match").notNull().default("pending"),
+		matchedTransactionId: uuid("lancamento_id").references(
+			() => transactions.id,
+			{ onDelete: "set null" },
+		),
+		suggestedAction: text("acao_sugerida"),
+		suggestedAmount: numeric("valor_sugerido", { precision: 12, scale: 2 }),
+		matchConfidence: numeric("confianca_match", { precision: 5, scale: 2 }),
+		matchReason: text("motivo_match"),
+		appliedAt: timestamp("aplicado_em", {
+			mode: "date",
+			withTimezone: true,
+		}),
+		createdAt: timestamp("created_at", {
+			mode: "date",
+			withTimezone: true,
+		})
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => ({
+		sessionIdIdx: index("reconciliacao_linhas_sessao_id_idx").on(
+			table.sessionId,
+		),
+		userIdIdx: index("reconciliacao_linhas_user_id_idx").on(table.userId),
+		externalIdIdx: index("reconciliacao_linhas_id_externo_idx").on(
+			table.externalId,
+		),
+	}),
+);
+
+export const reconciliationAliases = pgTable(
+	"reconciliacao_aliases",
+	{
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		statementKey: text("chave_extrato").notNull(),
+		targetName: text("nome_alvo").notNull(),
+		targetCategoryId: uuid("categoria_id").references(() => categories.id, {
+			onDelete: "set null",
+		}),
+		hitCount: integer("qtd_acertos").notNull().default(0),
+		source: text("origem").notNull().default("manual"),
+		lastUsedAt: timestamp("ultimo_uso", {
+			mode: "date",
+			withTimezone: true,
+		}),
+		createdAt: timestamp("created_at", {
+			mode: "date",
+			withTimezone: true,
+		})
+			.notNull()
+			.defaultNow(),
+		updatedAt: timestamp("updated_at", {
+			mode: "date",
+			withTimezone: true,
+		})
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => ({
+		pk: primaryKey({ columns: [table.userId, table.statementKey] }),
+		userIdIdx: index("reconciliacao_aliases_user_id_idx").on(table.userId),
+	}),
+);
+
 export const establishmentLogos = pgTable(
 	"establishment_logos",
 	{
@@ -1065,6 +1255,7 @@ export type Verification = typeof verification.$inferSelect;
 export type UserPreferences = typeof userPreferences.$inferSelect;
 export type NewUserPreferences = typeof userPreferences.$inferInsert;
 export type PayerShare = typeof payerShares.$inferSelect;
+export type PayerShareInvite = typeof payerShareInvites.$inferSelect;
 export type FinancialAccount = typeof financialAccounts.$inferSelect;
 export type Category = typeof categories.$inferSelect;
 export type Payer = typeof payers.$inferSelect;
@@ -1081,6 +1272,9 @@ export type NewApiToken = typeof apiTokens.$inferInsert;
 export type InboxItem = typeof inboxItems.$inferSelect;
 export type NewInboxItem = typeof inboxItems.$inferInsert;
 export type ImportCategoryMapping = typeof importCategoryMappings.$inferSelect;
+export type ReconciliationSession = typeof reconciliationSessions.$inferSelect;
+export type ReconciliationLine = typeof reconciliationLines.$inferSelect;
+export type ReconciliationAlias = typeof reconciliationAliases.$inferSelect;
 
 export const attachmentsRelations = relations(attachments, ({ one, many }) => ({
 	user: one(user, {
@@ -1129,6 +1323,45 @@ export const establishmentLogosRelations = relations(
 		user: one(user, {
 			fields: [establishmentLogos.userId],
 			references: [user.id],
+		}),
+	}),
+);
+
+export const reconciliationSessionsRelations = relations(
+	reconciliationSessions,
+	({ one, many }) => ({
+		user: one(user, {
+			fields: [reconciliationSessions.userId],
+			references: [user.id],
+		}),
+		lines: many(reconciliationLines),
+	}),
+);
+
+export const reconciliationLinesRelations = relations(
+	reconciliationLines,
+	({ one }) => ({
+		session: one(reconciliationSessions, {
+			fields: [reconciliationLines.sessionId],
+			references: [reconciliationSessions.id],
+		}),
+		matchedTransaction: one(transactions, {
+			fields: [reconciliationLines.matchedTransactionId],
+			references: [transactions.id],
+		}),
+	}),
+);
+
+export const reconciliationAliasesRelations = relations(
+	reconciliationAliases,
+	({ one }) => ({
+		user: one(user, {
+			fields: [reconciliationAliases.userId],
+			references: [user.id],
+		}),
+		targetCategory: one(categories, {
+			fields: [reconciliationAliases.targetCategoryId],
+			references: [categories.id],
 		}),
 	}),
 );

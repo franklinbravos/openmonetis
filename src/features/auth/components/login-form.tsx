@@ -1,8 +1,9 @@
 "use client";
 import { RiFingerprintLine, RiLoader4Line } from "@remixicon/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { getOAuthErrorMessage } from "@/features/auth/lib/oauth-error-messages";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
 import {
@@ -35,6 +36,7 @@ export function LoginForm({
 	...props
 }: LoginFormProps) {
 	const router = useRouter();
+	const searchParams = useSearchParams();
 	const isGoogleAvailable = googleSignInAvailable;
 
 	const [email, setEmail] = useState("");
@@ -53,6 +55,17 @@ export function LoginForm({
 
 		setPasskeySupported(true);
 	}, []);
+
+	useEffect(() => {
+		const oauthError = getOAuthErrorMessage(
+			searchParams.get("error"),
+			searchParams.get("error_description"),
+		);
+		if (!oauthError) return;
+
+		setError(oauthError);
+		router.replace("/login", { scroll: false });
+	}, [router, searchParams]);
 
 	async function handleSubmit(e: FormEvent<HTMLFormElement>) {
 		e.preventDefault();

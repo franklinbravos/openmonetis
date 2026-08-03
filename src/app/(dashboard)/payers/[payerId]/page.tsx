@@ -112,7 +112,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 		notFound();
 	}
 
-	const { pagador, canEdit } = access;
+	const { pagador, canEdit, canManageShares } = access;
 	const dataOwnerId = pagador.userId;
 
 	const periodoParamRaw = getSingleParam(resolvedSearchParams, "periodo");
@@ -293,7 +293,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 			? pagador.createdAt.toISOString()
 			: new Date().toISOString(),
 		lastMailAt: pagador.lastMailAt ? pagador.lastMailAt.toISOString() : null,
-		shareCode: canEdit ? pagador.shareCode : null,
+		shareCode: canManageShares ? pagador.shareCode : null,
 		canEdit,
 	};
 
@@ -339,10 +339,11 @@ export default async function Page({ params, searchParams }: PageProps) {
 
 					<TabsContent value="profile" className="space-y-4">
 						<PayerInfoCard payer={payerData} />
-						{canEdit && payerData.shareCode ? (
+						{canManageShares && payerData.shareCode ? (
 							<PayerSharingCard
 								payerId={pagador.id}
 								shareCode={payerData.shareCode}
+								payerEmail={payerData.email}
 								shares={payerSharesData}
 							/>
 						) : null}

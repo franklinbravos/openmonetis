@@ -16,6 +16,7 @@ type ShareData = {
 	userId: string;
 	name: string;
 	email: string;
+	permission: string;
 	createdAt: string;
 };
 
@@ -24,6 +25,7 @@ export async function fetchPayerShares(payerId: string): Promise<ShareData[]> {
 		.select({
 			id: payerShares.id,
 			sharedWithUserId: payerShares.sharedWithUserId,
+			permission: payerShares.permission,
 			createdAt: payerShares.createdAt,
 			userName: usersTable.name,
 			userEmail: usersTable.email,
@@ -37,6 +39,7 @@ export async function fetchPayerShares(payerId: string): Promise<ShareData[]> {
 		userId: share.sharedWithUserId,
 		name: share.userName ?? "Usuário",
 		email: share.userEmail ?? "email não informado",
+		permission: share.permission,
 		createdAt: share.createdAt?.toISOString() ?? new Date().toISOString(),
 	}));
 }

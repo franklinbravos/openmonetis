@@ -10,6 +10,7 @@ import {
 } from "@/shared/lib/actions/helpers";
 import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import { getPayerAccess } from "@/shared/lib/payers/access";
 import {
 	DEFAULT_PAYER_AVATAR,
 	PAYER_ROLE_ADMIN,
@@ -117,16 +118,15 @@ export async function updatePayerAction(
 		const currentUser = await getUser();
 		const data = updateSchema.parse(input);
 
-		const existing = await db.query.payers.findFirst({
-			where: and(eq(payers.id, data.id), eq(payers.userId, currentUser.id)),
-		});
-
-		if (!existing) {
+		const access = await getPayerAccess(currentUser.id, data.id);
+		if (!access?.canEdit) {
 			return {
 				success: false,
 				error: "Pessoa não encontrada.",
 			};
 		}
+
+		const existing = access.pagador;
 
 		await db
 			.update(payers)
@@ -140,7 +140,7 @@ export async function updatePayerAction(
 				isAutoSend: data.isAutoSend ?? false,
 				role: existing.role ?? PAYER_ROLE_THIRD_PARTY,
 			})
-			.where(and(eq(payers.id, data.id), eq(payers.userId, currentUser.id)));
+			.where(eq(payers.id, data.id));
 
 		// Se o pagador é admin, sincronizar nome com o usuário
 		if (existing.role === PAYER_ROLE_ADMIN) {

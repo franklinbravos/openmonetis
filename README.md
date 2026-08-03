@@ -204,7 +204,7 @@ pnpm db:push
 pnpm dev
 ```
 
-Acesse em: `http://localhost:3000`
+Acesse em: `http://localhost:3050`
 
 Toda vez que salvar um arquivo, o app atualiza automaticamente sem precisar reiniciar.
 
@@ -496,7 +496,7 @@ O token **nunca chega ao cliente**. O servidor constrói a URL `https://img.logo
 # Perfil 1 (Docker): não precisa definir — o compose usa "db" automaticamente
 DATABASE_URL=postgresql://openmonetis:openmonetis_dev_password@localhost:5432/openmonetis_db
 BETTER_AUTH_SECRET=seu-secret-aqui    # openssl rand -base64 32
-BETTER_AUTH_URL=http://localhost:3000
+BETTER_AUTH_URL=http://localhost:3050
 ```
 
 ### Opcionais
@@ -555,11 +555,25 @@ Use `BETTER_AUTH_TRUSTED_ORIGINS` quando o OpenMonetis for acessado por uma URL 
 Informe apenas origins confiáveis, separadas por vírgula:
 
 ```env
-BETTER_AUTH_URL=http://localhost:3000
+BETTER_AUTH_URL=http://localhost:3050
 BETTER_AUTH_TRUSTED_ORIGINS=https://*.trycloudflare.com,https://openmonetis.seudominio.com
 ```
 
 Para Google OAuth e outros callbacks externos, mantenha `BETTER_AUTH_URL` apontando para a URL pública/canônica configurada no provedor.
+
+**Dev local (`pnpm dev`):** o app sobe fixo na porta `3050`. No [Google Cloud Console](https://console.cloud.google.com/apis/credentials), adicione em **URIs de redirecionamento autorizados**:
+
+```
+http://localhost:3050/api/auth/callback/google
+```
+
+E configure no `.env`:
+
+```env
+BETTER_AUTH_URL=http://localhost:3050
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+```
 
 ### IA local com Ollama
 

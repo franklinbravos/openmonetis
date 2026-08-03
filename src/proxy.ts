@@ -17,6 +17,8 @@ const PROTECTED_ROUTES = [
 	"/payers",
 	"/inbox",
 	"/reports",
+	"/reconciliation",
+	"/change-password-required",
 ];
 
 // Rotas públicas (não requerem autenticação)
@@ -89,23 +91,44 @@ export default async function proxy(request: NextRequest) {
 	const signupDisabled = isSignupDisabled();
 
 	if (signupDisabled) {
-		if (pathname === "/signup" || pathname.startsWith("/signup/")) {
+		const callbackUrl = request.nextUrl.searchParams.get("callbackUrl");
+		const isInviteSignup = callbackUrl?.includes("/invite?token=");
+
+		if (
+			!isInviteSignup &&
+			(pathname === "/signup" || pathname.startsWith("/signup/"))
+		) {
 			return NextResponse.redirect(
 				new URL(isAuthenticated ? "/dashboard" : "/login", request.url),
-			);
-		}
-
-		if (pathname.startsWith("/api/auth/sign-up")) {
-			return NextResponse.json(
-				{ error: "Novos cadastros estão desativados." },
-				{ status: 403 },
 			);
 		}
 	}
 
 	// Redirect authenticated users away from login/signup pages
-	if (isAuthenticated && PUBLIC_AUTH_ROUTES.includes(pathname)) {
+	if (
+		isAuthenticated &&
+		PUBLIC_AUTH_ROUTES.includes(pathname) &&
+		pathname !== "/signup"
+	) {
 		return NextResponse.redirect(new URL("/dashboard", request.url));
+	}
+
+	const mustChangePassword = Boolean(
+		session?.user &&
+			"mustChangePassword" in session.user &&
+			session.user.mustChangePassword,
+	);
+
+	if (mustChangePassword && isAuthenticated) {
+		const canAccess =
+			pathname.startsWith("/change-password-required") ||
+			pathname.startsWith("/api/auth");
+
+		if (!canAccess) {
+			return NextResponse.redirect(
+				new URL("/change-password-required", request.url),
+			);
+		}
 	}
 
 	// Redirect unauthenticated users trying to access protected routes
@@ -142,7 +165,10 @@ export const config = {
 		"/payers/:path*",
 		"/inbox/:path*",
 		"/reports/:path*",
+		"/reconciliation/:path*",
 		"/login",
 		"/signup",
+		"/invite",
+		"/change-password-required",
 	],
 };

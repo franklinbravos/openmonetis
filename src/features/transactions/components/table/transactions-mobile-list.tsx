@@ -14,12 +14,18 @@ import Image from "next/image";
 import type { ReactNode } from "react";
 import { EstablishmentLogo } from "@/shared/components/entity-avatar";
 import MoneyValues from "@/shared/components/money-values";
+import {
+	Avatar,
+	AvatarFallback,
+	AvatarImage,
+} from "@/shared/components/ui/avatar";
 import { Badge } from "@/shared/components/ui/badge";
 import {
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
 } from "@/shared/components/ui/tooltip";
+import { resolveLogoSrc } from "@/shared/lib/logo";
 import { formatDate, formatDateGroupLabel } from "@/shared/utils/date";
 import { getConditionIcon, getPaymentMethodIcon } from "@/shared/utils/icons";
 import { cn } from "@/shared/utils/ui";
@@ -192,22 +198,44 @@ function TransactionMobileCard({
 		item.paymentMethod === "Transferência bancária"
 			? "Transf. bancária"
 			: item.paymentMethod;
+	const accountCardLabel = item.cartaoName ?? item.contaName;
+	const accountCardType = item.cartaoName ? "Cartão" : "Conta";
+	const accountCardLogo = resolveLogoSrc(item.cartaoLogo ?? item.contaLogo);
 
 	const type =
 		item.categoriaName === "Saldo inicial"
 			? "Saldo inicial"
 			: item.transactionType;
 
+	const handleOpenDetails = () => {
+		onViewDetails?.(item);
+	};
+
 	return (
 		<article
 			className={cn(
 				"rounded-md border bg-card px-3 py-2.5 shadow-xs",
+				onViewDetails &&
+					"cursor-pointer transition-colors hover:bg-muted/35 active:bg-muted/50",
 				item.paymentMethod === "Boleto" &&
 					item.dueDate &&
 					!item.isSettled &&
 					new Date(item.dueDate) < new Date() &&
 					"border-destructive/20 bg-destructive/3",
 			)}
+			onClick={onViewDetails ? handleOpenDetails : undefined}
+			onKeyDown={
+				onViewDetails
+					? (event) => {
+							if (event.key === "Enter" || event.key === " ") {
+								event.preventDefault();
+								handleOpenDetails();
+							}
+						}
+					: undefined
+			}
+			role={onViewDetails ? "button" : undefined}
+			tabIndex={onViewDetails ? 0 : undefined}
 		>
 			<div className="flex items-center gap-2.5">
 				<EstablishmentLogo name={item.name} size={34} />
@@ -257,6 +285,25 @@ function TransactionMobileCard({
 							<IconBadge label={paymentMethodLabel} compact>
 								{getPaymentMethodIcon(item.paymentMethod)}
 							</IconBadge>
+							{accountCardLabel ? (
+								<IconBadge
+									label={`${accountCardType}: ${accountCardLabel}`}
+									compact
+								>
+									<Avatar className="size-3.5">
+										{accountCardLogo ? (
+											<AvatarImage
+												src={accountCardLogo}
+												alt=""
+												className="object-cover"
+											/>
+										) : null}
+										<AvatarFallback className="text-[8px] font-medium uppercase">
+											{accountCardLabel.slice(0, 2)}
+										</AvatarFallback>
+									</Avatar>
+								</IconBadge>
+							) : null}
 							<IconBadge label={item.condition} compact>
 								{getConditionIcon(item.condition)}
 							</IconBadge>
@@ -316,7 +363,11 @@ function TransactionMobileCard({
 							) : null}
 						</div>
 						{showActions ? (
-							<div className="flex shrink-0 items-center gap-1">
+							<div
+								className="flex shrink-0 items-center gap-1"
+								onClick={(event) => event.stopPropagation()}
+								onKeyDown={(event) => event.stopPropagation()}
+							>
 								<TransactionSettlementButton
 									item={item}
 									isLoading={isSettlementLoading(item.id)}

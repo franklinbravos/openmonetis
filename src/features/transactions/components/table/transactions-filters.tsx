@@ -407,6 +407,7 @@ interface TransactionsFiltersProps {
 	className?: string;
 	exportButton?: ReactNode;
 	hideAdvancedFilters?: boolean;
+	hideMobileExport?: boolean;
 }
 
 export function TransactionsFilters({
@@ -416,6 +417,7 @@ export function TransactionsFilters({
 	className,
 	exportButton,
 	hideAdvancedFilters = false,
+	hideMobileExport = false,
 }: TransactionsFiltersProps) {
 	const router = useRouter();
 	const pathname = usePathname();
@@ -774,42 +776,34 @@ export function TransactionsFilters({
 	}
 
 	return (
-		<div
-			aria-busy={isPending}
-			className={cn(
-				"flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center",
-				className,
-			)}
-		>
-			<div className="relative w-full md:w-[250px]">
-				<Input
-					value={searchValue}
-					onChange={(event) => setSearchValue(event.target.value)}
-					placeholder="Buscar"
-					aria-label="Buscar lançamentos"
-					className={cn(
-						"w-full text-sm border-dashed",
-						searchValue.length > 0 && "pr-8",
-					)}
-				/>
-				{searchValue.length > 0 ? (
-					<button
-						type="button"
-						onClick={() => setSearchValue("")}
-						aria-label="Limpar busca"
-						className="absolute top-1/2 right-2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					>
-						<RiCloseLine className="size-4" aria-hidden />
-					</button>
-				) : null}
-			</div>
+		<div aria-busy={isPending} className={cn("flex flex-col gap-2", className)}>
+			{exportButton && !hideMobileExport ? (
+				<div className="flex justify-end md:hidden">{exportButton}</div>
+			) : null}
 
-			<div className="flex w-full gap-2 md:w-auto">
-				{exportButton && (
-					<div className="flex-1 md:flex-none *:w-full *:md:w-auto">
-						{exportButton}
-					</div>
-				)}
+			<div className="flex w-full items-center gap-2 md:flex-wrap md:justify-end">
+				<div className="relative min-w-0 flex-1 md:w-[250px]">
+					<Input
+						value={searchValue}
+						onChange={(event) => setSearchValue(event.target.value)}
+						placeholder="Buscar"
+						aria-label="Buscar lançamentos"
+						className={cn(
+							"w-full border bg-background text-sm shadow-xs",
+							searchValue.length > 0 && "pr-8",
+						)}
+					/>
+					{searchValue.length > 0 ? (
+						<button
+							type="button"
+							onClick={() => setSearchValue("")}
+							aria-label="Limpar busca"
+							className="absolute top-1/2 right-2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						>
+							<RiCloseLine className="size-4" aria-hidden />
+						</button>
+					) : null}
+				</div>
 
 				{!hideAdvancedFilters && (
 					<HoverCard openDelay={200} closeDelay={200}>
@@ -822,7 +816,7 @@ export function TransactionsFilters({
 								<DrawerTrigger asChild>
 									<Button
 										variant="outline"
-										className="flex-1 md:flex-none text-sm border-dashed relative bg-transparent"
+										className="relative shrink-0 border-dashed bg-transparent text-sm"
 										aria-label={
 											isPending ? "Aplicando filtros" : "Abrir filtros"
 										}
@@ -1208,6 +1202,10 @@ export function TransactionsFilters({
 						</Drawer>
 					</HoverCard>
 				)}
+
+				{exportButton ? (
+					<div className="hidden shrink-0 md:block">{exportButton}</div>
+				) : null}
 			</div>
 		</div>
 	);

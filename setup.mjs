@@ -198,7 +198,7 @@ if (dockerAvailable) {
 section("Autenticação");
 
 const authSecret = randomBytes(32).toString("base64");
-const betterAuthUrl = await askDefault("URL da aplicação", "http://localhost:3000");
+const betterAuthUrl = await askDefault("URL da aplicação", "http://localhost:3050");
 
 console.log(`${sym.ok} BETTER_AUTH_SECRET gerado`);
 console.log(`${sym.ok} BETTER_AUTH_URL: ${betterAuthUrl}`);
@@ -214,6 +214,9 @@ let googleClientSecret = "";
 if (await askYesNo("  Google OAuth (login social)?")) {
   googleClientId = await ask("  GOOGLE_CLIENT_ID: ");
   googleClientSecret = await ask("  GOOGLE_CLIENT_SECRET: ");
+  console.log(
+    `  ${c.dim}Redirect URI no Google Cloud Console: ${betterAuthUrl}/api/auth/callback/google${c.reset}`,
+  );
 }
 
 // Resend
@@ -305,7 +308,7 @@ const envContent = [
   "AUTH_SESSION_UPDATE_AGE_HOURS=24",
   "",
   "# === Portas ===",
-  "APP_PORT=3000",
+  "APP_PORT=3050",
   "DB_PORT=5432",
   "",
   "# === PostgreSQL (Docker local) ===",

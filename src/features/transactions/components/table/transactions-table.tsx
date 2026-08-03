@@ -299,6 +299,15 @@ export function TransactionsTable({
 
 	const showTopControls =
 		Boolean(createSlot) || Boolean(onMassAdd) || showFilters;
+	const exportSlot =
+		showFilters && selectedPeriod ? (
+			<TransactionsExport
+				lancamentos={data}
+				period={selectedPeriod}
+				exportContext={exportContext}
+			/>
+		) : null;
+
 	const renderTransactionRow = (row: Row<TransactionItem>) => (
 		<TableRow
 			key={row.id}
@@ -324,8 +333,17 @@ export function TransactionsTable({
 			{showTopControls ? (
 				<div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
 					{createSlot || onMassAdd ? (
-						<div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-							{createSlot}
+						<div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+							{createSlot || exportSlot ? (
+								<div className="flex w-full items-center gap-2 md:w-auto">
+									{createSlot ? (
+										<div className="min-w-0 flex-1 md:flex-none">{createSlot}</div>
+									) : null}
+									{exportSlot ? (
+										<div className="shrink-0 md:hidden">{exportSlot}</div>
+									) : null}
+								</div>
+							) : null}
 							{onMassAdd ? (
 								<Tooltip>
 									<TooltipTrigger asChild>
@@ -374,15 +392,8 @@ export function TransactionsTable({
 							accountCardOptions={accountCardFilterOptions}
 							className="w-full lg:flex-1 lg:justify-end"
 							hideAdvancedFilters={hasOtherUserData}
-							exportButton={
-								selectedPeriod ? (
-									<TransactionsExport
-										lancamentos={data}
-										period={selectedPeriod}
-										exportContext={exportContext}
-									/>
-								) : null
-							}
+							hideMobileExport={Boolean(createSlot)}
+							exportButton={exportSlot}
 						/>
 					) : null}
 				</div>

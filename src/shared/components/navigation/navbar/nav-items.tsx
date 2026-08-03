@@ -7,6 +7,7 @@ import {
 	RiBarChart2Line,
 	RiCalendarEventLine,
 	RiFileChartLine,
+	RiFileSearchLine,
 	RiGroupLine,
 	RiPriceTag3Line,
 	RiSecurePaymentLine,
@@ -61,6 +62,14 @@ export const NAV_SECTIONS: NavSection[] = [
 				description: "Notificações capturadas pelo Companion",
 				icon: <RiAtLine className="size-4" />,
 				iconClass: "text-primary",
+			},
+			{
+				href: "/reconciliation",
+				label: "Conciliação",
+				description: "Feche faturas e concilie extratos",
+				icon: <RiFileSearchLine className="size-4" />,
+				iconClass: "text-primary",
+				preservePeriod: true,
 			},
 			{
 				href: "/calendar",
