@@ -22,7 +22,18 @@ import NavigationButton from "./nav-button";
 import ReturnButton from "./return-button";
 import { useMonthPeriod } from "./use-month-period";
 
-export default function MonthNavigation() {
+const getToolbarExpandSlotId = (toolbarSlotId: string) =>
+	`${toolbarSlotId}-expand`;
+
+const getToolbarEndSlotId = (toolbarSlotId: string) => `${toolbarSlotId}-end`;
+
+type MonthNavigationProps = {
+	toolbarSlotId?: string;
+};
+
+export default function MonthNavigation({
+	toolbarSlotId,
+}: MonthNavigationProps = {}) {
 	const { period, currentMonth, currentYear, defaultPeriod, buildHref } =
 		useMonthPeriod();
 
@@ -56,62 +67,84 @@ export default function MonthNavigation() {
 	};
 
 	return (
-		<Card className="sticky top-18 z-10 grid w-full grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3 backdrop-blur-md supports-backdrop-filter:bg-card/60 sm:px-4">
-			<div aria-hidden />
-
-			<div className="flex min-w-0 items-center justify-center">
-				<NavigationButton
-					direction="left"
-					disabled={isPending}
-					onClick={() => handleNavigate(prevTarget)}
-				/>
-
-				<Popover open={isPickerOpen} onOpenChange={setIsPickerOpen}>
-					<PopoverTrigger asChild>
-						<Button
-							type="button"
-							variant="ghost"
-							size="sm"
-							disabled={isPending}
-							className="min-w-0 gap-1 px-1.5 font-semibold"
-							aria-current={!isDifferentFromCurrent ? "date" : undefined}
-							aria-label={`Selecionar período. Período atual: ${currentMonthLabel}`}
-						>
-							{isPending ? (
-								<LoadingSpinner />
-							) : (
-								<RiCalendarLine className="size-4 text-primary" />
-							)}
-							<span className="truncate capitalize">{currentMonthLabel}</span>
-							<RiArrowDropDownLine
-								className="size-4 text-muted-foreground/50"
-								aria-hidden
-							/>
-						</Button>
-					</PopoverTrigger>
-					<PopoverContent className="w-auto p-0" align="center">
-						<MonthPicker
-							selectedMonth={periodToDate(period)}
-							onMonthSelect={handleMonthSelect}
-						/>
-					</PopoverContent>
-				</Popover>
-
-				<NavigationButton
-					direction="right"
-					disabled={isPending}
-					onClick={() => handleNavigate(nextTarget)}
-				/>
-			</div>
-
-			<div className="flex justify-end">
-				{isDifferentFromCurrent ? (
-					<ReturnButton
-						disabled={isPending}
-						onClick={() => handleNavigate(returnTarget)}
+		<Card className="sticky top-18 z-10 flex w-full flex-col gap-0 px-3 py-3 backdrop-blur-md supports-backdrop-filter:bg-card/60 sm:px-4">
+			<div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-2">
+				{toolbarSlotId ? (
+					<div
+						id={toolbarSlotId}
+						className="flex min-w-0 items-center justify-start gap-1 md:hidden"
 					/>
-				) : null}
+				) : (
+					<div aria-hidden />
+				)}
+
+				<div className="flex min-w-0 items-center justify-center">
+					<NavigationButton
+						direction="left"
+						disabled={isPending}
+						onClick={() => handleNavigate(prevTarget)}
+					/>
+
+					<Popover open={isPickerOpen} onOpenChange={setIsPickerOpen}>
+						<PopoverTrigger asChild>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								disabled={isPending}
+								className="min-w-0 gap-1 px-1.5 font-semibold"
+								aria-current={!isDifferentFromCurrent ? "date" : undefined}
+								aria-label={`Selecionar período. Período atual: ${currentMonthLabel}`}
+							>
+								{isPending ? (
+									<LoadingSpinner />
+								) : (
+									<RiCalendarLine className="size-4 text-primary" />
+								)}
+								<span className="truncate capitalize">{currentMonthLabel}</span>
+								<RiArrowDropDownLine
+									className="size-4 text-muted-foreground/50"
+									aria-hidden
+								/>
+							</Button>
+						</PopoverTrigger>
+						<PopoverContent className="w-auto p-0" align="center">
+							<MonthPicker
+								selectedMonth={periodToDate(period)}
+								onMonthSelect={handleMonthSelect}
+							/>
+						</PopoverContent>
+					</Popover>
+
+					<NavigationButton
+						direction="right"
+						disabled={isPending}
+						onClick={() => handleNavigate(nextTarget)}
+					/>
+				</div>
+
+				<div className="flex items-center justify-end gap-1">
+					{toolbarSlotId ? (
+						<div
+							id={getToolbarEndSlotId(toolbarSlotId)}
+							className="flex items-center justify-end empty:hidden md:hidden"
+						/>
+					) : null}
+					{isDifferentFromCurrent ? (
+						<ReturnButton
+							disabled={isPending}
+							onClick={() => handleNavigate(returnTarget)}
+						/>
+					) : null}
+				</div>
 			</div>
+
+			{toolbarSlotId ? (
+				<div
+					id={getToolbarExpandSlotId(toolbarSlotId)}
+					className="empty:hidden md:hidden"
+				/>
+			) : null}
 		</Card>
 	);
 }

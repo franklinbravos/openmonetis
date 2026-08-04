@@ -5,7 +5,6 @@ import * as React from "react";
 
 import {
 	Command,
-	CommandEmpty,
 	CommandGroup,
 	CommandItem,
 	CommandList,
@@ -52,16 +51,6 @@ export function EstablishmentInput({
 		setSearchValue("");
 	};
 
-	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-		const newValue = e.target.value;
-		onChange(newValue);
-		setSearchValue(newValue);
-
-		if (newValue.length > 0 && estabelecimentos.length > 0) {
-			setOpen(true);
-		}
-	};
-
 	const filteredEstabelecimentos = React.useMemo(() => {
 		if (!searchValue) return estabelecimentos;
 
@@ -70,6 +59,31 @@ export function EstablishmentInput({
 			item.toLowerCase().includes(lowerSearch),
 		);
 	}, [estabelecimentos, searchValue]);
+
+	const hasSuggestions = filteredEstabelecimentos.length > 0;
+
+	React.useEffect(() => {
+		if (!hasSuggestions && open) {
+			setOpen(false);
+		}
+	}, [hasSuggestions, open]);
+
+	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const newValue = e.target.value;
+		onChange(newValue);
+		setSearchValue(newValue);
+
+		if (newValue.length === 0 || estabelecimentos.length === 0) {
+			setOpen(false);
+			return;
+		}
+
+		const lowerSearch = newValue.toLowerCase();
+		const hasMatches = estabelecimentos.some((item) =>
+			item.toLowerCase().includes(lowerSearch),
+		);
+		setOpen(hasMatches);
+	};
 
 	return (
 		<Popover open={open} onOpenChange={setOpen} modal>
@@ -90,18 +104,15 @@ export function EstablishmentInput({
 					)}
 				</div>
 			</PopoverTrigger>
-			{estabelecimentos.length > 0 && (
+			{estabelecimentos.length > 0 && hasSuggestions ? (
 				<PopoverContent
 					className="p-0"
 					style={width ? { width } : undefined}
 					align="start"
 					onOpenAutoFocus={(e) => e.preventDefault()}
 				>
-					<Command>
+					<Command shouldFilter={false}>
 						<CommandList className="max-h-[300px] overflow-y-auto">
-							<CommandEmpty className="p-6">
-								Nenhum estabelecimento encontrado.
-							</CommandEmpty>
 							<CommandGroup className="p-1">
 								{filteredEstabelecimentos.map((item) => (
 									<CommandItem
@@ -121,7 +132,7 @@ export function EstablishmentInput({
 						</CommandList>
 					</Command>
 				</PopoverContent>
-			)}
+			) : null}
 		</Popover>
 	);
 }

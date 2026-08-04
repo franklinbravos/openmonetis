@@ -97,6 +97,9 @@ hierarquia.
 
 ## 6. Componentes
 
+Padrões de componentes com implementação detalhada (ex.: ações rápidas de
+lançamento) estão em [DesignSystem.md](./DesignSystem.md).
+
 ### Botões
 
 Use [`Button`](./src/shared/components/ui/button.tsx) e suas variantes:

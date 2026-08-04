@@ -1,7 +1,6 @@
 "use client";
 import {
 	RiArrowLeftRightLine,
-	RiFileExcel2Line,
 	RiFlashlightFill,
 } from "@remixicon/react";
 import {
@@ -40,7 +39,9 @@ import {
 } from "@/shared/components/ui/tooltip";
 import { formatDateGroupLabel } from "@/shared/utils/date";
 import { cn } from "@/shared/utils/ui";
+import { TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID } from "../../lib/month-toolbar";
 import { TransactionsExport } from "../transactions-export";
+import { TransactionsImportButton } from "../transactions-import-button";
 import type {
 	AccountCardFilterOption,
 	TransactionFilterOption,
@@ -307,6 +308,7 @@ export function TransactionsTable({
 				exportContext={exportContext}
 			/>
 		) : null;
+	const importSlot = showTopControls ? <TransactionsImportButton /> : null;
 
 	const renderTransactionRow = (row: Row<TransactionItem>) => (
 		<TableRow
@@ -334,14 +336,9 @@ export function TransactionsTable({
 				<div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
 					{createSlot || onMassAdd ? (
 						<div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-							{createSlot || exportSlot ? (
-								<div className="flex w-full items-center gap-2 md:w-auto">
-									{createSlot ? (
-										<div className="min-w-0 flex-1 md:flex-none">{createSlot}</div>
-									) : null}
-									{exportSlot ? (
-										<div className="shrink-0 md:hidden">{exportSlot}</div>
-									) : null}
+							{createSlot ? (
+								<div className="flex w-full items-stretch gap-2 md:w-auto">
+									{createSlot}
 								</div>
 							) : null}
 							{onMassAdd ? (
@@ -364,22 +361,6 @@ export function TransactionsTable({
 									</TooltipContent>
 								</Tooltip>
 							) : null}
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<Button
-										onClick={() => router.push("/transactions/import")}
-										variant="outline"
-										size="icon"
-										className="hidden size-9 sm:inline-flex"
-									>
-										<RiFileExcel2Line className="size-4" />
-										<span className="sr-only">Importar extrato</span>
-									</Button>
-								</TooltipTrigger>
-								<TooltipContent>
-									<p>Importar extrato</p>
-								</TooltipContent>
-							</Tooltip>
 						</div>
 					) : (
 						<span className={showFilters ? "hidden sm:block" : ""} />
@@ -392,8 +373,9 @@ export function TransactionsTable({
 							accountCardOptions={accountCardFilterOptions}
 							className="w-full lg:flex-1 lg:justify-end"
 							hideAdvancedFilters={hasOtherUserData}
-							hideMobileExport={Boolean(createSlot)}
 							exportButton={exportSlot}
+							importButton={importSlot}
+							monthToolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID}
 						/>
 					) : null}
 				</div>

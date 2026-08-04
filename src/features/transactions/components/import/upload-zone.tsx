@@ -7,7 +7,7 @@ import type { ImportStatement } from "@/shared/lib/import/types";
 import { generateXlsTemplate, parseXls } from "@/shared/lib/import/xls-parser";
 
 interface UploadZoneProps {
-	onParsed: (statement: ImportStatement) => void;
+	onParsed: (statement: ImportStatement, fileName: string) => void;
 }
 
 export function UploadZone({ onParsed }: UploadZoneProps) {
@@ -35,7 +35,7 @@ export function UploadZone({ onParsed }: UploadZoneProps) {
 						setError("Nenhuma transação encontrada no arquivo.");
 						return;
 					}
-					onParsed(statement);
+					onParsed(statement, file.name);
 				} catch {
 					setError(
 						"Não foi possível ler o arquivo. Verifique se é um OFX válido.",
@@ -49,7 +49,7 @@ export function UploadZone({ onParsed }: UploadZoneProps) {
 				try {
 					const buffer = e.target?.result as ArrayBuffer;
 					const statement = await parseXls(buffer);
-					onParsed(statement);
+					onParsed(statement, file.name);
 				} catch (err) {
 					setError(
 						err instanceof Error

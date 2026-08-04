@@ -94,7 +94,7 @@ export function ImportPage({
 	);
 
 	const handleParsed = useCallback(
-		async (stmt: ImportStatement) => {
+		async (stmt: ImportStatement, _fileName?: string) => {
 			setStatement(stmt);
 			setIsChecking(true);
 
@@ -322,15 +322,15 @@ export function ImportPage({
 	return (
 		<Card>
 			<CardHeader>
-				<div className="flex items-center justify-between gap-4">
-					<div>
+				<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+					<div className="min-w-0 space-y-1">
 						<CardTitle>Importar extrato</CardTitle>
 						<CardDescription>
 							Importe transações a partir de um arquivo .ofx ou planilha .xlsx
 							exportado pelo seu banco.
 						</CardDescription>
 					</div>
-					<ImportSteps current={currentStep} />
+					<ImportSteps current={currentStep} className="shrink-0" />
 				</div>
 			</CardHeader>
 			<CardContent>

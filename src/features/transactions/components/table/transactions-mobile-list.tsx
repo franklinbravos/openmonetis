@@ -216,7 +216,7 @@ function TransactionMobileCard({
 			className={cn(
 				"rounded-md border bg-card px-3 py-2.5 shadow-xs",
 				onViewDetails &&
-					"cursor-pointer transition-colors hover:bg-muted/35 active:bg-muted/50",
+					"cursor-pointer transition-colors duration-200 hover:border-primary/50 hover:bg-muted/35 active:bg-muted/50",
 				item.paymentMethod === "Boleto" &&
 					item.dueDate &&
 					!item.isSettled &&

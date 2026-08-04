@@ -1,12 +1,20 @@
 "use client";
 
-import { RiAddFill, RiExchangeLine } from "@remixicon/react";
+import {
+	RiAddCircleFill,
+	RiExchangeLine,
+	RiSubtractLine,
+} from "@remixicon/react";
 import { useState } from "react";
 import { TransferDialog } from "@/features/accounts/components/transfer-dialog";
 import type { AccountData } from "@/features/accounts/queries";
 import type { DashboardAccount } from "@/features/dashboard/lib/accounts-queries";
 import type { DashboardWidgetQuickActionOptions } from "@/features/dashboard/widget-registry/widget-config";
 import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
+import {
+	TRANSACTION_QUICK_ACTIONS,
+	transactionQuickActionButtonClassName,
+} from "@/features/transactions/components/quick-actions/constants";
 import { Button } from "@/shared/components/ui/button";
 import {
 	DropdownMenu,
@@ -22,8 +30,7 @@ type DashboardQuickActionsProps = {
 	quickActionOptions: DashboardWidgetQuickActionOptions;
 };
 
-const quickActionButtonClassName =
-	"h-12 w-full min-w-0 flex-col justify-center gap-0.5 px-1.5 text-sm whitespace-normal sm:h-9 sm:w-auto sm:flex-row sm:gap-2 sm:px-3 sm:whitespace-nowrap";
+const quickActionButtonClassName = transactionQuickActionButtonClassName;
 
 function mapDashboardAccounts(accounts: DashboardAccount[]): AccountData[] {
 	return accounts
@@ -70,22 +77,22 @@ export function DashboardQuickActions({
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
 						<Button size="sm" variant="outline" className="w-full gap-2">
-							<RiAddFill className="size-4 text-primary" />
+							<RiAddCircleFill className="size-4 text-primary" />
 							Novo lançamento
 						</Button>
 					</DropdownMenuTrigger>
 					<DropdownMenuContent align="start" className="w-52">
 						<DropdownMenuItem onSelect={() => setIsMobileIncomeOpen(true)}>
-							<RiAddFill className="text-success/80" />
-							Nova receita
+							<RiAddCircleFill className="text-success/80" />
+							{TRANSACTION_QUICK_ACTIONS.income.label}
 						</DropdownMenuItem>
 						<DropdownMenuItem onSelect={() => setIsMobileExpenseOpen(true)}>
-							<RiAddFill className="text-destructive/80" />
-							Nova despesa
+							<RiSubtractLine className="text-destructive/80" />
+							{TRANSACTION_QUICK_ACTIONS.expense.label}
 						</DropdownMenuItem>
 						<DropdownMenuItem onSelect={() => setIsMobileTransferOpen(true)}>
 							<RiExchangeLine className="text-info/80" />
-							Nova transferência
+							{TRANSACTION_QUICK_ACTIONS.transfer.label}
 						</DropdownMenuItem>
 					</DropdownMenuContent>
 				</DropdownMenu>
@@ -98,11 +105,19 @@ export function DashboardQuickActions({
 					trigger={
 						<Button
 							size="sm"
-							variant="outline"
+							variant={TRANSACTION_QUICK_ACTIONS.income.variant}
 							className={quickActionButtonClassName}
 						>
-							<RiAddFill className="size-3.5 shrink-0 text-success/80" />
-							Nova receita
+							<TRANSACTION_QUICK_ACTIONS.income.Icon
+								className={TRANSACTION_QUICK_ACTIONS.income.iconClassName}
+								aria-hidden
+							/>
+							<span className="hidden sm:inline">
+								{TRANSACTION_QUICK_ACTIONS.income.label}
+							</span>
+							<span className="sr-only sm:hidden">
+								{TRANSACTION_QUICK_ACTIONS.income.label}
+							</span>
 						</Button>
 					}
 				/>
@@ -112,11 +127,19 @@ export function DashboardQuickActions({
 					trigger={
 						<Button
 							size="sm"
-							variant="outline"
+							variant={TRANSACTION_QUICK_ACTIONS.expense.variant}
 							className={quickActionButtonClassName}
 						>
-							<RiAddFill className="size-3.5 shrink-0 text-destructive/80" />
-							Nova despesa
+							<TRANSACTION_QUICK_ACTIONS.expense.Icon
+								className={TRANSACTION_QUICK_ACTIONS.expense.iconClassName}
+								aria-hidden
+							/>
+							<span className="hidden sm:inline">
+								{TRANSACTION_QUICK_ACTIONS.expense.label}
+							</span>
+							<span className="sr-only sm:hidden">
+								{TRANSACTION_QUICK_ACTIONS.expense.label}
+							</span>
 						</Button>
 					}
 				/>
@@ -126,11 +149,19 @@ export function DashboardQuickActions({
 					trigger={
 						<Button
 							size="sm"
-							variant="outline"
+							variant={TRANSACTION_QUICK_ACTIONS.transfer.variant}
 							className={quickActionButtonClassName}
 						>
-							<RiExchangeLine className="size-3.5 shrink-0 text-info/80" />
-							Nova transferência
+							<TRANSACTION_QUICK_ACTIONS.transfer.Icon
+								className={TRANSACTION_QUICK_ACTIONS.transfer.iconClassName}
+								aria-hidden
+							/>
+							<span className="hidden sm:inline">
+								{TRANSACTION_QUICK_ACTIONS.transfer.label}
+							</span>
+							<span className="sr-only sm:hidden">
+								{TRANSACTION_QUICK_ACTIONS.transfer.label}
+							</span>
 						</Button>
 					}
 				/>

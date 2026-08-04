@@ -1,9 +1,7 @@
 "use client";
 
-import { RiAddFill, RiExchangeLine } from "@remixicon/react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { TransferDialog } from "@/features/accounts/components/transfer-dialog";
 import type { AccountData } from "@/features/accounts/queries";
 import {
 	convertTransactionToInstallmentAction,
@@ -58,6 +56,7 @@ import {
 } from "../dialogs/split-pair-dialog";
 import { TransactionDetailsDialog } from "../dialogs/transaction-details-dialog";
 import { TransactionDialog } from "../dialogs/transaction-dialog/transaction-dialog";
+import { TransactionsQuickActions } from "../quick-actions/transactions-quick-actions";
 import { TransactionsTable } from "../table/transactions-table";
 import type {
 	AccountCardFilterOption,
@@ -692,69 +691,23 @@ export function TransactionsPage({
 	};
 
 	const createSlot = allowCreate ? (
-		<>
-			<TransactionDialog
-				mode="create"
-				payerOptions={payerOptions}
-				splitPayerOptions={splitPayerOptions}
-				defaultPayerId={defaultPayerId}
-				accountOptions={accountOptions}
-				cardOptions={cardOptions}
-				categoryOptions={categoryOptions}
-				estabelecimentos={estabelecimentos}
-				defaultPeriod={selectedPeriod}
-				defaultAccountId={defaultAccountId}
-				defaultCardId={defaultCardId}
-				defaultPaymentMethod={defaultPaymentMethod}
-				lockCardSelection={lockCardSelection}
-				lockPaymentMethod={lockPaymentMethod}
-				defaultTransactionType="Receita"
-				maxSizeMb={attachmentMaxSizeMb}
-				trigger={
-					<Button className="w-full sm:w-auto">
-						<RiAddFill className="size-4" />
-						Nova Receita
-					</Button>
-				}
-			/>
-			<TransactionDialog
-				mode="create"
-				payerOptions={payerOptions}
-				splitPayerOptions={splitPayerOptions}
-				defaultPayerId={defaultPayerId}
-				accountOptions={accountOptions}
-				cardOptions={cardOptions}
-				categoryOptions={categoryOptions}
-				estabelecimentos={estabelecimentos}
-				defaultPeriod={selectedPeriod}
-				defaultAccountId={defaultAccountId}
-				defaultCardId={defaultCardId}
-				defaultPaymentMethod={defaultPaymentMethod}
-				lockCardSelection={lockCardSelection}
-				lockPaymentMethod={lockPaymentMethod}
-				defaultTransactionType="Despesa"
-				maxSizeMb={attachmentMaxSizeMb}
-				trigger={
-					<Button className="w-full sm:w-auto">
-						<RiAddFill className="size-4" />
-						Nova Despesa
-					</Button>
-				}
-			/>
-			{transferAccounts && transferAccounts.length > 0 ? (
-				<TransferDialog
-					accounts={transferAccounts}
-					currentPeriod={selectedPeriod}
-					fromAccountId={defaultAccountId ?? undefined}
-					trigger={
-						<Button variant="outline" className="w-full sm:w-auto">
-							<RiExchangeLine className="size-4" />
-							Nova transferência
-						</Button>
-					}
-				/>
-			) : null}
-		</>
+		<TransactionsQuickActions
+			payerOptions={payerOptions}
+			splitPayerOptions={splitPayerOptions}
+			defaultPayerId={defaultPayerId}
+			accountOptions={accountOptions}
+			cardOptions={cardOptions}
+			categoryOptions={categoryOptions}
+			estabelecimentos={estabelecimentos}
+			selectedPeriod={selectedPeriod}
+			defaultAccountId={defaultAccountId}
+			defaultCardId={defaultCardId}
+			defaultPaymentMethod={defaultPaymentMethod}
+			lockCardSelection={lockCardSelection}
+			lockPaymentMethod={lockPaymentMethod}
+			attachmentMaxSizeMb={attachmentMaxSizeMb}
+			transferAccounts={transferAccounts}
+		/>
 	) : null;
 
 	return (

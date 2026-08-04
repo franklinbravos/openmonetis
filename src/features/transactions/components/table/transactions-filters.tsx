@@ -5,6 +5,7 @@ import {
 	RiCloseLine,
 	RiExpandUpDownLine,
 	RiFilterLine,
+	RiSearchLine,
 } from "@remixicon/react";
 import {
 	type ReadonlyURLSearchParams,
@@ -17,9 +18,11 @@ import {
 	useCallback,
 	useEffect,
 	useMemo,
+	useRef,
 	useState,
 	useTransition,
 } from "react";
+import { createPortal } from "react-dom";
 import {
 	AMOUNT_MAX_PARAM,
 	AMOUNT_MIN_PARAM,
@@ -83,6 +86,7 @@ import { formatCurrency } from "@/shared/utils/currency";
 import { formatDateOnly } from "@/shared/utils/date";
 import { slugify } from "@/shared/utils/string";
 import { cn } from "@/shared/utils/ui";
+import { getMonthToolbarExpandSlotId, getMonthToolbarEndSlotId, monthToolbarIconButtonClassName, monthToolbarIconClassName } from "@/features/transactions/lib/month-toolbar";
 import {
 	AccountCardSelectContent,
 	CategorySelectContent,
@@ -406,8 +410,9 @@ interface TransactionsFiltersProps {
 	accountCardOptions: AccountCardFilterOption[];
 	className?: string;
 	exportButton?: ReactNode;
+	importButton?: ReactNode;
 	hideAdvancedFilters?: boolean;
-	hideMobileExport?: boolean;
+	monthToolbarSlotId?: string;
 }
 
 export function TransactionsFilters({
@@ -416,8 +421,9 @@ export function TransactionsFilters({
 	accountCardOptions,
 	className,
 	exportButton,
+	importButton,
 	hideAdvancedFilters = false,
-	hideMobileExport = false,
+	monthToolbarSlotId,
 }: TransactionsFiltersProps) {
 	const router = useRouter();
 	const pathname = usePathname();
@@ -601,6 +607,65 @@ export function TransactionsFilters({
 	);
 
 	const [drawerOpen, setDrawerOpen] = useState(false);
+	const [searchExpanded, setSearchExpanded] = useState(false);
+	const [monthToolbarSlot, setMonthToolbarSlot] = useState<HTMLElement | null>(
+		null,
+	);
+	const [monthToolbarExpandSlot, setMonthToolbarExpandSlot] =
+		useState<HTMLElement | null>(null);
+	const [monthToolbarEndSlot, setMonthToolbarEndSlot] =
+		useState<HTMLElement | null>(null);
+	const searchInputRef = useRef<HTMLInputElement>(null);
+	const useMonthToolbar = Boolean(monthToolbarSlotId);
+	const monthToolbarExpandSlotId = monthToolbarSlotId
+		? getMonthToolbarExpandSlotId(monthToolbarSlotId)
+		: null;
+	const monthToolbarEndSlotId = monthToolbarSlotId
+		? getMonthToolbarEndSlotId(monthToolbarSlotId)
+		: null;
+
+	useEffect(() => {
+		if (!monthToolbarSlotId) {
+			setMonthToolbarSlot(null);
+			return;
+		}
+
+		setMonthToolbarSlot(document.getElementById(monthToolbarSlotId));
+	}, [monthToolbarSlotId]);
+
+	useEffect(() => {
+		if (!monthToolbarExpandSlotId) {
+			setMonthToolbarExpandSlot(null);
+			return;
+		}
+
+		setMonthToolbarExpandSlot(
+			document.getElementById(monthToolbarExpandSlotId),
+		);
+	}, [monthToolbarExpandSlotId]);
+
+	useEffect(() => {
+		if (!monthToolbarEndSlotId) {
+			setMonthToolbarEndSlot(null);
+			return;
+		}
+
+		setMonthToolbarEndSlot(document.getElementById(monthToolbarEndSlotId));
+	}, [monthToolbarEndSlotId]);
+
+	const hasSearchQuery =
+		searchValue.trim().length > 0 || currentSearchParam.trim().length > 0;
+
+	useEffect(() => {
+		if (hasSearchQuery && useMonthToolbar) {
+			setSearchExpanded(true);
+		}
+	}, [hasSearchQuery, useMonthToolbar]);
+
+	useEffect(() => {
+		if (!searchExpanded) return;
+		searchInputRef.current?.focus();
+	}, [searchExpanded]);
 	const hasDateRangeFilter =
 		Boolean(searchParams.get(DATE_START_PARAM)) ||
 		Boolean(searchParams.get(DATE_END_PARAM));
@@ -775,35 +840,185 @@ export function TransactionsFilters({
 		});
 	}
 
+	const searchField = (
+		<div
+			className={cn(
+				"relative min-w-0 flex-1 md:w-[250px]",
+				useMonthToolbar && "hidden md:block",
+			)}
+		>
+			<Input
+				value={searchValue}
+				onChange={(event) => setSearchValue(event.target.value)}
+				placeholder="Buscar"
+				aria-label="Buscar lançamentos"
+				className={cn(
+					"w-full border bg-white text-sm shadow-xs dark:bg-card",
+					searchValue.length > 0 && "pr-8",
+				)}
+			/>
+			{searchValue.length > 0 ? (
+				<button
+					type="button"
+					onClick={() => setSearchValue("")}
+					aria-label="Limpar busca"
+					className="absolute top-1/2 right-2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				>
+					<RiCloseLine className="size-4" aria-hidden />
+				</button>
+			) : null}
+		</div>
+	);
+
+	const filterTriggerButton = (
+		<Button
+			variant="outline"
+			className="relative shrink-0 border-dashed bg-transparent text-sm"
+			aria-label={isPending ? "Aplicando filtros" : "Abrir filtros"}
+		>
+			{isPending ? (
+				<Spinner className="size-4" role="presentation" aria-hidden />
+			) : (
+				<RiFilterLine className="size-4" aria-hidden />
+			)}
+			{isPending ? "Aplicando..." : "Filtros"}
+			{hasActiveFilters ? (
+				<span
+					className="absolute -top-1 -right-1 size-3 rounded-full bg-primary"
+					aria-hidden
+				/>
+			) : null}
+		</Button>
+	);
+
+	const monthSearchExpandBar =
+		useMonthToolbar && monthToolbarExpandSlot && searchExpanded
+			? createPortal(
+					<div className="w-full border-t border-border/60 pt-2 animate-in slide-in-from-top-2 fade-in duration-200">
+						<div className="relative">
+							<Input
+								ref={searchInputRef}
+								value={searchValue}
+								onChange={(event) => setSearchValue(event.target.value)}
+								placeholder="Buscar lançamentos"
+								aria-label="Buscar lançamentos"
+								className={cn(
+									"w-full border bg-white text-sm shadow-xs dark:bg-card",
+									searchValue.length > 0 ? "pr-16" : "pr-9",
+								)}
+							/>
+							{searchValue.length > 0 ? (
+								<button
+									type="button"
+									onClick={() => setSearchValue("")}
+									aria-label="Limpar busca"
+									className="absolute top-1/2 right-9 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								>
+									<RiCloseLine className="size-4" aria-hidden />
+								</button>
+							) : null}
+							<button
+								type="button"
+								onClick={() => setSearchExpanded(false)}
+								aria-label="Fechar busca"
+								className="absolute top-1/2 right-2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							>
+								<RiCloseLine className="size-4" aria-hidden />
+							</button>
+						</div>
+					</div>,
+					monthToolbarExpandSlot,
+				)
+			: null;
+
+	const monthToolbarEnd =
+		useMonthToolbar &&
+		monthToolbarEndSlot &&
+		(exportButton || importButton)
+			? createPortal(
+					<div className="flex items-center gap-1">
+						{importButton}
+						{exportButton}
+					</div>,
+					monthToolbarEndSlot,
+				)
+			: null;
+
+	const monthToolbar =
+		useMonthToolbar && monthToolbarSlot
+			? createPortal(
+					<>
+						<Button
+							type="button"
+							variant="outline"
+							size="icon-sm"
+							className={cn(
+								monthToolbarIconButtonClassName,
+								searchExpanded && "bg-accent text-accent-foreground",
+							)}
+							aria-label="Buscar lançamentos"
+							aria-expanded={searchExpanded}
+							onClick={() => setSearchExpanded((prev) => !prev)}
+						>
+							<RiSearchLine
+								className={monthToolbarIconClassName}
+								aria-hidden
+							/>
+							{hasSearchQuery ? (
+								<span
+									className="absolute top-1 right-1 size-2 rounded-full bg-primary"
+									aria-hidden
+								/>
+							) : null}
+						</Button>
+
+						{!hideAdvancedFilters ? (
+							<Button
+								type="button"
+								variant="outline"
+								size="icon-sm"
+								className={monthToolbarIconButtonClassName}
+								aria-label={isPending ? "Aplicando filtros" : "Abrir filtros"}
+								onClick={() => setDrawerOpen(true)}
+							>
+								{isPending ? (
+									<Spinner
+										className={monthToolbarIconClassName}
+										role="presentation"
+										aria-hidden
+									/>
+								) : (
+									<RiFilterLine
+										className={monthToolbarIconClassName}
+										aria-hidden
+									/>
+								)}
+								{hasActiveFilters ? (
+									<span
+										className="absolute top-1 right-1 size-2 rounded-full bg-primary"
+										aria-hidden
+									/>
+								) : null}
+							</Button>
+						) : null}
+					</>,
+					monthToolbarSlot,
+				)
+			: null;
+
 	return (
 		<div aria-busy={isPending} className={cn("flex flex-col gap-2", className)}>
-			{exportButton && !hideMobileExport ? (
-				<div className="flex justify-end md:hidden">{exportButton}</div>
-			) : null}
+			{monthSearchExpandBar}
+			{monthToolbarEnd}
+			{monthToolbar}
 
-			<div className="flex w-full items-center gap-2 md:flex-wrap md:justify-end">
-				<div className="relative min-w-0 flex-1 md:w-[250px]">
-					<Input
-						value={searchValue}
-						onChange={(event) => setSearchValue(event.target.value)}
-						placeholder="Buscar"
-						aria-label="Buscar lançamentos"
-						className={cn(
-							"w-full border bg-background text-sm shadow-xs",
-							searchValue.length > 0 && "pr-8",
-						)}
-					/>
-					{searchValue.length > 0 ? (
-						<button
-							type="button"
-							onClick={() => setSearchValue("")}
-							aria-label="Limpar busca"
-							className="absolute top-1/2 right-2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-						>
-							<RiCloseLine className="size-4" aria-hidden />
-						</button>
-					) : null}
-				</div>
+			<div
+				className={cn(
+					"flex w-full items-center gap-2 md:flex-wrap md:justify-end",
+					useMonthToolbar && "hidden md:flex",
+				)}
+			>
+				{searchField}
 
 				{!hideAdvancedFilters && (
 					<HoverCard openDelay={200} closeDelay={200}>
@@ -813,32 +1028,7 @@ export function TransactionsFilters({
 							onOpenChange={setDrawerOpen}
 						>
 							<HoverCardTrigger asChild>
-								<DrawerTrigger asChild>
-									<Button
-										variant="outline"
-										className="relative shrink-0 border-dashed bg-transparent text-sm"
-										aria-label={
-											isPending ? "Aplicando filtros" : "Abrir filtros"
-										}
-									>
-										{isPending ? (
-											<Spinner
-												className="size-4"
-												role="presentation"
-												aria-hidden
-											/>
-										) : (
-											<RiFilterLine className="size-4" aria-hidden />
-										)}
-										{isPending ? "Aplicando..." : "Filtros"}
-										{hasActiveFilters && (
-											<span
-												className="absolute -top-1 -right-1 size-3 rounded-full bg-primary"
-												aria-hidden
-											/>
-										)}
-									</Button>
-								</DrawerTrigger>
+								<DrawerTrigger asChild>{filterTriggerButton}</DrawerTrigger>
 							</HoverCardTrigger>
 							{activeFilterChips.length > 0 ? (
 								<HoverCardContent
@@ -1203,8 +1393,11 @@ export function TransactionsFilters({
 					</HoverCard>
 				)}
 
-				{exportButton ? (
-					<div className="hidden shrink-0 md:block">{exportButton}</div>
+				{importButton || exportButton ? (
+					<div className="hidden shrink-0 items-center gap-1 md:flex">
+						{importButton}
+						{exportButton}
+					</div>
 				) : null}
 			</div>
 		</div>

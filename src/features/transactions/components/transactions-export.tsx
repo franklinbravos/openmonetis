@@ -24,6 +24,11 @@ import {
 	loadExportLogoDataUrl,
 } from "@/shared/utils/export-branding";
 import { displayPeriod } from "@/shared/utils/period";
+import { cn } from "@/shared/utils/ui";
+import {
+	monthToolbarIconButtonClassName,
+	monthToolbarIconClassName,
+} from "@/features/transactions/lib/month-toolbar";
 import type { TransactionItem } from "./types";
 
 interface TransactionsExportProps {
@@ -369,12 +374,24 @@ export function TransactionsExport({
 			<DropdownMenuTrigger asChild>
 				<Button
 					variant="outline"
-					className="text-sm border-dashed"
+					className={cn(
+						monthToolbarIconButtonClassName,
+						"gap-0 px-0 md:h-9 md:w-auto md:gap-2 md:border-dashed md:px-4 md:text-sm",
+					)}
 					disabled={isExporting || lancamentos.length === 0}
 					aria-label="Exportar lançamentos"
 				>
-					<RiDownloadLine className="size-4" />
-					{isExporting ? "Exportando..." : "Exportar"}
+					<RiDownloadLine
+						className={cn(
+							monthToolbarIconClassName,
+							"md:size-4 md:text-foreground",
+						)}
+						aria-hidden
+					/>
+					<span className="hidden md:inline">
+						{isExporting ? "Exportando..." : "Exportar"}
+					</span>
+					<span className="sr-only md:hidden">Exportar lançamentos</span>
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end">

@@ -12,6 +12,7 @@ import {
 } from "@/features/invoices/queries";
 import { fetchUserPreferences } from "@/features/settings/queries";
 import { TransactionsPage as LancamentosSection } from "@/features/transactions/components/page/transactions-page";
+import { TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID } from "@/features/transactions/lib/month-toolbar";
 import {
 	buildOptionSets,
 	buildSluggedFilters,
@@ -149,7 +150,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 
 	return (
 		<main className="flex flex-col gap-6">
-			<MonthNavigation />
+			<MonthNavigation toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID} />
 
 			<section className="flex flex-col gap-4">
 				<InvoiceSummaryCard

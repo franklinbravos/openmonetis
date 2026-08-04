@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { RiCheckLine } from "@remixicon/react";
 import { cn } from "@/shared/utils/ui";
 
@@ -13,21 +14,27 @@ const STEP_ORDER: Step[] = ["upload", "review", "done"];
 
 interface ImportStepsProps {
 	current: Step;
+	className?: string;
 }
 
-export function ImportSteps({ current }: ImportStepsProps) {
+export function ImportSteps({ current, className }: ImportStepsProps) {
 	const currentIndex = STEP_ORDER.indexOf(current);
 
 	return (
-		<div className="flex items-center gap-0">
+		<div
+			className={cn(
+				"flex w-full items-center justify-between gap-1 sm:w-auto sm:justify-start sm:gap-0",
+				className,
+			)}
+		>
 			{STEPS.map((step, index) => {
 				const stepIndex = STEP_ORDER.indexOf(step.key);
 				const isCompleted = stepIndex < currentIndex;
 				const isActive = stepIndex === currentIndex;
 
 				return (
-					<div key={step.key} className="flex items-center">
-						<div className="flex items-center gap-2">
+					<Fragment key={step.key}>
+						<div className="flex shrink-0 flex-col items-center gap-1 sm:flex-row sm:gap-2">
 							<div
 								className={cn(
 									"flex size-6 items-center justify-center rounded-full border text-xs font-medium transition-colors",
@@ -47,7 +54,7 @@ export function ImportSteps({ current }: ImportStepsProps) {
 							</div>
 							<span
 								className={cn(
-									"text-sm",
+									"text-xs sm:text-sm",
 									isActive && "font-medium text-foreground",
 									!isActive && "text-muted-foreground",
 								)}
@@ -56,15 +63,15 @@ export function ImportSteps({ current }: ImportStepsProps) {
 							</span>
 						</div>
 
-						{index < STEPS.length - 1 && (
+						{index < STEPS.length - 1 ? (
 							<div
 								className={cn(
-									"mx-3 h-px w-10 transition-colors",
+									"mx-1 h-px min-w-2 flex-1 transition-colors sm:mx-3 sm:w-10 sm:flex-none",
 									stepIndex < currentIndex ? "bg-primary" : "bg-border",
 								)}
 							/>
-						)}
-					</div>
+						) : null}
+					</Fragment>
 				);
 			})}
 		</div>
