@@ -171,8 +171,8 @@ export function ReconciliationPage({
 				<CardContent className="space-y-4">
 					{canUpload ? (
 						<UploadZone
-							onParsed={(statement, fileName) => {
-								handleParsed(statement, fileName);
+							onParsed={(statement, file) => {
+								handleParsed(statement, file.name);
 							}}
 						/>
 					) : (

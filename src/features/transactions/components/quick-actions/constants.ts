@@ -1,8 +1,8 @@
 import {
+	type RemixiconComponentType,
 	RiAddCircleFill,
 	RiExchangeLine,
 	RiSubtractLine,
-	type RemixiconComponentType,
 } from "@remixicon/react";
 
 export type TransactionQuickActionKind = "income" | "expense" | "transfer";

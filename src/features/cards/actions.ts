@@ -14,11 +14,24 @@ import { loadLogoOptions } from "@/shared/lib/logo/options";
 import {
 	dayOfMonthSchema,
 	noteSchema,
-	requiredDecimalSchema,
 	uuidSchema,
 } from "@/shared/lib/schemas/common";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 import { normalizeFilePath } from "@/shared/utils/string";
+import {
+	CARD_IMPORT_PDF_PASSWORD_RULES,
+	type CardImportPdfPasswordRule,
+	validateCardImportPdfPasswordInput,
+} from "@/shared/lib/cards/import-pdf-password";
+import { encryptSecret } from "@/shared/lib/ai/secret-encryption";
+
+const importPdfPasswordRuleSchema = z.enum([
+	CARD_IMPORT_PDF_PASSWORD_RULES.none,
+	CARD_IMPORT_PDF_PASSWORD_RULES.fixed,
+	CARD_IMPORT_PDF_PASSWORD_RULES.cpf_first_6,
+	CARD_IMPORT_PDF_PASSWORD_RULES.cnpj_first_6,
+	CARD_IMPORT_PDF_PASSWORD_RULES.cpf_digits,
+]);
 
 const cardBaseSchema = z.object({
 	name: z
@@ -36,12 +49,18 @@ const cardBaseSchema = z.object({
 	closingDay: dayOfMonthSchema,
 	dueDay: dayOfMonthSchema,
 	note: noteSchema,
-	limit: requiredDecimalSchema("limite"),
+	limit: z
+		.number({ message: "Limite inválido." })
+		.min(0, "Limite inválido."),
 	logo: z
 		.string({ message: "Selecione um logo." })
 		.trim()
 		.min(1, "Selecione um logo."),
 	accountId: uuidSchema("FinancialAccount"),
+	importPdfPasswordRule: importPdfPasswordRuleSchema.default(
+		CARD_IMPORT_PDF_PASSWORD_RULES.none,
+	),
+	importPdfPasswordSecret: z.string().nullable().optional(),
 });
 
 const createCardSchema = cardBaseSchema;
@@ -78,6 +97,45 @@ async function assertAccountOwnership(userId: string, accountId: string) {
 	}
 }
 
+function resolveImportPdfPasswordPersistence(
+	input: {
+		importPdfPasswordRule: CardImportPdfPasswordRule;
+		importPdfPasswordSecret?: string | null;
+	},
+	existingSecret: string | null,
+): { importPdfPasswordRule: string | null; importPdfPasswordSecret: string | null } {
+	const hasStoredSecret = Boolean(existingSecret);
+	const validation = validateCardImportPdfPasswordInput(
+		input.importPdfPasswordRule,
+		input.importPdfPasswordSecret ?? "",
+		hasStoredSecret,
+	);
+
+	if (!validation.success) {
+		throw new Error(validation.error);
+	}
+
+	if (input.importPdfPasswordRule === CARD_IMPORT_PDF_PASSWORD_RULES.none) {
+		return {
+			importPdfPasswordRule: null,
+			importPdfPasswordSecret: null,
+		};
+	}
+
+	const secretInput = input.importPdfPasswordSecret?.trim() ?? "";
+	if (!secretInput) {
+		return {
+			importPdfPasswordRule: input.importPdfPasswordRule,
+			importPdfPasswordSecret: existingSecret,
+		};
+	}
+
+	return {
+		importPdfPasswordRule: input.importPdfPasswordRule,
+		importPdfPasswordSecret: encryptSecret(secretInput),
+	};
+}
+
 export async function createCardAction(
 	input: CardCreateInput,
 ): Promise<ActionResult<CardCreateResultData>> {
@@ -88,6 +146,13 @@ export async function createCardAction(
 		await assertAccountOwnership(user.id, data.accountId);
 
 		const logoFile = normalizeFilePath(data.logo);
+		const importPdfPassword = resolveImportPdfPasswordPersistence(
+			{
+				importPdfPasswordRule: data.importPdfPasswordRule,
+				importPdfPasswordSecret: data.importPdfPasswordSecret,
+			},
+			null,
+		);
 
 		const [created] = await db
 			.insert(cards)
@@ -102,6 +167,8 @@ export async function createCardAction(
 				logo: logoFile,
 				accountId: data.accountId,
 				userId: user.id,
+				importPdfPasswordRule: importPdfPassword.importPdfPasswordRule,
+				importPdfPasswordSecret: importPdfPassword.importPdfPasswordSecret,
 			})
 			.returning({
 				id: cards.id,
@@ -172,6 +239,28 @@ export async function updateCardAction(
 
 		const logoFile = normalizeFilePath(data.logo);
 
+		const existingCard = await db.query.cards.findFirst({
+			columns: {
+				importPdfPasswordSecret: true,
+			},
+			where: and(eq(cards.id, data.id), eq(cards.userId, user.id)),
+		});
+
+		if (!existingCard) {
+			return {
+				success: false,
+				error: "Cartão não encontrado.",
+			};
+		}
+
+		const importPdfPassword = resolveImportPdfPasswordPersistence(
+			{
+				importPdfPasswordRule: data.importPdfPasswordRule,
+				importPdfPasswordSecret: data.importPdfPasswordSecret,
+			},
+			existingCard.importPdfPasswordSecret,
+		);
+
 		const [updated] = await db
 			.update(cards)
 			.set({
@@ -184,6 +273,8 @@ export async function updateCardAction(
 				limit: formatDecimalForDbRequired(data.limit),
 				logo: logoFile,
 				accountId: data.accountId,
+				importPdfPasswordRule: importPdfPassword.importPdfPasswordRule,
+				importPdfPasswordSecret: importPdfPassword.importPdfPasswordSecret,
 			})
 			.where(and(eq(cards.id, data.id), eq(cards.userId, user.id)))
 			.returning();

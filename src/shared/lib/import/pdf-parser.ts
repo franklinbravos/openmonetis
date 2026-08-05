@@ -1,0 +1,432 @@
+import {
+	buildPeriodFromTransactions,
+	makeSyntheticExternalId,
+	parseBrazilianAmount,
+	parsePortugueseAbbrevDotDate,
+	parsePortugueseLongDate,
+	parsePortugueseShortDate,
+	parseSlashDateDMY,
+} from "./helpers";
+import type { ImportedTransaction, ImportStatement, InvoiceImportMetadata } from "./types";
+import { derivePeriodFromDate } from "@/shared/utils/period";
+import {
+	openPdfDocumentWithPassword,
+} from "./pdf-password";
+
+async function openPdfDocument(
+	buffer: ArrayBuffer,
+	password?: string,
+	extraCandidates: string[] = [],
+) {
+	return openPdfDocumentWithPassword(buffer, password, extraCandidates);
+}
+
+async function extractPdfText(
+	buffer: ArrayBuffer,
+	password?: string,
+	extraCandidates: string[] = [],
+): Promise<string> {
+	const pdf = await openPdfDocument(buffer, password, extraCandidates);
+	const pages: string[] = [];
+
+	for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+		const page = await pdf.getPage(pageNumber);
+		const content = await page.getTextContent();
+		pages.push(
+			content.items.map((item) => ("str" in item ? item.str : "")).join(" "),
+		);
+	}
+
+	return pages.join("\n");
+}
+
+function parseInterBankPdf(text: string): ImportStatement {
+	if (!/Período:/i.test(text) && !/Saldo por transação/i.test(text)) {
+		throw new Error("PDF de extrato do Banco Inter não reconhecido.");
+	}
+
+	const accountMatch = text.match(/Conta:\s*([\d-]+)/i);
+	const accountNumber = accountMatch?.[1]?.replace(/\D/g, "") ?? null;
+
+	const periodMatch = text.match(
+		/Período:\s*(\d{1,2}\/\d{1,2}\/\d{4})\s*a\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+	);
+	const period =
+		periodMatch?.[1] && periodMatch[2]
+			? {
+					from: parseSlashDateDMY(periodMatch[1]),
+					to: parseSlashDateDMY(periodMatch[2]),
+				}
+			: null;
+
+	const transactionsStart = text.search(/Saldo por transação/i);
+	const footerStart = text.search(/Fale com a gente/i);
+	const section = text.slice(
+		transactionsStart >= 0 ? transactionsStart : 0,
+		footerStart >= 0 ? footerStart : undefined,
+	);
+
+	const transactions: ImportedTransaction[] = [];
+
+	const dayHeaderRe =
+		/(\d{1,2}) de ([A-Za-zçãéôÇÃÉÔ]+) de (\d{4})\s+Saldo do dia:\s*-?R\$\s*[\d.]+,\d{2}/gi;
+	const txnRe = /(.+?)\s+(-?R\$\s*[\d.]+,\d{2})\s+-?R\$\s*[\d.]+,\d{2}/g;
+
+	const dayMatches = [...section.matchAll(dayHeaderRe)];
+
+	for (let index = 0; index < dayMatches.length; index++) {
+		const dayMatch = dayMatches[index];
+		const date = parsePortugueseLongDate(dayMatch[1], dayMatch[2], dayMatch[3]);
+		if (!date) continue;
+
+		const blockStart = (dayMatch.index ?? 0) + dayMatch[0].length;
+		const blockEnd = dayMatches[index + 1]?.index ?? section.length;
+		const block = section.slice(blockStart, blockEnd);
+
+		for (const txnMatch of block.matchAll(txnRe)) {
+			const description = txnMatch[1].trim();
+			if (!description) continue;
+
+			const amountSigned = parseBrazilianAmount(txnMatch[2]);
+			if (amountSigned === 0) continue;
+
+			transactions.push({
+				externalId: makeSyntheticExternalId([
+					date,
+					String(Math.abs(amountSigned)),
+					description,
+				]),
+				date,
+				amount: Math.abs(amountSigned),
+				description,
+				transactionType: amountSigned > 0 ? "income" : "expense",
+			});
+		}
+	}
+
+	if (transactions.length === 0) {
+		throw new Error("Nenhuma transação encontrada no PDF.");
+	}
+
+	const resolvedPeriod =
+		period?.from && period.to
+			? { from: period.from, to: period.to }
+			: buildPeriodFromTransactions(transactions);
+
+	return {
+		source: "Banco Inter",
+		accountNumber,
+		period: resolvedPeriod,
+		isCreditCard: false,
+		transactions,
+	};
+}
+
+function isInterCardInvoice(text: string): boolean {
+	return (
+		/Despesas da fatura|Resumo da fatura/i.test(text) &&
+		/CARTÃO\s+\d{4}\*{4}\d{4}/i.test(text)
+	);
+}
+
+const INTER_CARD_PAYMENT_RE =
+	/P\s*AGTO\s*DEBITO|PAGAMENTO\s+(?:EM\s+)?DEBITO|DEBITO\s+AUTOMATICO/i;
+
+function isInterCardPaymentForCurrentInvoice(
+	paymentDate: string,
+	dueDate: string,
+): boolean {
+	const payment = new Date(`${paymentDate}T12:00:00`);
+	const due = new Date(`${dueDate}T12:00:00`);
+
+	if (Number.isNaN(payment.getTime()) || Number.isNaN(due.getTime())) {
+		return false;
+	}
+
+	// Na fatura Inter, a linha "P AGTO DEBITO AUTOMATICO" costuma registrar o
+	// pagamento da fatura anterior (data no mês anterior ao vencimento atual).
+	// Só tratamos como pagamento desta fatura quando a data é do mesmo mês do
+	// vencimento ou posterior a ele.
+	return (
+		payment >= due ||
+		(payment.getFullYear() === due.getFullYear() &&
+			payment.getMonth() === due.getMonth())
+	);
+}
+
+function buildInvoiceMetadataFromDueDate(
+	dueDate: string | null,
+	options: {
+		isPaid?: boolean;
+		paymentDate?: string | null;
+		totalAmount?: number | null;
+	},
+): InvoiceImportMetadata | null {
+	if (!dueDate) return null;
+
+	return {
+		period: derivePeriodFromDate(dueDate),
+		dueDate,
+		isPaid: options.isPaid ?? false,
+		paymentDate: options.paymentDate ?? null,
+		totalAmount: options.totalAmount ?? null,
+	};
+}
+
+function parseInterCardInvoiceMetadata(
+	text: string,
+	transactions: ImportedTransaction[],
+): InvoiceImportMetadata | null {
+	const dueDateMatch = text.match(
+		/Data de Vencimento\s+(\d{1,2}\/\d{1,2}\/\d{4})/i,
+	);
+	const dueDate = dueDateMatch
+		? parseSlashDateDMY(dueDateMatch[1])
+		: null;
+
+	const paymentMatch = text.match(
+		/(\d{1,2}) de ([a-zç.]+)\s+(\d{4})\s+[^+]{0,120}P\s*AGTO\s*DEBITO[\s\S]*?\+\s*R\$\s*([\d.]+,\d{2})/i,
+	);
+	const parsedPaymentDate = paymentMatch
+		? parsePortugueseAbbrevDotDate(
+				paymentMatch[1],
+				paymentMatch[2],
+				paymentMatch[3],
+			)
+		: null;
+	const isCurrentInvoicePayment =
+		parsedPaymentDate !== null &&
+		dueDate !== null &&
+		isInterCardPaymentForCurrentInvoice(parsedPaymentDate, dueDate);
+	const paymentDate = isCurrentInvoicePayment ? parsedPaymentDate : null;
+	const paymentAmount = paymentMatch
+		? parseBrazilianAmount(paymentMatch[4])
+		: null;
+
+	const totalMatch = text.match(
+		/Total(?:\s+da\s+fatura)?\s+[^R]*R\$\s*([\d.]+,\d{2})/i,
+	);
+	const parsedTotal = totalMatch ? parseBrazilianAmount(totalMatch[1]) : null;
+	const transactionTotal = transactions.reduce(
+		(total, transaction) => total + transaction.amount,
+		0,
+	);
+
+	const isPaid =
+		isCurrentInvoicePayment ||
+		/fatura\s+paga|pagamento\s+efetuado|pago em/i.test(text);
+
+	return buildInvoiceMetadataFromDueDate(dueDate, {
+		isPaid,
+		paymentDate,
+		totalAmount: parsedTotal ?? (transactionTotal > 0 ? transactionTotal : null),
+	});
+}
+
+function parseNubankInvoiceMetadata(
+	text: string,
+	transactions: ImportedTransaction[],
+): InvoiceImportMetadata | null {
+	const dueMatch = text.match(
+		/Vencimento\s+(\d{2})\s+([A-Z]{3})\s+(\d{4})/i,
+	);
+	const dueDate = dueMatch
+		? parsePortugueseShortDate(
+				dueMatch[1],
+				dueMatch[2],
+				Number.parseInt(dueMatch[3], 10),
+			)
+		: null;
+
+	const totalMatch = text.match(/Total a pagar\s+R\$\s*([\d.]+,\d{2})/i);
+	const parsedTotal = totalMatch ? parseBrazilianAmount(totalMatch[1]) : null;
+	const transactionTotal = transactions.reduce(
+		(total, transaction) => total + transaction.amount,
+		0,
+	);
+
+	const paymentSection = text.slice(text.search(/Pagamentos e Financiamentos/i));
+	const paymentMatch = paymentSection.match(
+		/(\d{2}\s+[A-Z]{3})\s+.+?\s+R\$\s*([\d.]+,\d{2})/,
+	);
+	const paymentDate =
+		dueDate && paymentMatch
+			? parsePortugueseShortDate(
+					paymentMatch[1].split(/\s+/)[0],
+					paymentMatch[1].split(/\s+/)[1],
+					Number.parseInt(dueDate.slice(0, 4), 10),
+				)
+			: null;
+
+	const isPaid =
+		Boolean(paymentMatch) ||
+		/Total a pagar\s+R\$\s*0,00/i.test(text) ||
+		/Pagamento recebido/i.test(text);
+
+	return buildInvoiceMetadataFromDueDate(dueDate, {
+		isPaid,
+		paymentDate,
+		totalAmount: parsedTotal ?? (transactionTotal > 0 ? transactionTotal : null),
+	});
+}
+
+function parseInterCardPdf(text: string): ImportStatement {
+	if (!isInterCardInvoice(text)) {
+		throw new Error("Fatura de cartão do Banco Inter não reconhecida.");
+	}
+
+	const cardMatch = text.match(/(\d{4})\*{4}(\d{4})/);
+	const accountNumber = cardMatch ? `${cardMatch[1]}****${cardMatch[2]}` : null;
+
+	const sectionStart = text.search(/Despesas da fatura/i);
+	const afterStart = sectionStart >= 0 ? text.slice(sectionStart) : text;
+	const endRel = afterStart.search(/Próxima fatura/i);
+	const section =
+		endRel >= 0 ? afterStart.slice(0, endRel) : afterStart.slice(0, 2500);
+
+	const txnRe =
+		/(\d{1,2}) de ([a-zç.]+)\s+(\d{4})\s+(.+?)\s+-\s+(\+\s*)?R\$\s*([\d.]+,\d{2})/gi;
+
+	const transactions: ImportedTransaction[] = [];
+
+	for (const match of section.matchAll(txnRe)) {
+		if (match[5]) continue;
+
+		const date = parsePortugueseAbbrevDotDate(match[1], match[2], match[3]);
+		if (!date) continue;
+
+		const description = match[4].replace(/\s+/g, " ").trim();
+		if (
+			!description ||
+			INTER_CARD_PAYMENT_RE.test(description) ||
+			/Total CARTÃO/i.test(description)
+		) {
+			continue;
+		}
+
+		const amount = parseBrazilianAmount(match[6]);
+		if (amount <= 0) continue;
+
+		transactions.push({
+			externalId: makeSyntheticExternalId([date, description, String(amount)]),
+			date,
+			amount,
+			description,
+			transactionType: "expense",
+		});
+	}
+
+	if (transactions.length === 0) {
+		throw new Error("Nenhuma transação encontrada na fatura do cartão Inter.");
+	}
+
+	return {
+		source: "Banco Inter",
+		accountNumber,
+		period: buildPeriodFromTransactions(transactions),
+		isCreditCard: true,
+		transactions,
+		invoice: parseInterCardInvoiceMetadata(text, transactions),
+	};
+}
+
+function parseNubankPdf(text: string): ImportStatement {
+	if (!/Nu Pagamentos|Nubank/i.test(text) || !/TRANSAÇÕES/i.test(text)) {
+		throw new Error("Fatura Nubank não reconhecida.");
+	}
+
+	const yearMatch = text.match(/FATURA\s+\d{2}\s+[A-Z]{3}\s+(\d{4})/i);
+	const invoiceYear = yearMatch
+		? Number.parseInt(yearMatch[1], 10)
+		: new Date().getFullYear();
+
+	const periodMatch = text.match(
+		/TRANSAÇÕES\s+DE\s+(\d{2}\s+[A-Z]{3})\s+A\s+(\d{2}\s+[A-Z]{3})/i,
+	);
+	let period: { from: string; to: string } | null = null;
+	if (periodMatch) {
+		const [fromDay, fromMonth] = periodMatch[1].split(/\s+/);
+		const [toDay, toMonth] = periodMatch[2].split(/\s+/);
+		const from = parsePortugueseShortDate(fromDay, fromMonth, invoiceYear);
+		const to = parsePortugueseShortDate(toDay, toMonth, invoiceYear);
+		if (from && to) period = { from, to };
+	}
+
+	const transactionsStart = text.search(/TRANSAÇÕES\s+DE/i);
+	const paymentsStart = text.search(/Pagamentos e Financiamentos/i);
+	const transactionsSection =
+		paymentsStart > transactionsStart
+			? text.slice(transactionsStart, paymentsStart)
+			: text.slice(transactionsStart);
+
+	const txnRe =
+		/(\d{2}\s+[A-Z]{3})\s+(?:••••\s+\d{4}\s+)?(.+?)\s+R\$\s*([\d.]+,\d{2})/g;
+
+	const transactions: ImportedTransaction[] = [];
+
+	for (const match of transactionsSection.matchAll(txnRe)) {
+		const [day, monthAbbr] = match[1].split(/\s+/);
+		const date = parsePortugueseShortDate(day, monthAbbr, invoiceYear);
+		if (!date) continue;
+
+		const description = match[2].trim();
+		if (
+			!description ||
+			/Franklin/i.test(description) ||
+			/TRANSAÇÕES/i.test(description)
+		) {
+			continue;
+		}
+
+		const amount = parseBrazilianAmount(match[3]);
+		if (amount <= 0) continue;
+
+		transactions.push({
+			externalId: makeSyntheticExternalId([date, description, String(amount)]),
+			date,
+			amount,
+			description,
+			transactionType: "expense",
+		});
+	}
+
+	if (transactions.length === 0) {
+		throw new Error("Nenhuma transação encontrada na fatura Nubank.");
+	}
+
+	return {
+		source: "Nubank",
+		accountNumber: null,
+		period: period ?? buildPeriodFromTransactions(transactions),
+		isCreditCard: true,
+		transactions,
+		invoice: parseNubankInvoiceMetadata(text, transactions),
+	};
+}
+
+export async function parsePdf(
+	buffer: ArrayBuffer,
+	password?: string,
+	extraCandidates: string[] = [],
+): Promise<ImportStatement> {
+	const text = await extractPdfText(buffer, password, extraCandidates);
+	return parsePdfText(text);
+}
+
+export function parsePdfText(text: string): ImportStatement {
+	if (/Nu Pagamentos|Nubank/i.test(text) && /TRANSAÇÕES/i.test(text)) {
+		return parseNubankPdf(text);
+	}
+
+	if (isInterCardInvoice(text)) {
+		return parseInterCardPdf(text);
+	}
+
+	if (/Período:|Saldo por transação/i.test(text)) {
+		return parseInterBankPdf(text);
+	}
+
+	throw new Error(
+		"PDF não reconhecido. Suportamos extratos e faturas do Banco Inter e faturas do Nubank.",
+	);
+}

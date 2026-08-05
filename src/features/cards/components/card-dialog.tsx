@@ -25,6 +25,7 @@ import {
 	DEFAULT_CARD_BRANDS,
 	DEFAULT_CARD_STATUS,
 } from "@/shared/lib/cards/constants";
+import { CARD_IMPORT_PDF_PASSWORD_RULES } from "@/shared/lib/cards/import-pdf-password";
 import { getLogoDisplayName, normalizeLogo } from "@/shared/lib/logo";
 import {
 	formatLimitInput,
@@ -75,6 +76,9 @@ const buildInitialValues = ({
 		note: card?.note ?? "",
 		logo: selectedLogo,
 		accountId: card?.accountId ?? accounts[0]?.id ?? "",
+		importPdfPasswordRule:
+			card?.importPdfPasswordRule ?? CARD_IMPORT_PDF_PASSWORD_RULES.none,
+		importPdfPasswordSecret: "",
 	};
 };
 
@@ -160,8 +164,8 @@ export function CardDialog({
 
 		const rawLimit = normalizeDecimalInput(formState.limit);
 		const limitValue = rawLimit ? Number(rawLimit) : 0;
-		if (!Number.isFinite(limitValue) || limitValue <= 0) {
-			const message = "Informe um limite maior que zero.";
+		if (!Number.isFinite(limitValue) || limitValue < 0) {
+			const message = "Informe um limite válido.";
 			setErrorMessage(message);
 			toast.error(message);
 			return;
@@ -177,6 +181,8 @@ export function CardDialog({
 			note: formState.note.trim() || null,
 			logo: formState.logo,
 			accountId: formState.accountId,
+			importPdfPasswordRule: formState.importPdfPasswordRule,
+			importPdfPasswordSecret: formState.importPdfPasswordSecret.trim() || null,
 		};
 
 		if (!payload.logo) {
@@ -257,6 +263,9 @@ export function CardDialog({
 						<CardFormFields
 							values={formState}
 							accountOptions={accounts}
+							hasStoredImportPdfPasswordSecret={Boolean(
+								card?.hasImportPdfPasswordSecret,
+							)}
 							onChange={updateField}
 						/>
 

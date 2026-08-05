@@ -1,4 +1,9 @@
 import type { InvoicePaymentStatus } from "@/shared/lib/invoices";
+import {
+	CARD_IMPORT_PDF_PASSWORD_RULES,
+	type CardImportPdfPasswordRule,
+	isCardImportPdfPasswordRule,
+} from "@/shared/lib/cards/import-pdf-password";
 
 export type Card = {
 	id: string;
@@ -17,6 +22,8 @@ export type Card = {
 	currentInvoiceAmount: number;
 	currentInvoiceLabel: string;
 	currentInvoiceStatus: InvoicePaymentStatus | null;
+	importPdfPasswordRule: CardImportPdfPasswordRule;
+	hasImportPdfPasswordSecret: boolean;
 };
 
 export type CardFormValues = {
@@ -29,4 +36,6 @@ export type CardFormValues = {
 	note: string;
 	logo: string;
 	accountId: string;
+	importPdfPasswordRule: CardImportPdfPasswordRule;
+	importPdfPasswordSecret: string;
 };

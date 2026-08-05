@@ -1,12 +1,14 @@
 "use client";
 
+import { CategorySearchSelect } from "@/features/transactions/components/dialogs/transaction-dialog/category-search-select";
 import {
 	AccountCardSelectContent,
-	CategorySelectContent,
 	PayerSelectContent,
 } from "@/features/transactions/components/select-items";
 import type { SelectOption } from "@/features/transactions/components/types";
+import { groupAndSortCategories } from "@/features/transactions/lib/category-helpers";
 import { PeriodPicker } from "@/shared/components/period-picker";
+import { DatePicker } from "@/shared/components/ui/date-picker";
 import { Label } from "@/shared/components/ui/label";
 import {
 	Select,
@@ -46,10 +48,16 @@ interface GlobalFieldsProps {
 	accountCardValue: string | null;
 	payerId: string | null;
 	invoicePeriod: string | null;
+	isPaidInvoiceImport?: boolean;
+	paymentAccountId?: string | null;
+	paymentDate?: string;
 	onAccountCardChange: (value: string | null) => void;
 	onPayerChange: (value: string | null) => void;
 	onInvoicePeriodChange: (value: string | null) => void;
+	onPaymentAccountChange?: (value: string | null) => void;
+	onPaymentDateChange?: (value: string) => void;
 	onBulkCategoryChange: (categoryId: string) => void;
+	onCreateCategory?: () => void;
 }
 
 export function GlobalFields({
@@ -60,16 +68,22 @@ export function GlobalFields({
 	accountCardValue,
 	payerId,
 	invoicePeriod,
+	isPaidInvoiceImport = false,
+	paymentAccountId = null,
+	paymentDate = "",
 	onAccountCardChange,
 	onPayerChange,
 	onInvoicePeriodChange,
+	onPaymentAccountChange,
+	onPaymentDateChange,
 	onBulkCategoryChange,
+	onCreateCategory,
 }: GlobalFieldsProps) {
 	const isCard = accountCardValue?.startsWith("card:") ?? false;
-	const expenseCategories = categoryOptions.filter(
-		(o) => o.group === "despesa",
+	const categoryGroups = groupAndSortCategories(categoryOptions);
+	const selectedPaymentAccount = accountOptions.find(
+		(option) => option.value === paymentAccountId,
 	);
-	const incomeCategories = categoryOptions.filter((o) => o.group === "receita");
 
 	return (
 		<div className="flex flex-col gap-2">
@@ -146,42 +160,14 @@ export function GlobalFields({
 
 				<div className="flex min-w-0 flex-col gap-1.5">
 					<Label>Categoria</Label>
-					<Select onValueChange={onBulkCategoryChange}>
-						<SelectTrigger className="w-full">
-							<SelectValue placeholder="Aplicar a todas selecionadas…" />
-						</SelectTrigger>
-						<SelectContent>
-							{expenseCategories.length > 0 && (
-								<SelectGroup>
-									<SelectLabel>Despesa</SelectLabel>
-									{expenseCategories.map((opt) => (
-										<SelectItem key={opt.value} value={opt.value}>
-											<CategorySelectContent
-												label={opt.label}
-												icon={opt.icon}
-											/>
-										</SelectItem>
-									))}
-								</SelectGroup>
-							)}
-							{expenseCategories.length > 0 && incomeCategories.length > 0 && (
-								<SelectSeparator />
-							)}
-							{incomeCategories.length > 0 && (
-								<SelectGroup>
-									<SelectLabel>Receita</SelectLabel>
-									{incomeCategories.map((opt) => (
-										<SelectItem key={opt.value} value={opt.value}>
-											<CategorySelectContent
-												label={opt.label}
-												icon={opt.icon}
-											/>
-										</SelectItem>
-									))}
-								</SelectGroup>
-							)}
-						</SelectContent>
-					</Select>
+					<CategorySearchSelect
+						value=""
+						onValueChange={onBulkCategoryChange}
+						categoryGroups={categoryGroups}
+						categoryOptions={categoryOptions}
+						placeholder="Aplicar a todas selecionadas…"
+						onCreateCategory={onCreateCategory}
+					/>
 				</div>
 
 				{isCard && (
@@ -193,6 +179,53 @@ export function GlobalFields({
 							placeholder="Selecionar fatura…"
 						/>
 					</div>
+				)}
+
+				{isPaidInvoiceImport && (
+					<>
+						<div className="flex min-w-0 flex-col gap-1.5">
+							<Label>Conta de pagamento</Label>
+							<Select
+								value={paymentAccountId ?? ""}
+								onValueChange={(value) =>
+									onPaymentAccountChange?.(value || null)
+								}
+							>
+								<SelectTrigger className="w-full">
+									<SelectValue placeholder="Selecionar conta…">
+										{selectedPaymentAccount ? (
+											<AccountCardSelectContent
+												label={selectedPaymentAccount.label}
+												logo={selectedPaymentAccount.logo}
+												isCartao={false}
+											/>
+										) : null}
+									</SelectValue>
+								</SelectTrigger>
+								<SelectContent>
+									{accountOptions.map((option) => (
+										<SelectItem key={option.value} value={option.value}>
+											<AccountCardSelectContent
+												label={option.label}
+												logo={option.logo}
+												isCartao={false}
+											/>
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+
+						<div className="flex min-w-0 flex-col gap-1.5">
+							<Label>Data do pagamento</Label>
+							<DatePicker
+								value={paymentDate}
+								onChange={(value) => {
+									if (value) onPaymentDateChange?.(value);
+								}}
+							/>
+						</div>
+					</>
 				)}
 			</div>
 		</div>

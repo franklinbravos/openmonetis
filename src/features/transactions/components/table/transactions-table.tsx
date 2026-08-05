@@ -1,8 +1,5 @@
 "use client";
-import {
-	RiArrowLeftRightLine,
-	RiFlashlightFill,
-} from "@remixicon/react";
+import { RiArrowLeftRightLine, RiFlashlightFill } from "@remixicon/react";
 import {
 	flexRender,
 	getCoreRowModel,
@@ -82,6 +79,7 @@ type TransactionsTableProps = {
 	isSettlementLoading?: (id: string) => boolean;
 	showActions?: boolean;
 	showFilters?: boolean;
+	showImportButton?: boolean;
 	groupTransactionsByDate?: boolean;
 };
 
@@ -114,6 +112,7 @@ export function TransactionsTable({
 	isSettlementLoading,
 	showActions = true,
 	showFilters = true,
+	showImportButton = true,
 	groupTransactionsByDate = true,
 }: TransactionsTableProps) {
 	const router = useRouter();
@@ -308,12 +307,27 @@ export function TransactionsTable({
 				exportContext={exportContext}
 			/>
 		) : null;
-	const importSlot = showTopControls ? <TransactionsImportButton /> : null;
+	const importSlot =
+		showTopControls && showImportButton ? <TransactionsImportButton /> : null;
+
+	const handleOpenRowDetails = (item: TransactionItem) => {
+		onViewDetails?.(item);
+	};
+
+	const isInteractiveRowClickTarget = (target: EventTarget | null) => {
+		if (!(target instanceof HTMLElement)) return false;
+		return Boolean(
+			target.closest(
+				'button, a, input, textarea, select, label, [role="checkbox"], [role="menuitem"]',
+			),
+		);
+	};
 
 	const renderTransactionRow = (row: Row<TransactionItem>) => (
 		<TableRow
 			key={row.id}
 			className={cn(
+				onViewDetails && "cursor-pointer",
 				row.original.paymentMethod === "Boleto" &&
 					row.original.dueDate &&
 					!row.original.isSettled &&
@@ -321,6 +335,25 @@ export function TransactionsTable({
 					? "bg-destructive/3 hover:bg-destructive/5"
 					: undefined,
 			)}
+			onClick={
+				onViewDetails
+					? (event) => {
+							if (isInteractiveRowClickTarget(event.target)) return;
+							handleOpenRowDetails(row.original);
+						}
+					: undefined
+			}
+			onKeyDown={
+				onViewDetails
+					? (event) => {
+							if (event.key === "Enter" || event.key === " ") {
+								event.preventDefault();
+								handleOpenRowDetails(row.original);
+							}
+						}
+					: undefined
+			}
+			tabIndex={onViewDetails ? 0 : undefined}
 		>
 			{row.getVisibleCells().map((cell) => (
 				<TableCell key={cell.id}>

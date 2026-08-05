@@ -1,64 +1,276 @@
 "use client";
 
 import { RiDownloadLine, RiUploadCloud2Line } from "@remixicon/react";
-import { useRef, useState } from "react";
-import { parseOfx } from "@/shared/lib/import/ofx-parser";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { toast } from "sonner";
+import { fetchCardImportPdfPasswordAttemptsAction } from "@/features/cards/actions/fetch-import-pdf-password-attempts-action";
+import { saveCardImportPdfPasswordAction } from "@/features/cards/actions/import-pdf-password-action";
+import { ImportDuplicateFileDialog } from "@/features/transactions/components/import/import-duplicate-file-dialog";
+import { ImportPdfPasswordDialog } from "@/features/transactions/components/import/import-pdf-password-dialog";
+import {
+	findDuplicateImportFile,
+	type ImportFileHistoryEntry,
+} from "@/features/transactions/lib/import-file-duplicate";
+import { isImportBatchImported } from "@/features/transactions/lib/import-batch-status";
+import {
+	isSupportedImportFile,
+	parseImportFile,
+} from "@/shared/lib/import/parse-import-file";
+import {
+	isPdfPasswordError,
+	logPdfPasswordDebug,
+	mapPdfLoadError,
+	summarizePdfPasswordError,
+} from "@/shared/lib/import/pdf-password";
 import type { ImportStatement } from "@/shared/lib/import/types";
-import { generateXlsTemplate, parseXls } from "@/shared/lib/import/xls-parser";
+import { generateXlsTemplate } from "@/shared/lib/import/xls-parser";
+import { CARD_IMPORT_PDF_PASSWORD_RULES } from "@/shared/lib/cards/import-pdf-password";
+import { cn } from "@/shared/utils/ui";
+
+type UploadParsedOptions = {
+	existingBatchId?: string;
+};
 
 interface UploadZoneProps {
-	onParsed: (statement: ImportStatement, fileName: string) => void;
+	onParsed: (
+		statement: ImportStatement,
+		file: File,
+		options?: UploadParsedOptions,
+	) => void;
+	error?: string | null;
+	onErrorClear?: () => void;
+	linkedCardId?: string | null;
+	autoPdfPasswordAttempts?: string[];
+	importHistory?: ImportFileHistoryEntry[];
+	resumeBatchId?: string | null;
 }
 
-export function UploadZone({ onParsed }: UploadZoneProps) {
+const ACCEPTED_FORMATS = ".ofx,.qfx,.csv,.txt,.pdf,.xlsx,.xls";
+
+const FORMAT_LABEL = ".ofx · .qfx · .csv · .txt · .pdf · .xlsx · .xls";
+
+export function UploadZone({
+	onParsed,
+	error: externalError = null,
+	onErrorClear,
+	linkedCardId = null,
+	autoPdfPasswordAttempts: initialAutoPdfPasswordAttempts = [],
+	importHistory = [],
+	resumeBatchId = null,
+}: UploadZoneProps) {
 	const [error, setError] = useState<string | null>(null);
 	const [dragging, setDragging] = useState(false);
+	const [parsing, setParsing] = useState(false);
+	const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+	const [passwordError, setPasswordError] = useState<string | null>(null);
+	const [pendingFile, setPendingFile] = useState<File | null>(null);
+	const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
+	const [duplicateEntry, setDuplicateEntry] =
+		useState<ImportFileHistoryEntry | null>(null);
+	const [duplicatePendingFile, setDuplicatePendingFile] = useState<File | null>(
+		null,
+	);
+	const [autoPdfPasswordAttempts, setAutoPdfPasswordAttempts] = useState(
+		initialAutoPdfPasswordAttempts,
+	);
+	const [isSavingPassword, startSavePasswordTransition] = useTransition();
 	const inputRef = useRef<HTMLInputElement>(null);
 
-	const handleFile = (file: File) => {
-		setError(null);
-		const isOfx = /\.(ofx|qfx)$/i.test(file.name);
-		const isXls = /\.(xlsx|xls)$/i.test(file.name);
+	useEffect(() => {
+		setAutoPdfPasswordAttempts(initialAutoPdfPasswordAttempts);
+	}, [initialAutoPdfPasswordAttempts]);
 
-		if (!isOfx && !isXls) {
-			setError("Formato não suportado. Use .ofx, .qfx, .xlsx ou .xls.");
+	useEffect(() => {
+		if (!linkedCardId) {
+			setAutoPdfPasswordAttempts([]);
 			return;
 		}
 
-		if (isOfx) {
-			const reader = new FileReader();
-			reader.onload = (e) => {
-				try {
-					const content = e.target?.result as string;
-					const statement = parseOfx(content);
-					if (statement.transactions.length === 0) {
-						setError("Nenhuma transação encontrada no arquivo.");
-						return;
+		let cancelled = false;
+
+		void fetchCardImportPdfPasswordAttemptsAction({ cardId: linkedCardId }).then(
+			(result) => {
+				if (cancelled) return;
+				if (result.success) {
+					setAutoPdfPasswordAttempts(result.attempts);
+				}
+			},
+		);
+
+		return () => {
+			cancelled = true;
+		};
+	}, [linkedCardId]);
+
+	const parseFile = async (
+		file: File,
+		options?: {
+			explicitPassword?: string;
+			savePasswordToCard?: boolean;
+			savePasswordRule?:
+				| typeof CARD_IMPORT_PDF_PASSWORD_RULES.fixed
+				| typeof CARD_IMPORT_PDF_PASSWORD_RULES.cpf_first_6
+				| typeof CARD_IMPORT_PDF_PASSWORD_RULES.cnpj_first_6;
+			existingBatchId?: string;
+		},
+	) => {
+		setError(null);
+		setPasswordError(null);
+		onErrorClear?.();
+
+		if (!isSupportedImportFile(file.name)) {
+			setError(
+				"Formato não suportado. Use .ofx, .qfx, .csv, .txt, .pdf, .xlsx ou .xls.",
+			);
+			return;
+		}
+
+		setParsing(true);
+
+		try {
+			logPdfPasswordDebug("upload:parse-start", {
+				fileName: file.name,
+				fileSize: file.size,
+				explicitPassword: Boolean(options?.explicitPassword?.trim()),
+				autoCandidateCount: autoPdfPasswordAttempts.length,
+			});
+
+			const statement = await parseImportFile(file, {
+				pdfPassword: options?.explicitPassword?.trim(),
+				pdfPasswordCandidates: options?.explicitPassword?.trim()
+					? undefined
+					: autoPdfPasswordAttempts.length > 0
+						? autoPdfPasswordAttempts
+						: undefined,
+			});
+
+			if (statement.transactions.length === 0) {
+				setError("Nenhuma transação encontrada no arquivo.");
+				return;
+			}
+
+			if (
+				options?.savePasswordToCard &&
+				linkedCardId &&
+				options.explicitPassword?.trim()
+			) {
+				startSavePasswordTransition(async () => {
+					const result = await saveCardImportPdfPasswordAction({
+						cardId: linkedCardId,
+						rule:
+							options.savePasswordRule ??
+							CARD_IMPORT_PDF_PASSWORD_RULES.fixed,
+						secret: options.explicitPassword?.trim() ?? "",
+					});
+
+					if (result.success) {
+						toast.success(result.message);
+						const refreshed =
+							await fetchCardImportPdfPasswordAttemptsAction({
+								cardId: linkedCardId,
+							});
+						if (refreshed.success) {
+							setAutoPdfPasswordAttempts(refreshed.attempts);
+						}
+					} else if (result.error) {
+						toast.error(result.error);
 					}
-					onParsed(statement, file.name);
-				} catch {
-					setError(
-						"Não foi possível ler o arquivo. Verifique se é um OFX válido.",
-					);
-				}
-			};
-			reader.readAsText(file, "windows-1252");
-		} else {
-			const reader = new FileReader();
-			reader.onload = async (e) => {
-				try {
-					const buffer = e.target?.result as ArrayBuffer;
-					const statement = await parseXls(buffer);
-					onParsed(statement, file.name);
-				} catch (err) {
-					setError(
-						err instanceof Error
-							? err.message
-							: "Não foi possível ler a planilha.",
-					);
-				}
-			};
-			reader.readAsArrayBuffer(file);
+				});
+			}
+
+			setPasswordDialogOpen(false);
+			setPendingFile(null);
+			onParsed(statement, file, {
+				existingBatchId: options?.existingBatchId,
+			});
+		} catch (err) {
+			logPdfPasswordDebug("upload:parse-failed", {
+				error: summarizePdfPasswordError(err),
+			});
+
+			const mappedError: Error = mapPdfLoadError(
+				err,
+				Boolean(
+					options?.explicitPassword?.trim() || autoPdfPasswordAttempts.length > 0,
+				),
+			);
+
+			if (isPdfPasswordError(mappedError)) {
+				setPendingFile(file);
+				setPasswordDialogOpen(true);
+				setPasswordError(
+					options?.explicitPassword?.trim() &&
+						mappedError.name === "PdfPasswordIncorrectError"
+						? mappedError.message
+						: null,
+				);
+				return;
+			}
+
+			if (options?.explicitPassword) {
+				setPendingFile(file);
+				setPasswordDialogOpen(true);
+				setPasswordError(mappedError.message);
+				return;
+			}
+
+			setError(mappedError.message);
+		} finally {
+			setParsing(false);
+		}
+	};
+
+	const handleFile = async (file: File) => {
+		if (resumeBatchId) {
+			await parseFile(file, { existingBatchId: resumeBatchId });
+			return;
+		}
+
+		const duplicate = findDuplicateImportFile(file, importHistory);
+		if (duplicate) {
+			setDuplicateEntry(duplicate);
+			setDuplicatePendingFile(file);
+			setDuplicateDialogOpen(true);
+			return;
+		}
+
+		await parseFile(file);
+	};
+
+	const handleConfirmDuplicateImport = async () => {
+		if (!duplicatePendingFile || !duplicateEntry) return;
+		const file = duplicatePendingFile;
+		const existingBatchId = isImportBatchImported(duplicateEntry.status)
+			? undefined
+			: duplicateEntry.id;
+		setDuplicateEntry(null);
+		setDuplicatePendingFile(null);
+		await parseFile(file, { existingBatchId });
+	};
+
+	const handlePasswordSubmit = async (
+		password: string,
+		options?: {
+			saveToCard?: boolean;
+			saveRule?:
+				| typeof CARD_IMPORT_PDF_PASSWORD_RULES.fixed
+				| typeof CARD_IMPORT_PDF_PASSWORD_RULES.cpf_first_6
+				| typeof CARD_IMPORT_PDF_PASSWORD_RULES.cnpj_first_6;
+		},
+	) => {
+		if (!pendingFile) return;
+		await parseFile(pendingFile, {
+			explicitPassword: password,
+			savePasswordToCard: options?.saveToCard,
+			savePasswordRule: options?.saveRule,
+		});
+	};
+
+	const handlePasswordDialogOpenChange = (open: boolean) => {
+		setPasswordDialogOpen(open);
+		if (!open) {
+			setPendingFile(null);
+			setPasswordError(null);
 		}
 	};
 
@@ -75,10 +287,14 @@ export function UploadZone({ onParsed }: UploadZoneProps) {
 		URL.revokeObjectURL(url);
 	};
 
+	const displayError = externalError ?? error;
+	const isBusy = parsing || isSavingPassword;
+
 	return (
-		<div className="flex flex-col gap-3">
+		<div className="flex flex-col gap-2 md:gap-3">
 			<button
 				type="button"
+				disabled={isBusy}
 				onClick={() => inputRef.current?.click()}
 				onDragOver={(e) => {
 					e.preventDefault();
@@ -89,48 +305,85 @@ export function UploadZone({ onParsed }: UploadZoneProps) {
 					e.preventDefault();
 					setDragging(false);
 					const file = e.dataTransfer.files[0];
-					if (file) handleFile(file);
+					if (file) void handleFile(file);
 				}}
-				className={`flex flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed p-24 transition-colors ${
+				className={cn(
+					"flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-8 transition-colors md:gap-4 md:p-16",
 					dragging
 						? "border-primary bg-primary/5"
-						: "border-border hover:border-primary/50 hover:bg-muted/50"
-				}`}
+						: "border-border hover:border-primary/50 hover:bg-muted/50",
+					isBusy && "pointer-events-none opacity-60",
+				)}
 			>
-				<RiUploadCloud2Line className="text-muted-foreground size-14" />
+				<RiUploadCloud2Line className="size-10 text-muted-foreground md:size-14" />
 				<div className="text-center">
 					<p className="font-medium text-sm">
-						Arraste um arquivo aqui ou clique para selecionar
+						{isBusy
+							? "Lendo arquivo..."
+							: "Arraste um arquivo aqui ou clique para selecionar"}
 					</p>
-					<p className="mt-1 text-muted-foreground text-xs">
-						.ofx · .qfx · .xlsx · .xls
-					</p>
+					<p className="mt-1 text-muted-foreground text-xs">{FORMAT_LABEL}</p>
 				</div>
 			</button>
 
 			<input
 				ref={inputRef}
 				type="file"
-				accept=".ofx,.qfx,.xlsx,.xls"
+				accept={ACCEPTED_FORMATS}
 				className="hidden"
 				onChange={(e) => {
 					const file = e.target.files?.[0];
-					if (file) handleFile(file);
+					if (file) void handleFile(file);
 					e.target.value = "";
 				}}
 			/>
 
-			<div className="flex items-center justify-between">
-				{error ? <p className="text-destructive text-sm">{error}</p> : <span />}
+			<div className="flex items-start justify-between gap-3">
+				{displayError ? (
+					<p className="text-destructive text-sm">{displayError}</p>
+				) : null}
 				<button
 					type="button"
 					onClick={handleDownloadTemplate}
-					className="flex items-center gap-1.5 text-muted-foreground text-xs underline-offset-2 hover:text-foreground hover:underline"
+					className={cn(
+						"flex items-center gap-1.5 text-muted-foreground text-xs underline-offset-2 hover:text-foreground hover:underline",
+						!displayError && "ml-auto",
+					)}
 				>
 					<RiDownloadLine className="size-3.5" />
 					Baixar modelo .xlsx
 				</button>
 			</div>
+
+			<ImportPdfPasswordDialog
+				open={passwordDialogOpen}
+				fileName={pendingFile?.name ?? null}
+				error={passwordError}
+				isPending={isBusy}
+				linkedCardId={linkedCardId}
+				onOpenChange={handlePasswordDialogOpenChange}
+				onSubmit={(password, options) => {
+					void handlePasswordSubmit(password, options);
+				}}
+			/>
+
+			{duplicateEntry && duplicatePendingFile ? (
+				<ImportDuplicateFileDialog
+					open={duplicateDialogOpen}
+					onOpenChange={(open) => {
+						setDuplicateDialogOpen(open);
+						if (!open) {
+							setDuplicateEntry(null);
+							setDuplicatePendingFile(null);
+						}
+					}}
+					fileName={duplicatePendingFile.name}
+					previousImport={duplicateEntry}
+					onConfirm={() => {
+						void handleConfirmDuplicateImport();
+					}}
+				/>
+			) : null}
 		</div>
 	);
 }

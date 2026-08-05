@@ -3,36 +3,53 @@ import { Badge } from "@/shared/components/ui/badge";
 import { Card } from "@/shared/components/ui/card";
 import type { ImportStatement } from "@/shared/lib/import/types";
 import { formatDate } from "@/shared/utils/date";
+import { displayPeriod } from "@/shared/utils/period";
 
 interface ImportSummaryProps {
 	statement: ImportStatement;
+	invoicePeriod?: string | null;
 	total: number;
 	selected: number;
 	duplicates: number;
+	duplicateVerified?: number;
+	duplicateMismatch?: number;
 	uncategorized: number;
 	withoutPayer: number;
 }
 
 export function ImportSummary({
 	statement,
+	invoicePeriod = null,
 	total,
 	selected,
 	duplicates,
+	duplicateVerified = 0,
+	duplicateMismatch = 0,
 	uncategorized,
 	withoutPayer,
 }: ImportSummaryProps) {
 	return (
 		<Card className="flex flex-col gap-1 p-5 text-sm bg-primary/10 shadow-none ">
 			{/* Linha 1: título */}
-			<div className="flex items-center gap-2">
+			<div className="flex flex-wrap items-center gap-2">
 				<span className="font-medium">{statement.source}</span>
 				{statement.isCreditCard && (
 					<Badge variant="outline">Cartão de crédito</Badge>
 				)}
+				{statement.invoice?.isPaid ? (
+					<Badge variant="success">Fatura paga</Badge>
+				) : null}
 			</div>
 
 			{/* Linha 2: metadados */}
 			<div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground">
+				{invoicePeriod ? (
+					<span className="flex items-center gap-1">
+						<RiCalendarLine className="size-3.5 shrink-0" />
+						Fatura {displayPeriod(invoicePeriod)}
+					</span>
+				) : null}
+
 				{statement.period && (
 					<span className="flex items-center gap-1">
 						<RiCalendarLine className="size-3.5 shrink-0" />
@@ -47,7 +64,10 @@ export function ImportSummary({
 
 				{duplicates > 0 && (
 					<span className="text-amber-600 dark:text-amber-400">
-						{duplicates} duplicata{duplicates !== 1 ? "s" : ""}
+						{duplicates} já cadastrado{duplicates !== 1 ? "s" : ""}
+						{duplicateVerified > 0 || duplicateMismatch > 0
+							? ` (${duplicateVerified} conferido${duplicateVerified !== 1 ? "s" : ""}${duplicateMismatch > 0 ? `, ${duplicateMismatch} divergência${duplicateMismatch !== 1 ? "s" : ""}` : ""})`
+							: ""}
 					</span>
 				)}
 

@@ -27,13 +27,14 @@ function PdfCanvas({ url }: PdfCanvasProps) {
 		setLocked(false);
 
 		async function render() {
-			const pdfjsLib = await import("pdfjs-dist");
-			pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+			const { loadPdfJs } = await import("@/shared/lib/import/pdfjs-client");
+			const pdfjsLib = await loadPdfJs();
 
 			let pdf: Awaited<ReturnType<typeof pdfjsLib.getDocument>["promise"]>;
 			try {
 				pdf = await pdfjsLib.getDocument({ url }).promise;
 			} catch (err) {
+				console.info("[import-pdf] attachment preview failed", err);
 				if ((err as { name?: string }).name === "PasswordException") {
 					if (!cancelled) setLocked(true);
 				}

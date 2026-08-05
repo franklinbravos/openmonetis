@@ -7,10 +7,19 @@ export type ImportedTransaction = {
 	categoryRaw?: string | null;
 };
 
+export type InvoiceImportMetadata = {
+	period: string | null; // YYYY-MM (mês de vencimento da fatura)
+	dueDate: string | null; // YYYY-MM-DD
+	isPaid: boolean;
+	paymentDate: string | null; // YYYY-MM-DD
+	totalAmount: number | null;
+};
+
 export type ImportStatement = {
 	source: string; // nome do banco (ORG)
 	accountNumber: string | null; // ACCTID
 	period: { from: string; to: string } | null; // YYYY-MM-DD
 	isCreditCard: boolean; // true = CREDITCARDMSGSRSV1
 	transactions: ImportedTransaction[];
+	invoice?: InvoiceImportMetadata | null;
 };

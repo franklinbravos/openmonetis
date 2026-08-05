@@ -34,6 +34,12 @@ import {
 	TRANSACTION_TYPES,
 } from "@/features/transactions/lib/constants";
 import {
+	getMonthToolbarEndSlotId,
+	getMonthToolbarExpandSlotId,
+	monthToolbarIconButtonClassName,
+	monthToolbarIconClassName,
+} from "@/features/transactions/lib/month-toolbar";
+import {
 	parseDateFilterParam,
 	parsePositiveAmount,
 } from "@/features/transactions/lib/page-helpers";
@@ -86,7 +92,6 @@ import { formatCurrency } from "@/shared/utils/currency";
 import { formatDateOnly } from "@/shared/utils/date";
 import { slugify } from "@/shared/utils/string";
 import { cn } from "@/shared/utils/ui";
-import { getMonthToolbarExpandSlotId, getMonthToolbarEndSlotId, monthToolbarIconButtonClassName, monthToolbarIconClassName } from "@/features/transactions/lib/month-toolbar";
 import {
 	AccountCardSelectContent,
 	CategorySelectContent,
@@ -932,9 +937,7 @@ export function TransactionsFilters({
 			: null;
 
 	const monthToolbarEnd =
-		useMonthToolbar &&
-		monthToolbarEndSlot &&
-		(exportButton || importButton)
+		useMonthToolbar && monthToolbarEndSlot && (exportButton || importButton)
 			? createPortal(
 					<div className="flex items-center gap-1">
 						{importButton}
@@ -960,10 +963,7 @@ export function TransactionsFilters({
 							aria-expanded={searchExpanded}
 							onClick={() => setSearchExpanded((prev) => !prev)}
 						>
-							<RiSearchLine
-								className={monthToolbarIconClassName}
-								aria-hidden
-							/>
+							<RiSearchLine className={monthToolbarIconClassName} aria-hidden />
 							{hasSearchQuery ? (
 								<span
 									className="absolute top-1 right-1 size-2 rounded-full bg-primary"

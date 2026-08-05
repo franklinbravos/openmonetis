@@ -5,6 +5,7 @@ export type InstallmentDetection = {
 };
 
 const INSTALLMENT_SUFFIX_PATTERNS = [
+	/^(?<name>.+?)\s*\(\s*parcela\s+(?<current>\d{1,2})\s+de\s+(?<total>\d{1,2})\s*\)\s*$/iu,
 	/^(?<name>.+?)\s*[-–—]?\s*parcela\s+(?<current>\d{1,2})\s+de\s+(?<total>\d{1,2})\s*$/iu,
 	/^(?<name>.+?)\s*[-–—]?\s*parcela\s+(?<current>\d{1,2})\s*\/\s*(?<total>\d{1,2})\s*$/iu,
 	/^(?<name>.+?)\s*\((?<current>\d{1,2})\s*[/?]\s*(?<total>\d{1,2})\)\s*$/u,

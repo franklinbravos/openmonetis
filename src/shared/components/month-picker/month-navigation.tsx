@@ -29,10 +29,12 @@ const getToolbarEndSlotId = (toolbarSlotId: string) => `${toolbarSlotId}-end`;
 
 type MonthNavigationProps = {
 	toolbarSlotId?: string;
+	embedded?: boolean;
 };
 
 export default function MonthNavigation({
 	toolbarSlotId,
+	embedded = false,
 }: MonthNavigationProps = {}) {
 	const { period, currentMonth, currentYear, defaultPeriod, buildHref } =
 		useMonthPeriod();
@@ -66,8 +68,8 @@ export default function MonthNavigation({
 		handleNavigate(buildHref(dateToPeriod(date)));
 	};
 
-	return (
-		<Card className="sticky top-18 z-10 flex w-full flex-col gap-0 px-3 py-3 backdrop-blur-md supports-backdrop-filter:bg-card/60 sm:px-4">
+	const content = (
+		<>
 			<div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-2">
 				{toolbarSlotId ? (
 					<div
@@ -145,6 +147,20 @@ export default function MonthNavigation({
 					className="empty:hidden md:hidden"
 				/>
 			) : null}
+		</>
+	);
+
+	if (embedded) {
+		return (
+			<div className="flex w-full flex-col gap-0 px-3 py-2.5 sm:px-4 sm:py-3">
+				{content}
+			</div>
+		);
+	}
+
+	return (
+		<Card className="sticky top-18 z-10 flex w-full flex-col gap-0 px-3 py-3 backdrop-blur-md supports-backdrop-filter:bg-card/60 sm:px-4">
+			{content}
 		</Card>
 	);
 }

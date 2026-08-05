@@ -99,6 +99,7 @@ interface TransactionsPageProps {
 	importAccountOptions?: SelectOption[];
 	importCardOptions?: SelectOption[];
 	importCategoryOptions?: SelectOption[];
+	showImportButton?: boolean;
 }
 
 const pluralize = (count: number, singular: string, plural: string) =>
@@ -137,6 +138,7 @@ export function TransactionsPage({
 	importAccountOptions,
 	importCardOptions,
 	importCategoryOptions,
+	showImportButton = true,
 }: TransactionsPageProps) {
 	const [selectedTransaction, setSelectedTransaction] =
 		useState<TransactionItem | null>(null);
@@ -740,6 +742,7 @@ export function TransactionsPage({
 				onAnticipate={handleAnticipate}
 				onViewAnticipationHistory={handleViewAnticipationHistory}
 				isSettlementLoading={(id) => settlementLoadingId === id}
+				showImportButton={showImportButton}
 			/>
 
 			<TransactionDialog

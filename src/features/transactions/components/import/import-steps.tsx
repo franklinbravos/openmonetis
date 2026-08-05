@@ -1,5 +1,5 @@
-import { Fragment } from "react";
 import { RiCheckLine } from "@remixicon/react";
+import { Fragment } from "react";
 import { cn } from "@/shared/utils/ui";
 
 type Step = "upload" | "review" | "done";

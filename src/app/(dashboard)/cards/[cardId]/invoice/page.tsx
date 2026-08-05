@@ -4,12 +4,15 @@ import { connection } from "next/server";
 import type { FinancialAccount } from "@/db/schema";
 import { CardDialog } from "@/features/cards/components/card-dialog";
 import type { Card } from "@/features/cards/components/types";
+import { CardInvoiceContextHeader } from "@/features/invoices/components/card-invoice-context-header";
+import { CardInvoiceNavigationShell } from "@/features/invoices/components/card-invoice-navigation-shell";
 import { InvoiceSummaryCard } from "@/features/invoices/components/invoice-summary-card";
 import {
 	fetchCardData,
 	fetchCardTransactions,
 	fetchInvoiceData,
 } from "@/features/invoices/queries";
+import { fetchInvoiceImportSource } from "@/features/transactions/queries/import-source";
 import { fetchUserPreferences } from "@/features/settings/queries";
 import { TransactionsPage as LancamentosSection } from "@/features/transactions/components/page/transactions-page";
 import { TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID } from "@/features/transactions/lib/month-toolbar";
@@ -27,9 +30,12 @@ import {
 	fetchRecentEstablishments,
 	fetchTransactionFilterSources,
 } from "@/features/transactions/queries";
-import MonthNavigation from "@/shared/components/month-picker/month-navigation";
 import { Button } from "@/shared/components/ui/button";
 import { getUserId } from "@/shared/lib/auth/server";
+import {
+	CARD_IMPORT_PDF_PASSWORD_RULES,
+	isCardImportPdfPasswordRule,
+} from "@/shared/lib/cards/import-pdf-password";
 import { loadLogoOptions } from "@/shared/lib/logo/options";
 import { parsePeriodParam } from "@/shared/utils/period";
 
@@ -67,12 +73,14 @@ export default async function Page({ params, searchParams }: PageProps) {
 		invoiceData,
 		estabelecimentos,
 		userPreferences,
+		importSource,
 	] = await Promise.all([
 		fetchTransactionFilterSources(userId),
 		loadLogoOptions(),
 		fetchInvoiceData(userId, cardId, selectedPeriod),
 		fetchRecentEstablishments(userId),
 		fetchUserPreferences(userId),
+		fetchInvoiceImportSource(userId, cardId, selectedPeriod),
 	]);
 	const sluggedFilters = buildSluggedFilters(filterSources);
 	const slugMaps = buildSlugMaps(sluggedFilters);
@@ -123,6 +131,12 @@ export default async function Page({ params, searchParams }: PageProps) {
 
 	const limitAmount = Number(card.limit);
 
+	const importPdfPasswordRule = isCardImportPdfPasswordRule(
+		card.importPdfPasswordRule,
+	)
+		? card.importPdfPasswordRule
+		: CARD_IMPORT_PDF_PASSWORD_RULES.none;
+
 	const cardDialogData: Card = {
 		id: card.id,
 		name: card.name,
@@ -140,6 +154,8 @@ export default async function Page({ params, searchParams }: PageProps) {
 		currentInvoiceAmount: 0,
 		currentInvoiceLabel: "",
 		currentInvoiceStatus: null,
+		importPdfPasswordRule,
+		hasImportPdfPasswordSecret: Boolean(card.importPdfPasswordSecret),
 	};
 
 	const { totalAmount, invoiceStatus, paymentDate } = invoiceData;
@@ -150,18 +166,49 @@ export default async function Page({ params, searchParams }: PageProps) {
 
 	return (
 		<main className="flex flex-col gap-6">
-			<MonthNavigation toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID} />
+			<CardInvoiceNavigationShell
+				toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID}
+				header={
+					<CardInvoiceContextHeader
+						embedded
+						cardId={card.id}
+						cardName={card.name}
+						cardBrand={card.brand ?? null}
+						logo={card.logo}
+						periodLabel={periodLabel}
+						importPdfPasswordRule={importPdfPasswordRule}
+						hasImportPdfPasswordSecret={Boolean(card.importPdfPasswordSecret)}
+						actions={
+							<CardDialog
+								mode="update"
+								card={cardDialogData}
+								logoOptions={logoOptions}
+								accounts={cardDialogAccounts}
+								trigger={
+									<Button
+										type="button"
+										variant="ghost"
+										size="icon-sm"
+										className="text-muted-foreground hover:text-foreground"
+										aria-label="Editar cartão"
+									>
+										<RiPencilLine className="size-4" />
+									</Button>
+								}
+							/>
+						}
+					/>
+				}
+			/>
 
 			<section className="flex flex-col gap-4">
 				<InvoiceSummaryCard
 					cardId={card.id}
 					period={selectedPeriod}
-					cardName={card.name}
 					cardBrand={card.brand ?? null}
 					cardStatus={card.status ?? null}
 					closingDay={card.closingDay}
 					dueDay={card.dueDay}
-					periodLabel={periodLabel}
 					totalAmount={totalAmount}
 					limitAmount={limitAmount}
 					invoiceStatus={invoiceStatus}
@@ -172,26 +219,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 						label: option.label,
 						logo: option.logo ?? null,
 					}))}
-					logo={card.logo}
-					actions={
-						<CardDialog
-							mode="update"
-							card={cardDialogData}
-							logoOptions={logoOptions}
-							accounts={cardDialogAccounts}
-							trigger={
-								<Button
-									type="button"
-									variant="ghost"
-									size="icon-sm"
-									className="text-muted-foreground hover:text-foreground"
-									aria-label="Editar cartão"
-								>
-									<RiPencilLine className="size-4" />
-								</Button>
-							}
-						/>
-					}
+					importSourceFileName={importSource?.fileName ?? null}
 				/>
 			</section>
 
@@ -221,6 +249,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 					defaultPaymentMethod="Cartão de crédito"
 					lockCardSelection
 					lockPaymentMethod
+					showImportButton={false}
 				/>
 			</section>
 		</main>

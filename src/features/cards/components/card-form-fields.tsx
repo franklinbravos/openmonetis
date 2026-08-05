@@ -16,6 +16,7 @@ import {
 	DEFAULT_CARD_BRANDS,
 	DEFAULT_CARD_STATUS,
 } from "@/shared/lib/cards/constants";
+import { CardImportPdfPasswordFields } from "./card-import-pdf-password-fields";
 import {
 	AccountSelectContent,
 	BrandSelectContent,
@@ -32,6 +33,7 @@ interface AccountOption {
 interface CardFormFieldsProps {
 	values: CardFormValues;
 	accountOptions: AccountOption[];
+	hasStoredImportPdfPasswordSecret?: boolean;
 	onChange: (field: keyof CardFormValues, value: string) => void;
 }
 
@@ -45,6 +47,7 @@ const ensureOption = (options: string[], value: string) => {
 export function CardFormFields({
 	values,
 	accountOptions,
+	hasStoredImportPdfPasswordSecret = false,
 	onChange,
 }: CardFormFieldsProps) {
 	const brands = ensureOption(
@@ -112,13 +115,12 @@ export function CardFormFields({
 			</div>
 
 			<div className="flex flex-col gap-2">
-				<Label htmlFor="card-limit">Limite</Label>
+				<Label htmlFor="card-limit">Limite (opcional)</Label>
 				<CurrencyInput
 					id="card-limit"
 					value={values.limit}
 					onValueChange={(value) => onChange("limit", value)}
 					placeholder="R$ 0,00"
-					required
 				/>
 			</div>
 
@@ -209,6 +211,16 @@ export function CardFormFields({
 					value={values.note}
 					onChange={(event) => onChange("note", event.target.value)}
 					placeholder="Observações sobre este cartão"
+				/>
+			</div>
+
+			<div className="flex flex-col gap-4 rounded-lg border border-dashed p-4 sm:col-span-2">
+				<CardImportPdfPasswordFields
+					rule={values.importPdfPasswordRule}
+					secret={values.importPdfPasswordSecret}
+					hasStoredSecret={hasStoredImportPdfPasswordSecret}
+					onRuleChange={(value) => onChange("importPdfPasswordRule", value)}
+					onSecretChange={(value) => onChange("importPdfPasswordSecret", value)}
 				/>
 			</div>
 		</div>

@@ -386,6 +386,8 @@ export const cards = pgTable(
 				onDelete: "cascade",
 				onUpdate: "cascade",
 			}),
+		importPdfPasswordRule: text("regra_senha_pdf_importacao"),
+		importPdfPasswordSecret: text("segredo_senha_pdf_importacao"),
 	},
 	(table) => ({
 		accountIdIdx: index("cartoes_conta_id_idx").on(table.accountId),
@@ -1075,6 +1077,49 @@ export const noteAttachments = pgTable(
 	}),
 );
 
+export const importBatches = pgTable(
+	"import_batches",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		attachmentId: uuid("anexo_id").references(() => attachments.id, {
+			onDelete: "set null",
+		}),
+		sourceFileName: text("nome_arquivo_origem").notNull(),
+		sourceFileSize: integer("tamanho_arquivo_origem"),
+		cardId: uuid("cartao_id").references(() => cards.id, {
+			onDelete: "set null",
+		}),
+		invoicePeriod: text("periodo_fatura"),
+		accountId: uuid("conta_id").references(() => financialAccounts.id, {
+			onDelete: "set null",
+		}),
+		importedCount: integer("importados").notNull().default(0),
+		skippedCount: integer("ignorados").notNull().default(0),
+		status: text("status").notNull().default("uploaded"),
+		draftData: jsonb("dados_rascunho"),
+		createdAt: timestamp("created_at", {
+			mode: "date",
+			withTimezone: true,
+		})
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => ({
+		userIdCreatedAtIdx: index("import_batches_user_id_created_at_idx").on(
+			table.userId,
+			table.createdAt,
+		),
+		cardPeriodIdx: index("import_batches_cartao_periodo_idx").on(
+			table.userId,
+			table.cardId,
+			table.invoicePeriod,
+		),
+	}),
+);
+
 export const importCategoryMappings = pgTable(
 	"import_category_mappings",
 	{
@@ -1272,6 +1317,8 @@ export type NewApiToken = typeof apiTokens.$inferInsert;
 export type InboxItem = typeof inboxItems.$inferSelect;
 export type NewInboxItem = typeof inboxItems.$inferInsert;
 export type ImportCategoryMapping = typeof importCategoryMappings.$inferSelect;
+export type ImportBatch = typeof importBatches.$inferSelect;
+export type NewImportBatch = typeof importBatches.$inferInsert;
 export type ReconciliationSession = typeof reconciliationSessions.$inferSelect;
 export type ReconciliationLine = typeof reconciliationLines.$inferSelect;
 export type ReconciliationAlias = typeof reconciliationAliases.$inferSelect;
@@ -1312,6 +1359,25 @@ export const noteAttachmentsRelations = relations(
 		}),
 	}),
 );
+
+export const importBatchesRelations = relations(importBatches, ({ one }) => ({
+	user: one(user, {
+		fields: [importBatches.userId],
+		references: [user.id],
+	}),
+	attachment: one(attachments, {
+		fields: [importBatches.attachmentId],
+		references: [attachments.id],
+	}),
+	card: one(cards, {
+		fields: [importBatches.cardId],
+		references: [cards.id],
+	}),
+	account: one(financialAccounts, {
+		fields: [importBatches.accountId],
+		references: [financialAccounts.id],
+	}),
+}));
 
 export type Attachment = typeof attachments.$inferSelect;
 export type TransactionAttachment = typeof transactionAttachments.$inferSelect;

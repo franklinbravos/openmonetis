@@ -20,6 +20,31 @@ type SelectItemContentProps = {
 	icon?: string | null;
 };
 
+export function PayerSelectTriggerValue({
+	label,
+	avatarUrl,
+	showLabel = false,
+}: SelectItemContentProps & { showLabel?: boolean }) {
+	const avatarSrc = getAvatarSrc(avatarUrl);
+	const initial = label.charAt(0).toUpperCase() || "?";
+
+	return (
+		<span className="flex min-w-0 items-center gap-2">
+			<Avatar className="size-6 shrink-0 border border-border/60 bg-background">
+				<AvatarImage src={avatarSrc} alt={`Avatar de ${label}`} />
+				<AvatarFallback className="text-xs font-medium uppercase">
+					{initial}
+				</AvatarFallback>
+			</Avatar>
+			<span
+				className={showLabel ? "truncate" : "hidden truncate md:inline"}
+			>
+				{label}
+			</span>
+		</span>
+	);
+}
+
 export function PayerSelectContent({
 	label,
 	avatarUrl,

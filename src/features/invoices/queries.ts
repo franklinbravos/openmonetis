@@ -32,6 +32,8 @@ export async function fetchCardData(userId: string, cardId: string) {
 			status: true,
 			note: true,
 			accountId: true,
+			importPdfPasswordRule: true,
+			importPdfPasswordSecret: true,
 		},
 		where: and(eq(cards.id, cardId), eq(cards.userId, userId)),
 	});

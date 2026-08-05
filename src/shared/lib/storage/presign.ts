@@ -7,6 +7,20 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { S3_BUCKET, s3 } from "./s3-client";
 
+export async function putS3Object(
+	fileKey: string,
+	body: Buffer | Uint8Array,
+	mimeType: string,
+): Promise<void> {
+	const command = new PutObjectCommand({
+		Bucket: S3_BUCKET,
+		Key: fileKey,
+		Body: body,
+		ContentType: mimeType,
+	});
+	await s3.send(command);
+}
+
 export async function createPresignedPutUrl(
 	fileKey: string,
 	mimeType: string,
@@ -17,6 +31,31 @@ export async function createPresignedPutUrl(
 		ContentType: mimeType,
 	});
 	return getSignedUrl(s3, command, { expiresIn: 300 }); // 5 minutos
+}
+
+const MAX_INLINE_DOWNLOAD_BYTES = 5 * 1024 * 1024;
+
+export async function getS3ObjectBuffer(fileKey: string): Promise<Buffer> {
+	const command = new GetObjectCommand({
+		Bucket: S3_BUCKET,
+		Key: fileKey,
+	});
+	const result = await s3.send(command);
+	const bytes = await result.Body?.transformToByteArray();
+
+	if (!bytes || bytes.length === 0) {
+		throw new Error("Arquivo vazio ou indisponível no storage.");
+	}
+
+	return Buffer.from(bytes);
+}
+
+export function canInlineDownloadS3Object(contentLength: number | null): boolean {
+	return (
+		contentLength != null &&
+		contentLength > 0 &&
+		contentLength <= MAX_INLINE_DOWNLOAD_BYTES
+	);
 }
 
 export async function createPresignedGetUrl(fileKey: string): Promise<string> {

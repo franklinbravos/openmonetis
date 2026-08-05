@@ -1,3 +1,5 @@
+import { RiArrowLeftRightLine } from "@remixicon/react";
+import type { Metadata } from "next";
 import { connection } from "next/server";
 import { fetchAllAccountsForUser } from "@/features/accounts/queries";
 import { fetchUserPreferences } from "@/features/settings/queries";
@@ -21,6 +23,7 @@ import {
 } from "@/features/transactions/queries";
 import { LogoPrefetchProvider } from "@/shared/components/entity-avatar";
 import MonthNavigation from "@/shared/components/month-picker/month-navigation";
+import PageDescription from "@/shared/components/page-description";
 import { getUserId } from "@/shared/lib/auth/server";
 import { prefetchLogoMappings } from "@/shared/lib/logo/prefetch-server";
 import { parsePeriodParam } from "@/shared/utils/period";
@@ -29,6 +32,10 @@ type PageSearchParams = Promise<ResolvedSearchParams>;
 
 type PageProps = {
 	searchParams?: PageSearchParams;
+};
+
+export const metadata: Metadata = {
+	title: "Lançamentos",
 };
 
 export default async function Page({ searchParams }: PageProps) {
@@ -89,6 +96,11 @@ export default async function Page({ searchParams }: PageProps) {
 
 	return (
 		<main className="flex flex-col gap-6">
+			<PageDescription
+				icon={<RiArrowLeftRightLine />}
+				title="Lançamentos"
+				subtitle="Acompanhe todos os lançamentos financeiros do mês selecionado incluindo receitas, despesas e transações previstas."
+			/>
 			<MonthNavigation toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID} />
 			<LogoPrefetchProvider mappings={logoMappings}>
 				<TransactionsPage

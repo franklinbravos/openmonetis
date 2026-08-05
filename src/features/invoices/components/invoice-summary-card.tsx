@@ -1,7 +1,8 @@
 "use client";
 
-import { RiEditLine, RiEqualizerLine } from "@remixicon/react";
+import { RiEditLine, RiEqualizerLine, RiFileExcel2Line } from "@remixicon/react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useState, useTransition } from "react";
@@ -42,12 +43,12 @@ import {
 	INVOICE_STATUS_LABEL,
 	type InvoicePaymentStatus,
 } from "@/shared/lib/invoices";
-import { resolveLogoSrc } from "@/shared/lib/logo";
 import { formatCurrency } from "@/shared/utils/currency";
 import { formatDateOnly } from "@/shared/utils/date";
 import { cn } from "@/shared/utils/ui";
 import { AdjustInvoiceDialog } from "./adjust-invoice-dialog";
 import { EditPaymentDateDialog } from "./edit-payment-date-dialog";
+import { InvoiceImportSourceButton } from "./invoice-import-source-button";
 
 type PaymentAccountOption = {
 	value: string;
@@ -58,20 +59,17 @@ type PaymentAccountOption = {
 type InvoiceSummaryCardProps = {
 	cardId: string;
 	period: string;
-	cardName: string;
 	cardBrand: string | null;
 	cardStatus: string | null;
 	closingDay: string;
 	dueDay: string;
-	periodLabel: string;
 	totalAmount: number;
 	limitAmount: number | null;
 	invoiceStatus: InvoicePaymentStatus;
 	paymentDate: Date | null;
 	defaultPaymentAccountId: string | null;
 	paymentAccountOptions: PaymentAccountOption[];
-	logo?: string | null;
-	actions?: React.ReactNode;
+	importSourceFileName?: string | null;
 };
 
 const actionLabelByStatus: Record<InvoicePaymentStatus, string> = {
@@ -105,20 +103,17 @@ const formatPaymentDate = (value: Date | null) =>
 export function InvoiceSummaryCard({
 	cardId,
 	period,
-	cardName,
 	cardBrand,
 	cardStatus,
 	closingDay,
 	dueDay,
-	periodLabel,
 	totalAmount,
 	limitAmount,
 	invoiceStatus,
 	paymentDate: initialPaymentDate,
 	defaultPaymentAccountId,
 	paymentAccountOptions,
-	logo,
-	actions,
+	importSourceFileName = null,
 }: InvoiceSummaryCardProps) {
 	const router = useRouter();
 	const [isPending, startTransition] = useTransition();
@@ -140,13 +135,13 @@ export function InvoiceSummaryCard({
 		);
 	}, [defaultPaymentAccountId, paymentAccountOptions]);
 
-	const logoPath = resolveLogoSrc(logo);
 	const brandAsset = resolveCardBrandAsset(cardBrand);
 	const isPaid = invoiceStatus === INVOICE_PAYMENT_STATUS.PAID;
 	const paymentDateLabel = isPaid ? formatPaymentDate(paymentDate) : null;
 	const actionDescription = isPaid
 		? `Pagamento registrado em ${paymentDateLabel}.`
 		: INVOICE_STATUS_DESCRIPTION[invoiceStatus];
+	const importHref = `/transactions/import?cartao=${encodeURIComponent(cardId)}&periodo=${encodeURIComponent(period)}`;
 
 	const targetStatus = isPaid
 		? INVOICE_PAYMENT_STATUS.PENDING
@@ -209,37 +204,7 @@ export function InvoiceSummaryCard({
 		<Card className="gap-0 py-0 space-y-2">
 			<CardContent className="px-4 py-4 sm:px-5 sm:py-5">
 				<div className="flex flex-col gap-4">
-					{/* Linha 1 — identidade */}
-					<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-						<div className="flex min-w-0 items-start gap-3">
-							{logoPath ? (
-								<div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full">
-									<Image
-										src={logoPath}
-										alt={`Logo ${cardName}`}
-										width={48}
-										height={48}
-										className="h-full w-full object-contain"
-									/>
-								</div>
-							) : cardBrand ? (
-								<span className="flex size-12 shrink-0 items-center justify-center rounded-full border bg-card text-sm font-semibold text-primary">
-									{cardBrand.slice(0, 2).toUpperCase()}
-								</span>
-							) : null}
-							<div className="min-w-0 space-y-1">
-								<h2 className="truncate text-xl font-semibold text-foreground sm:text-2xl">
-									{cardName}
-								</h2>
-								<p className="text-sm leading-relaxed text-muted-foreground">
-									Fatura de {periodLabel}
-								</p>
-							</div>
-						</div>
-						{actions ? <div className="shrink-0">{actions}</div> : null}
-					</div>
-
-					{/* Linha 2 — valor da fatura (hero) */}
+					{/* Valor da fatura (hero) */}
 					<div className="space-y-3">
 						<p className="text-sm text-muted-foreground">Valor da fatura</p>
 						<div className="flex items-center gap-2">
@@ -332,7 +297,29 @@ export function InvoiceSummaryCard({
 								{actionDescription}
 							</p>
 						</div>
-						<div className="flex shrink-0 items-center gap-1.5">
+						<div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+							{importSourceFileName ? (
+								<InvoiceImportSourceButton
+									cardId={cardId}
+									invoicePeriod={period}
+									fileName={importSourceFileName}
+								/>
+							) : null}
+							<Button
+								asChild
+								type="button"
+								size="sm"
+								variant="outline"
+								className="min-w-32"
+							>
+								<Link
+									href={importHref}
+									className="inline-flex items-center gap-2"
+								>
+									<RiFileExcel2Line className="size-4" aria-hidden />
+									Importar fatura
+								</Link>
+							</Button>
 							{isPaid ? (
 								<Button
 									type="button"

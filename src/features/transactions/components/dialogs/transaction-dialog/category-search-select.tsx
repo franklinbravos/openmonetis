@@ -38,6 +38,7 @@ type CategorySearchSelectProps = {
 	triggerExtra?: React.ReactNode;
 	onCreateCategory?: () => void;
 	disabled?: boolean;
+	triggerClassName?: string;
 };
 
 const getCategorySearchValue = (option: SelectOption) =>
@@ -55,8 +56,12 @@ export function CategorySearchSelect({
 	triggerExtra,
 	onCreateCategory,
 	disabled,
+	triggerClassName,
 }: CategorySearchSelectProps) {
 	const [searchValue, setSearchValue] = useState("");
+	const [internalOpen, setInternalOpen] = useState(false);
+	const isOpenControlled = open !== undefined;
+	const popoverOpen = isOpenControlled ? open : internalOpen;
 	const selectedOption = categoryOptions.find(
 		(option) => option.value === value,
 	);
@@ -64,6 +69,9 @@ export function CategorySearchSelect({
 	const handleOpenChange = (nextOpen: boolean) => {
 		if (!nextOpen) {
 			setSearchValue("");
+		}
+		if (!isOpenControlled) {
+			setInternalOpen(nextOpen);
 		}
 		onOpenChange?.(nextOpen);
 	};
@@ -74,18 +82,19 @@ export function CategorySearchSelect({
 	};
 
 	return (
-		<Popover open={open} onOpenChange={handleOpenChange} modal>
+		<Popover open={popoverOpen} onOpenChange={handleOpenChange}>
 			<PopoverTrigger asChild>
 				<Button
 					id={id}
 					type="button"
 					variant="outline"
 					role="combobox"
-					aria-expanded={open}
+					aria-expanded={popoverOpen}
 					disabled={disabled}
 					className={cn(
 						"h-9 w-full justify-between border-input bg-transparent px-3 py-2 font-normal shadow-none hover:bg-transparent",
 						!selectedOption && "text-muted-foreground",
+						triggerClassName,
 					)}
 				>
 					<span className="flex min-w-0 flex-1 items-center gap-2 truncate text-left">
@@ -157,7 +166,12 @@ export function CategorySearchSelect({
 									<button
 										type="button"
 										className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-primary text-sm hover:bg-accent"
-										onClick={onCreateCategory}
+										onClick={() => {
+											handleOpenChange(false);
+											requestAnimationFrame(() => {
+												onCreateCategory();
+											});
+										}}
 									>
 										<RiAddFill className="size-4" />
 										Nova categoria
