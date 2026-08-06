@@ -56,8 +56,8 @@ export function AccountStatementCard({
 			<CardContent className="px-4 py-4 sm:px-5 sm:py-5">
 				<div className="flex flex-col gap-4">
 					{/* Linha 1 — identidade */}
-					<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-						<div className="flex min-w-0 items-start gap-3">
+					<div className="flex items-start justify-between gap-3">
+						<div className="flex min-w-0 flex-1 items-start gap-3">
 							{logoPath ? (
 								<div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full">
 									<Image
@@ -82,7 +82,9 @@ export function AccountStatementCard({
 								</p>
 							</div>
 						</div>
-						{actions ? <div className="shrink-0">{actions}</div> : null}
+						{actions ? (
+							<div className="flex shrink-0 items-center gap-0.5">{actions}</div>
+						) : null}
 					</div>
 
 					{/* Linha 2 — saldo final (hero) */}

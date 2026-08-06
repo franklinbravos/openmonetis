@@ -1,0 +1,2 @@
+ALTER TABLE "import_category_mappings" ADD COLUMN "pagador_id" uuid;--> statement-breakpoint
+ALTER TABLE "import_category_mappings" ADD CONSTRAINT "import_category_mappings_pagador_id_pagadores_id_fk" FOREIGN KEY ("pagador_id") REFERENCES "public"."pagadores"("id") ON DELETE set null ON UPDATE cascade;

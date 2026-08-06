@@ -48,6 +48,22 @@ services:
       retries: 3
       start_period: 40s
 
+  minio:
+    image: minio/minio:latest
+    container_name: openmonetis_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-openmonetis}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-openmonetis_dev_password}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+
 volumes:
   postgres_data:
+    driver: local
+  minio_data:
     driver: local

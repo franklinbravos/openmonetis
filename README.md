@@ -423,11 +423,59 @@ docker exec -i <container-db> pg_restore \
 
 ---
 
-## ☁️ Storage S3 Compatível
+## ☁️ Supabase (banco + storage)
 
-O suporte a anexos de lançamentos usa upload direto com URL pré-assinada. Essa configuração é opcional, mas passa a ser necessária se você quiser habilitar anexos no app.
+Quando usar Supabase, separe **três papéis** distintos:
 
-### Variáveis
+| Variável | Obrigatória em produção? | Uso |
+|---|---|---|
+| `DATABASE_URL` | Sim | Postgres **direct** (`db.*.supabase.co:5432`) — Drizzle + Better Auth |
+| `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` | Sim (se usar anexos/importação) | API do Supabase (Storage) |
+| `SUPABASE_TRANSACTION_POOLER` | **Não** | Opcional no `.env` local, só para `drizzle-kit push` |
+
+> O uso normal do app **é Postgres direct** via `DATABASE_URL` — não passa pelo pooler nem pela `service_role`.
+> A `service_role` é um JWT para a API do Supabase (arquivos), não para SQL.
+
+**Produção (Coolify)** — variáveis mínimas:
+
+```env
+DATABASE_URL=postgresql://postgres:SENHA@db.SEU_PROJECT_REF.supabase.co:5432/postgres?sslmode=require
+SUPABASE_URL=https://SEU_PROJECT_REF.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=sua_service_role_key
+SUPABASE_STORAGE_BUCKET=openmonetis-attachments
+```
+
+**Desenvolvimento local** — pode adicionar o pooler para `pnpm db:push` (hook `predev`):
+
+```env
+SUPABASE_TRANSACTION_POOLER=postgresql://postgres.SEU_PROJECT_REF:SENHA@....pooler.supabase.com:6543/postgres
+```
+
+---
+
+## ☁️ Storage (anexos e importação)
+
+Necessário para salvar PDFs de importação (Reprocessar) e anexos de lançamentos.
+
+### Opção recomendada: Supabase Storage
+
+Use o bucket do seu projeto Supabase com a **service role** (somente servidor):
+
+```env
+SUPABASE_URL=https://SEU_PROJECT_REF.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=sua_service_role_key
+SUPABASE_STORAGE_BUCKET=openmonetis-attachments
+```
+
+1. **Storage → Buckets** → crie `openmonetis-attachments` (privado)
+2. **Project Settings → API** → copie URL e `service_role` secret
+3. Teste: `pnpm run test:storage`
+
+> Não use `anon` key no servidor. A `service_role` ignora RLS e deve ficar apenas no `.env` / Coolify.
+
+### Opção alternativa: S3 compatível (self-host)
+
+Se `SUPABASE_*` não estiver definido, o app usa as variáveis `S3_*` (MinIO, R2, etc.):
 
 ```env
 S3_ENDPOINT=
@@ -437,13 +485,9 @@ S3_SECRET_ACCESS_KEY=
 S3_BUCKET=
 ```
 
-### Compatibilidade
-
-- O código atual espera um provider com API compatível com S3 e suporte a `PutObject`, `GetObject`, `HeadObject`, `DeleteObject` e URLs pré-assinadas.
-- A implementação usa `endpoint` customizado e `forcePathStyle: true` em [`src/shared/lib/storage/s3-client.ts`](./src/shared/lib/storage/s3-client.ts).
-- Em geral isso cobre MinIO, Cloudflare R2, Backblaze B2 S3-Compatible, DigitalOcean Spaces e AWS S3. Mas foi testado apenas no Supabase Storage.
-- Se o seu provider exigir `virtual-hosted-style` em vez de `path-style`, você vai precisar ajustar essa configuração antes de usar anexos.
-- Se as variáveis de S3 não forem configuradas, mantenha os anexos desabilitados no seu fluxo de uso.
+- API compatível com S3 (`PutObject`, `GetObject`, `HeadObject`, `DeleteObject`, URLs assinadas)
+- Implementação em [`src/shared/lib/storage/`](./src/shared/lib/storage/)
+- Se nenhum storage estiver configurado, anexos e retomada de importação ficam indisponíveis
 
 ---
 

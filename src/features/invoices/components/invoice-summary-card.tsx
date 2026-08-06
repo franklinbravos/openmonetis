@@ -1,6 +1,6 @@
 "use client";
 
-import { RiEditLine, RiEqualizerLine, RiFileExcel2Line } from "@remixicon/react";
+import { RiBankLine, RiEditLine, RiEqualizerLine, RiFileExcel2Line } from "@remixicon/react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -39,16 +39,14 @@ import { resolveCardBrandAsset } from "@/shared/lib/cards/brand-assets";
 import {
 	INVOICE_PAYMENT_STATUS,
 	INVOICE_STATUS_BADGE_VARIANT,
-	INVOICE_STATUS_DESCRIPTION,
 	INVOICE_STATUS_LABEL,
 	type InvoicePaymentStatus,
 } from "@/shared/lib/invoices";
 import { formatCurrency } from "@/shared/utils/currency";
-import { formatDateOnly } from "@/shared/utils/date";
 import { cn } from "@/shared/utils/ui";
 import { AdjustInvoiceDialog } from "./adjust-invoice-dialog";
 import { EditPaymentDateDialog } from "./edit-payment-date-dialog";
-import { InvoiceImportSourceButton } from "./invoice-import-source-button";
+import { InvoiceImportHistoryButton } from "./invoice-import-history-button";
 
 type PaymentAccountOption = {
 	value: string;
@@ -69,7 +67,7 @@ type InvoiceSummaryCardProps = {
 	paymentDate: Date | null;
 	defaultPaymentAccountId: string | null;
 	paymentAccountOptions: PaymentAccountOption[];
-	importSourceFileName?: string | null;
+	hasImportHistory?: boolean;
 };
 
 const actionLabelByStatus: Record<InvoicePaymentStatus, string> = {
@@ -81,9 +79,17 @@ const actionVariantByStatus: Record<
 	InvoicePaymentStatus,
 	"default" | "outline"
 > = {
-	[INVOICE_PAYMENT_STATUS.PENDING]: "default",
+	[INVOICE_PAYMENT_STATUS.PENDING]: "outline",
 	[INVOICE_PAYMENT_STATUS.PAID]: "outline",
 };
+
+const actionButtonClassName =
+	"h-auto min-h-8 w-full min-w-0 px-2 py-1.5 text-[11px] leading-tight sm:text-xs";
+
+const pendingPaymentButtonClassName = cn(
+	actionButtonClassName,
+	"border-primary bg-background text-primary hover:bg-primary/5 hover:text-primary",
+);
 
 const formatDay = (value: string) => value.padStart(2, "0");
 
@@ -92,13 +98,6 @@ const getCardStatusDotColor = (status: string | null) => {
 	const s = status.toLowerCase();
 	return s === "ativo" || s === "active" ? "bg-success" : "bg-gray-400";
 };
-
-const formatPaymentDate = (value: Date | null) =>
-	formatDateOnly(value, {
-		day: "2-digit",
-		month: "short",
-		year: "numeric",
-	}) ?? "data não informada";
 
 export function InvoiceSummaryCard({
 	cardId,
@@ -113,7 +112,7 @@ export function InvoiceSummaryCard({
 	paymentDate: initialPaymentDate,
 	defaultPaymentAccountId,
 	paymentAccountOptions,
-	importSourceFileName = null,
+	hasImportHistory = false,
 }: InvoiceSummaryCardProps) {
 	const router = useRouter();
 	const [isPending, startTransition] = useTransition();
@@ -137,10 +136,6 @@ export function InvoiceSummaryCard({
 
 	const brandAsset = resolveCardBrandAsset(cardBrand);
 	const isPaid = invoiceStatus === INVOICE_PAYMENT_STATUS.PAID;
-	const paymentDateLabel = isPaid ? formatPaymentDate(paymentDate) : null;
-	const actionDescription = isPaid
-		? `Pagamento registrado em ${paymentDateLabel}.`
-		: INVOICE_STATUS_DESCRIPTION[invoiceStatus];
 	const importHref = `/transactions/import?cartao=${encodeURIComponent(cardId)}&periodo=${encodeURIComponent(period)}`;
 
 	const targetStatus = isPaid
@@ -290,94 +285,94 @@ export function InvoiceSummaryCard({
 						) : null}
 					</div>
 
-					{/* Linha 4 — ação */}
-					<div className="flex flex-col gap-3 rounded-md border border-dashed bg-muted/30 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-						<div className="space-y-1">
-							<p className="text-xs text-muted-foreground">
-								{actionDescription}
-							</p>
-						</div>
-						<div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-							{importSourceFileName ? (
-								<InvoiceImportSourceButton
-									cardId={cardId}
-									invoicePeriod={period}
-									fileName={importSourceFileName}
-								/>
-							) : null}
+					{/* Linha 4 — ações */}
+					<div
+						className={cn(
+							"grid w-full gap-1.5 rounded-md border border-dashed bg-muted/30 p-2",
+							hasImportHistory ? "grid-cols-3" : "grid-cols-2",
+						)}
+					>
+						{hasImportHistory ? (
+							<InvoiceImportHistoryButton
+								cardId={cardId}
+								invoicePeriod={period}
+								className="w-full min-w-0"
+							/>
+						) : null}
+						<Button
+							asChild
+							type="button"
+							size="sm"
+							variant="outline"
+							className="h-auto min-h-8 w-full min-w-0 px-2 py-1.5 text-[11px] leading-tight sm:text-xs"
+						>
+							<Link
+								href={importHref}
+								className="inline-flex items-center justify-center gap-1 text-center"
+							>
+								<RiFileExcel2Line className="size-3.5 shrink-0" aria-hidden />
+								Importar fatura
+							</Link>
+						</Button>
+						{isPaid ? (
 							<Button
-								asChild
 								type="button"
 								size="sm"
-								variant="outline"
-								className="min-w-32"
+								variant={actionVariantByStatus[invoiceStatus]}
+								disabled={isPending}
+								onClick={() => handleAction()}
+								className={actionButtonClassName}
 							>
-								<Link
-									href={importHref}
-									className="inline-flex items-center gap-2"
-								>
-									<RiFileExcel2Line className="size-4" aria-hidden />
-									Importar fatura
-								</Link>
+								{isPending
+									? "Salvando..."
+									: actionLabelByStatus[invoiceStatus]}
 							</Button>
-							{isPaid ? (
-								<Button
-									type="button"
-									size="sm"
-									variant={actionVariantByStatus[invoiceStatus]}
-									disabled={isPending}
-									onClick={() => handleAction()}
-									className="min-w-32"
-								>
-									{isPending
-										? "Salvando..."
-										: actionLabelByStatus[invoiceStatus]}
-								</Button>
-							) : (
-								<PayInvoiceDialog
-									open={paymentDialogOpen}
-									onOpenChange={setPaymentDialogOpen}
-									isPending={isPending}
-									paymentDate={paymentDate}
-									onPaymentDateChange={setPaymentDate}
-									accountId={paymentAccountId}
-									onAccountChange={setPaymentAccountId}
-									accountOptions={paymentAccountOptions}
-									onConfirm={handlePaymentConfirm}
-									trigger={
-										<Button
-											type="button"
-											size="sm"
-											variant={actionVariantByStatus[invoiceStatus]}
-											disabled={isPending}
-											className="min-w-32"
-										>
-											{isPending
-												? "Salvando..."
-												: actionLabelByStatus[invoiceStatus]}
-										</Button>
-									}
-								/>
-							)}
-							{isPaid ? (
-								<EditPaymentDateDialog
-									trigger={
-										<Button
-											type="button"
-											variant="ghost"
-											size="icon-sm"
-											className="text-muted-foreground hover:text-foreground"
-											aria-label="Editar data de pagamento"
-										>
-											<RiEditLine className="size-4" />
-										</Button>
-									}
-									currentDate={paymentDate}
-									onDateChange={handleDateChange}
-								/>
-							) : null}
-						</div>
+						) : (
+							<PayInvoiceDialog
+								open={paymentDialogOpen}
+								onOpenChange={setPaymentDialogOpen}
+								isPending={isPending}
+								paymentDate={paymentDate}
+								onPaymentDateChange={setPaymentDate}
+								accountId={paymentAccountId}
+								onAccountChange={setPaymentAccountId}
+								accountOptions={paymentAccountOptions}
+								onConfirm={handlePaymentConfirm}
+								trigger={
+									<Button
+										type="button"
+										size="sm"
+										variant={actionVariantByStatus[invoiceStatus]}
+										disabled={isPending}
+										className={pendingPaymentButtonClassName}
+									>
+										{isPending
+											? "Salvando..."
+											: actionLabelByStatus[invoiceStatus]}
+									</Button>
+								}
+							/>
+						)}
 					</div>
+					{isPaid ? (
+						<div className="flex justify-end">
+							<EditPaymentDateDialog
+								trigger={
+									<Button
+										type="button"
+										variant="ghost"
+										size="icon-sm"
+										className="text-muted-foreground hover:text-foreground"
+										aria-label="Editar data de pagamento"
+									>
+										<RiEditLine className="size-4" />
+									</Button>
+								}
+								currentDate={paymentDate}
+								onDateChange={handleDateChange}
+							/>
+						</div>
+					) : null}
 				</div>
 			</CardContent>
 		</Card>

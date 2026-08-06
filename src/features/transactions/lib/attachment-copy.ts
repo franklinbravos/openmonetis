@@ -1,11 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { CopyObjectCommand } from "@aws-sdk/client-s3";
 import { eq } from "drizzle-orm";
 import { attachments, transactionAttachments, transactions } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import { getPayerAccess } from "@/shared/lib/payers/access";
-import { deleteS3Object } from "@/shared/lib/storage/presign";
-import { S3_BUCKET, s3 } from "@/shared/lib/storage/s3-client";
+import { copyStorageObject, deleteS3Object } from "@/shared/lib/storage/presign";
 
 const SAFE_EXTENSION = /^[a-z0-9]{1,10}$/i;
 
@@ -62,17 +60,9 @@ export async function copyAttachmentsForImport({
 		const newFileKey = `${targetUserId}/${randomUUID()}.${sanitizeExtension(src.fileKey)}`;
 
 		try {
-			await s3.send(
-				new CopyObjectCommand({
-					Bucket: S3_BUCKET,
-					CopySource: `${S3_BUCKET}/${src.fileKey}`,
-					Key: newFileKey,
-					ContentType: src.mimeType,
-					MetadataDirective: "COPY",
-				}),
-			);
+			await copyStorageObject(src.fileKey, newFileKey, src.mimeType);
 		} catch (error) {
-			console.error("Falha ao copiar anexo no S3:", error);
+			console.error("Falha ao copiar anexo no storage:", error);
 			continue;
 		}
 

@@ -1,13 +1,27 @@
 "use client";
 
-import { RiDownloadLine, RiHistoryLine, RiPlayLine } from "@remixicon/react";
+import {
+	RiDeleteBinLine,
+	RiDownloadLine,
+	RiHistoryLine,
+	RiPlayLine,
+} from "@remixicon/react";
 import Link from "next/link";
-import { useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { getImportBatchDownloadUrlAction } from "@/features/transactions/actions/import-batch-history-action";
+import {
+	deleteImportBatchAction,
+	getImportBatchDownloadUrlAction,
+} from "@/features/transactions/actions/import-batch-history-action";
 import type { ImportFileHistoryEntry } from "@/features/transactions/lib/import-file-duplicate";
-import { isImportBatchDraft, isImportBatchImported } from "@/features/transactions/lib/import-batch-status";
+import {
+	canDeleteImportBatch,
+	isImportBatchDraft,
+	isImportBatchImported,
+} from "@/features/transactions/lib/import-batch-status";
 import { buildImportContinueHref } from "@/features/transactions/lib/import-continue-href";
+import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import {
@@ -35,6 +49,7 @@ type ImportFileHistoryProps = {
 	viewAllLabel?: string;
 	onContinueImport?: (entry: ImportFileHistoryEntry) => void;
 	resumingBatchId?: string | null;
+	allowDelete?: boolean;
 };
 
 function formatFileSize(bytes: number | null): string | null {
@@ -45,17 +60,25 @@ function formatFileSize(bytes: number | null): string | null {
 }
 
 function ImportFileHistoryBadges({ entry }: { entry: ImportFileHistoryEntry }) {
+	if (isImportBatchImported(entry.status)) {
+		return (
+			<Badge variant="success" className="text-[10px]">
+				Importado
+			</Badge>
+		);
+	}
+
 	return (
 		<>
 			{isImportBatchDraft(entry.status) ? (
 				<Badge variant="secondary" className="text-[10px]">
 					Rascunho salvo
 				</Badge>
-			) : !isImportBatchImported(entry.status) ? (
+			) : (
 				<Badge variant="outline" className="text-[10px]">
 					Apenas upload
 				</Badge>
-			) : null}
+			)}
 			{entry.hasAttachment ? (
 				<Badge variant="secondary" className="text-[10px]">
 					Arquivo salvo
@@ -93,7 +116,9 @@ function ImportFileHistoryStatusText({ entry }: { entry: ImportFileHistoryEntry 
 
 	return isImportBatchDraft(entry.status)
 		? "Importação salva — continue depois"
-		: "Importação não concluída";
+		: entry.hasAttachment
+			? "Arquivo enviado — importação não concluída"
+			: "Registro criado — arquivo não salvo no servidor";
 }
 
 function ImportFileHistoryActions({
@@ -101,11 +126,15 @@ function ImportFileHistoryActions({
 	layout = "column",
 	onContinueImport,
 	resumingBatchId = null,
+	allowDelete = false,
+	onRequestDelete,
 }: {
 	entry: ImportFileHistoryEntry;
 	layout?: "column" | "row";
 	onContinueImport?: (entry: ImportFileHistoryEntry) => void;
 	resumingBatchId?: string | null;
+	allowDelete?: boolean;
+	onRequestDelete?: (entry: ImportFileHistoryEntry) => void;
 }) {
 	const [isPending, startTransition] = useTransition();
 	const continueLabel = isImportBatchDraft(entry.status)
@@ -114,6 +143,10 @@ function ImportFileHistoryActions({
 	const isResumingThisEntry = resumingBatchId === entry.id;
 	const isResumingOtherEntry =
 		resumingBatchId != null && resumingBatchId !== entry.id;
+	const canResumeOrReprocess =
+		!isImportBatchImported(entry.status) &&
+		(isImportBatchDraft(entry.status) || entry.hasAttachment);
+	const canDelete = allowDelete && canDeleteImportBatch(entry.status);
 
 	return (
 		<div
@@ -122,7 +155,7 @@ function ImportFileHistoryActions({
 				layout === "column" ? "flex-col items-end" : "justify-end",
 			)}
 		>
-			{!isImportBatchImported(entry.status) ? (
+			{canResumeOrReprocess ? (
 				onContinueImport ? (
 					<Button
 						type="button"
@@ -176,6 +209,18 @@ function ImportFileHistoryActions({
 					<RiDownloadLine className="size-4" aria-hidden />
 				</Button>
 			) : null}
+			{canDelete ? (
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon"
+					className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+					aria-label={`Excluir ${entry.sourceFileName}`}
+					onClick={() => onRequestDelete?.(entry)}
+				>
+					<RiDeleteBinLine className="size-4" aria-hidden />
+				</Button>
+			) : null}
 		</div>
 	);
 }
@@ -184,10 +229,14 @@ function ImportFileHistoryCardRow({
 	entry,
 	onContinueImport,
 	resumingBatchId,
+	allowDelete,
+	onRequestDelete,
 }: {
 	entry: ImportFileHistoryEntry;
 	onContinueImport?: (entry: ImportFileHistoryEntry) => void;
 	resumingBatchId?: string | null;
+	allowDelete?: boolean;
+	onRequestDelete?: (entry: ImportFileHistoryEntry) => void;
 }) {
 	return (
 		<div className="flex items-start gap-3 rounded-lg border bg-muted/20 px-3 py-2.5 md:hidden">
@@ -202,13 +251,7 @@ function ImportFileHistoryCardRow({
 					<ImportFileHistoryContextLine entry={entry} />
 				</p>
 				<p className="text-muted-foreground text-xs">
-					{isImportBatchImported(entry.status) ? (
-						<ImportFileHistoryStatusText entry={entry} />
-					) : isImportBatchDraft(entry.status) ? (
-						"Importação salva — continue depois"
-					) : (
-						"Arquivo enviado — importação não concluída"
-					)}
+					<ImportFileHistoryStatusText entry={entry} />
 				</p>
 			</div>
 			<ImportFileHistoryActions
@@ -216,6 +259,8 @@ function ImportFileHistoryCardRow({
 				layout="column"
 				onContinueImport={onContinueImport}
 				resumingBatchId={resumingBatchId}
+				allowDelete={allowDelete}
+				onRequestDelete={onRequestDelete}
 			/>
 		</div>
 	);
@@ -225,10 +270,14 @@ function ImportFileHistoryTableRow({
 	entry,
 	onContinueImport,
 	resumingBatchId,
+	allowDelete,
+	onRequestDelete,
 }: {
 	entry: ImportFileHistoryEntry;
 	onContinueImport?: (entry: ImportFileHistoryEntry) => void;
 	resumingBatchId?: string | null;
+	allowDelete?: boolean;
+	onRequestDelete?: (entry: ImportFileHistoryEntry) => void;
 }) {
 	return (
 		<TableRow>
@@ -252,6 +301,8 @@ function ImportFileHistoryTableRow({
 					layout="row"
 					onContinueImport={onContinueImport}
 					resumingBatchId={resumingBatchId}
+					allowDelete={allowDelete}
+					onRequestDelete={onRequestDelete}
 				/>
 			</TableCell>
 		</TableRow>
@@ -271,7 +322,29 @@ export function ImportFileHistory({
 	viewAllLabel = "Ver todas as importações",
 	onContinueImport,
 	resumingBatchId = null,
+	allowDelete = false,
 }: ImportFileHistoryProps) {
+	const router = useRouter();
+	const [pendingDeleteEntry, setPendingDeleteEntry] =
+		useState<ImportFileHistoryEntry | null>(null);
+
+	const handleConfirmDelete = async () => {
+		if (!pendingDeleteEntry) return;
+
+		const result = await deleteImportBatchAction({
+			batchId: pendingDeleteEntry.id,
+		});
+
+		if (!result.success) {
+			toast.error(result.error ?? "Não foi possível excluir a importação.");
+			throw new Error(result.error ?? "delete failed");
+		}
+
+		toast.success(result.message ?? "Importação excluída.");
+		setPendingDeleteEntry(null);
+		router.refresh();
+	};
+
 	if (entries.length === 0) {
 		if (!emptyMessage) return null;
 
@@ -285,7 +358,8 @@ export function ImportFileHistory({
 	const showViewAllLink = Boolean(viewAllHref && entries.length > 0);
 
 	return (
-		<section className={cn("space-y-3", className)}>
+		<>
+			<section className={cn("space-y-3", className)}>
 			{showHeader ? (
 				<div className="space-y-1">
 					<div className="flex items-center gap-2">
@@ -307,6 +381,8 @@ export function ImportFileHistory({
 						entry={entry}
 						onContinueImport={onContinueImport}
 						resumingBatchId={resumingBatchId}
+						allowDelete={allowDelete}
+						onRequestDelete={setPendingDeleteEntry}
 					/>
 				))}
 			</div>
@@ -328,6 +404,8 @@ export function ImportFileHistory({
 								entry={entry}
 								onContinueImport={onContinueImport}
 								resumingBatchId={resumingBatchId}
+								allowDelete={allowDelete}
+								onRequestDelete={setPendingDeleteEntry}
 							/>
 						))}
 					</TableBody>
@@ -353,6 +431,24 @@ export function ImportFileHistory({
 					Exibindo {limit} de {entries.length} registros.
 				</p>
 			) : null}
-		</section>
+			</section>
+
+			<ConfirmActionDialog
+				open={pendingDeleteEntry != null}
+				onOpenChange={(open) => {
+					if (!open) setPendingDeleteEntry(null);
+				}}
+				title="Excluir importação?"
+				description={
+					pendingDeleteEntry
+						? `O registro de "${pendingDeleteEntry.sourceFileName}" será removido. Esta ação não pode ser desfeita.`
+						: undefined
+				}
+				confirmLabel="Excluir"
+				confirmVariant="destructive"
+				pendingLabel="Excluindo…"
+				onConfirm={handleConfirmDelete}
+			/>
+		</>
 	);
 }

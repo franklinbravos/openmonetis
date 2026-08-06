@@ -1,6 +1,7 @@
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "@/db/schema";
+import { getPgPoolConfig } from "@/shared/lib/supabase/env";
 
 const globalForDb = globalThis as unknown as {
 	pool?: Pool;
@@ -10,13 +11,9 @@ let _db: NodePgDatabase<typeof schema> | undefined;
 let _pool: Pool | undefined;
 
 function getDb() {
-	const { DATABASE_URL } = process.env;
+	const poolConfig = getPgPoolConfig();
 
-	if (!DATABASE_URL) {
-		throw new Error("DATABASE_URL env variable is not set");
-	}
-
-	_pool = globalForDb.pool ?? new Pool({ connectionString: DATABASE_URL });
+	_pool = globalForDb.pool ?? new Pool(poolConfig);
 
 	if (process.env.NODE_ENV !== "production") {
 		globalForDb.pool = _pool;

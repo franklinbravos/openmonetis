@@ -1,10 +1,10 @@
-import type { Config } from "drizzle-kit";
+import { getMigrationDatabaseUrl } from "./src/shared/lib/supabase/env";
 
 export default {
 	schema: "./src/db/schema.ts",
 	out: "./drizzle",
 	dialect: "postgresql",
 	dbCredentials: {
-		url: process.env.DATABASE_URL as string,
+		url: getMigrationDatabaseUrl(),
 	},
-} satisfies Config;
+} satisfies import("drizzle-kit").Config;

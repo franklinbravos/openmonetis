@@ -19,7 +19,10 @@ import {
 	headS3Object,
 	putS3Object,
 } from "@/shared/lib/storage/presign";
-import { isObjectStorageConfigured } from "@/shared/lib/storage/config";
+import {
+	getStorageConfigurationErrorMessage,
+	isObjectStorageConfigured,
+} from "@/shared/lib/storage/config";
 import { uuidSchema } from "@/shared/lib/schemas/common";
 
 const UPLOAD_TOKEN_EXPIRY_SECONDS = 10 * 60;
@@ -234,8 +237,7 @@ export async function uploadImportSourceFileDirectAction(
 		if (!isObjectStorageConfigured()) {
 			return {
 				success: false,
-				error:
-					"Storage S3 não configurado. Configure as variáveis S3_* no .env para salvar o arquivo e retomar depois.",
+				error: getStorageConfigurationErrorMessage(),
 			};
 		}
 
@@ -302,6 +304,7 @@ export async function uploadImportSourceFileDirectAction(
 
 		return { success: true };
 	} catch (error) {
+		console.error("[uploadImportSourceFileDirectAction]", error);
 		const result = handleActionError(error);
 		if (!result.success) return { success: false, error: result.error };
 		return { success: false, error: "Erro inesperado." };
@@ -318,8 +321,7 @@ export async function getImportSourcePresignAction(input: {
 		if (!isObjectStorageConfigured()) {
 			return {
 				success: false,
-				error:
-					"Storage S3 não configurado. Configure as variáveis S3_* no .env.",
+				error: getStorageConfigurationErrorMessage(),
 			};
 		}
 

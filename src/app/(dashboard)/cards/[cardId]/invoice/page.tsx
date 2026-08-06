@@ -12,7 +12,7 @@ import {
 	fetchCardTransactions,
 	fetchInvoiceData,
 } from "@/features/invoices/queries";
-import { fetchInvoiceImportSource } from "@/features/transactions/queries/import-source";
+import { fetchImportBatchHistory } from "@/features/transactions/queries/import-batch-history";
 import { fetchUserPreferences } from "@/features/settings/queries";
 import { TransactionsPage as LancamentosSection } from "@/features/transactions/components/page/transactions-page";
 import { TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID } from "@/features/transactions/lib/month-toolbar";
@@ -73,14 +73,19 @@ export default async function Page({ params, searchParams }: PageProps) {
 		invoiceData,
 		estabelecimentos,
 		userPreferences,
-		importSource,
+		importHistory,
 	] = await Promise.all([
 		fetchTransactionFilterSources(userId),
 		loadLogoOptions(),
 		fetchInvoiceData(userId, cardId, selectedPeriod),
 		fetchRecentEstablishments(userId),
 		fetchUserPreferences(userId),
-		fetchInvoiceImportSource(userId, cardId, selectedPeriod),
+		fetchImportBatchHistory({
+			userId,
+			cardId,
+			invoicePeriod: selectedPeriod,
+			limit: 1,
+		}),
 	]);
 	const sluggedFilters = buildSluggedFilters(filterSources);
 	const slugMaps = buildSlugMaps(sluggedFilters);
@@ -219,7 +224,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 						label: option.label,
 						logo: option.logo ?? null,
 					}))}
-					importSourceFileName={importSource?.fileName ?? null}
+					hasImportHistory={importHistory.length > 0}
 				/>
 			</section>
 

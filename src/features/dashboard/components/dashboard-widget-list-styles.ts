@@ -1,5 +1,7 @@
 export const dashboardWidgetListStyles = {
 	row: "flex min-h-[3.25rem] items-center justify-between gap-2 py-1.5 transition-all duration-300",
+	rowLink:
+		"flex min-h-[3.25rem] w-full items-center justify-between gap-2 rounded-md py-1.5 transition-all duration-300 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 	main: "flex min-w-0 flex-1 items-center gap-2",
 	textStack: "min-w-0 flex-1 space-y-0.5",
 	title: "truncate text-sm font-medium leading-5 text-foreground",

@@ -3,6 +3,7 @@
 import {
 	RiArrowLeftRightLine,
 	RiArrowRightDownLine,
+	RiArrowRightLine,
 	RiArrowRightUpLine,
 	RiAttachment2,
 	RiCalendarEventLine,
@@ -26,6 +27,7 @@ import {
 	TooltipTrigger,
 } from "@/shared/components/ui/tooltip";
 import { resolveLogoSrc } from "@/shared/lib/logo";
+import { resolveTransferAccountsPreview } from "@/shared/lib/transfers/utils";
 import { formatDate, formatDateGroupLabel } from "@/shared/utils/date";
 import { getConditionIcon, getPaymentMethodIcon } from "@/shared/utils/icons";
 import { cn } from "@/shared/utils/ui";
@@ -201,6 +203,7 @@ function TransactionMobileCard({
 	const accountCardLabel = item.cartaoName ?? item.contaName;
 	const accountCardType = item.cartaoName ? "Cartão" : "Conta";
 	const accountCardLogo = resolveLogoSrc(item.cartaoLogo ?? item.contaLogo);
+	const transferAccounts = isTransfer ? resolveTransferAccountsPreview(item) : null;
 
 	const type =
 		item.categoriaName === "Saldo inicial"
@@ -275,35 +278,33 @@ function TransactionMobileCard({
 
 					<div className="mt-2 flex items-center justify-between gap-2">
 						<div className="flex min-w-0 flex-wrap items-center gap-1.5">
-							<IconBadge
-								label={type}
-								compact
-								className={getTransactionTypeIconClassName(type)}
-							>
-								{getTransactionTypeIcon(type)}
-							</IconBadge>
-							<IconBadge label={paymentMethodLabel} compact>
-								{getPaymentMethodIcon(item.paymentMethod)}
-							</IconBadge>
-							{accountCardLabel ? (
-								<IconBadge
-									label={`${accountCardType}: ${accountCardLabel}`}
-									compact
-								>
-									<Avatar className="size-3.5">
-										{accountCardLogo ? (
-											<AvatarImage
-												src={accountCardLogo}
-												alt=""
-												className="object-cover"
+							{transferAccounts ? (
+								<TransferAccountsBadge accounts={transferAccounts} />
+							) : (
+								<>
+									<IconBadge
+										label={type}
+										compact
+										className={getTransactionTypeIconClassName(type)}
+									>
+										{getTransactionTypeIcon(type)}
+									</IconBadge>
+									<IconBadge label={paymentMethodLabel} compact>
+										{getPaymentMethodIcon(item.paymentMethod)}
+									</IconBadge>
+									{accountCardLabel ? (
+										<IconBadge
+											label={`${accountCardType}: ${accountCardLabel}`}
+											compact
+										>
+											<AccountMiniAvatar
+												name={accountCardLabel}
+												logo={accountCardLogo}
 											/>
-										) : null}
-										<AvatarFallback className="text-[8px] font-medium uppercase">
-											{accountCardLabel.slice(0, 2)}
-										</AvatarFallback>
-									</Avatar>
-								</IconBadge>
-							) : null}
+										</IconBadge>
+									) : null}
+								</>
+							)}
 							<IconBadge label={item.condition} compact>
 								{getConditionIcon(item.condition)}
 							</IconBadge>
@@ -393,6 +394,51 @@ function TransactionMobileCard({
 				</div>
 			</div>
 		</article>
+	);
+}
+
+function AccountMiniAvatar({
+	name,
+	logo,
+}: {
+	name: string;
+	logo?: string | null;
+}) {
+	return (
+		<Avatar className="size-3.5">
+			{logo ? <AvatarImage src={logo} alt="" className="object-cover" /> : null}
+			<AvatarFallback className="font-medium text-[8px] uppercase">
+				{name.slice(0, 2)}
+			</AvatarFallback>
+		</Avatar>
+	);
+}
+
+function TransferAccountsBadge({
+	accounts,
+}: {
+	accounts: NonNullable<ReturnType<typeof resolveTransferAccountsPreview>>;
+}) {
+	const label = `${accounts.from.name} → ${accounts.to.name}`;
+
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<span className="inline-flex items-center gap-1 rounded-full border border-info/30 bg-info/5 px-1.5 py-0.5 text-info">
+					<AccountMiniAvatar
+						name={accounts.from.name}
+						logo={resolveLogoSrc(accounts.from.logo)}
+					/>
+					<RiArrowRightLine className="size-3 shrink-0" aria-hidden />
+					<AccountMiniAvatar
+						name={accounts.to.name}
+						logo={resolveLogoSrc(accounts.to.logo)}
+					/>
+					<span className="sr-only">{label}</span>
+				</span>
+			</TooltipTrigger>
+			<TooltipContent side="top">{label}</TooltipContent>
+		</Tooltip>
 	);
 }
 

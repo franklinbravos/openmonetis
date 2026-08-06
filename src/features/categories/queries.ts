@@ -9,6 +9,7 @@ type CategoryData = {
 	type: CategoryType;
 	icon: string | null;
 	parentId: string | null;
+	sortOrder: number;
 };
 
 export async function fetchCategoriesForUser(
@@ -24,5 +25,6 @@ export async function fetchCategoriesForUser(
 		type: category.type as CategoryType,
 		icon: category.icon,
 		parentId: category.parentId ?? null,
+		sortOrder: category.sortOrder ?? 0,
 	}));
 }

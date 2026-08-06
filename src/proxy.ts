@@ -27,11 +27,15 @@ const PUBLIC_AUTH_ROUTES = ["/login", "/signup"];
 function buildCsp(): string {
 	const isDev = process.env.NODE_ENV === "development";
 
-	const s3Origin = (() => {
+	const storageOrigin = (() => {
 		try {
-			return process.env.S3_ENDPOINT
-				? new URL(process.env.S3_ENDPOINT).origin
-				: "";
+			if (process.env.SUPABASE_URL?.trim()) {
+				return new URL(process.env.SUPABASE_URL).origin;
+			}
+			if (process.env.S3_ENDPOINT?.trim()) {
+				return new URL(process.env.S3_ENDPOINT).origin;
+			}
+			return "";
 		} catch {
 			return "";
 		}
@@ -39,12 +43,12 @@ function buildCsp(): string {
 
 	const umamiOrigin = process.env.UMAMI_URL ?? "";
 
-	const connectExtras = [umamiOrigin, s3Origin].filter(Boolean).join(" ");
+	const connectExtras = [umamiOrigin, storageOrigin].filter(Boolean).join(" ");
 
 	const imgExtras = [
 		"https://lh3.googleusercontent.com",
 		"https://img.logo.dev",
-		s3Origin,
+		storageOrigin,
 	]
 		.filter(Boolean)
 		.join(" ");
@@ -56,7 +60,7 @@ function buildCsp(): string {
 		`img-src 'self' ${imgExtras} data: blob:`,
 		"font-src 'self'",
 		`connect-src 'self' ${connectExtras}`,
-		`frame-src 'self'${s3Origin ? ` ${s3Origin}` : ""}`,
+		`frame-src 'self'${storageOrigin ? ` ${storageOrigin}` : ""}`,
 		"frame-ancestors 'none'",
 	].join("; ");
 }

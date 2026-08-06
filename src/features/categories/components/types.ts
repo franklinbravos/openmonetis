@@ -6,6 +6,7 @@ export type Category = {
 	type: CategoryType;
 	icon: string | null;
 	parentId: string | null;
+	sortOrder?: number;
 };
 
 export type CategoryFormValues = {

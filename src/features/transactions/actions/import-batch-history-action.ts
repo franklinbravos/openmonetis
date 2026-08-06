@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod/v4";
-import { importBatches } from "@/db/schema";
+import { attachments, importBatches, transactions } from "@/db/schema";
 import { fetchImportBatchHistory } from "@/features/transactions/queries/import-batch-history";
 import type { ImportFileHistoryEntry } from "@/features/transactions/lib/import-file-duplicate";
 import {
@@ -19,6 +19,7 @@ import { db } from "@/shared/lib/db";
 import {
 	canInlineDownloadS3Object,
 	createPresignedGetUrl,
+	deleteS3Object,
 	getS3ObjectBuffer,
 	headS3Object,
 } from "@/shared/lib/storage/presign";
@@ -77,6 +78,55 @@ export async function registerImportUploadAction(
 		revalidatePath("/transactions/import/history");
 
 		return { success: true, importBatchId };
+	} catch (error) {
+		const result = handleActionError(error);
+		if (!result.success) return { success: false, error: result.error };
+		return { success: false, error: "Erro inesperado." };
+	}
+}
+
+const syncBatchContextSchema = z.object({
+	batchId: z.string().uuid(),
+	invoicePeriod: z
+		.string()
+		.regex(/^\d{4}-\d{2}$/)
+		.nullable()
+		.optional(),
+	cardId: uuidSchema("Cartão").nullable().optional(),
+	accountId: uuidSchema("Conta").nullable().optional(),
+});
+
+export async function syncImportBatchContextAction(
+	input: z.infer<typeof syncBatchContextSchema>,
+): Promise<{ success: boolean; error?: string }> {
+	try {
+		const userId = await getUserId();
+		const data = syncBatchContextSchema.parse(input);
+
+		const updated = await db
+			.update(importBatches)
+			.set({
+				invoicePeriod: data.invoicePeriod ?? null,
+				cardId: data.cardId ?? null,
+				accountId: data.accountId ?? null,
+			})
+			.where(
+				and(
+					eq(importBatches.userId, userId),
+					eq(importBatches.id, data.batchId),
+				),
+			)
+			.returning({ id: importBatches.id });
+
+		if (updated.length === 0) {
+			return { success: false, error: "Importação não encontrada." };
+		}
+
+		revalidatePath("/transactions/import");
+		revalidatePath("/transactions/import/history");
+		revalidatePath("/cards");
+
+		return { success: true };
 	} catch (error) {
 		const result = handleActionError(error);
 		if (!result.success) return { success: false, error: result.error };
@@ -318,4 +368,77 @@ export async function getImportBatchDownloadUrlAction(input: {
 
 	const url = await createPresignedGetUrl(fileKey);
 	return { success: true, url, fileName: batch.sourceFileName };
+}
+
+export async function deleteImportBatchAction(input: {
+	batchId: string;
+}): Promise<{ success: boolean; error?: string; message?: string }> {
+	try {
+		const userId = await getUserId();
+		const data = downloadSchema.parse(input);
+
+		const batch = await db.query.importBatches.findFirst({
+			columns: {
+				id: true,
+				status: true,
+				attachmentId: true,
+			},
+			where: and(
+				eq(importBatches.userId, userId),
+				eq(importBatches.id, data.batchId),
+			),
+			with: {
+				attachment: {
+					columns: {
+						id: true,
+						fileKey: true,
+					},
+				},
+			},
+		});
+
+		if (!batch) {
+			return { success: false, error: "Importação não encontrada." };
+		}
+
+		if (batch.status === IMPORT_BATCH_STATUS.IMPORTED) {
+			return {
+				success: false,
+				error: "Não é possível excluir importações já concluídas.",
+			};
+		}
+
+		await db
+			.delete(transactions)
+			.where(
+				and(
+					eq(transactions.userId, userId),
+					eq(transactions.importBatchId, data.batchId),
+				),
+			);
+
+		if (batch.attachment?.fileKey) {
+			await deleteS3Object(batch.attachment.fileKey).catch(() => {});
+		}
+
+		if (batch.attachmentId) {
+			await db.delete(attachments).where(eq(attachments.id, batch.attachmentId));
+		}
+
+		await db
+			.delete(importBatches)
+			.where(
+				and(eq(importBatches.userId, userId), eq(importBatches.id, data.batchId)),
+			);
+
+		revalidatePath("/transactions/import");
+		revalidatePath("/transactions/import/history");
+		revalidatePath("/cards");
+
+		return { success: true, message: "Importação excluída." };
+	} catch (error) {
+		const result = handleActionError(error);
+		if (!result.success) return { success: false, error: result.error };
+		return { success: false, error: "Erro inesperado." };
+	}
 }

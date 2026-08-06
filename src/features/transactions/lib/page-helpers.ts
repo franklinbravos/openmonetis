@@ -569,6 +569,12 @@ type TransactionRowWithRelations = Partial<typeof transactions.$inferSelect> & {
 	card?: CardRow | null;
 	category?: CategoryRow | null;
 	hasAttachments?: boolean;
+	transferFromAccountId?: string | null;
+	transferFromAccountName?: string | null;
+	transferFromAccountLogo?: string | null;
+	transferToAccountId?: string | null;
+	transferToAccountName?: string | null;
+	transferToAccountLogo?: string | null;
 };
 
 export const mapTransactionsData = (rows: TransactionRowWithRelations[]) =>
@@ -610,6 +616,12 @@ export const mapTransactionsData = (rows: TransactionRowWithRelations[]) =>
 		anticipationId: item.anticipationId ?? null,
 		seriesId: item.seriesId ?? null,
 		splitGroupId: item.splitGroupId ?? null,
+		transferFromAccountId: item.transferFromAccountId ?? null,
+		transferFromAccountName: item.transferFromAccountName ?? null,
+		transferFromAccountLogo: item.transferFromAccountLogo ?? null,
+		transferToAccountId: item.transferToAccountId ?? null,
+		transferToAccountName: item.transferToAccountName ?? null,
+		transferToAccountLogo: item.transferToAccountLogo ?? null,
 		hasAttachments: item.hasAttachments ?? false,
 		readonly:
 			Boolean(item.note?.startsWith(ACCOUNT_AUTO_INVOICE_NOTE_PREFIX)) ||

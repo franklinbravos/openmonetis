@@ -1,4 +1,4 @@
-import { RiPencilLine } from "@remixicon/react";
+import { RiSettings4Line } from "@remixicon/react";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { AccountDialog } from "@/features/accounts/components/account-dialog";
@@ -192,9 +192,9 @@ export default async function Page({ params, searchParams }: PageProps) {
 								variant="ghost"
 								size="icon-sm"
 								className="text-muted-foreground hover:text-foreground"
-								aria-label="Editar conta"
+								aria-label="Configurar conta"
 							>
-								<RiPencilLine className="size-4" />
+								<RiSettings4Line className="size-4" aria-hidden />
 							</Button>
 						}
 					/>

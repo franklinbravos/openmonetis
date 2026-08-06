@@ -121,7 +121,6 @@ export default async function Page({ searchParams }: PageProps) {
 				<PageDescription
 					icon={<RiUploadCloud2Line />}
 					title="Importar fatura"
-					subtitle={`Importe a fatura de ${displayPeriod(invoiceContext.invoicePeriod)} do cartão ${invoiceContext.cardName}. O arquivo será validado para garantir que corresponde a esta fatura.`}
 				/>
 			) : (
 				<PageDescription

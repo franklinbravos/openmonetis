@@ -8,7 +8,7 @@ import {
 	RiCheckboxCircleFill,
 	RiMore2Line,
 } from "@remixicon/react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { CategorySearchSelect } from "@/features/transactions/components/dialogs/transaction-dialog/category-search-select";
 import {
 	AccountCardSelectContent,
@@ -422,6 +422,7 @@ interface ReviewTableProps {
 	onInvoicePaymentPeriodChange: (index: number, period: string | null) => void;
 	onDescriptionChange: (index: number, description: string) => void;
 	onInstallmentToggle: (index: number, enabled: boolean) => void;
+	onInstallmentDismiss: (index: number) => void;
 	onInstallmentCountChange: (index: number, installmentCount: number) => void;
 	onInstallmentCurrentChange: (index: number, currentInstallment: number) => void;
 	onUndoDuplicate: (index: number) => void;
@@ -449,6 +450,7 @@ export function ReviewTable({
 	onInvoicePaymentPeriodChange,
 	onDescriptionChange,
 	onInstallmentToggle,
+	onInstallmentDismiss,
 	onInstallmentCountChange,
 	onInstallmentCurrentChange,
 	onUndoDuplicate,
@@ -485,6 +487,7 @@ export function ReviewTable({
 					onInvoicePaymentPeriodChange={onInvoicePaymentPeriodChange}
 					onDescriptionChange={onDescriptionChange}
 					onInstallmentToggle={onInstallmentToggle}
+					onInstallmentDismiss={onInstallmentDismiss}
 					onInstallmentCountChange={onInstallmentCountChange}
 					onInstallmentCurrentChange={onInstallmentCurrentChange}
 					onUndoDuplicate={onUndoDuplicate}
@@ -621,6 +624,7 @@ export function ReviewTable({
 												isCard={isCard}
 												invoicePeriod={invoicePeriod}
 												onInstallmentToggle={onInstallmentToggle}
+												onInstallmentDismiss={onInstallmentDismiss}
 												onInstallmentCountChange={onInstallmentCountChange}
 												onInstallmentCurrentChange={onInstallmentCurrentChange}
 											/>
@@ -706,6 +710,7 @@ type ReviewRowHandlers = Pick<
 	| "onInvoicePaymentPeriodChange"
 	| "onDescriptionChange"
 	| "onInstallmentToggle"
+	| "onInstallmentDismiss"
 	| "onInstallmentCountChange"
 	| "onInstallmentCurrentChange"
 	| "onUndoDuplicate"
@@ -791,6 +796,7 @@ function ReviewMobileCard({
 	onInvoicePaymentPeriodChange,
 	onDescriptionChange,
 	onInstallmentToggle,
+	onInstallmentDismiss,
 	onInstallmentCountChange,
 	onInstallmentCurrentChange,
 	onUndoDuplicate,
@@ -920,6 +926,7 @@ function ReviewMobileCard({
 						isCard={isCard}
 						invoicePeriod={invoicePeriod}
 						onInstallmentToggle={onInstallmentToggle}
+						onInstallmentDismiss={onInstallmentDismiss}
 						onInstallmentCountChange={onInstallmentCountChange}
 						onInstallmentCurrentChange={onInstallmentCurrentChange}
 					/>
@@ -975,12 +982,15 @@ function ReviewMobileCard({
 	);
 }
 
+const INSTALLMENT_CARD_DISMISS_DELAY_MS = 2_500;
+
 function ReviewInstallmentFields({
 	row,
 	index,
 	isCard,
 	invoicePeriod,
 	onInstallmentToggle,
+	onInstallmentDismiss,
 	onInstallmentCountChange,
 	onInstallmentCurrentChange,
 }: {
@@ -989,22 +999,34 @@ function ReviewInstallmentFields({
 	isCard: boolean;
 	invoicePeriod: string | null;
 	onInstallmentToggle: (index: number, enabled: boolean) => void;
+	onInstallmentDismiss: (index: number) => void;
 	onInstallmentCountChange: (index: number, installmentCount: number) => void;
 	onInstallmentCurrentChange: (index: number, currentInstallment: number) => void;
 }) {
 	const [expanded, setExpanded] = useState(false);
+	const installment = row.installmentImport;
+
+	useEffect(() => {
+		if (!installment || installment.enabled) {
+			return;
+		}
+
+		const timer = window.setTimeout(() => {
+			onInstallmentDismiss(index);
+		}, INSTALLMENT_CARD_DISMISS_DELAY_MS);
+
+		return () => window.clearTimeout(timer);
+	}, [index, installment, onInstallmentDismiss]);
 
 	if (
 		!isCard ||
 		!invoicePeriod ||
 		row.kind !== "transaction" ||
 		row.transactionType !== "expense" ||
-		!row.installmentImport
+		!installment
 	) {
 		return null;
 	}
-
-	const installment = row.installmentImport;
 	const preview = installment.enabled
 		? buildInstallmentImportPreview(
 				invoicePeriod,
@@ -1050,7 +1072,12 @@ function ReviewInstallmentFields({
 				</CollapsibleTrigger>
 				<Switch
 					checked={installment.enabled}
-					onCheckedChange={(checked) => onInstallmentToggle(index, checked)}
+					onCheckedChange={(checked) => {
+						if (!checked) {
+							setExpanded(false);
+						}
+						onInstallmentToggle(index, checked);
+					}}
 					onClick={(event) => event.stopPropagation()}
 					aria-label="Importar como parcelamento"
 				/>

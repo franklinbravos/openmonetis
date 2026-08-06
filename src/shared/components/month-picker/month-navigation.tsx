@@ -70,17 +70,17 @@ export default function MonthNavigation({
 
 	const content = (
 		<>
-			<div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-2">
+			<div className="relative w-full min-h-8 md:grid md:grid-cols-[1fr_auto_1fr] md:items-center md:gap-2">
+				<div aria-hidden className="hidden min-w-0 md:block" />
+
 				{toolbarSlotId ? (
 					<div
 						id={toolbarSlotId}
-						className="flex min-w-0 items-center justify-start gap-1 md:hidden"
+						className="absolute top-1/2 left-0 z-10 flex -translate-y-1/2 items-center justify-start gap-1 md:hidden"
 					/>
-				) : (
-					<div aria-hidden />
-				)}
+				) : null}
 
-				<div className="flex min-w-0 items-center justify-center">
+				<div className="flex min-w-0 items-center justify-center max-md:px-10">
 					<NavigationButton
 						direction="left"
 						disabled={isPending}
@@ -125,7 +125,7 @@ export default function MonthNavigation({
 					/>
 				</div>
 
-				<div className="flex items-center justify-end gap-1">
+				<div className="absolute top-1/2 right-0 z-10 flex -translate-y-1/2 items-center justify-end gap-1 md:static md:z-auto md:translate-y-0">
 					{toolbarSlotId ? (
 						<div
 							id={getToolbarEndSlotId(toolbarSlotId)}

@@ -6,10 +6,11 @@ export async function fetchInvoiceImportSource(
 	userId: string,
 	cardId: string,
 	invoicePeriod: string,
-): Promise<{ fileName: string } | null> {
+): Promise<{ fileName: string; invoicePeriod: string } | null> {
 	const batch = await db.query.importBatches.findFirst({
 		columns: {
 			sourceFileName: true,
+			invoicePeriod: true,
 		},
 		where: and(
 			eq(importBatches.userId, userId),
@@ -20,7 +21,10 @@ export async function fetchInvoiceImportSource(
 		orderBy: [desc(importBatches.createdAt)],
 	});
 
-	if (!batch) return null;
+	if (!batch?.invoicePeriod) return null;
 
-	return { fileName: batch.sourceFileName };
+	return {
+		fileName: batch.sourceFileName,
+		invoicePeriod: batch.invoicePeriod,
+	};
 }

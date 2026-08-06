@@ -10,16 +10,51 @@ const STEPS: { key: Step; label: string }[] = [
 	{ key: "done", label: "Concluído" },
 ];
 
-const STEP_ORDER: Step[] = ["upload", "review", "done"];
-
 interface ImportStepsProps {
-	current: Step;
+	/** Etapa ativa no fluxo. */
+	active: Step;
+	/** Upload concluído no storage (ex.: Supabase). Sem isso, a etapa Upload não recebe ✓. */
+	uploadComplete?: boolean;
 	className?: string;
 }
 
-export function ImportSteps({ current, className }: ImportStepsProps) {
-	const currentIndex = STEP_ORDER.indexOf(current);
+function isStepCompleted(
+	step: Step,
+	active: Step,
+	uploadComplete: boolean,
+): boolean {
+	if (step === "upload") {
+		return uploadComplete && active !== "upload";
+	}
 
+	if (step === "review") {
+		return active === "done";
+	}
+
+	return false;
+}
+
+function isConnectorCompleted(
+	afterStep: Step,
+	active: Step,
+	uploadComplete: boolean,
+): boolean {
+	if (afterStep === "upload") {
+		return uploadComplete;
+	}
+
+	if (afterStep === "review") {
+		return active === "done";
+	}
+
+	return false;
+}
+
+export function ImportSteps({
+	active,
+	uploadComplete = false,
+	className,
+}: ImportStepsProps) {
 	return (
 		<div
 			className={cn(
@@ -28,9 +63,8 @@ export function ImportSteps({ current, className }: ImportStepsProps) {
 			)}
 		>
 			{STEPS.map((step, index) => {
-				const stepIndex = STEP_ORDER.indexOf(step.key);
-				const isCompleted = stepIndex < currentIndex;
-				const isActive = stepIndex === currentIndex;
+				const isCompleted = isStepCompleted(step.key, active, uploadComplete);
+				const isActive = step.key === active;
 
 				return (
 					<Fragment key={step.key}>
@@ -67,7 +101,9 @@ export function ImportSteps({ current, className }: ImportStepsProps) {
 							<div
 								className={cn(
 									"mx-1 h-px min-w-2 flex-1 transition-colors sm:mx-3 sm:w-10 sm:flex-none",
-									stepIndex < currentIndex ? "bg-primary" : "bg-border",
+									isConnectorCompleted(step.key, active, uploadComplete)
+										? "bg-primary"
+										: "bg-border",
 								)}
 							/>
 						) : null}

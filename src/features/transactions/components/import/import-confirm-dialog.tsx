@@ -9,11 +9,13 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/shared/components/ui/dialog";
+import { cn } from "@/shared/utils/ui";
 
 type ImportConfirmDialogProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	importCount: number;
+	verifiedCount: number;
 	replacedCount: number;
 	excludedCount: number;
 	installmentBackfillCount: number;
@@ -26,6 +28,7 @@ export function ImportConfirmDialog({
 	open,
 	onOpenChange,
 	importCount,
+	verifiedCount,
 	replacedCount,
 	excludedCount,
 	installmentBackfillCount,
@@ -55,10 +58,28 @@ export function ImportConfirmDialog({
 					<SummaryRow
 						label="Serão importados"
 						value={importCount}
+						tone="success"
+						prefix="+"
 						emphasis
 					/>
-					<SummaryRow label="Serão editados" value={editedCount} />
-					<SummaryRow label="Serão excluídos" value={excludedCount} />
+					{verifiedCount > 0 ? (
+						<SummaryRow
+							label="Conferidos"
+							value={verifiedCount}
+							tone="info"
+						/>
+					) : null}
+					{editedCount > 0 ? (
+						<SummaryRow label="Serão editados" value={editedCount} />
+					) : null}
+					{excludedCount > 0 ? (
+						<SummaryRow
+							label="Excluídos"
+							value={excludedCount}
+							tone="destructive"
+							prefix="-"
+						/>
+					) : null}
 					{installmentBackfillCount > 0 ? (
 						<p className="text-muted-foreground text-xs leading-relaxed">
 							O parcelamento inclui {installmentBackfillCount} lançamento
@@ -99,24 +120,38 @@ export function ImportConfirmDialog({
 	);
 }
 
+const summaryToneClassName = {
+	default: "text-foreground",
+	success: "text-emerald-600 dark:text-emerald-400",
+	info: "text-blue-600 dark:text-blue-400",
+	destructive: "text-destructive",
+} as const;
+
 function SummaryRow({
 	label,
 	value,
 	emphasis = false,
+	tone = "default",
+	prefix,
 }: {
 	label: string;
 	value: number;
 	emphasis?: boolean;
+	tone?: keyof typeof summaryToneClassName;
+	prefix?: "+" | "-";
 }) {
+	const countLabel = `${prefix ?? ""}${value} lançamento${value !== 1 ? "s" : ""}`;
+
 	return (
 		<div className="flex items-center justify-between gap-3">
 			<span className="text-muted-foreground">{label}</span>
 			<span
-				className={
-					emphasis ? "font-semibold text-foreground" : "font-medium text-foreground"
-				}
+				className={cn(
+					emphasis ? "font-semibold" : "font-medium",
+					summaryToneClassName[tone],
+				)}
 			>
-				{value} lançamento{value !== 1 ? "s" : ""}
+				{countLabel}
 			</span>
 		</div>
 	);

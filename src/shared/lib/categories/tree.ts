@@ -3,6 +3,7 @@ export type CategoryTreeItem = {
 	name: string;
 	parentId: string | null;
 	type?: string;
+	sortOrder?: number;
 };
 
 export type CategoryTreeNode<T extends CategoryTreeItem> = T & {
@@ -35,9 +36,16 @@ export function buildCategoryTree<T extends CategoryTreeItem>(
 	}
 
 	const sortNodes = (treeNodes: CategoryTreeNode<T>[]) => {
-		treeNodes.sort((left, right) =>
-			left.name.localeCompare(right.name, "pt-BR", { sensitivity: "base" }),
-		);
+		treeNodes.sort((left, right) => {
+			const orderDiff = (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
+			if (orderDiff !== 0) {
+				return orderDiff;
+			}
+
+			return left.name.localeCompare(right.name, "pt-BR", {
+				sensitivity: "base",
+			});
+		});
 
 		for (const node of treeNodes) {
 			sortNodes(node.children);
@@ -124,6 +132,21 @@ export function getCategoryPathLabel(
 	}
 
 	return parts.join(separator);
+}
+
+export function getCategoryAncestorPathLabel(
+	categoryId: string,
+	categoriesById: Map<string, { name: string; parentId: string | null }>,
+	separator = " › ",
+): string | null {
+	const path = getCategoryPathLabel(categoryId, categoriesById, separator);
+	const parts = path.split(separator);
+
+	if (parts.length <= 1) {
+		return null;
+	}
+
+	return parts.slice(0, -1).join(separator);
 }
 
 export function isValidCategoryParent(

@@ -1,13 +1,25 @@
-import { RiCalendarLine } from "@remixicon/react";
+import { RiBankCard2Line, RiBankLine, RiCalendarLine } from "@remixicon/react";
+import Image from "next/image";
 import { Badge } from "@/shared/components/ui/badge";
 import { Card } from "@/shared/components/ui/card";
 import type { ImportStatement } from "@/shared/lib/import/types";
-import { formatDate } from "@/shared/utils/date";
+import { resolveLogoSrc } from "@/shared/lib/logo";
+import { formatDate, formatDateOnlyLabel } from "@/shared/utils/date";
 import { displayPeriod } from "@/shared/utils/period";
+import { cn } from "@/shared/utils/ui";
+
+type AccountCardSummary = {
+	label: string;
+	logo?: string | null;
+	isCard: boolean;
+};
 
 interface ImportSummaryProps {
 	statement: ImportStatement;
 	invoicePeriod?: string | null;
+	accountCard?: AccountCardSummary | null;
+	paymentDate?: string | null;
+	isPaidInvoiceImport?: boolean;
 	total: number;
 	selected: number;
 	duplicates: number;
@@ -17,9 +29,84 @@ interface ImportSummaryProps {
 	withoutPayer: number;
 }
 
+function AccountCardIdentity({
+	label,
+	logo,
+	isCard,
+}: AccountCardSummary) {
+	const logoSrc = resolveLogoSrc(logo);
+	const Icon = isCard ? RiBankCard2Line : RiBankLine;
+
+	return (
+		<span className="flex min-w-0 items-center gap-2">
+			{logoSrc ? (
+				<Image
+					src={logoSrc}
+					alt={`Logo de ${label}`}
+					width={24}
+					height={24}
+					className="size-6 shrink-0 rounded-full"
+				/>
+			) : (
+				<span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-background/80">
+					<Icon className="size-3.5 text-muted-foreground" aria-hidden />
+				</span>
+			)}
+			<span className="truncate font-medium">{label}</span>
+		</span>
+	);
+}
+
+function ImportSummaryInvoiceHighlight({
+	invoicePeriod,
+	paymentDate,
+	isPaidInvoiceImport,
+	className,
+}: {
+	invoicePeriod: string | null;
+	paymentDate: string | null;
+	isPaidInvoiceImport: boolean;
+	className?: string;
+}) {
+	if (!invoicePeriod && !(isPaidInvoiceImport && paymentDate)) {
+		return null;
+	}
+
+	return (
+		<div
+			className={cn(
+				"flex flex-col gap-1 rounded-md border border-primary/25 bg-background/70 px-3 py-2 shadow-xs",
+				className,
+			)}
+		>
+			{invoicePeriod ? (
+				<p className="flex items-center gap-1.5 font-semibold text-foreground text-sm">
+					<RiCalendarLine
+						className="size-4 shrink-0 text-primary"
+						aria-hidden
+					/>
+					Fatura {displayPeriod(invoicePeriod)}
+				</p>
+			) : null}
+			{isPaidInvoiceImport && paymentDate ? (
+				<p className="text-foreground/90 text-sm">
+					{formatDateOnlyLabel(paymentDate, "Data de Pagamento:", {
+						day: "2-digit",
+						month: "2-digit",
+						year: "numeric",
+					})}
+				</p>
+			) : null}
+		</div>
+	);
+}
+
 export function ImportSummary({
 	statement,
 	invoicePeriod = null,
+	accountCard = null,
+	paymentDate = null,
+	isPaidInvoiceImport = false,
 	total,
 	selected,
 	duplicates,
@@ -28,11 +115,48 @@ export function ImportSummary({
 	uncategorized,
 	withoutPayer,
 }: ImportSummaryProps) {
+	const displayName = accountCard?.label ?? statement.source;
+
 	return (
-		<Card className="flex flex-col gap-1 p-5 text-sm bg-primary/10 shadow-none ">
-			{/* Linha 1: título */}
-			<div className="flex flex-wrap items-center gap-2">
-				<span className="font-medium">{statement.source}</span>
+		<Card className="flex flex-col gap-2 p-4 text-sm shadow-none bg-primary/10 sm:gap-1 sm:p-5">
+			{/* Mobile: cabeçalho compacto com cartão, fatura e pagamento */}
+			<div className="flex flex-col gap-2 md:hidden">
+				<div className="flex items-start justify-between gap-2">
+					{accountCard ? (
+						<AccountCardIdentity {...accountCard} />
+					) : (
+						<span className="truncate font-medium">{displayName}</span>
+					)}
+					<div className="flex shrink-0 flex-wrap justify-end gap-1">
+						{statement.isCreditCard ? (
+							<Badge variant="outline" className="text-xs">
+								Cartão
+							</Badge>
+						) : null}
+						{statement.invoice?.isPaid ? (
+							<Badge variant="success" className="text-xs">
+								Fatura paga
+							</Badge>
+						) : null}
+					</div>
+				</div>
+
+				{(invoicePeriod || (isPaidInvoiceImport && paymentDate)) && (
+					<ImportSummaryInvoiceHighlight
+						invoicePeriod={invoicePeriod}
+						paymentDate={paymentDate}
+						isPaidInvoiceImport={isPaidInvoiceImport}
+					/>
+				)}
+			</div>
+
+			{/* Desktop: título + badges */}
+			<div className="hidden flex-wrap items-center gap-2 md:flex">
+				{accountCard ? (
+					<AccountCardIdentity {...accountCard} />
+				) : (
+					<span className="font-medium">{statement.source}</span>
+				)}
 				{statement.isCreditCard && (
 					<Badge variant="outline">Cartão de crédito</Badge>
 				)}
@@ -41,18 +165,21 @@ export function ImportSummary({
 				) : null}
 			</div>
 
-			{/* Linha 2: metadados */}
-			<div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground">
-				{invoicePeriod ? (
-					<span className="flex items-center gap-1">
-						<RiCalendarLine className="size-3.5 shrink-0" />
-						Fatura {displayPeriod(invoicePeriod)}
-					</span>
-				) : null}
+			{/* Desktop: fatura e pagamento na segunda linha quando aplicável */}
+			{(invoicePeriod || (isPaidInvoiceImport && paymentDate)) && (
+				<ImportSummaryInvoiceHighlight
+					className="hidden md:flex md:flex-row md:items-center md:gap-4"
+					invoicePeriod={invoicePeriod}
+					paymentDate={paymentDate}
+					isPaidInvoiceImport={isPaidInvoiceImport}
+				/>
+			)}
 
+			{/* Estatísticas da revisão */}
+			<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground text-xs sm:gap-x-4 sm:text-sm">
 				{statement.period && (
-					<span className="flex items-center gap-1">
-						<RiCalendarLine className="size-3.5 shrink-0" />
+					<span className="hidden items-center gap-1 lg:flex">
+						<RiCalendarLine className="size-3.5 shrink-0" aria-hidden />
 						{formatDate(statement.period.from)} →{" "}
 						{formatDate(statement.period.to)}
 					</span>

@@ -10,7 +10,10 @@ import {
 } from "@/shared/lib/actions/helpers";
 import { getUser } from "@/shared/lib/auth/server";
 import { CATEGORY_TYPES } from "@/shared/lib/categories/constants";
-import { isValidCategoryParent } from "@/shared/lib/categories/tree";
+import {
+	getCategoryDescendantIds,
+	isValidCategoryParent,
+} from "@/shared/lib/categories/tree";
 import { db } from "@/shared/lib/db";
 import { uuidSchema } from "@/shared/lib/schemas/common";
 import { normalizeIconInput } from "@/shared/utils/string";
@@ -45,9 +48,23 @@ const deleteCategorySchema = z.object({
 	id: uuidSchema("Category"),
 });
 
+const reorderCategoriesSchema = z.object({
+	type: z.enum(CATEGORY_TYPES),
+	categories: z
+		.array(
+			z.object({
+				id: uuidSchema("Category"),
+				parentId: parentIdSchema,
+				sortOrder: z.number().int().min(0),
+			}),
+		)
+		.min(1),
+});
+
 type CategoryCreateInput = z.infer<typeof createCategorySchema>;
 type CategoryUpdateInput = z.infer<typeof updateCategorySchema>;
 type CategoryDeleteInput = z.infer<typeof deleteCategorySchema>;
+type ReorderCategoriesInput = z.infer<typeof reorderCategoriesSchema>;
 
 type CreatedCategoryResult = {
 	id: string;
@@ -279,6 +296,93 @@ export async function deleteCategoryAction(
 		revalidateForEntity("categories", user.id);
 
 		return { success: true, message: "Category removida com sucesso." };
+	} catch (error) {
+		return handleActionError(error);
+	}
+}
+
+export async function reorderCategoriesAction(
+	input: ReorderCategoriesInput,
+): Promise<ActionResult> {
+	try {
+		const user = await getUser();
+		const data = reorderCategoriesSchema.parse(input);
+		const categoryIds = data.categories.map((category) => category.id);
+		const userCategories = await fetchUserCategoriesForValidation(user.id);
+		const categoriesById = new Map(
+			userCategories.map((category) => [category.id, category]),
+		);
+
+		if (categoryIds.some((categoryId) => !categoriesById.has(categoryId))) {
+			return {
+				success: false,
+				error: "Uma ou mais categorias não foram encontradas.",
+			};
+		}
+
+		const uniqueIds = new Set(categoryIds);
+		if (uniqueIds.size !== categoryIds.length) {
+			return {
+				success: false,
+				error: "A ordem enviada contém categorias duplicadas.",
+			};
+		}
+
+		for (const category of data.categories) {
+			const current = categoriesById.get(category.id);
+			if (!current || current.type !== data.type) {
+				return {
+					success: false,
+					error: "A ordem enviada contém categorias inválidas para este tipo.",
+				};
+			}
+
+			const parentValidation = validateCategoryParent(
+				category.id,
+				category.parentId ?? null,
+				data.type,
+				userCategories,
+			);
+
+			if (parentValidation) {
+				return parentValidation;
+			}
+
+			if (category.parentId) {
+				const descendants = getCategoryDescendantIds(
+					category.id,
+					userCategories,
+				);
+				if (descendants.has(category.parentId)) {
+					return {
+						success: false,
+						error: "Não é possível mover uma categoria para dentro dela mesma.",
+					};
+				}
+			}
+		}
+
+		await db.transaction(async (tx) => {
+			for (const category of data.categories) {
+				await tx
+					.update(categories)
+					.set({
+						parentId: category.parentId ?? null,
+						sortOrder: category.sortOrder,
+					})
+					.where(
+						and(
+							eq(categories.id, category.id),
+							eq(categories.userId, user.id),
+							eq(categories.type, data.type),
+						),
+					);
+			}
+		});
+
+		revalidateForEntity("categories", user.id);
+
+		return { success: true, message: "Ordem das categorias atualizada." };
 	} catch (error) {
 		return handleActionError(error);
 	}

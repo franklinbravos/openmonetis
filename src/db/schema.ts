@@ -227,6 +227,7 @@ export const categories = pgTable(
 				onDelete: "set null",
 			},
 		),
+		sortOrder: integer("ordem").notNull().default(0),
 		createdAt: timestamp("created_at", {
 			mode: "date",
 			withTimezone: true,
@@ -1130,6 +1131,10 @@ export const importCategoryMappings = pgTable(
 		categoryId: uuid("category_id")
 			.notNull()
 			.references(() => categories.id, { onDelete: "cascade" }),
+		payerId: uuid("pagador_id").references(() => payers.id, {
+			onDelete: "set null",
+			onUpdate: "cascade",
+		}),
 		updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
 			.notNull()
 			.defaultNow(),

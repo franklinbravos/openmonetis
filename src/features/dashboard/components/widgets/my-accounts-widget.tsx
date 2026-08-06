@@ -140,68 +140,70 @@ export function MyAccountsWidget({
 							const logoSrc = resolveLogoSrc(account.logo);
 
 							return (
-								<li key={account.id} className={styles.row}>
-									<div className={styles.main}>
-										<div className="relative flex size-9.5 shrink-0 items-center justify-center overflow-hidden rounded-full">
-											{logoSrc ? (
-												<Image
-													src={logoSrc}
-													alt={`Logo da conta ${account.name}`}
-													fill
-													sizes="38px"
-													className="object-contain rounded-full"
-													priority={index === 0}
-												/>
-											) : (
-												<span className="text-xs font-medium text-primary">
-													{buildInitials(account.name)}
+								<li key={account.id}>
+									<Link
+										prefetch
+										href={`/accounts/${
+											account.id
+										}/statement?periodo=${formatPeriodForUrl(period)}`}
+										className={styles.rowLink}
+									>
+										<div className={styles.main}>
+											<div className="relative flex size-9.5 shrink-0 items-center justify-center overflow-hidden rounded-full">
+												{logoSrc ? (
+													<Image
+														src={logoSrc}
+														alt={`Logo da conta ${account.name}`}
+														fill
+														sizes="38px"
+														className="rounded-full object-contain"
+														priority={index === 0}
+													/>
+												) : (
+													<span className="font-medium text-primary text-xs">
+														{buildInitials(account.name)}
+													</span>
+												)}
+											</div>
+
+											<div className={styles.textStack}>
+												<span className={styles.title}>
+													{account.name}
 												</span>
-											)}
-										</div>
 
-										<div className={styles.textStack}>
-											<Link
-												prefetch
-												href={`/accounts/${
-													account.id
-												}/statement?periodo=${formatPeriodForUrl(period)}`}
-												className={styles.titleLink}
-											>
-												<span className="truncate">{account.name}</span>
-											</Link>
-
-											<div className={styles.meta}>
-												<span className="truncate">{account.accountType}</span>
-												{account.excludeFromBalance ? (
-													<Tooltip>
-														<TooltipTrigger asChild>
-															<span className="inline-flex cursor-help">
-																<Badge className="font-normal" variant="info">
-																	Não considerada
-																</Badge>
-															</span>
-														</TooltipTrigger>
-														<TooltipContent side="top" className="max-w-xs">
-															<p className="text-xs">
-																Esta conta aparece na lista, mas não entra no
-																cálculo do saldo total.
-															</p>
-														</TooltipContent>
-													</Tooltip>
-												) : null}
+												<div className={styles.meta}>
+													<span className="truncate">{account.accountType}</span>
+													{account.excludeFromBalance ? (
+														<Tooltip>
+															<TooltipTrigger asChild>
+																<span className="inline-flex cursor-help">
+																	<Badge className="font-normal" variant="info">
+																		Não considerada
+																	</Badge>
+																</span>
+															</TooltipTrigger>
+															<TooltipContent side="top" className="max-w-xs">
+																<p className="text-xs">
+																	Esta conta aparece na lista, mas não entra no
+																	cálculo do saldo total.
+																</p>
+															</TooltipContent>
+														</Tooltip>
+													) : null}
+												</div>
 											</div>
 										</div>
-									</div>
 
-									<div className={styles.trailing}>
-										<MoneyValues
-											className={cn(
-												styles.trailingValue,
-												account.balance < 0 && "text-destructive",
-											)}
-											amount={account.balance}
-										/>
-									</div>
+										<div className={styles.trailing}>
+											<MoneyValues
+												className={cn(
+													styles.trailingValue,
+													account.balance < 0 && "text-destructive",
+												)}
+												amount={account.balance}
+											/>
+										</div>
+									</Link>
 								</li>
 							);
 						})}

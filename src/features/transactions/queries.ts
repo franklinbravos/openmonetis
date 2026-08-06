@@ -19,6 +19,7 @@ import {
 	transactions,
 } from "@/db/schema";
 import { INITIAL_BALANCE_NOTE } from "@/shared/lib/accounts/constants";
+import { enrichTransactionsWithTransferPeers } from "@/shared/lib/transfers/enrich-transfer-peers";
 import { db } from "@/shared/lib/db";
 
 type BaseTransactionQueryInput = {
@@ -128,7 +129,7 @@ async function selectTransactionsWithRelations({
 			? await baseQuery.limit(limit).offset(offset ?? 0)
 			: await baseQuery;
 
-	return mapTransactionRows(transactionRows);
+	return enrichTransactionsWithTransferPeers(mapTransactionRows(transactionRows));
 }
 
 export async function fetchTransactionFilterSources(userId: string) {

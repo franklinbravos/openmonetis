@@ -21,3 +21,13 @@ export function buildImportContinueHref(
 	const query = params.toString();
 	return query ? `/transactions/import?${query}` : "/transactions/import";
 }
+
+export function buildInvoiceImportHistoryHref(
+	cardId: string,
+	invoicePeriod: string,
+): string {
+	const params = new URLSearchParams();
+	params.set("cartao", cardId);
+	params.set("periodo", invoicePeriod);
+	return `/transactions/import/history?${params.toString()}`;
+}

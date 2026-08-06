@@ -22,6 +22,10 @@ export function isImportBatchPending(status: ImportBatchStatus): boolean {
 	);
 }
 
+export function canDeleteImportBatch(status: ImportBatchStatus): boolean {
+	return !isImportBatchImported(status);
+}
+
 export function parseImportBatchStatus(value: string): ImportBatchStatus {
 	if (value === IMPORT_BATCH_STATUS.IMPORTED) {
 		return IMPORT_BATCH_STATUS.IMPORTED;

@@ -1,6 +1,9 @@
 import type { SelectOption } from "@/features/transactions/components/types";
 import { deriveCreditCardPeriod } from "@/features/transactions/lib/form-helpers";
-import type { InvoiceImportMetadata } from "@/shared/lib/import/types";
+import type {
+	ImportStatement,
+	InvoiceImportMetadata,
+} from "@/shared/lib/import/types";
 import { getTodayDateString } from "@/shared/utils/date";
 import { derivePeriodFromDate } from "@/shared/utils/period";
 
@@ -43,4 +46,28 @@ export function resolveImportPaymentDate(
 	if (invoice?.paymentDate) return invoice.paymentDate;
 	if (invoice?.dueDate) return invoice.dueDate;
 	return getTodayDateString();
+}
+
+/** Período da fatura para vincular o lote/arquivo — prioriza o conteúdo do arquivo. */
+export function resolveUploadInvoicePeriodFromStatement(
+	stmt: ImportStatement,
+	options: {
+		selectedCardOption?: SelectOption | null;
+		fallbackPeriod?: string | null;
+		filePeriodOverride?: string | null;
+	},
+): string | null {
+	if (options.filePeriodOverride) {
+		return options.filePeriodOverride;
+	}
+
+	const fromFile = stmt.isCreditCard
+		? resolveInvoicePeriodFromStatement(
+				stmt.invoice,
+				stmt.transactions,
+				options.selectedCardOption ?? null,
+			)
+		: null;
+
+	return fromFile ?? options.fallbackPeriod ?? null;
 }

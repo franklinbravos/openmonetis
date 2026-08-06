@@ -34,6 +34,12 @@ export type TransactionItem = {
 	anticipationId: string | null;
 	seriesId: string | null;
 	splitGroupId: string | null;
+	transferFromAccountId?: string | null;
+	transferFromAccountName?: string | null;
+	transferFromAccountLogo?: string | null;
+	transferToAccountId?: string | null;
+	transferToAccountName?: string | null;
+	transferToAccountLogo?: string | null;
 	hasAttachments: boolean;
 	readonly?: boolean;
 };
