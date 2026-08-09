@@ -20,9 +20,9 @@ ALTER TABLE public.lancamento_anexos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.anotacao_anexos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.import_batches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.import_category_mappings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.reconciliation_sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.reconciliation_lines ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.reconciliation_aliases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reconciliacao_sessoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reconciliacao_linhas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reconciliacao_aliases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.establishment_logos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.preferencias_usuario ENABLE ROW LEVEL SECURITY;
 
@@ -36,7 +36,7 @@ BEGIN
     'anotacoes', 'insights_salvos', 'tokens_api', 'pre_lancamentos',
     'dashboard_notification_states', 'antecipacoes_parcelas', 'lancamentos',
     'anexos', 'import_batches', 'import_category_mappings',
-    'reconciliation_sessions', 'reconciliation_lines', 'reconciliation_aliases',
+    'reconciliacao_sessoes', 'reconciliacao_linhas', 'reconciliacao_aliases',
     'establishment_logos', 'preferencias_usuario'
   ]
   LOOP
