@@ -222,6 +222,18 @@ O `pnpm dev` já em execução detecta as mudanças de código automaticamente �
 
 ## 📜 Scripts Disponíveis
 
+### Importação de arquivos (PDF)
+
+Faturas e extratos suportados em `.pdf`:
+
+| Banco | Tipo |
+|-------|------|
+| Banco Inter | Extrato de conta e fatura de cartão |
+| Nubank | Fatura de cartão (PDF) e extrato de conta (OFX) |
+| Itaú | Fatura de cartão (ex.: Itaucard Samsung) |
+
+Para desenvolvimento local, use `samples/finance/` (ignorada pelo Git) com extratos e faturas de exemplo — veja `samples/finance/README.md`.
+
 ### Desenvolvimento
 
 ```bash
@@ -423,33 +435,33 @@ docker exec -i <container-db> pg_restore \
 
 ---
 
-## ☁️ Supabase (banco + storage)
+## ☁️ Supabase (100% API)
 
-Quando usar Supabase, separe **três papéis** distintos:
+O OpenMonetis usa **somente a API do Supabase** em runtime — sem `DATABASE_URL`, sem `pg` e sem transaction pooler no app.
 
-| Variável | Obrigatória em produção? | Uso |
+| Variável | Obrigatória? | Uso |
 |---|---|---|
-| `DATABASE_URL` | Sim | Postgres **direct** (`db.*.supabase.co:5432`) — Drizzle + Better Auth |
-| `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` | Sim (se usar anexos/importação) | API do Supabase (Storage) |
-| `SUPABASE_TRANSACTION_POOLER` | **Não** | Opcional no `.env` local, só para `drizzle-kit push` |
+| `SUPABASE_URL` | Sim | API (Auth, PostgREST, Storage) |
+| `SUPABASE_ANON_KEY` | Sim | Sessão do usuário (SSR) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Sim | Server Actions, Companion API, Storage admin |
+| `SUPABASE_STORAGE_BUCKET` | Sim (anexos/importação) | Bucket privado |
+| `APP_SECRET` | Sim | Criptografia local (chaves de IA, tokens de upload) |
+| `APP_URL` | Sim | Links de convite e callbacks |
 
-> O uso normal do app **é Postgres direct** via `DATABASE_URL` — não passa pelo pooler nem pela `service_role`.
-> A `service_role` é um JWT para a API do Supabase (arquivos), não para SQL.
-
-**Produção (Coolify)** — variáveis mínimas:
+**Produção:**
 
 ```env
-DATABASE_URL=postgresql://postgres:SENHA@db.SEU_PROJECT_REF.supabase.co:5432/postgres?sslmode=require
 SUPABASE_URL=https://SEU_PROJECT_REF.supabase.co
+SUPABASE_ANON_KEY=sua_anon_key
 SUPABASE_SERVICE_ROLE_KEY=sua_service_role_key
 SUPABASE_STORAGE_BUCKET=openmonetis-attachments
+APP_URL=https://seu-dominio.com
+APP_SECRET=gere-com-openssl-rand-base64-32
 ```
 
-**Desenvolvimento local** — pode adicionar o pooler para `pnpm db:push` (hook `predev`):
+**Schema no Supabase:** aplique as migrations em `supabase/migrations/` com `pnpm supabase:push` (Supabase CLI linkado ao projeto). Para baseline a partir do histórico Drizzle: `pnpm db:baseline > supabase/migrations/00000000000000_drizzle_baseline.sql`.
 
-```env
-SUPABASE_TRANSACTION_POOLER=postgresql://postgres.SEU_PROJECT_REF:SENHA@....pooler.supabase.com:6543/postgres
-```
+**Auth:** login Google direto no app (popup `accounts.google.com`). Configure `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` no `.env` e adicione o mesmo Client ID em Supabase → Authentication → Providers → Google → **Authorized Client IDs**.
 
 ---
 
@@ -605,19 +617,26 @@ BETTER_AUTH_TRUSTED_ORIGINS=https://*.trycloudflare.com,https://openmonetis.seud
 
 Para Google OAuth e outros callbacks externos, mantenha `BETTER_AUTH_URL` apontando para a URL pública/canônica configurada no provedor.
 
-**Dev local (`pnpm dev`):** o app sobe fixo na porta `3050`. No [Google Cloud Console](https://console.cloud.google.com/apis/credentials), adicione em **URIs de redirecionamento autorizados**:
+**Dev local (`pnpm dev`):** o app sobe fixo na porta `3050`. No [Google Cloud Console](https://console.cloud.google.com/apis/credentials), adicione em **Origens JavaScript autorizadas**:
 
 ```
-http://localhost:3050/api/auth/callback/google
+http://localhost:3050
+```
+
+Em **URIs de redirecionamento autorizados** (necessário quando o browser bloqueia popup — ex. preview do Cursor):
+
+```
+http://localhost:3050/auth/google/callback
 ```
 
 E configure no `.env`:
 
 ```env
-BETTER_AUTH_URL=http://localhost:3050
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 ```
+
+No Supabase → Authentication → Providers → Google, ative o provider e inclua o mesmo `GOOGLE_CLIENT_ID` em **Authorized Client IDs**.
 
 ### IA local com Ollama
 

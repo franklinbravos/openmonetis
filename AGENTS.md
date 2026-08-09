@@ -364,3 +364,9 @@ Erros nao devem expor stack traces, paths ou nomes de bibliotecas ao cliente. Us
 Verificar pacotes novos sugeridos pela IA em npmjs.com antes de instalar. Red flags: menos de 1.000 downloads/semana, publicado nos ultimos 30 dias, nome muito parecido com pacote popular. Rodar `pnpm audit` periodicamente.
 
 ---
+
+## Maestro: Estilo e Processo
+
+As regras genéricas de estilo de código, estrutura, verificação, revisão e processo deste repositório são orquestradas pelo `.agents/AGENTS.md` — o "maestro". Este arquivo concentra apenas as regras específicas do projeto OpenMonetis.
+
+No conflito entre as duas fontes, a regra específica do projeto (este arquivo) prevalece sobre a regra genérica do maestro.

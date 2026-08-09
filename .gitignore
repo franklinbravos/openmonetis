@@ -109,6 +109,15 @@ docker-compose.override.yml
 opencode.json
 QWEN.md
 .codex
+# === Amostras financeiras (dados sensíveis — não versionar) ===
+/samples/finance/extratos/
+/samples/finance/faturas/
+/samples/finance/**/*.pdf
+/samples/finance/**/*.csv
+/samples/finance/**/*.ofx
+/samples/finance/**/*.xlsx
+/samples/finance/**/*.xls
+
 # === Backups locais ===
 /backup/
 
@@ -136,3 +145,10 @@ local/
 scratch/
 playground/
 /docs
+
+# Playwright artifacts
+/test-results/
+/playwright-report/
+
+# Amostras financeiras locais (podem conter dados sensíveis)
+/samples/
