@@ -45,7 +45,9 @@ export const CARD_IMPORT_PDF_PASSWORD_RULE_OPTIONS: Array<{
 	},
 ];
 
-const RULE_VALUES = new Set<string>(Object.values(CARD_IMPORT_PDF_PASSWORD_RULES));
+const RULE_VALUES = new Set<string>(
+	Object.values(CARD_IMPORT_PDF_PASSWORD_RULES),
+);
 
 export function isCardImportPdfPasswordRule(
 	value: string | null | undefined,

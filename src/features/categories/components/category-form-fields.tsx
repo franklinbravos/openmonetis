@@ -17,6 +17,7 @@ import {
 } from "@/shared/lib/categories/constants";
 import { getCategoryIconOptions } from "@/shared/lib/categories/icons";
 import { formatIndentedCategoryLabel } from "@/shared/lib/categories/tree";
+import { formatRemixIconLabel, resolveIconName } from "@/shared/utils/icons";
 import { cn } from "@/shared/utils/ui";
 
 import { CategoryIcon } from "./category-icon";
@@ -40,7 +41,12 @@ export function CategoryFormFields({
 	const [pickerOpen, setPickerOpen] = useState(false);
 
 	const selectedIconLabel = useMemo(() => {
-		return iconOptions.find((o) => o.value === values.icon)?.label ?? null;
+		const resolvedIcon = values.icon ? resolveIconName(values.icon) : null;
+		return (
+			iconOptions.find(
+				(option) => resolveIconName(option.value) === resolvedIcon,
+			)?.label ?? (resolvedIcon ? formatRemixIconLabel(resolvedIcon) : null)
+		);
 	}, [values.icon]);
 
 	return (

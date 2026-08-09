@@ -1,10 +1,16 @@
 "use client";
 
-import { RiBankLine, RiInformationLine } from "@remixicon/react";
+import {
+	RiBankLine,
+	RiFileExcel2Line,
+	RiInformationLine,
+} from "@remixicon/react";
 import Image from "next/image";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import MoneyValues from "@/shared/components/money-values";
 import { Badge } from "@/shared/components/ui/badge";
+import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent } from "@/shared/components/ui/card";
 import {
 	Tooltip,
@@ -25,8 +31,9 @@ type AccountStatementCardProps = {
 	totalIncomes: number;
 	totalExpenses: number;
 	logo?: string | null;
-	actions?: React.ReactNode;
-	balanceAdjustment?: React.ReactNode;
+	importHref?: string;
+	headerMenu?: ReactNode;
+	balanceAdjustment?: ReactNode;
 };
 
 const getAccountStatusBadgeVariant = (
@@ -45,7 +52,8 @@ export function AccountStatementCard({
 	totalIncomes,
 	totalExpenses,
 	logo,
-	actions,
+	importHref,
+	headerMenu,
 	balanceAdjustment,
 }: AccountStatementCardProps) {
 	const logoPath = resolveLogoSrc(logo);
@@ -82,8 +90,8 @@ export function AccountStatementCard({
 								</p>
 							</div>
 						</div>
-						{actions ? (
-							<div className="flex shrink-0 items-center gap-0.5">{actions}</div>
+						{headerMenu ? (
+							<div className="flex shrink-0 items-center">{headerMenu}</div>
 						) : null}
 					</div>
 
@@ -99,16 +107,32 @@ export function AccountStatementCard({
 							/>
 							{balanceAdjustment}
 						</div>
-						<div className="flex items-center gap-2">
-							<Badge
-								variant={getAccountStatusBadgeVariant(status)}
-								className="text-xs"
-							>
-								{status}
-							</Badge>
-							<span className="text-xs text-muted-foreground">
-								{accountType}
-							</span>
+						<div className="flex flex-wrap items-center justify-between gap-2">
+							<div className="flex items-center gap-2">
+								<Badge
+									variant={getAccountStatusBadgeVariant(status)}
+									className="text-xs"
+								>
+									{status}
+								</Badge>
+								<span className="text-xs text-muted-foreground">
+									{accountType}
+								</span>
+							</div>
+							{importHref ? (
+								<Button
+									asChild
+									type="button"
+									size="sm"
+									variant="outline"
+									className="h-8 gap-1.5 border-dashed px-3 text-xs"
+								>
+									<Link href={importHref}>
+										<RiFileExcel2Line className="size-3.5" aria-hidden />
+										Importar extrato
+									</Link>
+								</Button>
+							) : null}
 						</div>
 					</div>
 

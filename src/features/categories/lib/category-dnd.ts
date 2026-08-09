@@ -1,8 +1,8 @@
 import type { CategoryType } from "@/shared/lib/categories/constants";
 import {
+	type CategoryTreeItem,
 	getCategoryAncestorPathLabel,
 	getCategoryDescendantIds,
-	type CategoryTreeItem,
 } from "@/shared/lib/categories/tree";
 
 export type CategoryDropPosition = "before" | "inside" | "after";
@@ -137,9 +137,7 @@ export function recalculateFlatCategoryDepths(
 	const depthById = new Map<string, number>();
 
 	return items.map((item) => {
-		const depth = item.parentId
-			? (depthById.get(item.parentId) ?? -1) + 1
-			: 0;
+		const depth = item.parentId ? (depthById.get(item.parentId) ?? -1) + 1 : 0;
 		depthById.set(item.id, depth);
 
 		return {

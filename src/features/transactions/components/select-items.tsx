@@ -36,11 +36,7 @@ export function PayerSelectTriggerValue({
 					{initial}
 				</AvatarFallback>
 			</Avatar>
-			<span
-				className={showLabel ? "truncate" : "hidden truncate md:inline"}
-			>
-				{label}
-			</span>
+			<span className={showLabel ? "truncate" : "hidden"}>{label}</span>
 		</span>
 	);
 }

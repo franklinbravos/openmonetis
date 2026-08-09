@@ -97,7 +97,7 @@ const CATEGORY_ICON_OPTIONS: CategoryIconOption[] = [
 	{ label: "WiFi", value: "RiWifiLine" },
 	{ label: "Celular", value: "RiSmartphoneLine" },
 	{ label: "Computador", value: "RiComputerLine" },
-	{ label: "Monitor", value: "RiMonitorLine" },
+	{ label: "Monitor", value: "RiTv2Line" },
 	{ label: "Teclado", value: "RiKeyboardLine" },
 	{ label: "Mouse", value: "RiMouseLine" },
 	{ label: "Fone Bluetooth", value: "RiBluetoothLine" },
@@ -106,7 +106,7 @@ const CATEGORY_ICON_OPTIONS: CategoryIconOption[] = [
 	{ label: "Usuário", value: "RiUserLine" },
 	{ label: "Grupo", value: "RiGroupLine" },
 	{ label: "Família", value: "RiParentLine" },
-	{ label: "Bebê", value: "RiBabyCarriageLine" },
+	{ label: "Bebê", value: "RiEmotionHappyLine" },
 
 	// Animais
 	{ label: "Pet", value: "RiBearSmileLine" },
@@ -148,12 +148,12 @@ const CATEGORY_ICON_OPTIONS: CategoryIconOption[] = [
 	{ label: "Cadeado", value: "RiLockLine" },
 	{ label: "Chave", value: "RiKeyLine" },
 	{ label: "Configurações", value: "RiSettings3Line" },
-	{ label: "Link", value: "RiLinkLine" },
+	{ label: "Link", value: "RiLinksLine" },
 	{ label: "Anexo", value: "RiAttachment2" },
 	{ label: "Download", value: "RiDownloadLine" },
 	{ label: "Upload", value: "RiUploadLine" },
-	{ label: "Nuvem Download", value: "RiCloudDownloadLine" },
-	{ label: "Nuvem Upload", value: "RiCloudUploadLine" },
+	{ label: "Nuvem Download", value: "RiDownloadCloudLine" },
+	{ label: "Nuvem Upload", value: "RiUploadCloudLine" },
 ];
 
 type CategoryIconGroup = {
@@ -277,7 +277,7 @@ export const CATEGORY_ICON_GROUPS: CategoryIconGroup[] = [
 			{ label: "WiFi", value: "RiWifiLine" },
 			{ label: "Celular", value: "RiSmartphoneLine" },
 			{ label: "Computador", value: "RiComputerLine" },
-			{ label: "Monitor", value: "RiMonitorLine" },
+			{ label: "Monitor", value: "RiTv2Line" },
 			{ label: "Teclado", value: "RiKeyboardLine" },
 			{ label: "Mouse", value: "RiMouseLine" },
 			{ label: "Fone Bluetooth", value: "RiBluetoothLine" },
@@ -289,7 +289,7 @@ export const CATEGORY_ICON_GROUPS: CategoryIconGroup[] = [
 			{ label: "Usuário", value: "RiUserLine" },
 			{ label: "Grupo", value: "RiGroupLine" },
 			{ label: "Família", value: "RiParentLine" },
-			{ label: "Bebê", value: "RiBabyCarriageLine" },
+			{ label: "Bebê", value: "RiEmotionHappyLine" },
 		],
 	},
 	{
@@ -326,12 +326,12 @@ export const CATEGORY_ICON_GROUPS: CategoryIconGroup[] = [
 			{ label: "Cadeado", value: "RiLockLine" },
 			{ label: "Chave", value: "RiKeyLine" },
 			{ label: "Configurações", value: "RiSettings3Line" },
-			{ label: "Link", value: "RiLinkLine" },
+			{ label: "Link", value: "RiLinksLine" },
 			{ label: "Anexo", value: "RiAttachment2" },
 			{ label: "Download", value: "RiDownloadLine" },
 			{ label: "Upload", value: "RiUploadLine" },
-			{ label: "Nuvem Download", value: "RiCloudDownloadLine" },
-			{ label: "Nuvem Upload", value: "RiCloudUploadLine" },
+			{ label: "Nuvem Download", value: "RiDownloadCloudLine" },
+			{ label: "Nuvem Upload", value: "RiUploadCloudLine" },
 		],
 	},
 ];

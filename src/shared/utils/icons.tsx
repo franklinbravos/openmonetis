@@ -10,11 +10,45 @@ const normalizeKey = (value: string) =>
 		.toLowerCase()
 		.replace(/[^a-z0-9]/g, "");
 
+const ICON_ALIASES: Record<string, string> = {
+	RiBabyCarriageLine: "RiEmotionHappyLine",
+	RiMonitorLine: "RiTv2Line",
+	RiLinkLine: "RiLinksLine",
+	RiCloudDownloadLine: "RiDownloadCloudLine",
+	RiCloudUploadLine: "RiUploadCloudLine",
+};
+
+export function resolveIconName(iconName: string): string {
+	return ICON_ALIASES[iconName] ?? iconName;
+}
+
+let remixLineIconNamesCache: string[] | null = null;
+
+export function getAllRemixLineIconNames(): string[] {
+	if (!remixLineIconNamesCache) {
+		remixLineIconNamesCache = Object.keys(RemixIcons)
+			.filter((name) => name.startsWith("Ri") && name.endsWith("Line"))
+			.sort((a, b) => a.localeCompare(b, "pt-BR"));
+	}
+
+	return remixLineIconNamesCache;
+}
+
+export function formatRemixIconLabel(iconName: string): string {
+	return iconName
+		.replace(/^Ri/, "")
+		.replace(/Line$/, "")
+		.replace(/(\d+)/g, " $1 ")
+		.replace(/([a-z])([A-Z])/g, "$1 $2")
+		.trim();
+}
+
 export const getIconComponent = (
 	iconName: string,
 ): ComponentType<{ className?: string }> | null => {
+	const resolvedName = resolveIconName(iconName);
 	// Busca o ícone no objeto de ícones do Remix Icon
-	const icon = (RemixIcons as Record<string, unknown>)[iconName];
+	const icon = (RemixIcons as Record<string, unknown>)[resolvedName];
 
 	if (icon && typeof icon === "function") {
 		return icon as ComponentType<{ className?: string }>;

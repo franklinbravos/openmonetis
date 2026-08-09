@@ -1,12 +1,12 @@
 "use client";
 
 import {
+	closestCenter,
 	DndContext,
 	type DragEndEvent,
 	type DragOverEvent,
 	KeyboardSensor,
 	PointerSensor,
-	closestCenter,
 	useSensor,
 	useSensors,
 } from "@dnd-kit/core";
@@ -30,11 +30,11 @@ import { reorderCategoriesAction } from "@/features/categories/actions";
 import { CategoryHierarchyName } from "@/features/categories/components/category-hierarchy-name";
 import type { Category } from "@/features/categories/components/types";
 import {
-	type CategoryDropPosition,
-	type FlatCategoryItem,
 	applyCategoryDrop,
 	buildCategoryOrderUpdates,
+	type CategoryDropPosition,
 	enrichFlatCategories,
+	type FlatCategoryItem,
 	resolveCategoryDropPosition,
 } from "@/features/categories/lib/category-dnd";
 import { CategoryIconBadge } from "@/shared/components/entity-avatar";
@@ -206,10 +206,7 @@ function SortableCategoryRow({
 						}}
 					>
 						{isSubcategory ? (
-							<span
-								className="relative mt-2 flex h-8 w-5 shrink-0"
-								aria-hidden
-							>
+							<span className="relative mt-2 flex h-8 w-5 shrink-0" aria-hidden>
 								<span className="absolute top-0 bottom-1/2 left-2 border-muted-foreground/35 border-l" />
 								<span className="absolute top-1/2 left-2 h-px w-3 bg-muted-foreground/35" />
 							</span>
@@ -339,7 +336,9 @@ export function CategoriesSortableTable({
 	const [items, setItems] = useState<FlatCategoryItem[]>(() =>
 		buildFlatCategories(categories, categoriesById),
 	);
-	const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null);
+	const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(
+		null,
+	);
 	const [pointerY, setPointerY] = useState(0);
 	const [isPending, startTransition] = useTransition();
 
@@ -446,8 +445,8 @@ export function CategoriesSortableTable({
 		<Card className="py-2">
 			<CardContent className="px-2 py-4 sm:px-4">
 				<p className="mb-3 text-muted-foreground text-sm">
-					Arraste para reordenar. Solte no centro de uma categoria para transformá-la
-					em subcategoria.
+					Arraste para reordenar. Solte no centro de uma categoria para
+					transformá-la em subcategoria.
 				</p>
 				<DndContext
 					sensors={sensors}
@@ -485,7 +484,9 @@ export function CategoriesSortableTable({
 					</Table>
 				</DndContext>
 				{isPending ? (
-					<p className="mt-2 text-muted-foreground text-xs">Salvando ordem...</p>
+					<p className="mt-2 text-muted-foreground text-xs">
+						Salvando ordem...
+					</p>
 				) : null}
 			</CardContent>
 		</Card>

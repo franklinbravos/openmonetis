@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { Button } from "@/shared/components/ui/button";
 import { Card } from "@/shared/components/ui/card";
+import type { MonthPickerMonthStatus } from "@/shared/components/ui/month-picker";
 import { MonthPicker } from "@/shared/components/ui/month-picker";
 import {
 	Popover,
@@ -30,11 +31,13 @@ const getToolbarEndSlotId = (toolbarSlotId: string) => `${toolbarSlotId}-end`;
 type MonthNavigationProps = {
 	toolbarSlotId?: string;
 	embedded?: boolean;
+	monthStatuses?: Record<string, MonthPickerMonthStatus>;
 };
 
 export default function MonthNavigation({
 	toolbarSlotId,
 	embedded = false,
+	monthStatuses,
 }: MonthNavigationProps = {}) {
 	const { period, currentMonth, currentYear, defaultPeriod, buildHref } =
 		useMonthPeriod();
@@ -114,6 +117,7 @@ export default function MonthNavigation({
 							<MonthPicker
 								selectedMonth={periodToDate(period)}
 								onMonthSelect={handleMonthSelect}
+								monthStatuses={monthStatuses}
 							/>
 						</PopoverContent>
 					</Popover>

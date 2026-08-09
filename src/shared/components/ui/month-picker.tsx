@@ -1,8 +1,15 @@
 "use client";
-import { RiArrowLeftSFill, RiArrowRightSFill } from "@remixicon/react";
+import {
+	RiArrowLeftSFill,
+	RiArrowRightSFill,
+	RiCheckboxCircleFill,
+} from "@remixicon/react";
 import * as React from "react";
+import StatusDot from "@/shared/components/feedback/status-dot";
 import { cn } from "@/shared/utils/ui";
 import { buttonVariants } from "./button";
+
+export type MonthPickerMonthStatus = "paid" | "overdue";
 
 type Month = {
 	number: number;
@@ -49,6 +56,7 @@ type MonthCalProps = {
 	minDate?: Date;
 	maxDate?: Date;
 	disabledDates?: Date[];
+	monthStatuses?: Record<string, MonthPickerMonthStatus>;
 };
 
 type ButtonVariant =
@@ -67,6 +75,7 @@ function MonthPicker({
 	minDate,
 	maxDate,
 	disabledDates,
+	monthStatuses,
 	callbacks,
 	onYearBackward,
 	onYearForward,
@@ -88,6 +97,7 @@ function MonthPicker({
 						minDate={minDate}
 						maxDate={maxDate}
 						disabledDates={disabledDates}
+						monthStatuses={monthStatuses}
 					></MonthCal>
 				</div>
 			</div>
@@ -103,6 +113,7 @@ function MonthCal({
 	minDate,
 	maxDate,
 	disabledDates,
+	monthStatuses,
 	onYearBackward,
 	onYearForward,
 }: MonthCalProps) {
@@ -161,6 +172,9 @@ function MonthCal({
 						return (
 							<tr key={`row-${a}`} className="flex w-full mt-2">
 								{monthRow.map((m) => {
+									const periodKey = `${menuYear}-${String(m.number + 1).padStart(2, "0")}`;
+									const monthStatus = monthStatuses?.[periodKey];
+
 									return (
 										<td
 											key={m.number}
@@ -199,12 +213,29 @@ function MonthCal({
 																? (variant?.calendar?.selected ?? "default")
 																: (variant?.calendar?.main ?? "ghost"),
 													}),
-													"h-full w-full p-0 font-normal aria-selected:opacity-100",
+													"relative h-full w-full p-0 font-normal aria-selected:opacity-100",
 												)}
 											>
-												{callbacks?.monthLabel
-													? callbacks.monthLabel(m)
-													: m.name}
+												<span className="inline-flex flex-col items-center gap-0.5">
+													<span>
+														{callbacks?.monthLabel
+															? callbacks.monthLabel(m)
+															: m.name}
+													</span>
+													{monthStatus === "paid" ? (
+														<RiCheckboxCircleFill
+															className="size-3.5 text-success"
+															aria-hidden
+														/>
+													) : monthStatus === "overdue" ? (
+														<StatusDot
+															color="bg-destructive"
+															className="size-2"
+														/>
+													) : (
+														<span className="size-2" aria-hidden />
+													)}
+												</span>
 											</button>
 										</td>
 									);

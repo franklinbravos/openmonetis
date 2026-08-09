@@ -9,7 +9,10 @@ import { fetchDashboardNotes } from "./notes/notes-queries";
 import { fetchDashboardCurrentPeriodOverview } from "./overview/current-period-overview-queries";
 import { fetchDashboardPeriodOverview } from "./overview/period-overview-queries";
 
-async function fetchDashboardDataInternal(userId: string, period: string) {
+export async function fetchDashboardDataInternal(
+	userId: string,
+	period: string,
+) {
 	const [
 		periodOverview,
 		accountsSnapshot,

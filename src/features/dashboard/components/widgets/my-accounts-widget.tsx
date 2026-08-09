@@ -167,12 +167,12 @@ export function MyAccountsWidget({
 											</div>
 
 											<div className={styles.textStack}>
-												<span className={styles.title}>
-													{account.name}
-												</span>
+												<span className={styles.title}>{account.name}</span>
 
 												<div className={styles.meta}>
-													<span className="truncate">{account.accountType}</span>
+													<span className="truncate">
+														{account.accountType}
+													</span>
 													{account.excludeFromBalance ? (
 														<Tooltip>
 															<TooltipTrigger asChild>

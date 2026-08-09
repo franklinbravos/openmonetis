@@ -8,9 +8,9 @@ import {
 const ENCRYPTION_SALT = "openmonetis-ai-secrets-v1";
 
 function getEncryptionKey(): Buffer {
-	const secret = process.env.BETTER_AUTH_SECRET;
+	const secret = process.env.APP_SECRET;
 	if (!secret) {
-		throw new Error("BETTER_AUTH_SECRET não configurado.");
+		throw new Error("APP_SECRET não configurado.");
 	}
 
 	return scryptSync(secret, ENCRYPTION_SALT, 32);

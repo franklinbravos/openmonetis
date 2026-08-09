@@ -1,4 +1,20 @@
-import type { ImportedTransaction, ImportStatement } from "./types";
+import { derivePeriodFromDate } from "@/shared/utils/period";
+import type {
+	ImportedTransaction,
+	ImportStatement,
+	InvoiceImportMetadata,
+} from "./types";
+
+export type ParseOfxOptions = {
+	fileName?: string;
+};
+
+const NU_PAGAMENTOS_ORG = /NU\s+PAGAMENTOS/i;
+const NUBANK_FILE_DUE_DATE_RE = /Nubank_(\d{4}-\d{2}-\d{2})\./i;
+
+const NUBANK_OFX_SKIP_DESCRIPTIONS = [/^parcelamento de fatura/i];
+
+const NUBANK_OFX_EXPENSE_FROM_CREDIT = [/^juros de pagamento parcial/i];
 
 // Extrai o valor de uma tag leaf do OFX SGML: <TAG>valor
 function getField(block: string, tag: string): string | null {
@@ -13,7 +29,93 @@ function parseOfxDate(raw: string): string {
 	return `${match[1]}-${match[2]}-${match[3]}`;
 }
 
-export function parseOfx(content: string): ImportStatement {
+function addDaysToIsoDate(isoDate: string, days: number): string {
+	const date = new Date(`${isoDate}T12:00:00`);
+	date.setDate(date.getDate() + days);
+	return date.toISOString().slice(0, 10);
+}
+
+function isNubankCreditCardOfx(xml: string, isCreditCard: boolean): boolean {
+	return isCreditCard && NU_PAGAMENTOS_ORG.test(xml);
+}
+
+function parseDueDateFromFileName(fileName?: string): string | null {
+	if (!fileName) return null;
+	const match = fileName.match(NUBANK_FILE_DUE_DATE_RE);
+	return match?.[1] ?? null;
+}
+
+function parseLedgerBalance(xml: string): {
+	amount: number | null;
+	asOf: string | null;
+} {
+	const ledgerBlock = xml.match(/<LEDGERBAL>[\s\S]*?<\/LEDGERBAL>/);
+	if (!ledgerBlock) return { amount: null, asOf: null };
+
+	const balAmt = getField(ledgerBlock[0], "BALAMT");
+	const dtAsOf = getField(ledgerBlock[0], "DTASOF");
+
+	return {
+		amount: balAmt
+			? Math.abs(Number.parseFloat(balAmt.replace(",", ".")))
+			: null,
+		asOf: dtAsOf ? parseOfxDate(dtAsOf) : null,
+	};
+}
+
+function buildNubankCardInvoiceMetadata(
+	xml: string,
+	transactions: ImportedTransaction[],
+	fileName?: string,
+): InvoiceImportMetadata | null {
+	const dueDateFromFile = parseDueDateFromFileName(fileName);
+	const { amount: ledgerAmount, asOf } = parseLedgerBalance(xml);
+	const dueDate = dueDateFromFile ?? (asOf ? addDaysToIsoDate(asOf, 7) : null);
+
+	if (!dueDate) return null;
+
+	const paymentTxn = transactions.find((transaction) =>
+		/^pagamento\s+recebido$/i.test(transaction.description.trim()),
+	);
+
+	return {
+		period: derivePeriodFromDate(dueDate),
+		dueDate,
+		isPaid: Boolean(paymentTxn),
+		paymentDate: paymentTxn?.date ?? null,
+		totalAmount: ledgerAmount,
+	};
+}
+
+function postProcessNubankCardTransactions(
+	transactions: ImportedTransaction[],
+): ImportedTransaction[] {
+	return transactions.flatMap((transaction) => {
+		const description = transaction.description.trim();
+
+		if (
+			NUBANK_OFX_SKIP_DESCRIPTIONS.some((pattern) => pattern.test(description))
+		) {
+			return [];
+		}
+
+		if (
+			transaction.transactionType === "income" &&
+			NUBANK_OFX_EXPENSE_FROM_CREDIT.some((pattern) =>
+				pattern.test(description),
+			)
+		) {
+			return [{ ...transaction, transactionType: "expense" }];
+		}
+
+		return [transaction];
+	});
+}
+
+export function parseOfx(
+	content: string,
+	options?: ParseOfxOptions,
+): ImportStatement {
 	// Remove o header SGML (tudo antes de <OFX>)
 	const ofxStart = content.indexOf("<OFX>");
 	const xml = ofxStart >= 0 ? content.slice(ofxStart) : content;
@@ -54,6 +156,24 @@ export function parseOfx(content: string): ImportStatement {
 	});
 
 	const isCreditCard = xml.includes("<CREDITCARDMSGSRSV1>");
+
+	if (isNubankCreditCardOfx(xml, isCreditCard)) {
+		const processedTransactions =
+			postProcessNubankCardTransactions(transactions);
+
+		return {
+			source: "Nubank",
+			accountNumber,
+			period,
+			isCreditCard,
+			transactions: processedTransactions,
+			invoice: buildNubankCardInvoiceMetadata(
+				xml,
+				processedTransactions,
+				options?.fileName,
+			),
+		};
+	}
 
 	return { source, accountNumber, period, isCreditCard, transactions };
 }

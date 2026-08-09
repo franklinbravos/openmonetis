@@ -7,6 +7,10 @@ import {
 	INVOICE_PAYMENT_STATUS,
 	type InvoicePaymentStatus,
 } from "@/shared/lib/invoices";
+import { isDateOnlyPast } from "@/shared/utils/date";
+import { buildDueDateInfoFromPeriodDay } from "@/shared/utils/financial-dates";
+
+export type InvoiceMonthStatus = "paid" | "overdue";
 
 const toNumber = (value: string | number | null | undefined) => {
 	if (typeof value === "number") {
@@ -104,6 +108,58 @@ export async function fetchInvoiceData(
 	}
 
 	return { totalAmount, invoiceStatus, paymentDate };
+}
+
+export async function fetchCardInvoiceMonthStatuses(
+	userId: string,
+	cardId: string,
+	dueDay: string,
+): Promise<Record<string, InvoiceMonthStatus>> {
+	const [invoiceRows, periodRows] = await Promise.all([
+		db.query.invoices.findMany({
+			columns: {
+				period: true,
+				paymentStatus: true,
+			},
+			where: and(eq(invoices.userId, userId), eq(invoices.cardId, cardId)),
+		}),
+		db
+			.selectDistinct({ period: transactions.period })
+			.from(transactions)
+			.where(
+				and(eq(transactions.userId, userId), eq(transactions.cardId, cardId)),
+			),
+	]);
+
+	const paidPeriods = new Set(
+		invoiceRows
+			.filter((row) => row.paymentStatus === INVOICE_PAYMENT_STATUS.PAID)
+			.map((row) => row.period)
+			.filter((period): period is string => period !== null),
+	);
+
+	const relevantPeriods = new Set(
+		[
+			...invoiceRows.map((row) => row.period),
+			...periodRows.map((row) => row.period),
+		].filter((period): period is string => period !== null),
+	);
+
+	const statuses: Record<string, InvoiceMonthStatus> = {};
+
+	for (const period of relevantPeriods) {
+		if (paidPeriods.has(period)) {
+			statuses[period] = "paid";
+			continue;
+		}
+
+		const dueDate = buildDueDateInfoFromPeriodDay(period, dueDay).date;
+		if (dueDate && isDateOnlyPast(dueDate)) {
+			statuses[period] = "overdue";
+		}
+	}
+
+	return statuses;
 }
 
 export async function fetchCardTransactions(filters: SQL[]) {

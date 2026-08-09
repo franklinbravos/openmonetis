@@ -30,7 +30,7 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/shared/components/ui/tooltip";
-import { authClient } from "@/shared/lib/auth/client";
+import { authClient, signOut } from "@/shared/lib/auth/client";
 import { getAvatarSrc } from "@/shared/lib/payers/utils";
 import type { UpdateCheckResult } from "@/shared/lib/version/check-update";
 import { cn } from "@/shared/utils/ui";
@@ -71,13 +71,10 @@ export function NavbarUser({
 	const isDataUrl = avatarSrc.startsWith("data:");
 
 	async function handleLogout() {
-		await authClient.signOut({
-			fetchOptions: {
-				onSuccess: () => router.push("/login"),
-				onRequest: () => setLogoutLoading(true),
-				onResponse: () => setLogoutLoading(false),
-			},
-		});
+		setLogoutLoading(true);
+		await signOut();
+		setLogoutLoading(false);
+		router.push("/login");
 	}
 
 	return (

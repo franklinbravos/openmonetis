@@ -19,7 +19,7 @@ export function getInviteExpiryDate(): Date {
 
 export function buildInviteUrl(token: string): string {
 	const baseURL =
-		process.env.BETTER_AUTH_URL?.replace(/\/$/, "") ??
+		process.env.APP_URL?.replace(/\/$/, "") ??
 		`http://localhost:${process.env.APP_PORT ?? "3050"}`;
 	return `${baseURL}/invite?token=${encodeURIComponent(token)}`;
 }

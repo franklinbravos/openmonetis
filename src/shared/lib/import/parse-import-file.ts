@@ -26,7 +26,7 @@ export async function parseImportFile(
 		case "ofx":
 		case "qfx": {
 			const content = await readAsText(file, "windows-1252");
-			return parseOfx(content);
+			return parseOfx(content, { fileName: file.name });
 		}
 		case "xlsx":
 		case "xls":

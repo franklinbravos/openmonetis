@@ -1,8 +1,7 @@
-import { RiSettings4Line } from "@remixicon/react";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { AccountDialog } from "@/features/accounts/components/account-dialog";
 import { AccountStatementCard } from "@/features/accounts/components/account-statement-card";
+import { AccountStatementCardMenu } from "@/features/accounts/components/account-statement-card-menu";
 import { AddYieldDialog } from "@/features/accounts/components/add-yield-dialog";
 import { AdjustBalanceDialog } from "@/features/accounts/components/adjust-balance-dialog";
 import type { Account } from "@/features/accounts/components/types";
@@ -13,6 +12,7 @@ import {
 } from "@/features/accounts/statement-queries";
 import { fetchUserPreferences } from "@/features/settings/queries";
 import { TransactionsPage as LancamentosSection } from "@/features/transactions/components/page/transactions-page";
+import { buildAccountImportHref } from "@/features/transactions/lib/import-continue-href";
 import { TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID } from "@/features/transactions/lib/month-toolbar";
 import {
 	buildOptionSets,
@@ -30,7 +30,7 @@ import {
 	fetchTransactionFilterSources,
 } from "@/features/transactions/queries";
 import MonthNavigation from "@/shared/components/month-picker/month-navigation";
-import { Button } from "@/shared/components/ui/button";
+import { PageBreadcrumb } from "@/shared/components/navigation/page-breadcrumb";
 import { getUserId } from "@/shared/lib/auth/server";
 import { loadLogoOptions } from "@/shared/lib/logo/options";
 import { getBusinessDateString } from "@/shared/utils/date";
@@ -126,6 +126,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 
 	const periodLabel = `${capitalize(monthName)} de ${year}`;
 	const defaultYieldDate = resolveDefaultYieldDate(selectedPeriod);
+	const importHref = buildAccountImportHref(account.id, selectedPeriod);
 
 	const accountDialogData: Account = {
 		id: account.id,
@@ -156,7 +157,12 @@ export default async function Page({ params, searchParams }: PageProps) {
 
 	return (
 		<main className="flex flex-col gap-6">
-			<MonthNavigation toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID} />
+			<PageBreadcrumb
+				items={[
+					{ label: "Contas", href: "/accounts" },
+					{ label: account.name },
+				]}
+			/>
 
 			<AccountStatementCard
 				accountName={account.name}
@@ -168,6 +174,13 @@ export default async function Page({ params, searchParams }: PageProps) {
 				totalIncomes={totalIncomes}
 				totalExpenses={totalExpenses}
 				logo={account.logo}
+				importHref={importHref}
+				headerMenu={
+					<AccountStatementCardMenu
+						account={accountDialogData}
+						logoOptions={logoOptions}
+					/>
+				}
 				balanceAdjustment={
 					<>
 						<AddYieldDialog
@@ -181,25 +194,9 @@ export default async function Page({ params, searchParams }: PageProps) {
 						/>
 					</>
 				}
-				actions={
-					<AccountDialog
-						mode="update"
-						account={accountDialogData}
-						logoOptions={logoOptions}
-						trigger={
-							<Button
-								type="button"
-								variant="ghost"
-								size="icon-sm"
-								className="text-muted-foreground hover:text-foreground"
-								aria-label="Configurar conta"
-							>
-								<RiSettings4Line className="size-4" aria-hidden />
-							</Button>
-						}
-					/>
-				}
 			/>
+
+			<MonthNavigation toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID} />
 
 			<section className="flex flex-col gap-4">
 				<LancamentosSection
@@ -240,6 +237,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 						userPreferences?.groupTransactionsByDate ?? true
 					}
 					attachmentMaxSizeMb={userPreferences?.attachmentMaxSizeMb ?? 50}
+					showImportButton={false}
 				/>
 			</section>
 		</main>

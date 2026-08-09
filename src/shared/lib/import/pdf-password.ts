@@ -1,9 +1,9 @@
-import { loadPdfJs } from "./pdfjs-client";
 import {
 	logPdfPasswordDebug,
 	maskPasswordCandidate,
 	summarizePdfPasswordError,
 } from "./pdf-password-debug";
+import { loadPdfJs } from "./pdfjs-client";
 
 export {
 	logPdfPasswordDebug,
@@ -91,9 +91,7 @@ export function mapPdfLoadError(
 	});
 
 	if (isPdfPasswordError(error)) {
-		return error instanceof Error
-			? error
-			: new PdfPasswordIncorrectError();
+		return error instanceof Error ? error : new PdfPasswordIncorrectError();
 	}
 
 	if (error && typeof error === "object" && "name" in error) {

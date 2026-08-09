@@ -1,7 +1,8 @@
 "use client";
 
+import { RiPriceTag3Line } from "@remixicon/react";
 import type { ComponentType } from "react";
-import { getIconComponent } from "@/shared/utils/icons";
+import { getIconComponent, resolveIconName } from "@/shared/utils/icons";
 import { cn } from "@/shared/utils/ui";
 
 interface CategoryIconProps {
@@ -9,18 +10,12 @@ interface CategoryIconProps {
 	className?: string;
 }
 
-export function CategoryIcon({ name, className }: CategoryIconProps) {
-	const IconComponent = (
-		name ? getIconComponent(name) : getIconComponent("RiPriceTag3Line")
-	) as ComponentType<{ className?: string }> | null;
+const FALLBACK_ICON = RiPriceTag3Line;
 
-	if (!IconComponent) {
-		return (
-			<span className={cn("text-xs text-muted-foreground", className)}>
-				{name ?? "Category"}
-			</span>
-		);
-	}
+export function CategoryIcon({ name, className }: CategoryIconProps) {
+	const resolvedName = name ? resolveIconName(name) : "RiPriceTag3Line";
+	const IconComponent = (getIconComponent(resolvedName) ??
+		FALLBACK_ICON) as ComponentType<{ className?: string }>;
 
 	return <IconComponent className={cn("size-5", className)} aria-hidden />;
 }

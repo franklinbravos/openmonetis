@@ -45,11 +45,14 @@ export function MobileNav({
 			</Button>
 
 			<Sheet open={open} onOpenChange={setOpen}>
-				<SheetContent side="right" className="w-72">
+				<SheetContent
+					side="right"
+					className="w-72"
+					aria-describedby={undefined}
+				>
 					<SheetHeader className="border-b pb-4">
-						<SheetTitle asChild>
-							<Logo variant="compact" />
-						</SheetTitle>
+						<SheetTitle className="sr-only">Menu de navegação</SheetTitle>
+						<Logo variant="compact" aria-hidden />
 					</SheetHeader>
 
 					<nav className="flex flex-col gap-1 px-4">

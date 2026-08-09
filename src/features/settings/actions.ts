@@ -1,14 +1,20 @@
 "use server";
 
 import { createHash, randomBytes } from "node:crypto";
-import { verifyPassword } from "better-auth/crypto";
 import { and, eq, isNull, ne, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
 import { z } from "zod";
-import { account, apiTokens, payers } from "@/db/schema";
+import { apiTokens, payers } from "@/db/schema";
 import { revalidateForEntity } from "@/shared/lib/actions/helpers";
-import { auth } from "@/shared/lib/auth/config";
+import {
+	createEmailUser,
+	setPassword,
+	updateEmail,
+	updatePassword,
+	userUsesGoogleAuth,
+	verifyCurrentPassword,
+} from "@/shared/lib/auth/password";
+import { getUser } from "@/shared/lib/auth/server";
 import { DEFAULT_CATEGORIES } from "@/shared/lib/categories/defaults";
 import { db, schema } from "@/shared/lib/db";
 import {
@@ -177,35 +183,24 @@ export async function updateNameAction(
 	data: z.infer<typeof updateNameSchema>,
 ): Promise<ActionResponse> {
 	try {
-		const session = await auth.api.getSession({
-			headers: await headers(),
-		});
-
-		if (!session?.user?.id) {
-			return {
-				success: false,
-				error: "Não autenticado",
-			};
-		}
+		const user = await getUser();
 
 		const validated = updateNameSchema.parse(data);
 		const fullName = `${validated.firstName} ${validated.lastName}`;
-		const adminPayerId = await getAdminPayerId(session.user.id);
+		const adminPayerId = await getAdminPayerId(user.id);
 
 		// Atualizar nome do usuário
 		await db
 			.update(schema.user)
 			.set({ name: fullName })
-			.where(eq(schema.user.id, session.user.id));
+			.where(eq(schema.user.id, user.id));
 
 		// Sincronizar nome com o pessoa admin
 		if (adminPayerId) {
 			await db
 				.update(payers)
 				.set({ name: fullName })
-				.where(
-					and(eq(payers.userId, session.user.id), eq(payers.id, adminPayerId)),
-				);
+				.where(and(eq(payers.userId, user.id), eq(payers.id, adminPayerId)));
 		}
 
 		// Revalidar o layout do dashboard para atualizar a sidebar
@@ -236,11 +231,9 @@ export async function updatePasswordAction(
 	data: z.infer<typeof updatePasswordSchema>,
 ): Promise<ActionResponse> {
 	try {
-		const session = await auth.api.getSession({
-			headers: await headers(),
-		});
+		const user = await getUser();
 
-		if (!session?.user?.id || !session?.user?.email) {
+		if (!user.email) {
 			return {
 				success: false,
 				error: "Não autenticado",
@@ -249,56 +242,31 @@ export async function updatePasswordAction(
 
 		const validated = updatePasswordSchema.parse(data);
 
-		// Verificar se o usuário tem conta com provedor Google
-		const userAccount = await db.query.account.findFirst({
-			where: and(
-				eq(schema.account.userId, session.user.id),
-				eq(schema.account.providerId, "google"),
-			),
-		});
-
-		if (userAccount) {
+		if (await userUsesGoogleAuth(user.id)) {
 			return {
 				success: false,
 				error:
-					"Não é possível alterar senha para financialAccounts autenticadas via Google",
+					"Não é possível alterar senha para contas autenticadas via Google",
 			};
 		}
 
-		// Usar a API do Better Auth para atualizar a senha
-		try {
-			await auth.api.changePassword({
-				body: {
-					newPassword: validated.newPassword,
-					currentPassword: validated.currentPassword,
-				},
-				headers: await headers(),
-			});
+		const result = await updatePassword(
+			user.email,
+			validated.currentPassword,
+			validated.newPassword,
+		);
 
-			return {
-				success: true,
-				message: "Senha atualizada com sucesso",
-			};
-		} catch (authError) {
-			console.error("Erro na API do Better Auth:", authError);
-
-			// Verificar se o erro é de senha incorreta
-			if (
-				(authError as Error)?.message?.includes("password") ||
-				(authError as Error)?.message?.includes("incorrect")
-			) {
-				return {
-					success: false,
-					error: "Senha atual incorreta",
-				};
-			}
-
+		if (!result.ok) {
 			return {
 				success: false,
-				error:
-					"Erro ao atualizar senha. Verifique se a senha atual está correta.",
+				error: result.error,
 			};
 		}
+
+		return {
+			success: true,
+			message: "Senha atualizada com sucesso",
+		};
 	} catch (error) {
 		if (error instanceof z.ZodError) {
 			return {
@@ -332,27 +300,16 @@ export async function completeRequiredPasswordChangeAction(
 	data: z.infer<typeof requiredPasswordChangeSchema>,
 ): Promise<ActionResponse> {
 	try {
-		const session = await auth.api.getSession({
-			headers: await headers(),
-		});
-
-		if (!session?.user?.id) {
-			return { success: false, error: "Não autenticado" };
-		}
+		const user = await getUser();
 
 		const validated = requiredPasswordChangeSchema.parse(data);
 
-		await auth.api.setPassword({
-			body: {
-				newPassword: validated.newPassword,
-			},
-			headers: await headers(),
-		});
+		await setPassword(validated.newPassword);
 
 		await db
 			.update(schema.user)
 			.set({ mustChangePassword: false })
-			.where(eq(schema.user.id, session.user.id));
+			.where(eq(schema.user.id, user.id));
 
 		revalidatePath("/", "layout");
 
@@ -380,11 +337,9 @@ export async function updateEmailAction(
 	data: z.infer<typeof updateEmailSchema>,
 ): Promise<ActionResponse> {
 	try {
-		const session = await auth.api.getSession({
-			headers: await headers(),
-		});
+		const user = await getUser();
 
-		if (!session?.user?.id || !session?.user?.email) {
+		if (!user.email) {
 			return {
 				success: false,
 				error: "Não autenticado",
@@ -392,18 +347,8 @@ export async function updateEmailAction(
 		}
 
 		const validated = updateEmailSchema.parse(data);
+		const isGoogleAuth = await userUsesGoogleAuth(user.id);
 
-		// Verificar se o usuário tem conta com provedor Google
-		const userAccount = await db.query.account.findFirst({
-			where: and(
-				eq(schema.account.userId, session.user.id),
-				eq(schema.account.providerId, "google"),
-			),
-		});
-
-		const isGoogleAuth = !!userAccount;
-
-		// Se não for Google OAuth, validar senha
 		if (!isGoogleAuth) {
 			if (!validated.password) {
 				return {
@@ -412,30 +357,10 @@ export async function updateEmailAction(
 				};
 			}
 
-			// Buscar hash da senha no registro de credencial
-			const credentialAccount = await db
-				.select({ password: account.password })
-				.from(account)
-				.where(
-					and(
-						eq(account.userId, session.user.id),
-						eq(account.providerId, "credential"),
-					),
-				)
-				.limit(1);
-
-			const storedHash = credentialAccount[0]?.password;
-			if (!storedHash) {
-				return {
-					success: false,
-					error: "Conta de credencial não encontrada.",
-				};
-			}
-
-			const isValid = await verifyPassword({
-				password: validated.password,
-				hash: storedHash,
-			});
+			const isValid = await verifyCurrentPassword(
+				user.email,
+				validated.password,
+			);
 
 			if (!isValid) {
 				return {
@@ -445,11 +370,10 @@ export async function updateEmailAction(
 			}
 		}
 
-		// Verificar se o e-mail já está em uso por outro usuário
 		const existingUser = await db.query.user.findFirst({
 			where: and(
 				eq(schema.user.email, validated.newEmail),
-				ne(schema.user.id, session.user.id),
+				ne(schema.user.id, user.id),
 			),
 		});
 
@@ -460,22 +384,22 @@ export async function updateEmailAction(
 			};
 		}
 
-		// Verificar se o novo e-mail é diferente do atual
-		if (validated.newEmail.toLowerCase() === session.user.email.toLowerCase()) {
+		if (validated.newEmail.toLowerCase() === user.email.toLowerCase()) {
 			return {
 				success: false,
 				error: "O novo e-mail deve ser diferente do atual",
 			};
 		}
 
-		// Atualizar e-mail
+		await updateEmail(validated.newEmail);
+
 		await db
 			.update(schema.user)
 			.set({
 				email: validated.newEmail,
-				emailVerified: false, // Marcar como não verificado
+				emailVerified: false,
 			})
-			.where(eq(schema.user.id, session.user.id));
+			.where(eq(schema.user.id, user.id));
 
 		// Revalidar o layout do dashboard para atualizar a sidebar
 		revalidatePath("/", "layout");
@@ -505,23 +429,14 @@ export async function deleteAccountAction(
 	data: z.infer<typeof deleteAccountSchema>,
 ): Promise<ActionResponse> {
 	try {
-		const session = await auth.api.getSession({
-			headers: await headers(),
-		});
-
-		if (!session?.user?.id) {
-			return {
-				success: false,
-				error: "Não autenticado",
-			};
-		}
+		const user = await getUser();
 
 		// Validar confirmação
 		deleteAccountSchema.parse(data);
 
 		// Deletar todos os dados do usuário em cascade
 		// O schema deve ter as relações configuradas com onDelete: cascade
-		await db.delete(schema.user).where(eq(schema.user.id, session.user.id));
+		await db.delete(schema.user).where(eq(schema.user.id, user.id));
 
 		return {
 			success: true,
@@ -547,16 +462,7 @@ export async function resetAccountAction(
 	data: z.infer<typeof resetAccountSchema>,
 ): Promise<ActionResponse> {
 	try {
-		const session = await auth.api.getSession({
-			headers: await headers(),
-		});
-
-		if (!session?.user?.id) {
-			return {
-				success: false,
-				error: "Não autenticado",
-			};
-		}
+		const user = await getUser();
 
 		resetAccountSchema.parse(data);
 
@@ -566,7 +472,7 @@ export async function resetAccountAction(
 				email: true,
 				image: true,
 			},
-			where: eq(schema.user.id, session.user.id),
+			where: eq(schema.user.id, user.id),
 		});
 
 		if (!currentUser) {
@@ -576,16 +482,16 @@ export async function resetAccountAction(
 			};
 		}
 
-		await resetUserAppData(session.user.id, currentUser);
+		await resetUserAppData(user.id, currentUser);
 
-		revalidateForEntity("accounts", session.user.id);
-		revalidateForEntity("cards", session.user.id);
-		revalidateForEntity("categories", session.user.id);
-		revalidateForEntity("budgets", session.user.id);
-		revalidateForEntity("payers", session.user.id);
-		revalidateForEntity("notes", session.user.id);
-		revalidateForEntity("transactions", session.user.id);
-		revalidateForEntity("inbox", session.user.id);
+		revalidateForEntity("accounts", user.id);
+		revalidateForEntity("cards", user.id);
+		revalidateForEntity("categories", user.id);
+		revalidateForEntity("budgets", user.id);
+		revalidateForEntity("payers", user.id);
+		revalidateForEntity("notes", user.id);
+		revalidateForEntity("transactions", user.id);
+		revalidateForEntity("inbox", user.id);
 		revalidatePath("/settings");
 		revalidatePath("/insights");
 		revalidatePath("/reports");
@@ -616,16 +522,7 @@ export async function updatePreferencesAction(
 	data: z.infer<typeof updatePreferencesSchema>,
 ): Promise<ActionResponse> {
 	try {
-		const session = await auth.api.getSession({
-			headers: await headers(),
-		});
-
-		if (!session?.user?.id) {
-			return {
-				success: false,
-				error: "Não autenticado",
-			};
-		}
+		const user = await getUser();
 
 		const validated = updatePreferencesSchema.parse(data);
 
@@ -633,7 +530,7 @@ export async function updatePreferencesAction(
 		const existingResult = await db
 			.select()
 			.from(schema.userPreferences)
-			.where(eq(schema.userPreferences.userId, session.user.id))
+			.where(eq(schema.userPreferences.userId, user.id))
 			.limit(1);
 
 		const existing = existingResult[0] || null;
@@ -651,11 +548,11 @@ export async function updatePreferencesAction(
 					hideAnticipatedInstallments: validated.hideAnticipatedInstallments,
 					updatedAt: new Date(),
 				})
-				.where(eq(schema.userPreferences.userId, session.user.id));
+				.where(eq(schema.userPreferences.userId, user.id));
 		} else {
 			// Create new preferences
 			await db.insert(schema.userPreferences).values({
-				userId: session.user.id,
+				userId: user.id,
 				statementNoteAsColumn: validated.statementNoteAsColumn,
 				transactionsColumnOrder: validated.transactionsColumnOrder,
 				attachmentMaxSizeMb: validated.attachmentMaxSizeMb,
@@ -712,16 +609,7 @@ export async function createApiTokenAction(
 	data: z.infer<typeof createApiTokenSchema>,
 ): Promise<ActionResponse<{ token: string; tokenId: string }>> {
 	try {
-		const session = await auth.api.getSession({
-			headers: await headers(),
-		});
-
-		if (!session?.user?.id) {
-			return {
-				success: false,
-				error: "Não autenticado",
-			};
-		}
+		const user = await getUser();
 
 		const validated = createApiTokenSchema.parse(data);
 
@@ -734,7 +622,7 @@ export async function createApiTokenAction(
 		const [newToken] = await db
 			.insert(apiTokens)
 			.values({
-				userId: session.user.id,
+				userId: user.id,
 				name: validated.name,
 				tokenHash,
 				tokenPrefix,
@@ -772,16 +660,7 @@ export async function revokeApiTokenAction(
 	data: z.infer<typeof revokeApiTokenSchema>,
 ): Promise<ActionResponse> {
 	try {
-		const session = await auth.api.getSession({
-			headers: await headers(),
-		});
-
-		if (!session?.user?.id) {
-			return {
-				success: false,
-				error: "Não autenticado",
-			};
-		}
+		const user = await getUser();
 
 		const validated = revokeApiTokenSchema.parse(data);
 
@@ -792,7 +671,7 @@ export async function revokeApiTokenAction(
 			.where(
 				and(
 					eq(apiTokens.id, validated.tokenId),
-					eq(apiTokens.userId, session.user.id),
+					eq(apiTokens.userId, user.id),
 					isNull(apiTokens.revokedAt),
 				),
 			)
@@ -812,10 +691,7 @@ export async function revokeApiTokenAction(
 				revokedAt: new Date(),
 			})
 			.where(
-				and(
-					eq(apiTokens.id, validated.tokenId),
-					eq(apiTokens.userId, session.user.id),
-				),
+				and(eq(apiTokens.id, validated.tokenId), eq(apiTokens.userId, user.id)),
 			);
 
 		revalidatePath("/settings");

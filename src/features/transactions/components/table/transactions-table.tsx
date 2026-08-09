@@ -17,6 +17,7 @@ import type {
 	TransactionsExportContext,
 	TransactionsPaginationState,
 } from "@/features/transactions/lib/export-types";
+import { buildAccountImportHref } from "@/features/transactions/lib/import-continue-href";
 import { EmptyState } from "@/shared/components/feedback/empty-state";
 import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent } from "@/shared/components/ui/card";
@@ -307,8 +308,14 @@ export function TransactionsTable({
 				exportContext={exportContext}
 			/>
 		) : null;
+	const importHref =
+		exportContext?.source === "account-statement" && exportContext.accountId
+			? buildAccountImportHref(exportContext.accountId, exportContext.period)
+			: undefined;
 	const importSlot =
-		showTopControls && showImportButton ? <TransactionsImportButton /> : null;
+		showTopControls && showImportButton ? (
+			<TransactionsImportButton href={importHref} />
+		) : null;
 
 	const handleOpenRowDetails = (item: TransactionItem) => {
 		onViewDetails?.(item);

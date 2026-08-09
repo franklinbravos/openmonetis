@@ -2,14 +2,13 @@
 
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
 import { z } from "zod";
 import type { AIProvider } from "@/features/insights/constants";
 import {
 	fetchUserAiProviderSettings,
 	mergeStoredProviderSettings,
 } from "@/shared/lib/ai/user-provider-config";
-import { auth } from "@/shared/lib/auth/config";
+import { getUser } from "@/shared/lib/auth/server";
 import { db, schema } from "@/shared/lib/db";
 
 type ActionResponse<T = void> = {
@@ -45,16 +44,9 @@ export async function updateAiProviderSettingsAction(
 	input: z.infer<typeof updateAiProviderSettingsSchema>,
 ): Promise<ActionResponse> {
 	try {
-		const session = await auth.api.getSession({
-			headers: await headers(),
-		});
-
-		if (!session?.user?.id) {
-			return { success: false, error: "Não autenticado" };
-		}
-
+		const user = await getUser();
+		const userId = user.id;
 		const validated = updateAiProviderSettingsSchema.parse(input);
-		const userId = session.user.id;
 
 		const existingResult = await db
 			.select({
@@ -134,14 +126,7 @@ export async function updateAiProviderSettingsAction(
 }
 
 export async function fetchAiProviderSettingsAction() {
-	const session = await auth.api.getSession({
-		headers: await headers(),
-	});
-
-	if (!session?.user?.id) {
-		return null;
-	}
-
-	const settings = await fetchUserAiProviderSettings(session.user.id);
+	const user = await getUser();
+	const settings = await fetchUserAiProviderSettings(user.id);
 	return settings.view;
 }

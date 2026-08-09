@@ -1,6 +1,11 @@
 "use client";
 
-import { RiBankLine, RiEditLine, RiEqualizerLine, RiFileExcel2Line } from "@remixicon/react";
+import {
+	RiBankLine,
+	RiEditLine,
+	RiEqualizerLine,
+	RiFileExcel2Line,
+} from "@remixicon/react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -323,9 +328,7 @@ export function InvoiceSummaryCard({
 								onClick={() => handleAction()}
 								className={actionButtonClassName}
 							>
-								{isPending
-									? "Salvando..."
-									: actionLabelByStatus[invoiceStatus]}
+								{isPending ? "Salvando..." : actionLabelByStatus[invoiceStatus]}
 							</Button>
 						) : (
 							<PayInvoiceDialog

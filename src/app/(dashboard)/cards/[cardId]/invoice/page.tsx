@@ -9,10 +9,10 @@ import { CardInvoiceNavigationShell } from "@/features/invoices/components/card-
 import { InvoiceSummaryCard } from "@/features/invoices/components/invoice-summary-card";
 import {
 	fetchCardData,
+	fetchCardInvoiceMonthStatuses,
 	fetchCardTransactions,
 	fetchInvoiceData,
 } from "@/features/invoices/queries";
-import { fetchImportBatchHistory } from "@/features/transactions/queries/import-batch-history";
 import { fetchUserPreferences } from "@/features/settings/queries";
 import { TransactionsPage as LancamentosSection } from "@/features/transactions/components/page/transactions-page";
 import { TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID } from "@/features/transactions/lib/month-toolbar";
@@ -30,6 +30,8 @@ import {
 	fetchRecentEstablishments,
 	fetchTransactionFilterSources,
 } from "@/features/transactions/queries";
+import { fetchImportBatchHistory } from "@/features/transactions/queries/import-batch-history";
+import { PageBreadcrumb } from "@/shared/components/navigation/page-breadcrumb";
 import { Button } from "@/shared/components/ui/button";
 import { getUserId } from "@/shared/lib/auth/server";
 import {
@@ -74,6 +76,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 		estabelecimentos,
 		userPreferences,
 		importHistory,
+		invoiceMonthStatuses,
 	] = await Promise.all([
 		fetchTransactionFilterSources(userId),
 		loadLogoOptions(),
@@ -86,6 +89,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 			invoicePeriod: selectedPeriod,
 			limit: 1,
 		}),
+		fetchCardInvoiceMonthStatuses(userId, cardId, String(card.dueDay)),
 	]);
 	const sluggedFilters = buildSluggedFilters(filterSources);
 	const slugMaps = buildSlugMaps(sluggedFilters);
@@ -171,8 +175,13 @@ export default async function Page({ params, searchParams }: PageProps) {
 
 	return (
 		<main className="flex flex-col gap-6">
+			<PageBreadcrumb
+				items={[{ label: "Cartões", href: "/cards" }, { label: card.name }]}
+			/>
+
 			<CardInvoiceNavigationShell
 				toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID}
+				monthStatuses={invoiceMonthStatuses}
 				header={
 					<CardInvoiceContextHeader
 						embedded
