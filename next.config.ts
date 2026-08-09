@@ -8,6 +8,21 @@ const nextConfig: NextConfig = {
 	output: "standalone",
 	cacheComponents: true,
 	reactCompiler: true,
+	// Expõe Supabase no cliente mesmo quando só SUPABASE_* está no .env
+	env: {
+		NEXT_PUBLIC_SUPABASE_URL:
+			process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? "",
+		NEXT_PUBLIC_SUPABASE_ANON_KEY:
+			process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+			process.env.SUPABASE_ANON_KEY ??
+			"",
+		NEXT_PUBLIC_GOOGLE_CLIENT_ID:
+			process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ??
+			process.env.GOOGLE_CLIENT_ID ??
+			"",
+		NEXT_PUBLIC_APP_URL:
+			process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? "",
+	},
 	images: {
 		remotePatterns: [
 			new URL("https://lh3.googleusercontent.com/**"),

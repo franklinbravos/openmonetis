@@ -221,7 +221,7 @@ if [[ "$DRY_RUN" == true ]]; then
 fi
 
 if [[ "$SKIP_SCHEMA" != true ]]; then
-	log "Aplicando schema no Supabase (drizzle db:push via pooler)..."
+	log "Aplicando schema no Supabase (drizzle-kit push)..."
 	(
 		cd "$PROJECT_DIR"
 		pnpm exec drizzle-kit push --force
@@ -278,8 +278,8 @@ cat <<EOF
 ✓ Migração concluída.
 
 Próximos passos:
-  1. No .env, confirme DATABASE_URL na conexão direct (db.*.supabase.co:5432)
-  2. Mantenha SUPABASE_TRANSACTION_POOLER só para drizzle-kit (db:push)
+  1. No .env, confirme DATABASE_URL (conexão do app — Direct/Session no painel Supabase)
+  2. SUPABASE_TRANSACTION_POOLER permanece só para drizzle-kit (db:push)
   3. Defina SUPABASE_STORAGE_BUCKET=openmonetis-attachments
 
 Backup local desta migração: $WORK_DIR
