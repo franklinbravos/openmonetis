@@ -203,7 +203,9 @@ function TransactionMobileCard({
 	const accountCardLabel = item.cartaoName ?? item.contaName;
 	const accountCardType = item.cartaoName ? "Cartão" : "Conta";
 	const accountCardLogo = resolveLogoSrc(item.cartaoLogo ?? item.contaLogo);
-	const transferAccounts = isTransfer ? resolveTransferAccountsPreview(item) : null;
+	const transferAccounts = isTransfer
+		? resolveTransferAccountsPreview(item)
+		: null;
 
 	const type =
 		item.categoriaName === "Saldo inicial"
@@ -365,6 +367,7 @@ function TransactionMobileCard({
 						</div>
 						{showActions ? (
 							<div
+								role="presentation"
 								className="flex shrink-0 items-center gap-1"
 								onClick={(event) => event.stopPropagation()}
 								onKeyDown={(event) => event.stopPropagation()}

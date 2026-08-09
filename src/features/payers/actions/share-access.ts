@@ -15,7 +15,7 @@ import {
 	handleActionError,
 	revalidateForEntity,
 } from "@/shared/lib/actions/helpers";
-import { auth } from "@/shared/lib/auth/config";
+import { createEmailUser } from "@/shared/lib/auth/password";
 import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
 import { assertPayerShareManagement } from "@/shared/lib/payers/access";
@@ -206,15 +206,14 @@ export async function createPayerAccessAction(
 			createdByUserId: currentUser.id,
 		});
 
-		const signUpResult = await auth.api.signUpEmail({
-			body: {
-				email,
-				password,
-				name: pagador.name,
-			},
+		const signUpUser = await createEmailUser({
+			email,
+			password,
+			name: pagador.name,
+			mustChangePassword,
 		});
 
-		if (!signUpResult?.user?.id) {
+		if (!signUpUser?.id) {
 			return {
 				success: false,
 				error: "Não foi possível criar o usuário de acesso.",
@@ -225,12 +224,12 @@ export async function createPayerAccessAction(
 			await db
 				.update(user)
 				.set({ mustChangePassword: true })
-				.where(eq(user.id, signUpResult.user.id));
+				.where(eq(user.id, signUpUser.id));
 		}
 
 		await createShareForUser({
 			payerId: data.payerId,
-			sharedWithUserId: signUpResult.user.id,
+			sharedWithUserId: signUpUser.id,
 			permission: data.permission,
 			createdByUserId: pagador.userId,
 		});
@@ -247,7 +246,7 @@ export async function createPayerAccessAction(
 			);
 
 		revalidatePayer(currentUser.id, data.payerId);
-		revalidateForEntity("payers", signUpResult.user.id);
+		revalidateForEntity("payers", signUpUser.id);
 
 		return {
 			success: true,

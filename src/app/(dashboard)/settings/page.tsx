@@ -1,11 +1,8 @@
 import { RiAndroidLine, RiArrowRightSLine } from "@remixicon/react";
-import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { AiProvidersTab } from "@/features/settings/components/ai-providers-tab";
 import { CompanionTab } from "@/features/settings/components/companion-tab";
 import { DeleteAccountForm } from "@/features/settings/components/delete-account-form";
-import { PasskeysForm } from "@/features/settings/components/passkeys-form";
 import { PreferencesForm } from "@/features/settings/components/preferences-form";
 import { UpdateEmailForm } from "@/features/settings/components/update-email-form";
 import { UpdateNameForm } from "@/features/settings/components/update-name-form";
@@ -19,7 +16,8 @@ import {
 	TabsList,
 	TabsTrigger,
 } from "@/shared/components/ui/tabs";
-import { auth } from "@/shared/lib/auth/config";
+import { userUsesGoogleAuth } from "@/shared/lib/auth/password";
+import { getUser } from "@/shared/lib/auth/server";
 
 type PageSearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -41,207 +39,194 @@ export default async function Page({ searchParams }: PageProps) {
 	const resolvedSearchParams = searchParams ? await searchParams : undefined;
 	const abaParam = getSingleParam(resolvedSearchParams, "aba");
 	const defaultTab = abaParam === "ia" ? "ia" : "preferencias";
-	const session = await auth.api.getSession({
-		headers: await headers(),
-	});
+	const user = await getUser();
 
-	if (!session?.user) {
-		redirect("/");
-	}
+	const userName = user.name || "";
+	const userEmail = user.email || "";
 
-	const userName = session.user.name || "";
-	const userEmail = session.user.email || "";
-
-	const { authProvider, userPreferences, userApiTokens, aiProviderSettings } =
-		await fetchSettingsPageData(session.user.id);
+	const { userPreferences, userApiTokens, aiProviderSettings } =
+		await fetchSettingsPageData(user.id);
+	const authProvider = (await userUsesGoogleAuth(user.id))
+		? "google"
+		: "credential";
 
 	return (
-		<div className="w-full">
-			<Tabs defaultValue={defaultTab} className="w-full">
-				{/* No mobile: rolagem horizontal + seta indicando mais opções à direita */}
-				<div className="relative -mx-6 px-6 md:mx-0 md:px-0">
-					<div className="overflow-x-auto overflow-y-hidden scroll-smooth md:overflow-visible [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-						<TabsList className="inline-flex w-max flex-nowrap md:w-full">
-							<TabsTrigger value="preferencias">Preferências</TabsTrigger>
-							<TabsTrigger value="ia">Inteligência artificial</TabsTrigger>
-							<TabsTrigger value="companion">Companion</TabsTrigger>
-							<TabsTrigger value="nome">Alterar nome</TabsTrigger>
-							<TabsTrigger value="senha">Alterar senha</TabsTrigger>
-							<TabsTrigger value="passkeys">Passkeys</TabsTrigger>
-							<TabsTrigger value="email">Alterar e-mail</TabsTrigger>
-							<TabsTrigger value="deletar" className="text-destructive">
-								Ações perigosas
-							</TabsTrigger>
-						</TabsList>
-					</div>
-					<div
-						className="pointer-events-none absolute right-0 top-0 hidden h-9 w-10 items-center justify-end bg-linear-to-l from-background to-transparent md:hidden"
-						aria-hidden
-					>
-						<RiArrowRightSLine className="size-5 shrink-0 text-muted-foreground" />
-					</div>
-				</div>
-
-				<TabsContent value="preferencias" className="mt-4">
-					<Card className="p-6">
-						<div className="space-y-4">
-							<div>
-								<h2 className="text-xl font-semibold mb-1">Preferências</h2>
-								<p className="text-sm text-muted-foreground">
-									Personalize sua experiência no OpenMonetis ajustando as
-									configurações de acordo com suas necessidades.
-								</p>
-							</div>
-							<Separator />
-							<PreferencesForm
-								statementNoteAsColumn={
-									userPreferences?.statementNoteAsColumn ?? false
-								}
-								transactionsColumnOrder={
-									userPreferences?.transactionsColumnOrder ?? null
-								}
-								attachmentMaxSizeMb={userPreferences?.attachmentMaxSizeMb ?? 50}
-								showTransactionSummary={
-									userPreferences?.showTransactionSummary ?? true
-								}
-								groupTransactionsByDate={
-									userPreferences?.groupTransactionsByDate ?? true
-								}
-								hideAnticipatedInstallments={
-									userPreferences?.hideAnticipatedInstallments ?? false
-								}
-							/>
+		<main className="flex flex-col gap-6">
+			<div className="w-full">
+				<Tabs defaultValue={defaultTab} className="w-full">
+					{/* No mobile: rolagem horizontal + seta indicando mais opções à direita */}
+					<div className="relative -mx-6 px-6 md:mx-0 md:px-0">
+						<div className="overflow-x-auto overflow-y-hidden scroll-smooth md:overflow-visible [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+							<TabsList className="inline-flex w-max flex-nowrap md:w-full">
+								<TabsTrigger value="preferencias">Preferências</TabsTrigger>
+								<TabsTrigger value="ia">Inteligência artificial</TabsTrigger>
+								<TabsTrigger value="companion">Companion</TabsTrigger>
+								<TabsTrigger value="nome">Alterar nome</TabsTrigger>
+								<TabsTrigger value="senha">Alterar senha</TabsTrigger>
+								<TabsTrigger value="email">Alterar e-mail</TabsTrigger>
+								<TabsTrigger value="deletar" className="text-destructive">
+									Ações perigosas
+								</TabsTrigger>
+							</TabsList>
 						</div>
-					</Card>
-				</TabsContent>
-
-				<TabsContent value="ia" className="mt-4">
-					<Card className="p-6">
-						<div className="space-y-4">
-							<div>
-								<h2 className="text-xl font-semibold mb-1">
-									Inteligência artificial
-								</h2>
-								<p className="text-sm text-muted-foreground">
-									Configure chaves de API, URLs e modelos padrão para gerar
-									insights. As chaves salvas aqui têm prioridade sobre o arquivo{" "}
-									<code>.env</code>.
-								</p>
-							</div>
-							<Separator />
-							<AiProvidersTab settings={aiProviderSettings} />
+						<div
+							className="pointer-events-none absolute right-0 top-0 hidden h-9 w-10 items-center justify-end bg-linear-to-l from-background to-transparent md:hidden"
+							aria-hidden
+						>
+							<RiArrowRightSLine className="size-5 shrink-0 text-muted-foreground" />
 						</div>
-					</Card>
-				</TabsContent>
+					</div>
 
-				<TabsContent value="companion" className="mt-4">
-					<Card className="p-6">
-						<div className="space-y-4">
-							<div>
-								<div className="flex items-center gap-2 mb-1">
-									<h2 className="text-xl font-semibold">
-										OpenMonetis Companion
-									</h2>
-									<span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-xs font-medium text-success dark:bg-success/10">
-										<RiAndroidLine className="h-3 w-3" />
-										Android
-									</span>
+					<TabsContent value="preferencias" className="mt-4">
+						<Card className="p-6">
+							<div className="space-y-4">
+								<div>
+									<h2 className="text-xl font-semibold mb-1">Preferências</h2>
+									<p className="text-sm text-muted-foreground">
+										Personalize sua experiência no OpenMonetis ajustando as
+										configurações de acordo com suas necessidades.
+									</p>
 								</div>
-								<p className="text-sm text-muted-foreground">
-									Capture notificações de transações dos seus apps de banco
-									(Nubank, Itaú, Bradesco, Inter, C6 e outros) e envie para sua
-									caixa de entrada.
-								</p>
+								<Separator />
+								<PreferencesForm
+									statementNoteAsColumn={
+										userPreferences?.statementNoteAsColumn ?? false
+									}
+									transactionsColumnOrder={
+										userPreferences?.transactionsColumnOrder ?? null
+									}
+									attachmentMaxSizeMb={
+										userPreferences?.attachmentMaxSizeMb ?? 50
+									}
+									showTransactionSummary={
+										userPreferences?.showTransactionSummary ?? true
+									}
+									groupTransactionsByDate={
+										userPreferences?.groupTransactionsByDate ?? true
+									}
+									hideAnticipatedInstallments={
+										userPreferences?.hideAnticipatedInstallments ?? false
+									}
+								/>
 							</div>
-							<Separator />
-							<CompanionTab tokens={userApiTokens} />
-						</div>
-					</Card>
-				</TabsContent>
+						</Card>
+					</TabsContent>
 
-				<TabsContent value="nome" className="mt-4">
-					<Card className="p-6">
-						<div className="space-y-4">
-							<div>
-								<h2 className="text-xl font-semibold mb-1">Alterar nome</h2>
-								<p className="text-sm text-muted-foreground">
-									Atualize como seu nome aparece no OpenMonetis. Esse nome pode
-									ser exibido em diferentes seções do app e em comunicações.
-								</p>
+					<TabsContent value="ia" className="mt-4">
+						<Card className="p-6">
+							<div className="space-y-4">
+								<div>
+									<h2 className="text-xl font-semibold mb-1">
+										Inteligência artificial
+									</h2>
+									<p className="text-sm text-muted-foreground">
+										Configure chaves de API, URLs e modelos padrão para gerar
+										insights. As chaves salvas aqui têm prioridade sobre o
+										arquivo <code>.env</code>.
+									</p>
+								</div>
+								<Separator />
+								<AiProvidersTab settings={aiProviderSettings} />
 							</div>
-							<Separator />
-							<UpdateNameForm currentName={userName} />
-						</div>
-					</Card>
-				</TabsContent>
+						</Card>
+					</TabsContent>
 
-				<TabsContent value="senha" className="mt-4">
-					<Card className="p-6">
-						<div className="space-y-4">
-							<div>
-								<h2 className="text-xl font-semibold mb-1">Alterar senha</h2>
-								<p className="text-sm text-muted-foreground">
-									Defina uma nova senha para sua conta. Guarde-a em local
-									seguro.
-								</p>
+					<TabsContent value="companion" className="mt-4">
+						<Card className="p-6">
+							<div className="space-y-4">
+								<div>
+									<div className="flex items-center gap-2 mb-1">
+										<h2 className="text-xl font-semibold">
+											OpenMonetis Companion
+										</h2>
+										<span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-xs font-medium text-success dark:bg-success/10">
+											<RiAndroidLine className="h-3 w-3" />
+											Android
+										</span>
+									</div>
+									<p className="text-sm text-muted-foreground">
+										Capture notificações de transações dos seus apps de banco
+										(Nubank, Itaú, Bradesco, Inter, C6 e outros) e envie para
+										sua caixa de entrada.
+									</p>
+								</div>
+								<Separator />
+								<CompanionTab tokens={userApiTokens} />
 							</div>
-							<Separator />
-							<UpdatePasswordForm authProvider={authProvider} />
-						</div>
-					</Card>
-				</TabsContent>
+						</Card>
+					</TabsContent>
 
-				<TabsContent value="passkeys" className="mt-4">
-					<Card className="p-6">
-						<div className="space-y-4">
-							<div>
-								<h2 className="text-xl font-semibold mb-1">Passkeys</h2>
-								<p className="text-sm text-muted-foreground">
-									Passkeys permitem login sem senha, usando biometria (Face ID,
-									Touch ID, Windows Hello) ou chaves de segurança.
-								</p>
+					<TabsContent value="nome" className="mt-4">
+						<Card className="p-6">
+							<div className="space-y-4">
+								<div>
+									<h2 className="text-xl font-semibold mb-1">Alterar nome</h2>
+									<p className="text-sm text-muted-foreground">
+										Atualize como seu nome aparece no OpenMonetis. Esse nome
+										pode ser exibido em diferentes seções do app e em
+										comunicações.
+									</p>
+								</div>
+								<Separator />
+								<UpdateNameForm currentName={userName} />
 							</div>
-							<Separator />
-							<PasskeysForm />
-						</div>
-					</Card>
-				</TabsContent>
+						</Card>
+					</TabsContent>
 
-				<TabsContent value="email" className="mt-4">
-					<Card className="p-6">
-						<div className="space-y-4">
-							<div>
-								<h2 className="text-xl font-semibold mb-1">Alterar e-mail</h2>
-								<p className="text-sm text-muted-foreground">
-									Atualize o e-mail associado à sua conta. Você precisará
-									confirmar os links enviados para o novo e também para o e-mail
-									atual (quando aplicável) para concluir a alteração.
-								</p>
+					<TabsContent value="senha" className="mt-4">
+						<Card className="p-6">
+							<div className="space-y-4">
+								<div>
+									<h2 className="text-xl font-semibold mb-1">Alterar senha</h2>
+									<p className="text-sm text-muted-foreground">
+										Defina uma nova senha para sua conta. Guarde-a em local
+										seguro.
+									</p>
+								</div>
+								<Separator />
+								<UpdatePasswordForm authProvider={authProvider} />
 							</div>
-							<Separator />
-							<UpdateEmailForm
-								currentEmail={userEmail}
-								authProvider={authProvider}
-							/>
-						</div>
-					</Card>
-				</TabsContent>
+						</Card>
+					</TabsContent>
 
-				<TabsContent value="deletar" className="mt-4">
-					<Card className="p-6">
-						<div className="space-y-4">
-							<div>
-								<h2 className="text-xl font-semibold mb-1">Ações perigosas</h2>
-								<p className="text-sm text-muted-foreground">
-									Você pode zerar os dados do OpenMonetis e manter seu acesso,
-									ou excluir sua conta inteira de forma irreversível.
-								</p>
+					<TabsContent value="email" className="mt-4">
+						<Card className="p-6">
+							<div className="space-y-4">
+								<div>
+									<h2 className="text-xl font-semibold mb-1">Alterar e-mail</h2>
+									<p className="text-sm text-muted-foreground">
+										Atualize o e-mail associado à sua conta. Você precisará
+										confirmar os links enviados para o novo e também para o
+										e-mail atual (quando aplicável) para concluir a alteração.
+									</p>
+								</div>
+								<Separator />
+								<UpdateEmailForm
+									currentEmail={userEmail}
+									authProvider={authProvider}
+								/>
 							</div>
-							<DeleteAccountForm />
-						</div>
-					</Card>
-				</TabsContent>
-			</Tabs>
-		</div>
+						</Card>
+					</TabsContent>
+
+					<TabsContent value="deletar" className="mt-4">
+						<Card className="p-6">
+							<div className="space-y-4">
+								<div>
+									<h2 className="text-xl font-semibold mb-1">
+										Ações perigosas
+									</h2>
+									<p className="text-sm text-muted-foreground">
+										Você pode zerar os dados do OpenMonetis e manter seu acesso,
+										ou excluir sua conta inteira de forma irreversível.
+									</p>
+								</div>
+								<DeleteAccountForm />
+							</div>
+						</Card>
+					</TabsContent>
+				</Tabs>
+			</div>
+		</main>
 	);
 }

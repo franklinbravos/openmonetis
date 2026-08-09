@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { payerShares, payers, user as usersTable } from "@/db/schema";
+import { payerShares, payers } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import {
 	type PayerSharePermission,
@@ -9,6 +9,7 @@ import {
 	resolveOwnerAccess,
 	resolveSharedAccess,
 } from "@/shared/lib/payers/share-permissions";
+import { getSupabaseAdmin } from "@/shared/lib/supabase/admin";
 
 type PayerWithAccess = Omit<typeof payers.$inferSelect, "shareCode"> & {
 	shareCode: string | null;
@@ -20,6 +21,55 @@ type PayerWithAccess = Omit<typeof payers.$inferSelect, "shareCode"> & {
 	shareId: string | null;
 };
 
+type SharedShareRow = {
+	id: string;
+	permission: string;
+	pagador_id: string;
+	pagadores: {
+		user_id: string;
+		user: {
+			name: string | null;
+			email: string | null;
+		} | null;
+	} | null;
+};
+
+async function fetchSharedSharesForUser(userId: string): Promise<
+	{
+		shareId: string;
+		permission: string;
+		payer: typeof payers.$inferSelect;
+		ownerName: string | null;
+		ownerEmail: string | null;
+	}[]
+> {
+	const supabase = getSupabaseAdmin();
+	const { data, error } = await supabase
+		.from("compartilhamentos_pagador")
+		.select(
+			"id, permission, pagadores:pagadores!pagador_id(*, user:user!user_id(name, email))",
+		)
+		.eq("shared_with_user_id", userId);
+	if (error) {
+		console.error("[payers] fetchSharedSharesForUser falhou", {
+			userId,
+			error: error.message,
+		});
+		throw error;
+	}
+
+	return (data ?? []).map((row) => {
+		const share = row as unknown as SharedShareRow;
+		return {
+			shareId: share.id,
+			permission: share.permission,
+			payer: share.pagadores as unknown as typeof payers.$inferSelect,
+			ownerName: share.pagadores?.user?.name ?? null,
+			ownerEmail: share.pagadores?.user?.email ?? null,
+		};
+	});
+}
+
 export async function fetchPayersWithAccess(
 	userId: string,
 ): Promise<PayerWithAccess[]> {
@@ -27,18 +77,7 @@ export async function fetchPayersWithAccess(
 		db.query.payers.findMany({
 			where: eq(payers.userId, userId),
 		}),
-		db
-			.select({
-				shareId: payerShares.id,
-				permission: payerShares.permission,
-				payer: payers,
-				ownerName: usersTable.name,
-				ownerEmail: usersTable.email,
-			})
-			.from(payerShares)
-			.innerJoin(payers, eq(payerShares.payerId, payers.id))
-			.leftJoin(usersTable, eq(payers.userId, usersTable.id))
-			.where(eq(payerShares.sharedWithUserId, userId)),
+		fetchSharedSharesForUser(userId),
 	]);
 
 	const ownedMapped: PayerWithAccess[] = owned.map((item) => {

@@ -34,6 +34,12 @@ const resolveStatus = (status: string | null): PayerStatus => {
 	return found ?? PAYER_STATUS_OPTIONS[0];
 };
 
+const toIsoString = (value: Date | string | null | undefined): string => {
+	if (!value) return new Date().toISOString();
+	if (value instanceof Date) return value.toISOString();
+	return new Date(value).toISOString();
+};
+
 export async function fetchPayersForUser(
 	userId: string,
 ): Promise<{ payers: PayerData[]; avatarOptions: string[] }> {
@@ -61,7 +67,7 @@ export async function fetchPayersForUser(
 			note: pagador.note,
 			role: pagador.role,
 			isAutoSend: pagador.isAutoSend ?? false,
-			createdAt: pagador.createdAt?.toISOString() ?? new Date().toISOString(),
+			createdAt: toIsoString(pagador.createdAt),
 			canEdit: pagador.canEdit,
 			sharedByName: pagador.sharedByName ?? null,
 			sharedByEmail: pagador.sharedByEmail ?? null,
