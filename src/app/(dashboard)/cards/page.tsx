@@ -6,7 +6,7 @@ import { getUserId } from "@/shared/lib/auth/server";
 export default async function Page() {
 	await connection();
 	const userId = await getUserId();
-	const { activeCards, archivedCards, accounts, logoOptions } =
+	const { activeCards, archivedCards, accounts, logoOptions, currentInvoicePeriod } =
 		await fetchAllCardsForUser(userId);
 
 	return (
@@ -16,6 +16,7 @@ export default async function Page() {
 				archivedCards={archivedCards}
 				accounts={accounts}
 				logoOptions={logoOptions}
+				currentInvoicePeriod={currentInvoicePeriod}
 			/>
 		</main>
 	);

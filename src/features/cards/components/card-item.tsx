@@ -5,10 +5,12 @@ import {
 	RiCalendarScheduleLine,
 	RiChat3Line,
 	RiDeleteBin5Line,
+	RiFileExcel2Line,
 	RiFileList2Line,
 	RiPencilLine,
 } from "@remixicon/react";
 import Image from "next/image";
+import Link from "next/link";
 import MoneyValues from "@/shared/components/money-values";
 import { Badge } from "@/shared/components/ui/badge";
 import {
@@ -32,6 +34,8 @@ import { resolveLogoSrc } from "@/shared/lib/logo";
 import { cn } from "@/shared/utils/ui";
 
 interface CardItemProps {
+	cardId: string;
+	currentInvoicePeriod: string;
 	name: string;
 	brand: string;
 	status: string;
@@ -54,6 +58,8 @@ interface CardItemProps {
 const formatDay = (value: string) => value.padStart(2, "0");
 
 export function CardItem({
+	cardId,
+	currentInvoicePeriod,
 	name,
 	brand,
 	status,
@@ -89,6 +95,7 @@ export function CardItem({
 	const isInactive = status?.toLowerCase() === "inativo";
 	const isCurrentInvoicePaid =
 		currentInvoiceStatus === INVOICE_PAYMENT_STATUS.PAID;
+	const importHref = `/transactions/import?cartao=${encodeURIComponent(cardId)}&periodo=${encodeURIComponent(currentInvoicePeriod)}`;
 
 	return (
 		<Card className="flex flex-col p-6 w-full">
@@ -257,6 +264,13 @@ export function CardItem({
 					<RiFileList2Line className="size-4" aria-hidden />
 					fatura
 				</button>
+				<Link
+					href={importHref}
+					className="flex items-center gap-1 font-medium text-primary transition-opacity hover:opacity-80"
+				>
+					<RiFileExcel2Line className="size-4" aria-hidden />
+					importar fatura
+				</Link>
 				<button
 					type="button"
 					onClick={onRemove}

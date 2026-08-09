@@ -30,6 +30,7 @@ interface CardsPageProps {
 	archivedCards: CreditCard[];
 	accounts: AccountOption[];
 	logoOptions: string[];
+	currentInvoicePeriod: string;
 }
 
 export function CardsPage({
@@ -37,6 +38,7 @@ export function CardsPage({
 	archivedCards,
 	accounts,
 	logoOptions,
+	currentInvoicePeriod,
 }: CardsPageProps) {
 	const router = useRouter();
 	const [activeTab, setActiveTab] = useState("ativos");
@@ -134,6 +136,8 @@ export function CardsPage({
 				{list.map((card) => (
 					<CardItem
 						key={card.id}
+						cardId={card.id}
+						currentInvoicePeriod={currentInvoicePeriod}
 						name={card.name}
 						brand={card.brand}
 						status={card.status}

@@ -1,8 +1,12 @@
 "use server";
 
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { importCategoryMappings, transactions } from "@/db/schema";
-import { normalizeDescriptionKey } from "@/features/transactions/lib/import-utils";
+import {
+	isTruncatedDescriptionMatch,
+	MIN_DESCRIPTION_PREFIX_MATCH_LENGTH,
+	normalizeDescriptionKey,
+} from "@/features/transactions/lib/import-utils";
 import { getUserId } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
 
@@ -68,7 +72,7 @@ async function fetchTransactionDescriptionMemory(
 
 	const memory: Record<string, ImportDescriptionMemory> = {};
 	for (const row of rows) {
-		if (memory[row.descriptionKey]) continue;
+		if (!row.descriptionKey || memory[row.descriptionKey]) continue;
 		memory[row.descriptionKey] = {
 			categoryId: row.categoryId,
 			payerId: row.payerId,
@@ -76,6 +80,128 @@ async function fetchTransactionDescriptionMemory(
 	}
 
 	return memory;
+}
+
+function getEligiblePrefixKeys(keys: string[]): string[] {
+	return keys.filter((key) => key.length >= MIN_DESCRIPTION_PREFIX_MATCH_LENGTH);
+}
+
+function resolvePrefixMemoryForKeys(
+	keys: string[],
+	candidates: {
+		descriptionKey: string;
+		categoryId: string | null;
+		payerId: string | null;
+	}[],
+): Record<string, ImportDescriptionMemory> {
+	const memory: Record<string, ImportDescriptionMemory> = {};
+
+	for (const importKey of getEligiblePrefixKeys(keys)) {
+		const match = candidates.find(
+			(candidate) =>
+				candidate.descriptionKey &&
+				isTruncatedDescriptionMatch(importKey, candidate.descriptionKey),
+		);
+
+		if (!match) continue;
+
+		memory[importKey] = {
+			categoryId: match.categoryId,
+			payerId: match.payerId,
+		};
+	}
+
+	return memory;
+}
+
+async function fetchSavedPrefixDescriptionMemory(
+	userId: string,
+	keys: string[],
+): Promise<Record<string, ImportDescriptionMemory>> {
+	const eligibleKeys = getEligiblePrefixKeys(keys);
+	if (eligibleKeys.length === 0) return {};
+
+	const rows = await db
+		.select({
+			descriptionKey: importCategoryMappings.descriptionKey,
+			categoryId: importCategoryMappings.categoryId,
+			payerId: importCategoryMappings.payerId,
+			updatedAt: importCategoryMappings.updatedAt,
+		})
+		.from(importCategoryMappings)
+		.where(
+			and(
+				eq(importCategoryMappings.userId, userId),
+				or(
+					...eligibleKeys.flatMap((key) => [
+						sql`${importCategoryMappings.descriptionKey} like ${`${key}%`}`,
+						sql`${key} like ${importCategoryMappings.descriptionKey} || '%'`,
+					]),
+				),
+			),
+		)
+		.orderBy(desc(importCategoryMappings.updatedAt));
+
+	return resolvePrefixMemoryForKeys(keys, rows);
+}
+
+async function fetchTransactionPrefixDescriptionMemory(
+	userId: string,
+	keys: string[],
+): Promise<Record<string, ImportDescriptionMemory>> {
+	const eligibleKeys = getEligiblePrefixKeys(keys);
+	if (eligibleKeys.length === 0) return {};
+
+	const rows = await db
+		.select({
+			descriptionKey: transactionDescriptionKeySql,
+			categoryId: transactions.categoryId,
+			payerId: transactions.payerId,
+			createdAt: transactions.createdAt,
+		})
+		.from(transactions)
+		.where(
+			and(
+				eq(transactions.userId, userId),
+				or(
+					...eligibleKeys.flatMap((key) => [
+						sql`${transactionDescriptionKeySql} like ${`${key}%`}`,
+						sql`${key} like ${transactionDescriptionKeySql} || '%'`,
+					]),
+				),
+			),
+		)
+		.orderBy(desc(transactions.createdAt));
+
+	return resolvePrefixMemoryForKeys(keys, rows);
+}
+
+function mergeDescriptionMemory(
+	keys: string[],
+	...sources: Record<string, ImportDescriptionMemory>[]
+): Record<string, ImportDescriptionMemory> {
+	return Object.fromEntries(
+		keys.map((key) => {
+			let categoryId: string | null = null;
+			let payerId: string | null = null;
+
+			for (const source of sources) {
+				const entry = source[key];
+				if (!entry) continue;
+				categoryId ??= entry.categoryId;
+				payerId ??= entry.payerId;
+			}
+
+			return [key, { categoryId, payerId }];
+		}),
+	);
+}
+
+function getKeysMissingCategory(
+	keys: string[],
+	memory: Record<string, ImportDescriptionMemory>,
+): string[] {
+	return keys.filter((key) => !memory[key]?.categoryId);
 }
 
 export async function fetchImportDescriptionMemory(
@@ -92,19 +218,27 @@ export async function fetchImportDescriptionMemory(
 		fetchTransactionDescriptionMemory(userId, keys),
 	]);
 
-	return Object.fromEntries(
-		keys.map((key) => {
-			const saved = savedMemory[key];
-			const fromTransaction = transactionMemory[key];
+	const exactMemory = mergeDescriptionMemory(
+		keys,
+		savedMemory,
+		transactionMemory,
+	);
+	const keysMissingCategory = getKeysMissingCategory(keys, exactMemory);
 
-			return [
-				key,
-				{
-					categoryId: saved?.categoryId ?? fromTransaction?.categoryId ?? null,
-					payerId: saved?.payerId ?? fromTransaction?.payerId ?? null,
-				},
-			];
-		}),
+	if (keysMissingCategory.length === 0) {
+		return exactMemory;
+	}
+
+	const [savedPrefixMemory, transactionPrefixMemory] = await Promise.all([
+		fetchSavedPrefixDescriptionMemory(userId, keysMissingCategory),
+		fetchTransactionPrefixDescriptionMemory(userId, keysMissingCategory),
+	]);
+
+	return mergeDescriptionMemory(
+		keys,
+		exactMemory,
+		savedPrefixMemory,
+		transactionPrefixMemory,
 	);
 }
 
@@ -124,6 +258,7 @@ export async function fetchCategoryMappings(
 export async function saveCategoryMappings(
 	rows: {
 		description: string;
+		sourceDescription?: string;
 		categoryId: string | null;
 		payerId?: string | null;
 	}[],
@@ -132,13 +267,24 @@ export async function saveCategoryMappings(
 
 	const toUpsert = rows
 		.filter((row) => row.categoryId !== null)
-		.map((row) => ({
-			userId,
-			descriptionKey: normalizeDescriptionKey(row.description),
-			categoryId: row.categoryId as string,
-			payerId: row.payerId ?? null,
-			updatedAt: new Date(),
-		}))
+		.flatMap((row) => {
+			const keys = new Set<string>();
+			const correctedKey = normalizeDescriptionKey(row.description);
+			const sourceKey = normalizeDescriptionKey(
+				row.sourceDescription ?? row.description,
+			);
+
+			if (correctedKey.length > 0) keys.add(correctedKey);
+			if (sourceKey.length > 0) keys.add(sourceKey);
+
+			return [...keys].map((descriptionKey) => ({
+				userId,
+				descriptionKey,
+				categoryId: row.categoryId as string,
+				payerId: row.payerId ?? null,
+				updatedAt: new Date(),
+			}));
+		})
 		.filter((row) => row.descriptionKey.length > 0);
 
 	if (toUpsert.length === 0) return;

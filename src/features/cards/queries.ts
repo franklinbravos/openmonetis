@@ -247,7 +247,9 @@ export async function fetchAllCardsForUser(userId: string): Promise<{
 	archivedCards: CardData[];
 	accounts: AccountSimple[];
 	logoOptions: string[];
+	currentInvoicePeriod: string;
 }> {
+	const currentInvoicePeriod = getCurrentPeriod();
 	const [activeData, archivedData] = await Promise.all([
 		fetchCardsForUser(userId),
 		fetchInactiveForUser(userId),
@@ -258,5 +260,6 @@ export async function fetchAllCardsForUser(userId: string): Promise<{
 		archivedCards: archivedData.cards,
 		accounts: activeData.accounts,
 		logoOptions: activeData.logoOptions,
+		currentInvoicePeriod,
 	};
 }
