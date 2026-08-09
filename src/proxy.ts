@@ -89,6 +89,7 @@ function buildCsp(): string {
 		`img-src 'self' ${imgExtras} data: blob:`,
 		"font-src 'self'",
 		`connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com ${connectExtras}`,
+		"worker-src 'self' blob:",
 		`frame-src 'self' https://accounts.google.com${storageOrigin ? ` ${storageOrigin}` : ""}`,
 		"frame-ancestors 'none'",
 	].join("; ");

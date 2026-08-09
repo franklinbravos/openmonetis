@@ -3,7 +3,8 @@ import { pathToFileURL } from "node:url";
 
 function resolvePdfWorkerSrc(): string {
 	if (typeof window !== "undefined") {
-		return "/pdf.worker.min.mjs";
+		// URL absoluta evita falha de same-origin do pdf.js 6 com path relativo.
+		return `${window.location.origin}/pdf.worker.min.mjs`;
 	}
 
 	return pathToFileURL(join(process.cwd(), "public/pdf.worker.min.mjs")).href;
@@ -24,4 +25,22 @@ export async function loadPdfJs() {
 	}
 
 	return pdfjsModulePromise;
+}
+
+export function buildPdfDocumentInit(
+	data: Uint8Array,
+	password?: string,
+): {
+	data: Uint8Array;
+	password?: string;
+	useWasm: boolean;
+	useWorkerFetch: boolean;
+} {
+	return {
+		data,
+		...(password ? { password } : {}),
+		// Evita fetch de wasm/cmaps externos que podem travar atrás da CSP.
+		useWasm: false,
+		useWorkerFetch: false,
+	};
 }

@@ -3,7 +3,7 @@ import {
 	maskPasswordCandidate,
 	summarizePdfPasswordError,
 } from "./pdf-password-debug";
-import { loadPdfJs } from "./pdfjs-client";
+import { buildPdfDocumentInit, loadPdfJs } from "./pdfjs-client";
 
 export {
 	logPdfPasswordDebug,
@@ -133,6 +133,40 @@ export function mapPdfLoadError(
 		: new Error("Não foi possível ler o PDF.");
 }
 
+const PDF_LOAD_TIMEOUT_MS = 30_000;
+
+type PdfLoadingTask = {
+	promise: Promise<unknown>;
+	destroy: () => Promise<void>;
+};
+
+async function withPdfLoadTimeout<T>(
+	promise: Promise<T>,
+	loadingTask: PdfLoadingTask,
+): Promise<T> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+
+	try {
+		return await Promise.race([
+			promise,
+			new Promise<T>((_, reject) => {
+				timer = setTimeout(() => {
+					reject(
+						new Error(
+							"Tempo esgotado ao ler o PDF. Recarregue a página e tente novamente.",
+						),
+					);
+				}, PDF_LOAD_TIMEOUT_MS);
+			}),
+		]);
+	} catch (error) {
+		await loadingTask.destroy().catch(() => {});
+		throw error;
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
+}
+
 async function loadPdfWithPasswordCandidates(
 	pdfjsLib: Awaited<ReturnType<typeof loadPdfJs>>,
 	buffer: ArrayBuffer,
@@ -140,6 +174,11 @@ async function loadPdfWithPasswordCandidates(
 ) {
 	const data = new Uint8Array(buffer.slice(0));
 	let attemptIndex = 0;
+	let rejectPassword: ((error: Error) => void) | undefined;
+
+	const passwordPromise = new Promise<never>((_, reject) => {
+		rejectPassword = reject;
+	});
 
 	logPdfPasswordDebug("open:start", {
 		bufferBytes: buffer.byteLength,
@@ -149,9 +188,9 @@ async function loadPdfWithPasswordCandidates(
 		pdfjsVersion: pdfjsLib.version,
 	});
 
-	const loadingTask = pdfjsLib.getDocument({ data });
+	const loadingTask = pdfjsLib.getDocument(buildPdfDocumentInit(data));
 	loadingTask.onPassword = (
-		updatePassword: (password: string | Error) => void,
+		updatePassword: (password: string) => void,
 		reason: number,
 	) => {
 		const candidate = candidates[attemptIndex];
@@ -164,7 +203,8 @@ async function loadPdfWithPasswordCandidates(
 
 		if (attemptIndex >= candidates.length) {
 			logPdfPasswordDebug("onPassword:exhausted");
-			updatePassword(new PdfPasswordIncorrectError());
+			rejectPassword?.(new PdfPasswordIncorrectError());
+			void loadingTask.destroy();
 			return;
 		}
 
@@ -172,14 +212,18 @@ async function loadPdfWithPasswordCandidates(
 	};
 
 	try {
-		const pdf = await loadingTask.promise;
-		logPdfPasswordDebug("open:success", { numPages: pdf.numPages });
+		const pdf = await withPdfLoadTimeout(
+			Promise.race([loadingTask.promise, passwordPromise]),
+			loadingTask,
+		);
+		logPdfPasswordDebug("open:success", {
+			numPages: (pdf as { numPages: number }).numPages,
+		});
 		return pdf;
 	} catch (error) {
 		logPdfPasswordDebug("open:failed", {
 			error: summarizePdfPasswordError(error),
 		});
-		await loadingTask.destroy().catch(() => {});
 		throw error;
 	}
 }
@@ -193,22 +237,30 @@ async function loadPdfRequestingPassword(
 		bufferBytes: buffer.byteLength,
 	});
 
-	const loadingTask = pdfjsLib.getDocument({ data });
+	let rejectPassword: ((error: Error) => void) | undefined;
+	const passwordPromise = new Promise<never>((_, reject) => {
+		rejectPassword = reject;
+	});
+
+	const loadingTask = pdfjsLib.getDocument(buildPdfDocumentInit(data));
 	loadingTask.onPassword = (
-		updatePassword: (password: string | Error) => void,
+		_updatePassword: (password: string) => void,
 		reason: number,
 	) => {
 		logPdfPasswordDebug("onPassword:required", { reason });
-		updatePassword(new PdfPasswordRequiredError());
+		rejectPassword?.(new PdfPasswordRequiredError());
+		void loadingTask.destroy();
 	};
 
 	try {
-		return await loadingTask.promise;
+		return await withPdfLoadTimeout(
+			Promise.race([loadingTask.promise, passwordPromise]),
+			loadingTask,
+		);
 	} catch (error) {
 		logPdfPasswordDebug("open:failed-no-password", {
 			error: summarizePdfPasswordError(error),
 		});
-		await loadingTask.destroy().catch(() => {});
 		throw error;
 	}
 }
