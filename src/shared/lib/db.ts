@@ -1,33 +1,22 @@
-import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "@/db/schema";
-import { getPgPoolConfig } from "@/shared/lib/supabase/env";
+import { createSupabaseDb } from "@/shared/lib/supabase/drizzle-bridge";
 
 const globalForDb = globalThis as unknown as {
-	pool?: Pool;
+	db?: ReturnType<typeof createSupabaseDb>;
 };
 
-let _db: NodePgDatabase<typeof schema> | undefined;
-let _pool: Pool | undefined;
-
 function getDb() {
-	const poolConfig = getPgPoolConfig();
-
-	_pool = globalForDb.pool ?? new Pool(poolConfig);
-
-	if (process.env.NODE_ENV !== "production") {
-		globalForDb.pool = _pool;
-		// Recria o client a cada acesso em dev para registrar tabelas novas após HMR.
-		return drizzle(_pool, { schema });
+	const cached = globalForDb.db;
+	if (!cached || typeof cached.selectDistinct !== "function") {
+		globalForDb.db = createSupabaseDb();
 	}
-
-	if (!_db) {
-		_db = drizzle(_pool, { schema });
-	}
-
-	return _db;
+	return globalForDb.db as NonNullable<typeof globalForDb.db>;
 }
 
+/**
+ * Camada de dados via Supabase PostgREST (API) com API compatível ao Drizzle.
+ */
 export const db = new Proxy({} as NodePgDatabase<typeof schema>, {
 	get(_, prop) {
 		return Reflect.get(getDb(), prop);

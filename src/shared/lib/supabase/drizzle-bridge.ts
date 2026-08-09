@@ -1,0 +1,1780 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+	getTableColumns,
+	getTableName,
+	type SQL,
+	type Table,
+} from "drizzle-orm";
+import type { PgColumn } from "drizzle-orm/pg-core";
+import * as schema from "@/db/schema";
+import { getSupabaseAdmin } from "@/shared/lib/supabase/admin";
+import type { Database } from "@/shared/lib/supabase/database.types";
+
+type ColumnFilter = {
+	table?: string;
+	column: string;
+};
+
+type Filter =
+	| ({ type: "eq" } & ColumnFilter & { value: unknown })
+	| ({ type: "neq" } & ColumnFilter & { value: unknown })
+	| ({ type: "gt" } & ColumnFilter & { value: unknown })
+	| ({ type: "gte" } & ColumnFilter & { value: unknown })
+	| ({ type: "lt" } & ColumnFilter & { value: unknown })
+	| ({ type: "lte" } & ColumnFilter & { value: unknown })
+	| ({ type: "is" } & ColumnFilter & { value: null })
+	| ({ type: "in" } & ColumnFilter & { values: unknown[] })
+	| ({ type: "ilike" } & ColumnFilter & { value: string; negated?: boolean })
+	| { type: "or"; filters: Filter[] }
+	| { type: "and"; filters: Filter[] }
+	| { type: "unsupported" };
+
+const DRIZZLE_QUERY_KEY = "queryChunks";
+
+const TABLE_BY_JS_NAME: Record<string, Table> = {
+	user: schema.user,
+	account: schema.account,
+	session: schema.session,
+	verification: schema.verification,
+	passkey: schema.passkey,
+	userPreferences: schema.userPreferences,
+	financialAccounts: schema.financialAccounts,
+	categories: schema.categories,
+	payers: schema.payers,
+	payerShares: schema.payerShares,
+	payerShareInvites: schema.payerShareInvites,
+	cards: schema.cards,
+	invoices: schema.invoices,
+	budgets: schema.budgets,
+	notes: schema.notes,
+	savedInsights: schema.savedInsights,
+	apiTokens: schema.apiTokens,
+	inboxItems: schema.inboxItems,
+	dashboardNotificationStates: schema.dashboardNotificationStates,
+	installmentAnticipations: schema.installmentAnticipations,
+	transactions: schema.transactions,
+	attachments: schema.attachments,
+	transactionAttachments: schema.transactionAttachments,
+	noteAttachments: schema.noteAttachments,
+	importBatches: schema.importBatches,
+	importCategoryMappings: schema.importCategoryMappings,
+	reconciliationSessions: schema.reconciliationSessions,
+	reconciliationLines: schema.reconciliationLines,
+	reconciliationAliases: schema.reconciliationAliases,
+	establishmentLogos: schema.establishmentLogos,
+};
+
+/** Nested selects PostgREST por relação Drizzle `with`. */
+const RELATION_SELECTS: Record<string, Record<string, string>> = {
+	transactions: {
+		payer: "pagadores!pagador_id(*)",
+		financialAccount: "contas!conta_id(*)",
+		card: "cartoes!cartao_id(*)",
+		category: "categorias!categoria_id(*)",
+		user: "user!user_id(*)",
+	},
+	payers: {
+		user: "user!user_id(*)",
+	},
+	cards: {
+		account: "contas!conta_id(*)",
+		transactions: "lancamentos!cartao_id(*)",
+		invoices: "faturas!cartao_id(*)",
+	},
+	financialAccounts: {
+		transactions: "lancamentos!conta_id(*)",
+	},
+	invoices: {
+		card: "cartoes!cartao_id(*)",
+		transactions: "lancamentos!cartao_id(*)",
+	},
+	budgets: {
+		category: "categorias!categoria_id(*)",
+	},
+	notes: {
+		attachments: "anotacoes_anexos(*, anexo:anexos(*))",
+	},
+	transactions_attachments: {
+		attachment: "anexos!anexo_id(*)",
+	},
+};
+
+function isPgColumn(value: unknown): value is PgColumn {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"columnType" in value &&
+		"name" in value
+	);
+}
+
+function getSqlChunks(where: SQL | undefined): unknown[] {
+	if (!where) return [];
+	const chunks = (where as unknown as Record<string, unknown>)[
+		DRIZZLE_QUERY_KEY
+	];
+	return Array.isArray(chunks) ? chunks : [];
+}
+
+function chunkText(part: unknown): string {
+	if (typeof part === "object" && part !== null && "value" in part) {
+		const value = (part as { value: string | string[] }).value;
+		return Array.isArray(value) ? value.join("") : String(value);
+	}
+	return "";
+}
+
+function chunkParamValue(part: unknown): unknown {
+	if (
+		typeof part === "object" &&
+		part !== null &&
+		"value" in part &&
+		"encoder" in part
+	) {
+		return (part as { value: unknown }).value;
+	}
+	return undefined;
+}
+
+function normalizeFilterValue(value: unknown): unknown {
+	if (Array.isArray(value)) {
+		return value.map((entry) => normalizeFilterValue(entry));
+	}
+	const paramValue = chunkParamValue(value);
+	return paramValue !== undefined ? paramValue : value;
+}
+
+function columnTable(column: PgColumn): string | undefined {
+	try {
+		return getTableName(column.table);
+	} catch {
+		return undefined;
+	}
+}
+
+function parseComparison(
+	column: PgColumn,
+	operator: string,
+	value: unknown,
+): Filter {
+	const base = { table: columnTable(column), column: column.name };
+	switch (operator.trim()) {
+		case "=":
+			return { type: "eq", ...base, value: normalizeFilterValue(value) };
+		case "<>":
+		case "!=":
+			return { type: "neq", ...base, value: normalizeFilterValue(value) };
+		case ">":
+			return { type: "gt", ...base, value: normalizeFilterValue(value) };
+		case ">=":
+			return { type: "gte", ...base, value: normalizeFilterValue(value) };
+		case "<":
+			return { type: "lt", ...base, value: normalizeFilterValue(value) };
+		case "<=":
+			return { type: "lte", ...base, value: normalizeFilterValue(value) };
+		default:
+			return { type: "unsupported" };
+	}
+}
+
+function negateFilter(filter: Filter): Filter {
+	if (filter.type === "eq") {
+		return { ...filter, type: "neq" };
+	}
+	if (filter.type === "ilike") {
+		return { ...filter, negated: !filter.negated };
+	}
+	return filter;
+}
+
+function tryParseOrGroup(chunks: unknown[]): Filter[] | null {
+	if (chunks.length < 3) return null;
+	if (!chunkText(chunks[0]).includes("(")) return null;
+	if (!chunkText(chunks[chunks.length - 1]).includes(")")) return null;
+
+	const innerChunks = getSqlChunks(chunks[1] as SQL);
+	const orIndex = innerChunks.findIndex(
+		(part) => chunkText(part).trim().toLowerCase() === "or",
+	);
+	if (orIndex === -1) return null;
+
+	const leftFilters = parseWhereChunk({
+		queryChunks: innerChunks.slice(0, orIndex),
+	} as SQL);
+	const rightFilters = parseWhereChunk({
+		queryChunks: innerChunks.slice(orIndex + 1),
+	} as SQL);
+
+	return [{ type: "or", filters: [...leftFilters, ...rightFilters] }];
+}
+
+function parseWhereChunk(chunk: unknown): Filter[] {
+	if (!chunk || typeof chunk !== "object") return [];
+
+	const sqlChunk = chunk as SQL;
+	const chunks = getSqlChunks(sqlChunk);
+	if (chunks.length === 0) return [];
+
+	const orGroup = tryParseOrGroup(chunks);
+	if (orGroup) return orGroup;
+
+	if (
+		chunkText(chunks[0]).trim().toLowerCase() === "not" &&
+		getSqlChunks(chunks[1] as SQL).length > 0
+	) {
+		return parseWhereChunk(chunks[1] as SQL).map(negateFilter);
+	}
+
+	const text = chunks
+		.map((part) => chunkText(part))
+		.join("")
+		.trim();
+
+	if (text === "false") {
+		return [{ type: "eq", column: "id", value: null }];
+	}
+
+	const filters: Filter[] = [];
+	let i = 0;
+
+	while (i < chunks.length) {
+		const part = chunks[i];
+
+		if (isPgColumn(part)) {
+			const op = chunkText(chunks[i + 1])
+				.trim()
+				.toLowerCase();
+			const value = chunkParamValue(chunks[i + 2]);
+
+			if (op === "is") {
+				const isValue = String(value ?? "").toLowerCase();
+				if (isValue.includes("null")) {
+					filters.push({
+						type: "is",
+						table: columnTable(part),
+						column: part.name,
+						value: null,
+					});
+					i += 4;
+					continue;
+				}
+			}
+
+			if (op === "in" && Array.isArray(chunks[i + 2])) {
+				filters.push({
+					type: "in",
+					table: columnTable(part),
+					column: part.name,
+					values: normalizeFilterValue(chunks[i + 2]) as unknown[],
+				});
+				i += 4;
+				continue;
+			}
+
+			if (op === "ilike") {
+				filters.push({
+					type: "ilike",
+					table: columnTable(part),
+					column: part.name,
+					value: String(value ?? ""),
+				});
+				i += 4;
+				continue;
+			}
+
+			if (["=", "<>", "!=", ">", ">=", "<", "<="].includes(op)) {
+				filters.push(parseComparison(part, op, value));
+				i += 4;
+				continue;
+			}
+		}
+
+		if (
+			typeof part === "object" &&
+			part !== null &&
+			getSqlChunks(part as SQL).length > 0
+		) {
+			filters.push(...parseWhereChunk(part));
+		}
+
+		i += 1;
+	}
+
+	return filters;
+}
+
+function parseWhere(where: SQL | undefined): Filter[] {
+	if (!where) return [];
+	return parseWhereChunk(where);
+}
+
+function filterHasForeignTable(filter: Filter, mainTable: string): boolean {
+	if (filter.type === "or" || filter.type === "and") {
+		return filter.filters.some((entry) =>
+			filterHasForeignTable(entry, mainTable),
+		);
+	}
+	if (filter.type === "unsupported") return false;
+	return Boolean(filter.table && filter.table !== mainTable);
+}
+
+function partitionFilters(
+	filters: Filter[],
+	mainTable: string,
+): { api: Filter[]; deferred: Filter[] } {
+	const api: Filter[] = [];
+	const deferred: Filter[] = [];
+
+	for (const filter of filters) {
+		if (filter.type === "and") {
+			const nested = partitionFilters(filter.filters, mainTable);
+			if (nested.api.length > 0) {
+				api.push({ type: "and", filters: nested.api });
+			}
+			if (nested.deferred.length > 0) {
+				deferred.push({ type: "and", filters: nested.deferred });
+			}
+			continue;
+		}
+
+		if (filterHasForeignTable(filter, mainTable)) {
+			deferred.push(filter);
+		} else {
+			api.push(filter);
+		}
+	}
+
+	return { api, deferred };
+}
+
+type RowEvalContext = {
+	mainTable: string;
+	mainRow: Record<string, unknown>;
+	joinRows: Map<string, Record<string, unknown> | Record<string, unknown>[]>;
+};
+
+function findEmbedKeyForTable(
+	fromTable: Table,
+	joinTableName: string,
+): string | null {
+	const tableKey = jsKeyFromTable(fromTable);
+	const relations = RELATION_SELECTS[tableKey] ?? {};
+	for (const [key, fragment] of Object.entries(relations)) {
+		if (fragment.includes(joinTableName)) return key;
+	}
+	return joinTableName;
+}
+
+function buildRowEvalContext(
+	fromTable: Table,
+	rawRow: Record<string, unknown>,
+	joins: { table: Table }[],
+): RowEvalContext {
+	const mainTable = getTableName(fromTable);
+	const mainRow = fromDbRow(fromTable, rawRow);
+	const joinRows = new Map<
+		string,
+		Record<string, unknown> | Record<string, unknown>[]
+	>();
+
+	for (const join of joins) {
+		const joinTableName = getTableName(join.table);
+		const embedKey = findEmbedKeyForTable(fromTable, joinTableName);
+		const embed =
+			(embedKey ? rawRow[embedKey] : undefined) ?? rawRow[joinTableName];
+		if (!embed) continue;
+
+		if (Array.isArray(embed)) {
+			joinRows.set(
+				joinTableName,
+				embed.map((entry) =>
+					fromDbRow(join.table, entry as Record<string, unknown>),
+				),
+			);
+			continue;
+		}
+
+		joinRows.set(
+			joinTableName,
+			fromDbRow(join.table, embed as Record<string, unknown>),
+		);
+	}
+
+	return { mainTable, mainRow, joinRows };
+}
+
+function getFilterColumnValue(
+	ctx: RowEvalContext,
+	filter: ColumnFilter,
+): unknown {
+	const table = filter.table ?? ctx.mainTable;
+	if (table === ctx.mainTable) {
+		return ctx.mainRow[filter.column];
+	}
+
+	const joinData = ctx.joinRows.get(table);
+	if (!joinData) return null;
+	if (Array.isArray(joinData)) {
+		return joinData.map((row) => row[filter.column]);
+	}
+	return joinData[filter.column];
+}
+
+function compareFilterValues(
+	left: unknown,
+	right: unknown,
+	operator: "gt" | "gte" | "lt" | "lte",
+): boolean {
+	if (left == null || right == null) return false;
+	if (
+		typeof left === "number" &&
+		typeof right === "number" &&
+		!Number.isNaN(left) &&
+		!Number.isNaN(right)
+	) {
+		if (operator === "gt") return left > right;
+		if (operator === "gte") return left >= right;
+		if (operator === "lt") return left < right;
+		return left <= right;
+	}
+
+	const leftText = String(left);
+	const rightText = String(right);
+	if (operator === "gt") return leftText > rightText;
+	if (operator === "gte") return leftText >= rightText;
+	if (operator === "lt") return leftText < rightText;
+	return leftText <= rightText;
+}
+
+function evaluateFilter(ctx: RowEvalContext, filter: Filter): boolean {
+	switch (filter.type) {
+		case "unsupported":
+			return true;
+		case "and":
+			return filter.filters.every((entry) => evaluateFilter(ctx, entry));
+		case "or":
+			return filter.filters.some((entry) => evaluateFilter(ctx, entry));
+		case "eq":
+			return getFilterColumnValue(ctx, filter) === filter.value;
+		case "neq":
+			return getFilterColumnValue(ctx, filter) !== filter.value;
+		case "gt": {
+			const value = getFilterColumnValue(ctx, filter);
+			return compareFilterValues(value, filter.value, "gt");
+		}
+		case "gte": {
+			const value = getFilterColumnValue(ctx, filter);
+			return compareFilterValues(value, filter.value, "gte");
+		}
+		case "lt": {
+			const value = getFilterColumnValue(ctx, filter);
+			return compareFilterValues(value, filter.value, "lt");
+		}
+		case "lte": {
+			const value = getFilterColumnValue(ctx, filter);
+			return compareFilterValues(value, filter.value, "lte");
+		}
+		case "is":
+			return getFilterColumnValue(ctx, filter) == null;
+		case "in": {
+			const value = getFilterColumnValue(ctx, filter);
+			return filter.values.includes(value);
+		}
+		case "ilike": {
+			const value = String(getFilterColumnValue(ctx, filter) ?? "");
+			const pattern = String(filter.value ?? "");
+			const matches = value
+				.toLowerCase()
+				.includes(pattern.replace(/%/g, "").toLowerCase());
+			return filter.negated ? !matches : matches;
+		}
+		default:
+			return true;
+	}
+}
+
+function rowMatchesDeferredFilters(
+	ctx: RowEvalContext,
+	deferred: Filter[],
+): boolean {
+	return deferred.every((filter) => evaluateFilter(ctx, filter));
+}
+
+type EqCondition = {
+	left: PgColumn;
+	right: PgColumn | unknown;
+};
+
+function collectEqConditions(sql: SQL | undefined): EqCondition[] {
+	if (!sql) return [];
+	const results: EqCondition[] = [];
+	const chunks = getSqlChunks(sql);
+
+	for (let i = 0; i < chunks.length; i += 1) {
+		const part = chunks[i];
+		if (isPgColumn(part) && chunkText(chunks[i + 1]).trim() === "=") {
+			const right = chunks[i + 2];
+			if (isPgColumn(right)) {
+				results.push({ left: part, right });
+			} else {
+				results.push({
+					left: part,
+					right: normalizeFilterValue(right),
+				});
+			}
+			i += 3;
+			continue;
+		}
+
+		if (
+			typeof part === "object" &&
+			part !== null &&
+			getSqlChunks(part as SQL).length > 0
+		) {
+			results.push(...collectEqConditions(part as SQL));
+		}
+	}
+
+	return results;
+}
+
+type JoinMetadata = {
+	joinTable: Table;
+	joinFkColumn: string;
+	mainPkColumn: string;
+	constantFilters: Filter[];
+};
+
+function parseJoinMetadata(
+	mainTable: Table,
+	join: { table: Table; on: SQL },
+): JoinMetadata {
+	const mainName = getTableName(mainTable);
+	const joinName = getTableName(join.table);
+	const constantFilters: Filter[] = [];
+	let joinFkColumn = "";
+	let mainPkColumn = "";
+
+	for (const condition of collectEqConditions(join.on)) {
+		const leftTable = columnTable(condition.left);
+		const rightIsColumn = isPgColumn(condition.right);
+		const rightTable = rightIsColumn
+			? columnTable(condition.right as PgColumn)
+			: undefined;
+
+		if (rightIsColumn && leftTable && rightTable && leftTable !== rightTable) {
+			if (leftTable === joinName && rightTable === mainName) {
+				joinFkColumn = condition.left.name;
+				mainPkColumn = (condition.right as PgColumn).name;
+			} else if (leftTable === mainName && rightTable === joinName) {
+				mainPkColumn = condition.left.name;
+				joinFkColumn = (condition.right as PgColumn).name;
+			}
+			continue;
+		}
+
+		if (leftTable === joinName) {
+			const base = {
+				table: joinName,
+				column: condition.left.name,
+			};
+			if (condition.right === null) {
+				constantFilters.push({ type: "is", ...base, value: null });
+			} else {
+				constantFilters.push({
+					type: "eq",
+					...base,
+					value: condition.right,
+				});
+			}
+		}
+	}
+
+	return {
+		joinTable: join.table,
+		joinFkColumn,
+		mainPkColumn,
+		constantFilters,
+	};
+}
+
+function resolveShapeColumnValue(
+	row: Record<string, unknown>,
+	col: PgColumn,
+	fromTable: Table,
+	joins: { table: Table }[],
+): unknown {
+	const colTable = columnTable(col);
+	const mainTableName = getTableName(fromTable);
+	if (!colTable || colTable === mainTableName) {
+		return row[col.name] ?? fromDbRow(fromTable, row)[col.name];
+	}
+
+	const embedKey = findEmbedKeyForTable(fromTable, colTable);
+	const embed = (embedKey ? row[embedKey] : undefined) ?? row[colTable];
+	if (!embed) return null;
+	if (Array.isArray(embed)) {
+		return (
+			(embed[0] as Record<string, unknown> | undefined)?.[col.name] ?? null
+		);
+	}
+	return (embed as Record<string, unknown>)[col.name];
+}
+
+function sqlExpressionText(expr: unknown): string {
+	if (!expr || typeof expr !== "object") return "";
+	return getSqlChunks(expr as SQL)
+		.map((part) => {
+			if (isPgColumn(part)) return part.name;
+			return chunkText(part);
+		})
+		.join("")
+		.toLowerCase();
+}
+
+function extractSqlColumns(expr: unknown): PgColumn[] {
+	if (!expr || typeof expr !== "object") return [];
+	return getSqlChunks(expr as SQL).filter(isPgColumn);
+}
+
+function columnValueFromMappedRow(
+	row: Record<string, unknown>,
+	col: PgColumn,
+): unknown {
+	if (col.name in row) return row[col.name];
+	const columns = getTableColumns(col.table);
+	for (const [jsKey, column] of Object.entries(columns)) {
+		if (column.name === col.name) {
+			return row[jsKey];
+		}
+	}
+	return null;
+}
+
+function computeAggregateValue(
+	expr: unknown,
+	joinRows: Record<string, unknown>[],
+	ctx: RowEvalContext,
+): number {
+	const text = sqlExpressionText(expr);
+	const columns = extractSqlColumns(expr);
+
+	if (text.includes("count(")) {
+		if (text.includes("count(*)")) {
+			return joinRows.length;
+		}
+		return joinRows.filter((row) => {
+			const col = columns.find((entry) => text.includes(entry.name));
+			return col ? row[col.name] != null : true;
+		}).length;
+	}
+
+	if (!text.includes("sum(")) {
+		return 0;
+	}
+
+	const amountColumn =
+		columns.find(
+			(entry) => entry.name === "valor" || entry.name === "amount",
+		) ?? columns.at(-1);
+
+	return joinRows.reduce((total, joinRow) => {
+		const joinCtx: RowEvalContext = {
+			...ctx,
+			joinRows: new Map(ctx.joinRows),
+		};
+		const joinTableName = amountColumn ? columnTable(amountColumn) : undefined;
+		if (joinTableName) {
+			joinCtx.joinRows.set(joinTableName, joinRow);
+		}
+
+		if (text.includes("case when")) {
+			const caseSql = expr as SQL;
+			const caseChunks = getSqlChunks(caseSql);
+			const whenIndex = caseChunks.findIndex((part) =>
+				chunkText(part).toLowerCase().includes("when"),
+			);
+			if (whenIndex >= 0) {
+				const whenSql = caseChunks[whenIndex + 1] as SQL;
+				const whenFilters = parseWhere(whenSql);
+				if (!whenFilters.every((filter) => evaluateFilter(joinCtx, filter))) {
+					return total;
+				}
+			}
+		}
+
+		const rawAmount = amountColumn
+			? columnValueFromMappedRow(joinRow, amountColumn)
+			: 0;
+		const amount = Number(rawAmount ?? 0);
+		if (text.includes("abs(")) {
+			return total + Math.abs(amount);
+		}
+		return total + amount;
+	}, 0);
+}
+
+function resolveGroupedColumnValue(
+	expr: unknown,
+	rawMainRow: Record<string, unknown>,
+	mainMapped: Record<string, unknown>,
+	fromTable: Table,
+	joins: { table: Table }[],
+	relatedJoinRows: Record<string, unknown>[][],
+	joinIndexes: { meta: JoinMetadata }[],
+): unknown {
+	if (!isPgColumn(expr)) {
+		const chunks = getSqlChunks(expr as SQL);
+		const nestedColumn = chunks.find(isPgColumn);
+		if (nestedColumn) {
+			return resolveGroupedColumnValue(
+				nestedColumn,
+				rawMainRow,
+				mainMapped,
+				fromTable,
+				joins,
+				relatedJoinRows,
+				joinIndexes,
+			);
+		}
+		return null;
+	}
+
+	const colTable = columnTable(expr);
+	const mainTableName = getTableName(fromTable);
+	if (!colTable || colTable === mainTableName) {
+		return mainMapped[expr.name] ?? rawMainRow[expr.name];
+	}
+
+	const joinIndex = joinIndexes.findIndex(
+		({ meta }) => getTableName(meta.joinTable) === colTable,
+	);
+	if (joinIndex >= 0) {
+		return relatedJoinRows[joinIndex]?.[0]?.[expr.name] ?? null;
+	}
+
+	return resolveShapeColumnValue(rawMainRow, expr, fromTable, joins);
+}
+
+function qualifyColumn(filter: ColumnFilter, mainTable?: string): string {
+	if (!filter.table || !mainTable || filter.table === mainTable) {
+		return filter.column;
+	}
+	return `${filter.table}.${filter.column}`;
+}
+
+function formatOrValue(value: unknown): string {
+	if (value === null || value === undefined) return "null";
+	if (typeof value === "boolean") return String(value);
+	if (value instanceof Date) return value.toISOString();
+	return String(value);
+}
+
+/**
+ * Extrai coluna + direção de um orderBy do Drizzle.
+ * Aceita PgColumn direto (asc) ou wrappers desc()/asc() (objetos SQL com chunks).
+ */
+function extractOrderSpec(orderExpr: unknown): {
+	column: PgColumn | null;
+	ascending: boolean;
+} {
+	if (isPgColumn(orderExpr)) {
+		return { column: orderExpr, ascending: true };
+	}
+
+	const chunks = getSqlChunks(orderExpr as SQL);
+	const column = chunks.find(isPgColumn) as PgColumn | undefined;
+	const direction = chunks
+		.map((part) =>
+			typeof part === "object" &&
+			part !== null &&
+			"value" in part &&
+			typeof (part as { value: unknown }).value === "string"
+				? (part as { value: string }).value
+				: "",
+		)
+		.join("")
+		.toLowerCase();
+
+	return {
+		column: column ?? null,
+		ascending: !direction.includes("desc"),
+	};
+}
+
+function filterToOrExpr(filter: Filter, mainTable?: string): string | null {
+	if (
+		filter.type === "or" ||
+		filter.type === "and" ||
+		filter.type === "unsupported"
+	) {
+		return null;
+	}
+
+	const col = qualifyColumn(filter, mainTable);
+	switch (filter.type) {
+		case "eq":
+			return `${col}.eq.${formatOrValue(filter.value)}`;
+		case "neq":
+			return `${col}.neq.${formatOrValue(filter.value)}`;
+		case "gt":
+			return `${col}.gt.${formatOrValue(filter.value)}`;
+		case "gte":
+			return `${col}.gte.${formatOrValue(filter.value)}`;
+		case "lt":
+			return `${col}.lt.${formatOrValue(filter.value)}`;
+		case "lte":
+			return `${col}.lte.${formatOrValue(filter.value)}`;
+		case "is":
+			return `${col}.is.null`;
+		case "in":
+			return `${col}.in.(${filter.values.map(formatOrValue).join(",")})`;
+		case "ilike":
+			return filter.negated
+				? `${col}.not.ilike.${formatOrValue(filter.value)}`
+				: `${col}.ilike.${formatOrValue(filter.value)}`;
+		default:
+			return null;
+	}
+}
+
+function serializeFilterValue(value: unknown): unknown {
+	return value instanceof Date ? value.toISOString() : value;
+}
+
+function applyFilters<
+	T extends {
+		eq: Function;
+		neq: Function;
+		gt: Function;
+		gte: Function;
+		lt: Function;
+		lte: Function;
+		is: Function;
+		in: Function;
+		or: Function;
+		ilike: Function;
+		not: Function;
+	},
+>(query: T, filters: Filter[], mainTable?: string): T {
+	for (const filter of filters) {
+		if (filter.type === "unsupported") continue;
+		if (filter.type === "and") {
+			for (const nested of filter.filters) {
+				query = applyFilters(query, [nested], mainTable);
+			}
+			continue;
+		}
+		if (filter.type === "or") {
+			const orExpr = filter.filters
+				.map((entry) => filterToOrExpr(entry, mainTable))
+				.filter((entry): entry is string => Boolean(entry))
+				.join(",");
+			if (orExpr && orExpr.split(",").length === filter.filters.length) {
+				query = query.or(orExpr) as T;
+			}
+			continue;
+		}
+
+		const col = qualifyColumn(filter, mainTable);
+		const value =
+			"value" in filter ? serializeFilterValue(filter.value) : undefined;
+		switch (filter.type) {
+			case "eq":
+				query = query.eq(col, value) as T;
+				break;
+			case "neq":
+				query = query.neq(col, value) as T;
+				break;
+			case "gt":
+				query = query.gt(col, value) as T;
+				break;
+			case "gte":
+				query = query.gte(col, value) as T;
+				break;
+			case "lt":
+				query = query.lt(col, value) as T;
+				break;
+			case "lte":
+				query = query.lte(col, value) as T;
+				break;
+			case "is":
+				query = query.is(col, filter.value) as T;
+				break;
+			case "in":
+				query = query.in(col, filter.values) as T;
+				break;
+			case "ilike":
+				if (filter.negated) {
+					query = query.not(col, "ilike", value) as T;
+				} else {
+					query = query.ilike(col, value) as T;
+				}
+				break;
+		}
+	}
+	return query;
+}
+
+function jsKeyFromTable(table: Table): string {
+	for (const [key, value] of Object.entries(TABLE_BY_JS_NAME)) {
+		if (value === table) return key;
+	}
+	return getTableName(table);
+}
+
+function toDbRow(
+	table: Table,
+	values: Record<string, unknown>,
+): Record<string, unknown> {
+	const columns = getTableColumns(table);
+	const row: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(values)) {
+		const column = columns[key];
+		if (column) {
+			row[column.name] = value;
+		} else {
+			row[key] = value;
+		}
+	}
+	return row;
+}
+
+function fromDbRow(
+	table: Table,
+	row: Record<string, unknown>,
+): Record<string, unknown> {
+	const columns = getTableColumns(table);
+	const mapped: Record<string, unknown> = {};
+	for (const [jsKey, column] of Object.entries(columns)) {
+		if (column.name in row) {
+			mapped[jsKey] = row[column.name];
+		}
+	}
+	return mapped;
+}
+
+function buildSelectColumns(
+	table: Table,
+	columns?: Record<string, boolean>,
+): string {
+	if (!columns) return "*";
+	const cols = getTableColumns(table);
+	const selected = Object.entries(columns)
+		.filter(([, enabled]) => enabled)
+		.map(([key]) => cols[key]?.name ?? key);
+	return selected.length > 0 ? selected.join(",") : "*";
+}
+
+function buildWithSelect(
+	tableKey: string,
+	withConfig?: Record<string, boolean | object>,
+): string {
+	if (!withConfig) return "*";
+	const relations = RELATION_SELECTS[tableKey];
+	if (!relations) return "*";
+
+	const parts = ["*"];
+	for (const [relation, enabled] of Object.entries(withConfig)) {
+		if (!enabled || !relations[relation]) continue;
+		parts.push(relations[relation]);
+	}
+	return parts.join(",");
+}
+
+type FindOptions = {
+	where?: SQL;
+	columns?: Record<string, boolean>;
+	with?: Record<string, boolean | object>;
+	orderBy?: unknown;
+	limit?: number;
+	offset?: number;
+};
+
+async function runFind<T extends Table>(
+	client: SupabaseClient<Database>,
+	table: T,
+	options: FindOptions,
+	single: boolean,
+) {
+	const tableKey = jsKeyFromTable(table);
+	const tableName = getTableName(table);
+	let query = client
+		.from(tableName as keyof Database["public"]["Tables"])
+		.select(
+			options.with
+				? buildWithSelect(tableKey, options.with as Record<string, boolean>)
+				: buildSelectColumns(table, options.columns),
+			{ count: single ? undefined : "exact" },
+		);
+
+	const filters = parseWhere(options.where);
+	query = applyFilters(query, filters, tableName);
+
+	if (options.limit !== undefined) {
+		query = query.limit(options.limit);
+	} else if (single) {
+		query = query.limit(1);
+	}
+	if (options.offset !== undefined) {
+		query = query.range(
+			options.offset,
+			options.offset + (options.limit ?? 10) - 1,
+		);
+	}
+
+	const { data, error } = await query;
+	if (error) {
+		console.error("[bridge] runFind falhou", {
+			table: tableName,
+			error: error.message,
+		});
+		throw error;
+	}
+
+	const mapRow = (row: Record<string, unknown>) => {
+		const mapped = fromDbRow(table, row);
+		if (options.with) {
+			for (const relation of Object.keys(options.with)) {
+				const relTable = resolveRelationTable(tableKey, relation);
+				const relTableName = relTable ? getTableName(relTable) : null;
+				// PostgREST devolve as relações aninhadas com o nome da tabela (ex: "pagadores"),
+				// não com a chave Drizzle (ex: "payer").
+				const relData =
+					row[relation] ??
+					(relTableName ? row[relTableName] : undefined) ??
+					mapped[relation];
+				if (relData && typeof relData === "object") {
+					if (relTable) {
+						mapped[relation] = Array.isArray(relData)
+							? relData.map((r) =>
+									fromDbRow(relTable, r as Record<string, unknown>),
+								)
+							: fromDbRow(relTable, relData as Record<string, unknown>);
+					}
+				}
+			}
+		}
+		return mapped;
+	};
+
+	if (single) {
+		const row = Array.isArray(data) ? data[0] : data;
+		if (!row) return undefined as never;
+		return mapRow(row as Record<string, unknown>) as never;
+	}
+
+	if (!data) return [] as never;
+
+	return (data as Record<string, unknown>[]).map(mapRow) as never;
+}
+
+function resolveRelationTable(
+	parentKey: string,
+	relation: string,
+): Table | null {
+	const map: Record<string, Record<string, Table>> = {
+		transactions: {
+			payer: schema.payers,
+			financialAccount: schema.financialAccounts,
+			card: schema.cards,
+			category: schema.categories,
+			user: schema.user,
+		},
+		payers: { user: schema.user },
+		cards: { account: schema.financialAccounts },
+		invoices: { card: schema.cards },
+		budgets: { category: schema.categories },
+	};
+	return map[parentKey]?.[relation] ?? null;
+}
+
+function createQueryApi(client: SupabaseClient<Database>) {
+	const query = new Proxy(
+		{},
+		{
+			get(_target, prop: string) {
+				const table = TABLE_BY_JS_NAME[prop];
+				if (!table) {
+					throw new Error(`Tabela Drizzle desconhecida: ${String(prop)}`);
+				}
+				return {
+					findFirst: (options: FindOptions = {}) =>
+						runFind(client, table, options, true),
+					findMany: (options: FindOptions = {}) =>
+						runFind(client, table, options, false),
+				};
+			},
+		},
+	);
+
+	return { query };
+}
+
+function createInsertBuilder(client: SupabaseClient<Database>, table: Table) {
+	const tableName = getTableName(table);
+	return {
+		values(values: Record<string, unknown> | Record<string, unknown>[]) {
+			const rows = Array.isArray(values) ? values : [values];
+			const payload = rows.map((row) => toDbRow(table, row));
+
+			const insertAndSelect = async () => {
+				const { data, error } = await client
+					.from(tableName as keyof Database["public"]["Tables"])
+					.insert(payload as never[])
+					.select();
+				if (error) {
+					console.error("[bridge] insert falhou", {
+						table: tableName,
+						error: error.message,
+					});
+					throw error;
+				}
+				return (data ?? []).map((row) =>
+					fromDbRow(table, row as Record<string, unknown>),
+				);
+			};
+
+			const insertOnly = async () => {
+				const { error } = await client
+					.from(tableName as keyof Database["public"]["Tables"])
+					.insert(payload as never[]);
+				if (error) {
+					console.error("[bridge] insert falhou", {
+						table: tableName,
+						error: error.message,
+					});
+					throw error;
+				}
+			};
+
+			let executed = false;
+			let execution: Promise<unknown[]> | null = null;
+			const execute = async (): Promise<unknown[]> => {
+				if (executed) return execution ?? Promise.resolve([]);
+				executed = true;
+				execution = insertAndSelect();
+				return execution;
+			};
+
+			return {
+				returning: () => execute(),
+				async execute() {
+					await insertOnly();
+				},
+				// biome-ignore lint/suspicious/noThenProperty: thenable necessário para `await db.insert(...)` (API compatível com Drizzle)
+				then<TResult1 = unknown[], TResult2 = never>(
+					onfulfilled?:
+						| ((value: unknown[]) => TResult1 | PromiseLike<TResult1>)
+						| null,
+					onrejected?:
+						| ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
+						| null,
+				) {
+					return execute().then(onfulfilled, onrejected);
+				},
+			};
+		},
+	};
+}
+
+function createDeleteBuilder(client: SupabaseClient<Database>, table: Table) {
+	const tableName = getTableName(table);
+	return {
+		where(where: SQL) {
+			let executed = false;
+			let execution: Promise<void> | null = null;
+
+			const execute = async (): Promise<void> => {
+				if (executed) return execution ?? Promise.resolve();
+				executed = true;
+				execution = (async () => {
+					let query = client
+						.from(tableName as keyof Database["public"]["Tables"])
+						.delete();
+					query = applyFilters(query, parseWhere(where), tableName);
+					const { error } = await query;
+					if (error) {
+						console.error("[bridge] delete falhou", {
+							table: tableName,
+							error: error.message,
+						});
+						throw error;
+					}
+				})();
+				return execution;
+			};
+
+			const thenable: {
+				execute: () => Promise<void>;
+				then: <TResult1 = void, TResult2 = never>(
+					onfulfilled?:
+						| ((value: void) => TResult1 | PromiseLike<TResult1>)
+						| null,
+					onrejected?:
+						| ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
+						| null,
+				) => Promise<TResult1 | TResult2>;
+			} = {
+				execute,
+				// biome-ignore lint/suspicious/noThenProperty: thenable necessário para `await db.delete(...).where(...)` (API compatível com Drizzle)
+				then(onfulfilled, onrejected) {
+					return execute().then(onfulfilled, onrejected);
+				},
+			};
+
+			return thenable;
+		},
+	};
+}
+
+function createUpdateBuilder(client: SupabaseClient<Database>, table: Table) {
+	const tableName = getTableName(table);
+	return {
+		set(values: Record<string, unknown>) {
+			const payload = toDbRow(table, values);
+			return {
+				where(where: SQL) {
+					return {
+						returning: async () => {
+							let query = client
+								.from(tableName as keyof Database["public"]["Tables"])
+								.update(payload as never)
+								.select();
+							query = applyFilters(query, parseWhere(where), tableName);
+							const { data, error } = await query;
+							if (error) throw error;
+							return (data ?? []).map((row) =>
+								fromDbRow(table, row as Record<string, unknown>),
+							);
+						},
+						async execute() {
+							let query = client
+								.from(tableName as keyof Database["public"]["Tables"])
+								.update(payload as never);
+							query = applyFilters(query, parseWhere(where), tableName);
+							const { error } = await query;
+							if (error) throw error;
+						},
+					};
+				},
+			};
+		},
+	};
+}
+
+type SelectShape = Record<string, unknown>;
+
+class SupabaseSelectBuilder {
+	private client: SupabaseClient<Database>;
+	private shape: SelectShape = {};
+	private fromTable: Table | null = null;
+	private joins: { table: Table; on: SQL }[] = [];
+	private whereClause?: SQL;
+	private limitCount?: number;
+	private offsetCount?: number;
+	private orderExprs: unknown[] = [];
+	private groupByExprs: unknown[] = [];
+	private distinct = false;
+
+	constructor(
+		client: SupabaseClient<Database>,
+		options?: { distinct?: boolean },
+	) {
+		this.client = client;
+		this.distinct = options?.distinct ?? false;
+	}
+
+	select(shape: SelectShape) {
+		this.shape = shape;
+		return this;
+	}
+
+	from(table: Table) {
+		this.fromTable = table;
+		return this;
+	}
+
+	leftJoin(table: Table, _on: SQL) {
+		this.joins.push({ table, on: _on });
+		return this;
+	}
+
+	innerJoin(table: Table, _on: SQL) {
+		this.joins.push({ table, on: _on });
+		return this;
+	}
+
+	where(where: SQL) {
+		this.whereClause = where;
+		return this;
+	}
+
+	groupBy(...exprs: unknown[]) {
+		this.groupByExprs = exprs;
+		return this;
+	}
+
+	orderBy(...exprs: unknown[]) {
+		this.orderExprs = exprs;
+		return this;
+	}
+
+	limit(count: number) {
+		this.limitCount = count;
+		return this;
+	}
+
+	offset(count: number) {
+		this.offsetCount = count;
+		return this;
+	}
+
+	// biome-ignore lint/suspicious/noThenProperty: thenable necessário para `await db.select(...)` (API compatível com Drizzle)
+	async then<TResult1 = unknown[], TResult2 = never>(
+		onfulfilled?:
+			| ((value: unknown[]) => TResult1 | PromiseLike<TResult1>)
+			| null,
+		onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+	) {
+		try {
+			const result = await this.execute();
+			return Promise.resolve(result).then(onfulfilled, onrejected);
+		} catch (error) {
+			return Promise.reject(error).catch(onrejected);
+		}
+	}
+
+	private async execute(): Promise<unknown[]> {
+		if (!this.fromTable) {
+			throw new Error("select().from() é obrigatório");
+		}
+
+		if (this.groupByExprs.length > 0) {
+			return this.executeWithGroupBy();
+		}
+
+		return this.executeFlat();
+	}
+
+	private async executeFlat(): Promise<unknown[]> {
+		if (!this.fromTable) {
+			throw new Error("select().from() é obrigatório");
+		}
+
+		const tableName = getTableName(this.fromTable);
+
+		// Shapes puramente agregados (ex: { total: count() }) — usa count exact do PostgREST.
+		const shapeEntries = Object.entries(this.shape);
+		const isCountOnlyShape =
+			shapeEntries.length > 0 &&
+			shapeEntries.every(([, expr]) => {
+				const text = sqlExpressionText(expr);
+				return text.includes("count(") || text.includes("sum(");
+			});
+		if (isCountOnlyShape) {
+			const parsedFilters = parseWhere(this.whereClause);
+			const { api } = partitionFilters(parsedFilters, tableName);
+			let countQuery = this.client
+				.from(tableName as keyof Database["public"]["Tables"])
+				.select("*", { count: "exact", head: true });
+			countQuery = applyFilters(countQuery, api, tableName);
+			const { count, error } = await countQuery;
+			if (error) {
+				console.error("[bridge] count falhou", {
+					table: tableName,
+					error: error.message,
+				});
+				throw error;
+			}
+			return [
+				Object.fromEntries(
+					shapeEntries.map(([alias, expr]) => {
+						const text = sqlExpressionText(expr);
+						const value = text.includes("count(*)")
+							? (count ?? 0)
+							: text.includes("count(")
+								? (count ?? 0)
+								: 0;
+						return [alias, value];
+					}),
+				),
+			];
+		}
+
+		const tableKey = jsKeyFromTable(this.fromTable);
+		const withParts: string[] = ["*"];
+
+		for (const join of this.joins) {
+			const rel = RELATION_SELECTS[tableKey];
+			for (const fragment of Object.values(rel ?? {})) {
+				if (fragment.includes(getTableName(join.table))) {
+					withParts.push(fragment);
+				}
+			}
+			if (!rel) {
+				withParts.push(`${getTableName(join.table)}(*)`);
+			}
+		}
+
+		let query = this.client
+			.from(tableName as keyof Database["public"]["Tables"])
+			.select(withParts.join(","));
+
+		const parsedFilters = parseWhere(this.whereClause);
+		const { api, deferred } = partitionFilters(parsedFilters, tableName);
+		query = applyFilters(query, api, tableName);
+
+		// Ordenação aplicada no PostgREST apenas para colunas da tabela principal.
+		const jsOrder: { key: string; ascending: boolean }[] = [];
+		for (const orderExpr of this.orderExprs) {
+			const { column, ascending } = extractOrderSpec(orderExpr);
+			if (!column) continue;
+			if (column.table === this.fromTable) {
+				query = query.order(column.name, { ascending }) as typeof query;
+			} else {
+				jsOrder.push({ key: column.name, ascending });
+			}
+		}
+
+		if (this.limitCount !== undefined) {
+			query = query.limit(this.limitCount);
+		}
+		if (this.offsetCount !== undefined) {
+			query = query.range(
+				this.offsetCount,
+				this.offsetCount + (this.limitCount ?? 1000) - 1,
+			);
+		}
+
+		const { data, error } = await query;
+		if (error) {
+			console.error("[bridge] select falhou", {
+				table: tableName,
+				with: withParts,
+				error,
+			});
+			throw error;
+		}
+
+		const rows = (data ?? []).filter((row) => {
+			if (!this.fromTable || deferred.length === 0) return true;
+			const ctx = buildRowEvalContext(
+				this.fromTable,
+				row as Record<string, unknown>,
+				this.joins,
+			);
+			return rowMatchesDeferredFilters(ctx, deferred);
+		});
+
+		let mappedRows = rows.map((row) =>
+			this.mapSelectRow(row as Record<string, unknown>),
+		);
+
+		// Ordenação JS para colunas de tabelas relacionadas (ex: attachments.createdAt).
+		for (const { key, ascending } of jsOrder) {
+			mappedRows = mappedRows.sort((left, right) => {
+				const leftValue = (left as Record<string, unknown>)[key];
+				const rightValue = (right as Record<string, unknown>)[key];
+				if (leftValue === rightValue) return 0;
+				if (leftValue == null) return 1;
+				if (rightValue == null) return -1;
+				const result = leftValue > rightValue ? 1 : -1;
+				return ascending ? result : -result;
+			});
+		}
+
+		return this.dedupeMappedRows(mappedRows);
+	}
+
+	private dedupeMappedRows(
+		rows: Record<string, unknown>[],
+	): Record<string, unknown>[] {
+		if (!this.distinct) return rows;
+
+		const seen = new Set<string>();
+		const unique: Record<string, unknown>[] = [];
+
+		for (const row of rows) {
+			const key =
+				Object.keys(this.shape).length > 0
+					? Object.keys(this.shape)
+							.map((alias) => String(row[alias] ?? ""))
+							.join("|")
+					: JSON.stringify(row);
+			if (seen.has(key)) continue;
+			seen.add(key);
+			unique.push(row);
+		}
+
+		return unique;
+	}
+
+	private async executeWithGroupBy(): Promise<unknown[]> {
+		if (!this.fromTable) {
+			throw new Error("select().from() é obrigatório");
+		}
+
+		const tableName = getTableName(this.fromTable);
+		const parsedFilters = parseWhere(this.whereClause);
+		const { api, deferred } = partitionFilters(parsedFilters, tableName);
+
+		let mainQuery = this.client
+			.from(tableName as keyof Database["public"]["Tables"])
+			.select("*");
+		mainQuery = applyFilters(mainQuery, api, tableName);
+
+		const { data: mainData, error: mainError } = await mainQuery;
+		if (mainError) throw mainError;
+
+		const mainRows = (mainData ?? []) as Record<string, unknown>[];
+		const joinIndexes: Array<{
+			meta: JoinMetadata;
+			rowsByFk: Map<string, Record<string, unknown>[]>;
+		}> = [];
+
+		for (const join of this.joins) {
+			const meta = parseJoinMetadata(this.fromTable, join);
+			const joinTableName = getTableName(meta.joinTable);
+			let joinQuery = this.client
+				.from(joinTableName as keyof Database["public"]["Tables"])
+				.select("*");
+			joinQuery = applyFilters(joinQuery, meta.constantFilters, joinTableName);
+
+			const { data: joinData, error: joinError } = await joinQuery;
+			if (joinError) throw joinError;
+
+			const rowsByFk = new Map<string, Record<string, unknown>[]>();
+			for (const row of joinData ?? []) {
+				const mapped = fromDbRow(
+					meta.joinTable,
+					row as Record<string, unknown>,
+				);
+				const fkValue = String(mapped[meta.joinFkColumn] ?? "");
+				if (!fkValue) continue;
+				const bucket = rowsByFk.get(fkValue) ?? [];
+				bucket.push(mapped);
+				rowsByFk.set(fkValue, bucket);
+			}
+
+			joinIndexes.push({ meta, rowsByFk });
+		}
+
+		const grouped = new Map<string, Record<string, unknown>>();
+
+		for (const rawMainRow of mainRows) {
+			const mainMapped = fromDbRow(this.fromTable, rawMainRow);
+			const ctx = buildRowEvalContext(this.fromTable, rawMainRow, this.joins);
+
+			const relatedJoinRows: Record<string, unknown>[][] = joinIndexes.map(
+				({ meta, rowsByFk }) => {
+					const mainPk = String(mainMapped[meta.mainPkColumn] ?? "");
+					return rowsByFk.get(mainPk) ?? [];
+				},
+			);
+
+			const flatJoinRows =
+				relatedJoinRows.flat().length > 0
+					? relatedJoinRows.flat()
+					: [mainMapped];
+			if (
+				deferred.length > 0 &&
+				!rowMatchesDeferredFilters(
+					{
+						...ctx,
+						joinRows: new Map(
+							joinIndexes.map(({ meta }, index) => [
+								getTableName(meta.joinTable),
+								relatedJoinRows[index] ?? [],
+							]),
+						),
+					},
+					deferred,
+				)
+			) {
+				continue;
+			}
+
+			const groupKey = this.groupByExprs
+				.map((expr) =>
+					String(
+						resolveGroupedColumnValue(
+							expr,
+							rawMainRow,
+							mainMapped,
+							this.fromTable!,
+							this.joins,
+							relatedJoinRows,
+							joinIndexes,
+						) ?? "",
+					),
+				)
+				.join("|");
+
+			if (!grouped.has(groupKey)) {
+				const base: Record<string, unknown> = {};
+				for (const [alias, expr] of Object.entries(this.shape)) {
+					if (isPgColumn(expr)) {
+						base[alias] = resolveGroupedColumnValue(
+							expr,
+							rawMainRow,
+							mainMapped,
+							this.fromTable,
+							this.joins,
+							relatedJoinRows,
+							joinIndexes,
+						);
+					}
+				}
+				grouped.set(groupKey, base);
+			}
+
+			const entry = grouped.get(groupKey)!;
+			for (const [alias, expr] of Object.entries(this.shape)) {
+				if (isPgColumn(expr)) continue;
+				const aggregate = computeAggregateValue(expr, flatJoinRows, ctx);
+				entry[alias] = (Number(entry[alias] ?? 0) || 0) + aggregate;
+			}
+		}
+
+		let results = Array.from(grouped.values());
+
+		if (this.orderExprs.length > 0) {
+			const orderExpr = this.orderExprs[0];
+			const orderColumn = isPgColumn(orderExpr)
+				? orderExpr
+				: getSqlChunks(orderExpr as SQL).find(isPgColumn);
+			if (orderColumn) {
+				results = results.sort((left, right) => {
+					const alias = Object.entries(this.shape).find(
+						([, expr]) => expr === orderColumn,
+					)?.[0];
+					const leftValue = alias ? left[alias] : left[orderColumn.name];
+					const rightValue = alias ? right[alias] : right[orderColumn.name];
+					if (leftValue === rightValue) return 0;
+					if (leftValue == null) return 1;
+					if (rightValue == null) return -1;
+					return leftValue > rightValue ? 1 : -1;
+				});
+			}
+		}
+
+		if (this.limitCount !== undefined) {
+			results = results.slice(0, this.limitCount);
+		}
+
+		return results;
+	}
+
+	private mapSelectRow(row: Record<string, unknown>): Record<string, unknown> {
+		if (!this.fromTable) return row;
+		const result: Record<string, unknown> = {};
+
+		for (const [alias, expr] of Object.entries(this.shape)) {
+			if (isPgColumn(expr)) {
+				result[alias] = resolveShapeColumnValue(
+					row,
+					expr,
+					this.fromTable,
+					this.joins,
+				);
+				continue;
+			}
+			if (expr && typeof expr === "object" && "table" in (expr as object)) {
+				const col = expr as PgColumn;
+				result[alias] = resolveShapeColumnValue(
+					row,
+					col,
+					this.fromTable,
+					this.joins,
+				);
+				continue;
+			}
+			result[alias] = row[alias];
+		}
+
+		if (Object.keys(this.shape).length === 0) {
+			return fromDbRow(this.fromTable, row);
+		}
+
+		if (this.shape.transaction && this.fromTable === schema.transactions) {
+			result.transaction = fromDbRow(this.fromTable, row);
+		}
+
+		for (const join of this.joins) {
+			const joinName = getTableName(join.table);
+			const tableKey = jsKeyFromTable(this.fromTable);
+			const relKey = Object.keys(RELATION_SELECTS[tableKey] ?? {}).find((k) =>
+				RELATION_SELECTS[tableKey][k]?.includes(joinName),
+			);
+			if (!relKey) continue;
+
+			// PostgREST devolve relações com o nome da tabela (ex: "cartoes"),
+			// não com a chave Drizzle (ex: "card") — mesmo padrão de runFind().
+			const relData = row[relKey] ?? row[joinName];
+			if (!relData || typeof relData !== "object") continue;
+
+			const relRow = Array.isArray(relData)
+				? (relData[0] as Record<string, unknown> | undefined)
+				: (relData as Record<string, unknown>);
+			if (!relRow) continue;
+
+			result[relKey] = fromDbRow(join.table, relRow);
+		}
+
+		return result;
+	}
+}
+
+export type SupabaseDb = {
+	query: ReturnType<typeof createQueryApi>["query"];
+	insert: (table: Table) => ReturnType<typeof createInsertBuilder>;
+	delete: (table: Table) => ReturnType<typeof createDeleteBuilder>;
+	update: (table: Table) => ReturnType<typeof createUpdateBuilder>;
+	select: (shape?: SelectShape) => SupabaseSelectBuilder;
+	selectDistinct: (shape?: SelectShape) => SupabaseSelectBuilder;
+	execute: (sql: SQL | string) => Promise<void>;
+	transaction: <T>(fn: (tx: SupabaseDb) => Promise<T>) => Promise<T>;
+};
+
+export function createSupabaseDb(
+	client?: SupabaseClient<Database>,
+): SupabaseDb {
+	return buildSupabaseDb(client);
+}
+
+function buildSupabaseDb(client?: SupabaseClient<Database>): SupabaseDb {
+	const supabase = client ?? getSupabaseAdmin();
+	const api = createQueryApi(supabase);
+
+	return {
+		query: api.query,
+		insert: (table: Table) => createInsertBuilder(supabase, table),
+		delete: (table: Table) => createDeleteBuilder(supabase, table),
+		update: (table: Table) => createUpdateBuilder(supabase, table),
+		select: (shape?: SelectShape) => {
+			const builder = new SupabaseSelectBuilder(supabase);
+			if (shape) builder.select(shape);
+			return builder;
+		},
+		selectDistinct: (shape?: SelectShape) => {
+			const builder = new SupabaseSelectBuilder(supabase, { distinct: true });
+			if (shape) builder.select(shape);
+			return builder;
+		},
+		async execute(sql: SQL | string) {
+			if (typeof sql === "string") {
+				const { error } = await supabase.rpc("health_check" as never);
+				if (error) throw error;
+				return;
+			}
+			const { error } = await supabase.rpc("health_check" as never);
+			if (error) throw error;
+		},
+		transaction: async <T>(fn: (tx: SupabaseDb) => Promise<T>) => {
+			return fn(buildSupabaseDb(supabase));
+		},
+	};
+}
+
+export type { SupabaseDb as SupabaseDatabase };

@@ -1,9 +1,9 @@
 import {
+	CopyObjectCommand,
 	DeleteObjectCommand,
 	GetObjectCommand,
 	HeadObjectCommand,
 	PutObjectCommand,
-	CopyObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import {
@@ -11,7 +11,10 @@ import {
 	getStorageBucket,
 } from "@/shared/lib/storage/config";
 import { S3_BUCKET, s3 } from "@/shared/lib/storage/s3-client";
-import { getSupabaseAdmin, ensureSupabaseStorageBucket } from "@/shared/lib/storage/supabase-admin";
+import {
+	ensureSupabaseStorageBucket,
+	getSupabaseAdmin,
+} from "@/shared/lib/storage/supabase-admin";
 
 export const MAX_INLINE_DOWNLOAD_BYTES = 5 * 1024 * 1024;
 
@@ -20,7 +23,10 @@ type StorageObjectMetadata = {
 	contentType: string | null;
 };
 
-function splitStoragePath(fileKey: string): { folder: string; fileName: string } {
+function splitStoragePath(fileKey: string): {
+	folder: string;
+	fileName: string;
+} {
 	const parts = fileKey.split("/");
 	const fileName = parts.pop() ?? fileKey;
 	return {
@@ -75,10 +81,12 @@ export async function putS3Object(
 		await ensureSupabaseStorageBucket();
 		const supabase = getSupabaseAdmin();
 		const bucket = getStorageBucket();
-		const { error } = await supabase.storage.from(bucket).upload(fileKey, body, {
-			contentType: mimeType,
-			upsert: true,
-		});
+		const { error } = await supabase.storage
+			.from(bucket)
+			.upload(fileKey, body, {
+				contentType: mimeType,
+				upsert: true,
+			});
 		if (error) throw error;
 		return;
 	}
@@ -126,7 +134,9 @@ export async function getS3ObjectBuffer(fileKey: string): Promise<Buffer> {
 	if (backend === "supabase") {
 		const supabase = getSupabaseAdmin();
 		const bucket = getStorageBucket();
-		const { data, error } = await supabase.storage.from(bucket).download(fileKey);
+		const { data, error } = await supabase.storage
+			.from(bucket)
+			.download(fileKey);
 
 		if (error) throw error;
 		if (!data) {
@@ -155,7 +165,9 @@ export async function getS3ObjectBuffer(fileKey: string): Promise<Buffer> {
 	return Buffer.from(bytes);
 }
 
-export function canInlineDownloadS3Object(contentLength: number | null): boolean {
+export function canInlineDownloadS3Object(
+	contentLength: number | null,
+): boolean {
 	return (
 		contentLength != null &&
 		contentLength > 0 &&
@@ -187,7 +199,9 @@ export async function createPresignedGetUrl(fileKey: string): Promise<string> {
 	return getSignedUrl(s3, command, { expiresIn: 3600 });
 }
 
-export async function headS3Object(fileKey: string): Promise<StorageObjectMetadata> {
+export async function headS3Object(
+	fileKey: string,
+): Promise<StorageObjectMetadata> {
 	const backend = getStorageBackend();
 	if (backend === "supabase") {
 		return getSupabaseObjectMetadata(fileKey);

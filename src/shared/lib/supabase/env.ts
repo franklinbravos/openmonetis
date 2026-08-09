@@ -1,88 +1,67 @@
-import type { PoolConfig } from "pg";
-
 /**
- * URLs de banco para o OpenMonetis com Supabase.
- *
- * - App (Drizzle/Better Auth): DATABASE_URL → Postgres **direct** (db.*.supabase.co:5432)
- * - Migrações (drizzle-kit push): SUPABASE_TRANSACTION_POOLER (opcional) ou DATABASE_URL
- * - Storage: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (API do Supabase — não é SQL)
+ * Variáveis Supabase em runtime.
+ * URL e anon key usam NEXT_PUBLIC_* no cliente (login, OAuth).
+ * service_role permanece somente no servidor.
  */
 
-export function getAppDatabaseUrl(): string {
-	const url = process.env.DATABASE_URL?.trim();
+function readEnv(...names: string[]): string | undefined {
+	for (const name of names) {
+		const value = process.env[name]?.trim();
+		if (value) return value;
+	}
+	return undefined;
+}
+
+export function getSupabaseUrl(): string {
+	const url = readEnv("NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL");
 	if (!url) {
 		throw new Error(
-			"DATABASE_URL não configurada. Use a conexão direct do Supabase (db.*.supabase.co:5432).",
+			"SUPABASE_URL não configurada. Defina NEXT_PUBLIC_SUPABASE_URL (e SUPABASE_URL no servidor, se quiser).",
 		);
 	}
 	return url;
 }
 
-/**
- * Usado só por drizzle-kit (db:push, db:studio, db:generate).
- * Em produção (Coolify) essa URL normalmente não é necessária — o app em runtime usa getAppDatabaseUrl().
- */
-export function getMigrationDatabaseUrl(): string {
-	const url =
-		process.env.SUPABASE_MIGRATION_DATABASE_URL?.trim() ??
-		process.env.SUPABASE_TRANSACTION_POOLER?.trim() ??
-		process.env.DATABASE_URL?.trim();
-
-	if (!url) {
+export function getSupabaseAnonKey(): string {
+	const key = readEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_ANON_KEY");
+	if (!key) {
 		throw new Error(
-			"Defina DATABASE_URL ou SUPABASE_TRANSACTION_POOLER para drizzle-kit.",
+			"SUPABASE_ANON_KEY não configurada. Defina NEXT_PUBLIC_SUPABASE_ANON_KEY (e SUPABASE_ANON_KEY no servidor, se quiser).",
 		);
 	}
-
-	return url;
+	return key;
 }
 
-/** Config do `pg.Pool` — trata SSL do Supabase no driver Node.js. */
-export function getPgPoolConfig(): PoolConfig {
-	const raw = getAppDatabaseUrl();
-	const isSupabase = raw.includes("supabase.co");
-
-	if (!isSupabase) {
-		return { connectionString: raw };
+export function getSupabaseServiceRoleKey(): string {
+	const key = readEnv(
+		"SUPABASE_SERVICE_ROLE_KEY",
+		// alias legado (typo comum — não expor no cliente)
+		"NEXT_SUPABASE_SERVICE_ROLE_KEY",
+	);
+	if (!key) {
+		throw new Error(
+			"SUPABASE_SERVICE_ROLE_KEY não configurada. Copie a service_role em Supabase → Project Settings → API (somente servidor).",
+		);
 	}
-
-	// sslmode=require na URL faz o pg v8+ validar certificado (verify-full).
-	// Removemos da string e usamos ssl explícito compatível com Supabase.
-	const url = new URL(raw);
-	url.searchParams.delete("sslmode");
-
-	return {
-		connectionString: url.toString(),
-		ssl: { rejectUnauthorized: false },
-	};
+	return key;
 }
 
 export function isSupabaseProjectConfigured(): boolean {
 	return Boolean(
-		process.env.SUPABASE_URL?.trim() &&
-			process.env.SUPABASE_SERVICE_ROLE_KEY?.trim(),
+		readEnv("NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL") &&
+			readEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_ANON_KEY") &&
+			readEnv("SUPABASE_SERVICE_ROLE_KEY", "NEXT_SUPABASE_SERVICE_ROLE_KEY"),
 	);
 }
 
 export function getSupabaseProjectRef(): string | null {
-	const url = process.env.SUPABASE_URL?.trim();
-	if (!url) return null;
+	const supabaseUrl = readEnv("NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL");
+	if (!supabaseUrl) return null;
 
 	try {
-		const hostname = new URL(url).hostname;
+		const hostname = new URL(supabaseUrl).hostname;
 		return hostname.split(".")[0] ?? null;
 	} catch {
 		return null;
 	}
-}
-
-/**
- * Monta URL direct a partir do project ref + senha (útil no setup inicial).
- */
-export function buildSupabaseDirectDatabaseUrl(
-	projectRef: string,
-	password: string,
-): string {
-	const encodedPassword = encodeURIComponent(password);
-	return `postgresql://postgres:${encodedPassword}@db.${projectRef}.supabase.co:5432/postgres?sslmode=require`;
 }
