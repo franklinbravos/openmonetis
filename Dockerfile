@@ -63,40 +63,12 @@ WORKDIR /app
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
-# Instalar deps do drizzle-kit em diretório separado ANTES de copiar o standalone
-# Isso evita que o pnpm install sobrescreva o node_modules do Next.js standalone
-COPY --from=builder /app/package.json /tmp/pkg.json
-RUN mkdir -p /app/migrate && \
-  node -e "\
-  const p=JSON.parse(require('fs').readFileSync('/tmp/pkg.json','utf8'));\
-  require('fs').writeFileSync('/app/migrate/package.json',JSON.stringify({\
-    name:'openmonetis-migrate',version:p.version,\
-    dependencies:{\
-      'drizzle-orm':p.dependencies['drizzle-orm'],\
-      'pg':p.dependencies['pg']\
-    },\
-    devDependencies:{'drizzle-kit':p.devDependencies['drizzle-kit']}\
-  }));" && \
-  cd /app/migrate && pnpm install --no-frozen-lockfile --ignore-scripts && \
-  chown -R nextjs:nodejs /app/migrate
-
 # Copiar apenas arquivos necessários para produção
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 # Copiar arquivos de build do Next.js (inclui node_modules standalone com next)
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-# Copiar arquivos do Drizzle (migrations e schema)
-COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
-COPY --from=builder --chown=nextjs:nodejs /app/drizzle.config.ts ./drizzle.config.ts
-COPY --from=builder --chown=nextjs:nodejs /app/src/db ./src/db
-
-# Copiar entrypoint de migrations
-COPY docker-entrypoint.sh ./
-RUN sed -i 's/\r$//' /app/docker-entrypoint.sh && \
-    chmod +x /app/docker-entrypoint.sh && \
-    chown nextjs:nodejs /app/docker-entrypoint.sh
 
 # Definir variáveis de ambiente de produção
 ENV NODE_ENV=production \
@@ -114,6 +86,5 @@ USER nextjs
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD wget --quiet --tries=1 --spider http://127.0.0.1:3000/api/health || exit 1
 
-# Entrypoint: roda migrations e depois executa o CMD
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
+# O schema é gerenciado no Supabase — sem migrations locais em runtime
 CMD ["node", "server.js"]

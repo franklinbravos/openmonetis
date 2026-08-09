@@ -17,9 +17,6 @@ on:
     paths:
       - ".github/workflows/docker-coolify.yml"
       - "Dockerfile"
-      - "docker-entrypoint.sh"
-      - "drizzle/**"
-      - "drizzle.config.ts"
       - "next.config.ts"
       - "package.json"
       - "pnpm-lock.yaml"
