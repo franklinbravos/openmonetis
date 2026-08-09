@@ -1,9 +1,9 @@
 "use client";
-import { RiFingerprintLine, RiLoader4Line } from "@remixicon/react";
+import { RiLoader4Line } from "@remixicon/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { getOAuthErrorMessage } from "@/features/auth/lib/oauth-error-messages";
+import { getAuthErrorMessage } from "@/features/auth/lib/auth-error-messages";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/shared/components/ui/field";
 import { Input } from "@/shared/components/ui/input";
 import { authClient, googleSignInAvailable } from "@/shared/lib/auth/client";
+import { preloadGoogleSignIn } from "@/shared/lib/auth/google-sign-in";
 import { cn } from "@/shared/utils/ui";
 import { AuthCardShell } from "./auth-card-shell";
 import { AuthErrorAlert } from "./auth-error-alert";
@@ -41,23 +42,25 @@ export function LoginForm({
 
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
-	const [rememberMe, setRememberMe] = useState(false);
+	const [rememberMe, setRememberMe] = useState(true);
+
+	useEffect(() => {
+		const stored = localStorage.getItem("openmonetis-remember-me");
+		if (stored !== null) {
+			setRememberMe(stored === "true");
+		}
+	}, []);
 
 	const [error, setError] = useState("");
 	const [loadingEmail, setLoadingEmail] = useState(false);
 	const [loadingGoogle, setLoadingGoogle] = useState(false);
-	const [loadingPasskey, setLoadingPasskey] = useState(false);
-	const [passkeySupported, setPasskeySupported] = useState(false);
 
 	useEffect(() => {
-		if (typeof window === "undefined") return;
-		if (typeof PublicKeyCredential === "undefined") return;
-
-		setPasskeySupported(true);
+		preloadGoogleSignIn();
 	}, []);
 
 	useEffect(() => {
-		const oauthError = getOAuthErrorMessage(
+		const oauthError = getAuthErrorMessage(
 			searchParams.get("error"),
 			searchParams.get("error_description"),
 		);
@@ -74,8 +77,6 @@ export function LoginForm({
 			{
 				email,
 				password,
-				callbackURL: "/dashboard",
-				rememberMe,
 			},
 			{
 				onRequest: () => {
@@ -83,8 +84,10 @@ export function LoginForm({
 					setLoadingEmail(true);
 				},
 				onSuccess: () => {
+					localStorage.setItem("openmonetis-remember-me", String(rememberMe));
 					setLoadingEmail(false);
 					toast.success("Login realizado com sucesso!");
+					router.refresh();
 					router.replace("/dashboard");
 				},
 				onError: (ctx) => {
@@ -97,7 +100,7 @@ export function LoginForm({
 						);
 					}
 
-					setError(ctx.error.message);
+					setError(getAuthErrorMessage(ctx.error.message) ?? ctx.error.message);
 					setLoadingEmail(false);
 				},
 			},
@@ -121,38 +124,18 @@ export function LoginForm({
 				callbackURL: "/dashboard",
 			},
 			{
+				onSuccess: () => {
+					setLoadingGoogle(false);
+					toast.success("Login realizado com sucesso!");
+					router.refresh();
+					router.replace("/dashboard");
+				},
 				onError: (ctx) => {
-					// Só desativa loading se houver erro
-					setError(ctx.error.message);
+					setError(getAuthErrorMessage(ctx.error.message) ?? ctx.error.message);
 					setLoadingGoogle(false);
 				},
 			},
 		);
-	}
-
-	async function handlePasskey() {
-		setError("");
-		setLoadingPasskey(true);
-
-		const { error: passkeyError } = await authClient.signIn.passkey({
-			fetchOptions: {
-				onSuccess: () => {
-					setLoadingPasskey(false);
-					router.replace("/dashboard");
-				},
-				onError: (ctx) => {
-					setError(ctx.error.message);
-					setLoadingPasskey(false);
-				},
-			},
-		});
-
-		if (passkeyError) {
-			setError(
-				(passkeyError.message as string) || "Erro ao entrar com passkey.",
-			);
-			setLoadingPasskey(false);
-		}
 	}
 
 	return (
@@ -206,7 +189,7 @@ export function LoginForm({
 								id="remember-me"
 								checked={rememberMe}
 								onCheckedChange={(checked) => setRememberMe(checked === true)}
-								disabled={loadingEmail || loadingGoogle || loadingPasskey}
+								disabled={loadingEmail || loadingGoogle}
 								className="mt-0.5"
 							/>
 							<div className="grid gap-1">
@@ -222,7 +205,7 @@ export function LoginForm({
 						<Field>
 							<Button
 								type="submit"
-								disabled={loadingEmail || loadingGoogle || loadingPasskey}
+								disabled={loadingEmail || loadingGoogle}
 								className="w-full"
 							>
 								{loadingEmail ? (
@@ -238,40 +221,12 @@ export function LoginForm({
 						</FieldSeparator>
 
 						<Field>
-							<div
-								className={cn(
-									passkeySupported ? "grid grid-cols-2 gap-2" : "flex",
-								)}
-							>
-								<GoogleAuthButton
-									onClick={handleGoogle}
-									loading={loadingGoogle}
-									disabled={
-										loadingEmail ||
-										loadingGoogle ||
-										loadingPasskey ||
-										!isGoogleAvailable
-									}
-									text="Google"
-								/>
-
-								{passkeySupported && (
-									<Button
-										variant="outline"
-										type="button"
-										onClick={handlePasskey}
-										disabled={loadingEmail || loadingGoogle || loadingPasskey}
-										className="w-full gap-2"
-									>
-										{loadingPasskey ? (
-											<RiLoader4Line className="h-4 w-4 animate-spin" />
-										) : (
-											<RiFingerprintLine className="h-5 w-5" />
-										)}
-										<span>Passkey</span>
-									</Button>
-								)}
-							</div>
+							<GoogleAuthButton
+								onClick={handleGoogle}
+								loading={loadingGoogle}
+								disabled={loadingEmail || loadingGoogle || !isGoogleAvailable}
+								text="Google"
+							/>
 						</Field>
 
 						{!signupDisabled && (

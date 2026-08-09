@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { QueryProvider } from "@/shared/components/providers/query-provider";
+import { SupabaseAuthListener } from "@/shared/components/providers/supabase-auth-listener";
 import { ThemeProvider } from "@/shared/components/providers/theme-provider";
 import { Toaster } from "@/shared/components/ui/sonner";
 import "./globals.css";
@@ -43,6 +44,7 @@ export default function RootLayout({
 			<body className="antialiased" suppressHydrationWarning>
 				<ThemeProvider attribute="class" defaultTheme="light">
 					<QueryProvider>
+						<SupabaseAuthListener />
 						<Suspense>{children}</Suspense>
 						<Toaster position="top-right" />
 					</QueryProvider>

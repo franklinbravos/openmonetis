@@ -1,8 +1,9 @@
 "use client";
 import { RiCheckLine, RiCloseLine, RiLoader4Line } from "@remixicon/react";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { getAuthErrorMessage } from "@/features/auth/lib/auth-error-messages";
 import { Button } from "@/shared/components/ui/button";
 import {
 	Field,
@@ -13,6 +14,7 @@ import {
 } from "@/shared/components/ui/field";
 import { Input } from "@/shared/components/ui/input";
 import { authClient, googleSignInAvailable } from "@/shared/lib/auth/client";
+import { preloadGoogleSignIn } from "@/shared/lib/auth/google-sign-in";
 import { cn } from "@/shared/utils/ui";
 import { AuthCardShell } from "./auth-card-shell";
 import { AuthErrorAlert } from "./auth-error-alert";
@@ -89,6 +91,10 @@ export function SignupForm({ className, ...props }: DivProps) {
 	const [loadingEmail, setLoadingEmail] = useState(false);
 	const [loadingGoogle, setLoadingGoogle] = useState(false);
 
+	useEffect(() => {
+		preloadGoogleSignIn();
+	}, []);
+
 	const passwordValidation = validatePassword(password);
 
 	async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -116,7 +122,7 @@ export function SignupForm({ className, ...props }: DivProps) {
 					router.replace("/dashboard");
 				},
 				onError: (ctx) => {
-					setError(ctx.error.message);
+					setError(getAuthErrorMessage(ctx.error.message) ?? ctx.error.message);
 					setLoadingEmail(false);
 				},
 			},
@@ -140,9 +146,14 @@ export function SignupForm({ className, ...props }: DivProps) {
 				callbackURL: "/dashboard",
 			},
 			{
+				onSuccess: () => {
+					setLoadingGoogle(false);
+					toast.success("Conta criada com sucesso!");
+					router.refresh();
+					router.replace("/dashboard");
+				},
 				onError: (ctx) => {
-					// Só desativa loading se houver erro
-					setError(ctx.error.message);
+					setError(getAuthErrorMessage(ctx.error.message) ?? ctx.error.message);
 					setLoadingGoogle(false);
 				},
 			},

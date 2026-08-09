@@ -1,6 +1,13 @@
+import { type CookieOptions, createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
-import { auth } from "@/shared/lib/auth/config";
 import { isSignupDisabled } from "@/shared/lib/auth/signup";
+import { getSupabaseAnonKey, getSupabaseUrl } from "@/shared/lib/supabase/env";
+
+type CookieToSet = {
+	name: string;
+	value: string;
+	options: CookieOptions;
+};
 
 // Rotas protegidas que requerem autenticação
 const PROTECTED_ROUTES = [
@@ -18,10 +25,30 @@ const PROTECTED_ROUTES = [
 	"/inbox",
 	"/reports",
 	"/reconciliation",
+	"/attachments",
+	"/changelog",
 	"/change-password-required",
 ];
 
-// Rotas públicas (não requerem autenticação)
+function redirectKeepingSession(
+	request: NextRequest,
+	path: string,
+	sessionCookies: CookieToSet[],
+	authHeaders: Record<string, string>,
+) {
+	const redirectResponse = NextResponse.redirect(new URL(path, request.url));
+
+	for (const { name, value, options } of sessionCookies) {
+		redirectResponse.cookies.set(name, value, options);
+	}
+
+	for (const [key, value] of Object.entries(authHeaders)) {
+		redirectResponse.headers.set(key, value);
+	}
+
+	return redirectResponse;
+}
+
 const PUBLIC_AUTH_ROUTES = ["/login", "/signup"];
 
 function buildCsp(): string {
@@ -43,7 +70,9 @@ function buildCsp(): string {
 
 	const umamiOrigin = process.env.UMAMI_URL ?? "";
 
-	const connectExtras = [umamiOrigin, storageOrigin].filter(Boolean).join(" ");
+	const connectExtras = [umamiOrigin, storageOrigin, getSupabaseUrl()]
+		.filter(Boolean)
+		.join(" ");
 
 	const imgExtras = [
 		"https://lh3.googleusercontent.com",
@@ -55,21 +84,51 @@ function buildCsp(): string {
 
 	return [
 		"default-src 'self'",
-		`script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}${umamiOrigin ? ` ${umamiOrigin}` : ""}`,
+		`script-src 'self' 'unsafe-inline' https://accounts.google.com${isDev ? " 'unsafe-eval'" : ""}${umamiOrigin ? ` ${umamiOrigin}` : ""}`,
 		"style-src 'self' 'unsafe-inline'",
 		`img-src 'self' ${imgExtras} data: blob:`,
 		"font-src 'self'",
-		`connect-src 'self' ${connectExtras}`,
-		`frame-src 'self'${storageOrigin ? ` ${storageOrigin}` : ""}`,
+		`connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com ${connectExtras}`,
+		`frame-src 'self' https://accounts.google.com${storageOrigin ? ` ${storageOrigin}` : ""}`,
 		"frame-ancestors 'none'",
 	].join("; ");
+}
+
+async function getSessionUser(request: NextRequest) {
+	let response = NextResponse.next({ request });
+	let sessionCookies: CookieToSet[] = [];
+	let authHeaders: Record<string, string> = {};
+
+	const supabase = createServerClient(getSupabaseUrl(), getSupabaseAnonKey(), {
+		cookies: {
+			getAll() {
+				return request.cookies.getAll();
+			},
+			setAll(cookiesToSet, headers = {}) {
+				sessionCookies = cookiesToSet;
+				authHeaders = headers;
+
+				for (const { name, value } of cookiesToSet) {
+					request.cookies.set(name, value);
+				}
+				response = NextResponse.next({ request });
+				for (const { name, value, options } of cookiesToSet) {
+					response.cookies.set(name, value, options);
+				}
+				for (const [key, value] of Object.entries(headers)) {
+					response.headers.set(key, value);
+				}
+			},
+		},
+	});
+
+	const { data } = await supabase.auth.getUser();
+	return { user: data.user, response, sessionCookies, authHeaders };
 }
 
 export default async function proxy(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 
-	// Multi-domain: block all routes except landing on public domain
-	// Normalize PUBLIC_DOMAIN: strip protocol and port if provided
 	const publicDomain = process.env.PUBLIC_DOMAIN?.replace(
 		/^https?:\/\//,
 		"",
@@ -86,12 +145,13 @@ export default async function proxy(request: NextRequest) {
 		return NextResponse.next();
 	}
 
-	// Validate actual session, not just cookie existence
-	const session = await auth.api.getSession({
-		headers: request.headers,
-	});
-
-	const isAuthenticated = !!session?.user;
+	const {
+		user,
+		response: sessionResponse,
+		sessionCookies,
+		authHeaders,
+	} = await getSessionUser(request);
+	const isAuthenticated = Boolean(user);
 	const signupDisabled = isSignupDisabled();
 
 	if (signupDisabled) {
@@ -102,49 +162,59 @@ export default async function proxy(request: NextRequest) {
 			!isInviteSignup &&
 			(pathname === "/signup" || pathname.startsWith("/signup/"))
 		) {
-			return NextResponse.redirect(
-				new URL(isAuthenticated ? "/dashboard" : "/login", request.url),
+			return redirectKeepingSession(
+				request,
+				isAuthenticated ? "/dashboard" : "/login",
+				sessionCookies,
+				authHeaders,
 			);
 		}
 	}
 
-	// Redirect authenticated users away from login/signup pages
 	if (
 		isAuthenticated &&
 		PUBLIC_AUTH_ROUTES.includes(pathname) &&
 		pathname !== "/signup"
 	) {
-		return NextResponse.redirect(new URL("/dashboard", request.url));
+		return redirectKeepingSession(
+			request,
+			"/dashboard",
+			sessionCookies,
+			authHeaders,
+		);
 	}
 
-	const mustChangePassword = Boolean(
-		session?.user &&
-			"mustChangePassword" in session.user &&
-			session.user.mustChangePassword,
-	);
+	const mustChangePassword = Boolean(user?.user_metadata?.must_change_password);
 
 	if (mustChangePassword && isAuthenticated) {
 		const canAccess =
 			pathname.startsWith("/change-password-required") ||
-			pathname.startsWith("/api/auth");
+			pathname.startsWith("/auth");
 
 		if (!canAccess) {
-			return NextResponse.redirect(
-				new URL("/change-password-required", request.url),
+			return redirectKeepingSession(
+				request,
+				"/change-password-required",
+				sessionCookies,
+				authHeaders,
 			);
 		}
 	}
 
-	// Redirect unauthenticated users trying to access protected routes
 	const isProtectedRoute = PROTECTED_ROUTES.some((route) =>
 		pathname.startsWith(route),
 	);
 
 	if (!isAuthenticated && isProtectedRoute) {
-		return NextResponse.redirect(new URL("/login", request.url));
+		return redirectKeepingSession(
+			request,
+			"/login",
+			sessionCookies,
+			authHeaders,
+		);
 	}
 
-	const response = NextResponse.next();
+	const response = sessionResponse;
 	if (!pathname.startsWith("/api/")) {
 		response.headers.set("Content-Security-Policy", buildCsp());
 	}
@@ -152,27 +222,11 @@ export default async function proxy(request: NextRequest) {
 }
 
 export const config = {
-	// Apply middleware to protected and auth routes
 	matcher: [
-		"/",
-		"/api/:path*",
-		"/settings/:path*",
-		"/notes/:path*",
-		"/calendar/:path*",
-		"/cards/:path*",
-		"/categories/:path*",
-		"/accounts/:path*",
-		"/dashboard/:path*",
-		"/insights/:path*",
-		"/transactions/:path*",
-		"/budgets/:path*",
-		"/payers/:path*",
-		"/inbox/:path*",
-		"/reports/:path*",
-		"/reconciliation/:path*",
-		"/login",
-		"/signup",
-		"/invite",
-		"/change-password-required",
+		/*
+		 * Renova sessão Supabase em todas as rotas dinâmicas.
+		 * Server Components não conseguem gravar cookies — o proxy precisa cobrir tudo.
+		 */
+		"/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
 	],
 };

@@ -1,8 +1,7 @@
 import { and, eq } from "drizzle-orm";
-import { headers } from "next/headers";
 import { connection, NextResponse } from "next/server";
 import { apiTokens } from "@/db/schema";
-import { auth } from "@/shared/lib/auth/config";
+import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
 
 interface RouteParams {
@@ -14,21 +13,11 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
 
 	const { tokenId } = await params;
 
-	// Verificar autenticação via sessão web
-	const requestHeaders = new Headers(await headers());
-	const session = await auth.api.getSession({ headers: requestHeaders });
-
-	if (!session?.user) {
-		return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
-	}
-
 	try {
-		// Verificar se token pertence ao usuário
+		const user = await getUser();
+
 		const token = await db.query.apiTokens.findFirst({
-			where: and(
-				eq(apiTokens.id, tokenId),
-				eq(apiTokens.userId, session.user.id),
-			),
+			where: and(eq(apiTokens.id, tokenId), eq(apiTokens.userId, user.id)),
 		});
 
 		if (!token) {
@@ -38,13 +27,10 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
 			);
 		}
 
-		// Revogar token (soft delete)
 		await db
 			.update(apiTokens)
 			.set({ revokedAt: new Date() })
-			.where(
-				and(eq(apiTokens.id, tokenId), eq(apiTokens.userId, session.user.id)),
-			);
+			.where(and(eq(apiTokens.id, tokenId), eq(apiTokens.userId, user.id)));
 
 		return NextResponse.json({
 			message: "Token revogado com sucesso",

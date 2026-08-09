@@ -1,66 +1,84 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
-import { auth } from "@/shared/lib/auth/config";
+import { ensureUserBootstrap } from "@/shared/lib/auth/bootstrap";
+import { createClient } from "@/shared/lib/supabase/server";
 
-/**
- * Cached session fetch - deduplicates auth calls within a single request.
- * Layout + page calling getUser() will only hit auth once.
- */
+export type AppUser = {
+	id: string;
+	name: string;
+	email: string;
+	image?: string | null;
+	mustChangePassword: boolean;
+	emailVerified: boolean;
+};
+
 const getSessionCached = cache(async () => {
-	return auth.api.getSession({ headers: await headers() });
+	const supabase = await createClient();
+	const { data, error } = await supabase.auth.getUser();
+	if (error || !data.user) {
+		return null;
+	}
+
+	const user = data.user;
+	const metadata = user.user_metadata ?? {};
+
+	return {
+		user: {
+			id: user.id,
+			name:
+				(typeof metadata.name === "string" && metadata.name) ||
+				user.email?.split("@")[0] ||
+				"Usuário",
+			email: user.email ?? "",
+			image:
+				(typeof metadata.avatar_url === "string" && metadata.avatar_url) ||
+				(typeof metadata.picture === "string" && metadata.picture) ||
+				null,
+			mustChangePassword: Boolean(metadata.must_change_password),
+			emailVerified: Boolean(user.email_confirmed_at),
+		} satisfies AppUser,
+	};
 });
 
 /**
  * Gets the current authenticated user
- * @returns User object
- * @throws Redirects to /login if user is not authenticated
  */
-export async function getUser() {
+export async function getUser(): Promise<AppUser> {
 	const session = await getSessionCached();
 
 	if (!session?.user) {
 		redirect("/login");
 	}
 
+	await ensureUserBootstrap(session.user);
 	return session.user;
 }
 
-/**
- * Gets the current authenticated user ID
- * @returns User ID string
- * @throws Redirects to /login if user is not authenticated
- */
-export async function getUserId() {
-	const session = await getSessionCached();
-
-	if (!session?.user) {
-		redirect("/login");
-	}
-
-	return session.user.id;
+export async function getUserId(): Promise<string> {
+	const user = await getUser();
+	return user.id;
 }
 
-/**
- * Gets the current authenticated session
- * @returns Full session object including user
- * @throws Redirects to /login if user is not authenticated
- */
 export async function getUserSession() {
 	const session = await getSessionCached();
-
 	if (!session?.user) {
 		redirect("/login");
 	}
-
+	await ensureUserBootstrap(session.user);
 	return session;
 }
 
-/**
- * Gets the current session without requiring authentication
- * @returns Session object or null if not authenticated
- * @note This function does not redirect if user is not authenticated
- */
 export async function getOptionalUserSession() {
 	return getSessionCached();
+}
+
+export async function getOptionalUser(): Promise<AppUser | null> {
+	const session = await getSessionCached();
+	return session?.user ?? null;
+}
+
+export async function getAuthHeadersUserId(): Promise<string | null> {
+	const session = await getSessionCached();
+	return session?.user.id ?? null;
 }
