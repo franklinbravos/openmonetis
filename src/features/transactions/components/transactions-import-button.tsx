@@ -9,14 +9,21 @@ import {
 import { Button } from "@/shared/components/ui/button";
 import { cn } from "@/shared/utils/ui";
 
-export function TransactionsImportButton() {
+export function TransactionsImportButton({
+	href = "/transactions/import",
+}: {
+	href?: string;
+}) {
 	const router = useRouter();
 
 	return (
 		<Button
 			type="button"
 			variant="outline"
-			onClick={() => router.push("/transactions/import")}
+			onClick={() => {
+				router.push(href);
+				router.refresh();
+			}}
 			className={cn(
 				monthToolbarIconButtonClassName,
 				"gap-0 px-0 md:h-9 md:w-auto md:gap-2 md:border-dashed md:px-4 md:text-sm",

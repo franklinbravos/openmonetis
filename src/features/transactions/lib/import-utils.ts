@@ -15,16 +15,10 @@ export function isTruncatedDescriptionMatch(
 ): boolean {
 	if (!importKey || !storedKey) return false;
 	if (importKey === storedKey) return true;
-	if (
-		importKey.length >= minLength &&
-		storedKey.startsWith(importKey)
-	) {
+	if (importKey.length >= minLength && storedKey.startsWith(importKey)) {
 		return true;
 	}
-	if (
-		storedKey.length >= minLength &&
-		importKey.startsWith(storedKey)
-	) {
+	if (storedKey.length >= minLength && importKey.startsWith(storedKey)) {
 		return true;
 	}
 	return false;

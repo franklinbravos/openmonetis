@@ -18,17 +18,12 @@ describe("normalizeDescriptionKey", () => {
 describe("isTruncatedDescriptionMatch", () => {
 	it("aceita prefixo truncado", () => {
 		expect(
-			isTruncatedDescriptionMatch(
-				"mercado extra",
-				"mercado extra hiper",
-			),
+			isTruncatedDescriptionMatch("mercado extra", "mercado extra hiper"),
 		).toBe(true);
 	});
 
 	it("ignora chaves ausentes", () => {
-		expect(isTruncatedDescriptionMatch("mercado extra", undefined)).toBe(
-			false,
-		);
+		expect(isTruncatedDescriptionMatch("mercado extra", undefined)).toBe(false);
 		expect(isTruncatedDescriptionMatch("", "mercado extra")).toBe(false);
 	});
 });

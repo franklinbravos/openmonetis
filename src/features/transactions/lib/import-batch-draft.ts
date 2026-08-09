@@ -1,10 +1,31 @@
 import { z } from "zod";
 import type { ReviewRow } from "@/features/transactions/components/import/review-table";
+import type { ImportDuplicateValidation } from "@/features/transactions/lib/import-duplicate-match";
 import type {
 	ReviewInstallmentImport,
 	ReviewRecurrenceImport,
 } from "@/features/transactions/lib/import-installments";
 import { normalizeDescriptionKey } from "@/features/transactions/lib/import-utils";
+
+const importDuplicateMismatchDraftSchema = z.object({
+	field: z.enum(["date", "amount", "description", "type", "installment"]),
+	label: z.string(),
+	imported: z.string(),
+	existing: z.string(),
+});
+
+const importDuplicateValidationDraftSchema = z.object({
+	status: z.enum(["match", "mismatch", "link_suggestion"]),
+	matchScore: z.object({
+		date: z.boolean(),
+		amount: z.boolean(),
+		description: z.boolean(),
+	}),
+	mismatches: z.array(importDuplicateMismatchDraftSchema),
+	existingTransactionId: z.string().uuid(),
+	existingPayerId: z.string().uuid().nullable(),
+	existingCategoryId: z.string().uuid().nullable(),
+});
 
 const reviewInstallmentImportSchema = z.object({
 	enabled: z.boolean(),
@@ -23,18 +44,23 @@ const importBatchDraftRowSchema = z.object({
 	selected: z.boolean(),
 	categoryId: z.string().uuid().nullable(),
 	payerId: z.string().uuid().nullable(),
-	kind: z.enum(["transaction", "invoice_payment"]),
+	kind: z.enum(["transaction", "invoice_payment", "transfer"]),
 	invoicePaymentCardId: z.string().uuid().nullable(),
 	invoicePaymentPeriod: z
 		.string()
 		.regex(/^\d{4}-\d{2}$/)
 		.nullable(),
+	transferPeerAccountId: z.string().uuid().nullable().optional(),
 	installmentImport: reviewInstallmentImportSchema.nullable(),
 	recurrenceImport: reviewRecurrenceImportSchema.nullable(),
 	description: z.string().optional(),
 	transactionType: z.enum(["income", "expense"]).optional(),
 	isDuplicate: z.boolean().optional(),
 	reimported: z.boolean().optional(),
+	linked: z.boolean().optional(),
+	duplicateValidation: importDuplicateValidationDraftSchema
+		.nullable()
+		.optional(),
 });
 
 export const importBatchDraftDataSchema = z.object({
@@ -58,12 +84,15 @@ export function buildImportReviewRowKey(row: {
 	date: string;
 	amount: number;
 	description: string;
+	sourceDescription?: string;
 }): string {
 	if (row.externalId) {
 		return `fit:${row.externalId}`;
 	}
 
-	return `sem:${row.date}|${row.amount}|${normalizeDescriptionKey(row.description)}`;
+	const descriptionForKey = row.sourceDescription ?? row.description;
+
+	return `sem:${row.date}|${row.amount}|${normalizeDescriptionKey(descriptionForKey)}`;
 }
 
 export function buildImportBatchDraft(input: {
@@ -89,6 +118,7 @@ export function buildImportBatchDraft(input: {
 			kind: row.kind,
 			invoicePaymentCardId: row.invoicePaymentCardId,
 			invoicePaymentPeriod: row.invoicePaymentPeriod,
+			transferPeerAccountId: row.transferPeerAccountId,
 			installmentImport: row.installmentImport,
 			recurrenceImport: row.recurrenceImport,
 			description:
@@ -96,6 +126,8 @@ export function buildImportBatchDraft(input: {
 			transactionType: row.transactionType,
 			isDuplicate: row.isDuplicate,
 			reimported: row.reimported,
+			linked: row.linked ?? false,
+			duplicateValidation: row.linked ? null : row.duplicateValidation,
 		})),
 	};
 }
@@ -114,31 +146,55 @@ export function applyImportBatchDraftToRows(
 	const draftByKey = new Map(draftData.rows.map((row) => [row.key, row]));
 
 	return rows.map((row) => {
-		const draft = draftByKey.get(buildImportReviewRowKey(row));
+		const draft =
+			draftByKey.get(buildImportReviewRowKey(row)) ??
+			(row.description !== row.sourceDescription
+				? draftByKey.get(
+						buildImportReviewRowKey({
+							externalId: row.externalId,
+							date: row.date,
+							amount: row.amount,
+							description: row.description,
+						}),
+					)
+				: null);
 		if (!draft) return row;
 
-		const isDuplicate =
-			draft.isDuplicate === false
+		const linked = draft.linked ?? false;
+		const isDuplicate = linked
+			? false
+			: draft.isDuplicate === false
 				? false
 				: draft.isDuplicate === true
 					? row.isDuplicate
 					: row.isDuplicate;
 
+		const duplicateValidation: ImportDuplicateValidation | null = linked
+			? null
+			: draft.duplicateValidation != null
+				? draft.duplicateValidation
+				: isDuplicate
+					? row.duplicateValidation
+					: null;
+
 		return {
 			...row,
-			selected: draft.selected,
+			selected: linked ? false : draft.selected,
 			categoryId: draft.categoryId,
 			payerId: draft.payerId,
 			kind: draft.kind,
 			invoicePaymentCardId: draft.invoicePaymentCardId,
 			invoicePaymentPeriod: draft.invoicePaymentPeriod,
-			installmentImport: draft.installmentImport as ReviewInstallmentImport | null,
+			transferPeerAccountId: draft.transferPeerAccountId ?? null,
+			installmentImport:
+				draft.installmentImport as ReviewInstallmentImport | null,
 			recurrenceImport: draft.recurrenceImport as ReviewRecurrenceImport | null,
 			description: draft.description ?? row.description,
 			transactionType: draft.transactionType ?? row.transactionType,
 			isDuplicate,
-			duplicateValidation: isDuplicate ? row.duplicateValidation : null,
+			duplicateValidation,
 			reimported: draft.reimported ?? row.reimported,
+			linked,
 		};
 	});
 }

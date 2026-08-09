@@ -1,15 +1,14 @@
-import { and, desc, eq } from "drizzle-orm";
-import { cards, importBatches } from "@/db/schema";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import { cards, financialAccounts, importBatches } from "@/db/schema";
+import { parseImportBatchStatus } from "@/features/transactions/lib/import-batch-status";
 import type { ImportFileHistoryEntry } from "@/features/transactions/lib/import-file-duplicate";
-import {
-	parseImportBatchStatus,
-} from "@/features/transactions/lib/import-batch-status";
 import { db } from "@/shared/lib/db";
 
 type FetchImportBatchHistoryInput = {
 	userId: string;
 	cardId?: string | null;
 	invoicePeriod?: string | null;
+	accountId?: string | null;
 	limit?: number;
 };
 
@@ -21,6 +20,7 @@ export async function fetchImportBatchHistory({
 	userId,
 	cardId = null,
 	invoicePeriod = null,
+	accountId = null,
 	limit = 20,
 }: FetchImportBatchHistoryInput): Promise<ImportFileHistoryEntry[]> {
 	const filters = [eq(importBatches.userId, userId)];
@@ -31,6 +31,11 @@ export async function fetchImportBatchHistory({
 
 	if (invoicePeriod) {
 		filters.push(eq(importBatches.invoicePeriod, invoicePeriod));
+	}
+
+	if (accountId) {
+		filters.push(eq(importBatches.accountId, accountId));
+		filters.push(isNull(importBatches.cardId));
 	}
 
 	const rows = await db
@@ -46,9 +51,15 @@ export async function fetchImportBatchHistory({
 			cardId: importBatches.cardId,
 			invoicePeriod: importBatches.invoicePeriod,
 			cardName: cards.name,
+			accountId: importBatches.accountId,
+			accountName: financialAccounts.name,
 		})
 		.from(importBatches)
 		.leftJoin(cards, eq(importBatches.cardId, cards.id))
+		.leftJoin(
+			financialAccounts,
+			eq(importBatches.accountId, financialAccounts.id),
+		)
 		.where(and(...filters))
 		.orderBy(desc(importBatches.createdAt))
 		.limit(limit);
@@ -65,5 +76,7 @@ export async function fetchImportBatchHistory({
 		cardId: row.cardId,
 		invoicePeriod: row.invoicePeriod,
 		cardName: row.cardName,
+		accountId: row.accountId,
+		accountName: row.accountName,
 	}));
 }

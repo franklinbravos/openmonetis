@@ -63,7 +63,10 @@ export function buildInstallmentImportPreview(
 	currentInstallment: number,
 	installmentCount: number,
 ) {
-	const firstPeriod = getInstallmentBasePeriod(invoicePeriod, currentInstallment);
+	const firstPeriod = getInstallmentBasePeriod(
+		invoicePeriod,
+		currentInstallment,
+	);
 	const lastPeriod = addMonthsToPeriod(firstPeriod, installmentCount - 1);
 
 	return {
@@ -98,11 +101,15 @@ export function isValidRecurrenceImport(
 
 export function countImportRecords(
 	rows: Array<{
+		kind?: "transaction" | "invoice_payment" | "transfer";
 		installmentImport?: ReviewInstallmentImport | null;
 		recurrenceImport?: ReviewRecurrenceImport | null;
 	}>,
 ) {
 	return rows.reduce((total, row) => {
+		if (row.kind === "transfer") {
+			return total + 2;
+		}
 		if (isValidInstallmentImport(row.installmentImport)) {
 			return total + row.installmentImport.installmentCount;
 		}

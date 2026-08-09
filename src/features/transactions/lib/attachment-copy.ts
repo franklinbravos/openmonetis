@@ -3,7 +3,10 @@ import { eq } from "drizzle-orm";
 import { attachments, transactionAttachments, transactions } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import { getPayerAccess } from "@/shared/lib/payers/access";
-import { copyStorageObject, deleteS3Object } from "@/shared/lib/storage/presign";
+import {
+	copyStorageObject,
+	deleteS3Object,
+} from "@/shared/lib/storage/presign";
 
 const SAFE_EXTENSION = /^[a-z0-9]{1,10}$/i;
 

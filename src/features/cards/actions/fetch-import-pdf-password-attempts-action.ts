@@ -12,7 +12,9 @@ const schema = z.object({
 
 export async function fetchCardImportPdfPasswordAttemptsAction(
 	input: z.infer<typeof schema>,
-): Promise<{ success: true; attempts: string[] } | { success: false; error: string }> {
+): Promise<
+	{ success: true; attempts: string[] } | { success: false; error: string }
+> {
 	try {
 		const userId = await getUserId();
 		const { cardId } = schema.parse(input);

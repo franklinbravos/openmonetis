@@ -4,8 +4,8 @@ import crypto, { randomUUID } from "node:crypto";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { z } from "zod/v4";
 import { attachments, importBatches } from "@/db/schema";
-import { handleActionError } from "@/shared/lib/actions/helpers";
 import { IMPORT_BATCH_STATUS } from "@/features/transactions/lib/import-batch-status";
+import { handleActionError } from "@/shared/lib/actions/helpers";
 import { MAX_FILE_SIZE } from "@/shared/lib/attachments/config";
 import { getUser, getUserId } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
@@ -13,17 +13,17 @@ import {
 	isAllowedImportSourceMimeType,
 	resolveImportFileMimeType,
 } from "@/shared/lib/import/source-mime";
+import { uuidSchema } from "@/shared/lib/schemas/common";
+import {
+	getStorageConfigurationErrorMessage,
+	isObjectStorageConfigured,
+} from "@/shared/lib/storage/config";
 import {
 	createPresignedGetUrl,
 	createPresignedPutUrl,
 	headS3Object,
 	putS3Object,
 } from "@/shared/lib/storage/presign";
-import {
-	getStorageConfigurationErrorMessage,
-	isObjectStorageConfigured,
-} from "@/shared/lib/storage/config";
-import { uuidSchema } from "@/shared/lib/schemas/common";
 
 const UPLOAD_TOKEN_EXPIRY_SECONDS = 10 * 60;
 
@@ -77,11 +77,9 @@ type PresignResult =
 	| { success: false; error: string };
 
 function getUploadTokenSecret(): string {
-	const secret = process.env.BETTER_AUTH_SECRET;
+	const secret = process.env.APP_SECRET;
 	if (!secret) {
-		throw new Error(
-			"BETTER_AUTH_SECRET is required. Set it in your .env file.",
-		);
+		throw new Error("APP_SECRET is required. Set it in your .env file.");
 	}
 	return secret;
 }
@@ -408,7 +406,10 @@ export async function confirmImportSourceUploadAction(
 export async function getImportSourceDownloadUrlAction(input: {
 	cardId: string;
 	invoicePeriod: string;
-}): Promise<{ success: true; url: string; fileName: string } | { success: false; error: string }> {
+}): Promise<
+	| { success: true; url: string; fileName: string }
+	| { success: false; error: string }
+> {
 	try {
 		const userId = await getUserId();
 		const data = downloadSchema.parse(input);

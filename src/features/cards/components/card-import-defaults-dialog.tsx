@@ -38,7 +38,9 @@ export function CardImportDefaultsDialog({
 	const router = useRouter();
 	const [open, setOpen] = useState(false);
 	const [isPending, startTransition] = useTransition();
-	const [rule, setRule] = useState<CardImportPdfPasswordRule>(importPdfPasswordRule);
+	const [rule, setRule] = useState<CardImportPdfPasswordRule>(
+		importPdfPasswordRule,
+	);
 	const [secret, setSecret] = useState("");
 
 	const handleOpenChange = (nextOpen: boolean) => {
@@ -91,7 +93,11 @@ export function CardImportDefaultsDialog({
 				</DialogHeader>
 
 				<CardImportPdfPasswordFields
-					rule={isCardImportPdfPasswordRule(rule) ? rule : CARD_IMPORT_PDF_PASSWORD_RULES.none}
+					rule={
+						isCardImportPdfPasswordRule(rule)
+							? rule
+							: CARD_IMPORT_PDF_PASSWORD_RULES.none
+					}
 					secret={secret}
 					hasStoredSecret={hasStoredImportPdfPasswordSecret}
 					onRuleChange={setRule}

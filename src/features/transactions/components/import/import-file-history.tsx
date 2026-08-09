@@ -14,13 +14,13 @@ import {
 	deleteImportBatchAction,
 	getImportBatchDownloadUrlAction,
 } from "@/features/transactions/actions/import-batch-history-action";
-import type { ImportFileHistoryEntry } from "@/features/transactions/lib/import-file-duplicate";
 import {
 	canDeleteImportBatch,
 	isImportBatchDraft,
 	isImportBatchImported,
 } from "@/features/transactions/lib/import-batch-status";
 import { buildImportContinueHref } from "@/features/transactions/lib/import-continue-href";
+import type { ImportFileHistoryEntry } from "@/features/transactions/lib/import-file-duplicate";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
@@ -88,13 +88,19 @@ function ImportFileHistoryBadges({ entry }: { entry: ImportFileHistoryEntry }) {
 	);
 }
 
-function ImportFileHistoryContextLine({ entry }: { entry: ImportFileHistoryEntry }) {
+function ImportFileHistoryContextLine({
+	entry,
+}: {
+	entry: ImportFileHistoryEntry;
+}) {
 	return (
 		<>
 			{formatDateTime(entry.createdAt)}
 			{entry.cardName && entry.invoicePeriod
 				? ` · ${entry.cardName} · ${displayPeriod(entry.invoicePeriod)}`
-				: null}
+				: entry.accountName
+					? ` · ${entry.accountName}`
+					: null}
 			{formatFileSize(entry.sourceFileSize)
 				? ` · ${formatFileSize(entry.sourceFileSize)}`
 				: null}
@@ -102,7 +108,11 @@ function ImportFileHistoryContextLine({ entry }: { entry: ImportFileHistoryEntry
 	);
 }
 
-function ImportFileHistoryStatusText({ entry }: { entry: ImportFileHistoryEntry }) {
+function ImportFileHistoryStatusText({
+	entry,
+}: {
+	entry: ImportFileHistoryEntry;
+}) {
 	if (isImportBatchImported(entry.status)) {
 		return (
 			<>
@@ -139,13 +149,13 @@ function ImportFileHistoryActions({
 	const [isPending, startTransition] = useTransition();
 	const continueLabel = isImportBatchDraft(entry.status)
 		? "Continuar"
-		: "Reprocessar";
+		: entry.hasAttachment
+			? "Reprocessar"
+			: "Reenviar arquivo";
 	const isResumingThisEntry = resumingBatchId === entry.id;
 	const isResumingOtherEntry =
 		resumingBatchId != null && resumingBatchId !== entry.id;
-	const canResumeOrReprocess =
-		!isImportBatchImported(entry.status) &&
-		(isImportBatchDraft(entry.status) || entry.hasAttachment);
+	const canResumeOrReprocess = !isImportBatchImported(entry.status);
 	const canDelete = allowDelete && canDeleteImportBatch(entry.status);
 
 	return (
@@ -242,7 +252,10 @@ function ImportFileHistoryCardRow({
 		<div className="flex items-start gap-3 rounded-lg border bg-muted/20 px-3 py-2.5 md:hidden">
 			<div className="min-w-0 flex-1 space-y-1">
 				<div className="flex flex-wrap items-center gap-2">
-					<p className="truncate font-medium text-sm" title={entry.sourceFileName}>
+					<p
+						className="truncate font-medium text-sm"
+						title={entry.sourceFileName}
+					>
 						{entry.sourceFileName}
 					</p>
 					<ImportFileHistoryBadges entry={entry} />
@@ -283,7 +296,10 @@ function ImportFileHistoryTableRow({
 		<TableRow>
 			<TableCell className="max-w-[280px]">
 				<div className="flex min-w-0 flex-wrap items-center gap-2">
-					<p className="truncate font-medium text-sm" title={entry.sourceFileName}>
+					<p
+						className="truncate font-medium text-sm"
+						title={entry.sourceFileName}
+					>
 						{entry.sourceFileName}
 					</p>
 					<ImportFileHistoryBadges entry={entry} />
@@ -349,7 +365,9 @@ export function ImportFileHistory({
 		if (!emptyMessage) return null;
 
 		return (
-			<p className={cn("text-muted-foreground text-sm", className)}>{emptyMessage}</p>
+			<p className={cn("text-muted-foreground text-sm", className)}>
+				{emptyMessage}
+			</p>
 		);
 	}
 
@@ -360,77 +378,80 @@ export function ImportFileHistory({
 	return (
 		<>
 			<section className={cn("space-y-3", className)}>
-			{showHeader ? (
-				<div className="space-y-1">
-					<div className="flex items-center gap-2">
-						<RiHistoryLine className="size-4 text-muted-foreground" aria-hidden />
-						<h3 className="font-medium text-sm">{title}</h3>
-					</div>
-					{!compact ? (
-						<p className="text-muted-foreground text-xs leading-relaxed">
-							{description}
-						</p>
-					) : null}
-				</div>
-			) : null}
-
-			<div className="space-y-2 md:hidden">
-				{visibleEntries.map((entry) => (
-					<ImportFileHistoryCardRow
-						key={entry.id}
-						entry={entry}
-						onContinueImport={onContinueImport}
-						resumingBatchId={resumingBatchId}
-						allowDelete={allowDelete}
-						onRequestDelete={setPendingDeleteEntry}
-					/>
-				))}
-			</div>
-
-			<div className="hidden rounded-lg border md:block">
-				<Table>
-					<TableHeader>
-						<TableRow>
-							<TableHead>Arquivo</TableHead>
-							<TableHead>Enviado em</TableHead>
-							<TableHead>Status</TableHead>
-							<TableHead className="text-right">Ações</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{visibleEntries.map((entry) => (
-							<ImportFileHistoryTableRow
-								key={entry.id}
-								entry={entry}
-								onContinueImport={onContinueImport}
-								resumingBatchId={resumingBatchId}
-								allowDelete={allowDelete}
-								onRequestDelete={setPendingDeleteEntry}
+				{showHeader ? (
+					<div className="space-y-1">
+						<div className="flex items-center gap-2">
+							<RiHistoryLine
+								className="size-4 text-muted-foreground"
+								aria-hidden
 							/>
-						))}
-					</TableBody>
-				</Table>
-			</div>
+							<h3 className="font-medium text-sm">{title}</h3>
+						</div>
+						{!compact ? (
+							<p className="text-muted-foreground text-xs leading-relaxed">
+								{description}
+							</p>
+						) : null}
+					</div>
+				) : null}
 
-			{showViewAllLink ? (
-				<p className="text-muted-foreground text-xs">
-					<Link
-						href={viewAllHref ?? "/transactions/import/history"}
-						className="underline-offset-2 hover:text-foreground hover:underline"
-					>
-						{viewAllLabel}
-					</Link>
-					{limit != null && limit > 0 && entries.length > limit
-						? ` · exibindo ${limit} de ${entries.length}`
-						: entries.length > 0
-							? ` · ${entries.length} registro${entries.length !== 1 ? "s" : ""}`
-							: null}
-				</p>
-			) : limit != null && limit > 0 && entries.length > limit ? (
-				<p className="text-muted-foreground text-xs">
-					Exibindo {limit} de {entries.length} registros.
-				</p>
-			) : null}
+				<div className="space-y-2 md:hidden">
+					{visibleEntries.map((entry) => (
+						<ImportFileHistoryCardRow
+							key={entry.id}
+							entry={entry}
+							onContinueImport={onContinueImport}
+							resumingBatchId={resumingBatchId}
+							allowDelete={allowDelete}
+							onRequestDelete={setPendingDeleteEntry}
+						/>
+					))}
+				</div>
+
+				<div className="hidden rounded-lg border md:block">
+					<Table>
+						<TableHeader>
+							<TableRow>
+								<TableHead>Arquivo</TableHead>
+								<TableHead>Enviado em</TableHead>
+								<TableHead>Status</TableHead>
+								<TableHead className="text-right">Ações</TableHead>
+							</TableRow>
+						</TableHeader>
+						<TableBody>
+							{visibleEntries.map((entry) => (
+								<ImportFileHistoryTableRow
+									key={entry.id}
+									entry={entry}
+									onContinueImport={onContinueImport}
+									resumingBatchId={resumingBatchId}
+									allowDelete={allowDelete}
+									onRequestDelete={setPendingDeleteEntry}
+								/>
+							))}
+						</TableBody>
+					</Table>
+				</div>
+
+				{showViewAllLink ? (
+					<p className="text-muted-foreground text-xs">
+						<Link
+							href={viewAllHref ?? "/transactions/import/history"}
+							className="underline-offset-2 hover:text-foreground hover:underline"
+						>
+							{viewAllLabel}
+						</Link>
+						{limit != null && limit > 0 && entries.length > limit
+							? ` · exibindo ${limit} de ${entries.length}`
+							: entries.length > 0
+								? ` · ${entries.length} registro${entries.length !== 1 ? "s" : ""}`
+								: null}
+					</p>
+				) : limit != null && limit > 0 && entries.length > limit ? (
+					<p className="text-muted-foreground text-xs">
+						Exibindo {limit} de {entries.length} registros.
+					</p>
+				) : null}
 			</section>
 
 			<ConfirmActionDialog

@@ -107,9 +107,7 @@ export function ImportPdfPasswordDialog({
 								}
 							}}
 						/>
-						{error ? (
-							<p className="text-destructive text-sm">{error}</p>
-						) : null}
+						{error ? <p className="text-destructive text-sm">{error}</p> : null}
 					</div>
 
 					{linkedCardId ? (
@@ -119,9 +117,7 @@ export function ImportPdfPasswordDialog({
 									id="import-pdf-save-to-card"
 									checked={saveToCard}
 									disabled={isPending}
-									onCheckedChange={(checked) =>
-										setSaveToCard(checked === true)
-									}
+									onCheckedChange={(checked) => setSaveToCard(checked === true)}
 								/>
 								<div className="space-y-1">
 									<Label

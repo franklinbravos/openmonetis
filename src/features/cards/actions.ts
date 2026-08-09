@@ -8,7 +8,13 @@ import {
 	handleActionError,
 	revalidateForEntity,
 } from "@/shared/lib/actions/helpers";
+import { encryptSecret } from "@/shared/lib/ai/secret-encryption";
 import { getUser } from "@/shared/lib/auth/server";
+import {
+	CARD_IMPORT_PDF_PASSWORD_RULES,
+	type CardImportPdfPasswordRule,
+	validateCardImportPdfPasswordInput,
+} from "@/shared/lib/cards/import-pdf-password";
 import { db } from "@/shared/lib/db";
 import { loadLogoOptions } from "@/shared/lib/logo/options";
 import {
@@ -18,12 +24,6 @@ import {
 } from "@/shared/lib/schemas/common";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 import { normalizeFilePath } from "@/shared/utils/string";
-import {
-	CARD_IMPORT_PDF_PASSWORD_RULES,
-	type CardImportPdfPasswordRule,
-	validateCardImportPdfPasswordInput,
-} from "@/shared/lib/cards/import-pdf-password";
-import { encryptSecret } from "@/shared/lib/ai/secret-encryption";
 
 const importPdfPasswordRuleSchema = z.enum([
 	CARD_IMPORT_PDF_PASSWORD_RULES.none,
@@ -49,9 +49,7 @@ const cardBaseSchema = z.object({
 	closingDay: dayOfMonthSchema,
 	dueDay: dayOfMonthSchema,
 	note: noteSchema,
-	limit: z
-		.number({ message: "Limite inválido." })
-		.min(0, "Limite inválido."),
+	limit: z.number({ message: "Limite inválido." }).min(0, "Limite inválido."),
 	logo: z
 		.string({ message: "Selecione um logo." })
 		.trim()
@@ -103,7 +101,10 @@ function resolveImportPdfPasswordPersistence(
 		importPdfPasswordSecret?: string | null;
 	},
 	existingSecret: string | null,
-): { importPdfPasswordRule: string | null; importPdfPasswordSecret: string | null } {
+): {
+	importPdfPasswordRule: string | null;
+	importPdfPasswordSecret: string | null;
+} {
 	const hasStoredSecret = Boolean(existingSecret);
 	const validation = validateCardImportPdfPasswordInput(
 		input.importPdfPasswordRule,

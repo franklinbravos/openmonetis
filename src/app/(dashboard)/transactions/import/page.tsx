@@ -1,8 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { RiUploadCloud2Line } from "@remixicon/react";
 import type { Metadata } from "next";
 import { connection } from "next/server";
+import { resolveCardImportPdfPasswordAttempts } from "@/features/cards/lib/resolve-import-pdf-password";
 import { ImportPage } from "@/features/transactions/components/import/import-page";
-import { fetchImportBatchHistory } from "@/features/transactions/queries/import-batch-history";
 import {
 	buildOptionSets,
 	buildSluggedFilters,
@@ -11,7 +12,7 @@ import {
 } from "@/features/transactions/lib/page-helpers";
 import type { InvoiceImportContext } from "@/features/transactions/lib/validate-invoice-import-context";
 import { fetchTransactionFilterSources } from "@/features/transactions/queries";
-import { resolveCardImportPdfPasswordAttempts } from "@/features/cards/lib/resolve-import-pdf-password";
+import { fetchImportBatchHistory } from "@/features/transactions/queries/import-batch-history";
 import PageDescription from "@/shared/components/page-description";
 import { getUserId } from "@/shared/lib/auth/server";
 import { displayPeriod, parsePeriod } from "@/shared/utils/period";
@@ -24,6 +25,7 @@ type PageProps = {
 
 function resolveImportPrefill(searchParams: ResolvedSearchParams | undefined) {
 	const cardId = getSingleParam(searchParams ?? {}, "cartao");
+	const accountId = getSingleParam(searchParams ?? {}, "conta");
 	const periodRaw = getSingleParam(searchParams ?? {}, "periodo");
 
 	let invoicePeriod: string | null = null;
@@ -38,6 +40,7 @@ function resolveImportPrefill(searchParams: ResolvedSearchParams | undefined) {
 
 	return {
 		initialCardId: cardId,
+		initialAccountId: accountId,
 		initialInvoicePeriod: invoicePeriod,
 		initialResumeBatchId: getSingleParam(searchParams ?? {}, "lote"),
 	};
@@ -47,12 +50,22 @@ export async function generateMetadata({
 	searchParams,
 }: PageProps): Promise<Metadata> {
 	const resolvedSearchParams = searchParams ? await searchParams : undefined;
-	const { initialCardId, initialInvoicePeriod, initialResumeBatchId } =
-		resolveImportPrefill(resolvedSearchParams);
+	const {
+		initialCardId,
+		initialAccountId,
+		initialInvoicePeriod,
+		initialResumeBatchId,
+	} = resolveImportPrefill(resolvedSearchParams);
 
 	if (initialCardId && initialInvoicePeriod) {
 		return {
 			title: `Importar fatura · ${displayPeriod(initialInvoicePeriod)}`,
+		};
+	}
+
+	if (initialAccountId) {
+		return {
+			title: "Importar extrato",
 		};
 	}
 
@@ -65,8 +78,12 @@ export default async function Page({ searchParams }: PageProps) {
 	await connection();
 	const userId = await getUserId();
 	const resolvedSearchParams = searchParams ? await searchParams : undefined;
-	const { initialCardId, initialInvoicePeriod, initialResumeBatchId } =
-		resolveImportPrefill(resolvedSearchParams);
+	const {
+		initialCardId,
+		initialAccountId,
+		initialInvoicePeriod,
+		initialResumeBatchId,
+	} = resolveImportPrefill(resolvedSearchParams);
 	const filterSources = await fetchTransactionFilterSources(userId);
 	const sluggedFilters = buildSluggedFilters(filterSources);
 	const {
@@ -85,6 +102,16 @@ export default async function Page({ searchParams }: PageProps) {
 		cardOptions.some((option) => option.value === initialCardId)
 			? initialCardId
 			: null;
+
+	const validAccountId =
+		initialAccountId &&
+		accountOptions.some((option) => option.value === initialAccountId)
+			? initialAccountId
+			: null;
+
+	const accountName =
+		accountOptions.find((option) => option.value === validAccountId)?.label ??
+		"Conta";
 
 	const initialPaymentAccountId = validCardId
 		? (filterSources.cardRows.find((card) => card.id === validCardId)
@@ -110,10 +137,11 @@ export default async function Page({ searchParams }: PageProps) {
 		userId,
 		cardId: validCardId,
 		invoicePeriod: validCardId ? initialInvoicePeriod : null,
+		accountId: validAccountId && !validCardId ? validAccountId : null,
 		limit: 20,
 	});
 
-	const importSessionKey = `${validCardId ?? ""}|${initialInvoicePeriod ?? ""}`;
+	const importMountKey = initialResumeBatchId ?? randomUUID();
 
 	return (
 		<main className="flex flex-col gap-6">
@@ -121,6 +149,12 @@ export default async function Page({ searchParams }: PageProps) {
 				<PageDescription
 					icon={<RiUploadCloud2Line />}
 					title="Importar fatura"
+				/>
+			) : validAccountId ? (
+				<PageDescription
+					icon={<RiUploadCloud2Line />}
+					title="Importar extrato"
+					subtitle={`Importe lançamentos do extrato da conta ${accountName}.`}
 				/>
 			) : (
 				<PageDescription
@@ -131,14 +165,18 @@ export default async function Page({ searchParams }: PageProps) {
 			)}
 
 			<ImportPage
-				key={importSessionKey}
+				key={importMountKey}
+				importMountKey={importMountKey}
 				payerOptions={payerOptions}
 				accountOptions={accountOptions}
 				cardOptions={cardOptions}
 				categoryOptions={categoryOptions}
 				defaultPayerId={defaultPayerId}
 				initialCardId={validCardId}
-				initialInvoicePeriod={validCardId ? initialInvoicePeriod : null}
+				initialAccountId={validAccountId}
+				initialInvoicePeriod={
+					validCardId || validAccountId ? initialInvoicePeriod : null
+				}
 				initialPaymentAccountId={initialPaymentAccountId}
 				invoiceContext={invoiceContext}
 				linkedCardId={validCardId}

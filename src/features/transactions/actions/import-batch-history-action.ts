@@ -5,17 +5,18 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod/v4";
 import { attachments, importBatches, transactions } from "@/db/schema";
-import { fetchImportBatchHistory } from "@/features/transactions/queries/import-batch-history";
-import type { ImportFileHistoryEntry } from "@/features/transactions/lib/import-file-duplicate";
 import {
+	type ImportBatchDraftData,
 	importBatchDraftDataSchema,
 	parseImportBatchDraftData,
-	type ImportBatchDraftData,
 } from "@/features/transactions/lib/import-batch-draft";
 import { IMPORT_BATCH_STATUS } from "@/features/transactions/lib/import-batch-status";
+import type { ImportFileHistoryEntry } from "@/features/transactions/lib/import-file-duplicate";
+import { fetchImportBatchHistory } from "@/features/transactions/queries/import-batch-history";
 import { handleActionError } from "@/shared/lib/actions/helpers";
 import { getUserId } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import { uuidSchema } from "@/shared/lib/schemas/common";
 import {
 	canInlineDownloadS3Object,
 	createPresignedGetUrl,
@@ -23,7 +24,6 @@ import {
 	getS3ObjectBuffer,
 	headS3Object,
 } from "@/shared/lib/storage/presign";
-import { uuidSchema } from "@/shared/lib/schemas/common";
 
 const historySchema = z.object({
 	cardId: uuidSchema("Cartão").nullable().optional(),
@@ -32,6 +32,7 @@ const historySchema = z.object({
 		.regex(/^\d{4}-\d{2}$/)
 		.nullable()
 		.optional(),
+	accountId: uuidSchema("Conta").nullable().optional(),
 	limit: z.number().int().min(1).max(100).optional(),
 });
 
@@ -170,7 +171,10 @@ export async function saveImportBatchDraftAction(
 				accountId: data.accountId ?? null,
 			})
 			.where(
-				and(eq(importBatches.userId, userId), eq(importBatches.id, data.batchId)),
+				and(
+					eq(importBatches.userId, userId),
+					eq(importBatches.id, data.batchId),
+				),
 			);
 
 		revalidatePath("/transactions/import");
@@ -183,10 +187,7 @@ export async function saveImportBatchDraftAction(
 	} catch (error) {
 		console.error("[saveImportBatchDraftAction]", error);
 
-		if (
-			error instanceof Error &&
-			error.message.includes("dados_rascunho")
-		) {
+		if (error instanceof Error && error.message.includes("dados_rascunho")) {
 			return {
 				success: false,
 				error:
@@ -210,6 +211,7 @@ export async function fetchImportBatchHistoryAction(
 		userId,
 		cardId: data.cardId ?? null,
 		invoicePeriod: data.invoicePeriod ?? null,
+		accountId: data.accountId ?? null,
 		limit: data.limit ?? 20,
 	});
 }
@@ -229,6 +231,57 @@ const saveDraftSchema = z.object({
 const resumeSchema = z.object({
 	batchId: z.string().uuid(),
 });
+
+export async function getImportBatchDraftAction(input: {
+	batchId: string;
+}): Promise<
+	| { success: true; draftData: ImportBatchDraftData | null }
+	| { success: false; error: string }
+> {
+	try {
+		const userId = await getUserId();
+		const data = resumeSchema.parse(input);
+
+		const batch = await db.query.importBatches.findFirst({
+			columns: {
+				id: true,
+				status: true,
+				draftData: true,
+			},
+			where: and(
+				eq(importBatches.userId, userId),
+				eq(importBatches.id, data.batchId),
+			),
+		});
+
+		if (!batch) {
+			return { success: false, error: "Importação não encontrada." };
+		}
+
+		if (batch.status === IMPORT_BATCH_STATUS.IMPORTED) {
+			return { success: false, error: "Esta importação já foi concluída." };
+		}
+
+		return {
+			success: true,
+			draftData: parseImportBatchDraftData(batch.draftData),
+		};
+	} catch (error) {
+		console.error("[getImportBatchDraftAction]", error);
+
+		if (error instanceof Error && error.message.includes("dados_rascunho")) {
+			return {
+				success: false,
+				error:
+					"Banco desatualizado. Execute pnpm run db:push e tente novamente.",
+			};
+		}
+
+		const result = handleActionError(error);
+		if (!result.success) return { success: false, error: result.error };
+		return { success: false, error: "Erro inesperado." };
+	}
+}
 
 export async function getImportBatchResumeAction(input: {
 	batchId: string;
@@ -294,13 +347,15 @@ export async function getImportBatchResumeAction(input: {
 				if (canInlineDownloadS3Object(objectMetadata.contentLength)) {
 					const fileBuffer = await getS3ObjectBuffer(fileKey);
 					fileContentBase64 = fileBuffer.toString("base64");
-					mimeType =
-						objectMetadata.contentType ?? "application/octet-stream";
+					mimeType = objectMetadata.contentType ?? "application/octet-stream";
 				} else {
 					downloadUrl = await createPresignedGetUrl(fileKey);
 				}
 			} catch (error) {
-				console.error("[getImportBatchResumeAction] storage read failed", error);
+				console.error(
+					"[getImportBatchResumeAction] storage read failed",
+					error,
+				);
 			}
 		}
 
@@ -319,10 +374,7 @@ export async function getImportBatchResumeAction(input: {
 	} catch (error) {
 		console.error("[getImportBatchResumeAction]", error);
 
-		if (
-			error instanceof Error &&
-			error.message.includes("dados_rascunho")
-		) {
+		if (error instanceof Error && error.message.includes("dados_rascunho")) {
 			return {
 				success: false,
 				error:
@@ -339,7 +391,8 @@ export async function getImportBatchResumeAction(input: {
 export async function getImportBatchDownloadUrlAction(input: {
 	batchId: string;
 }): Promise<
-	{ success: true; url: string; fileName: string } | { success: false; error: string }
+	| { success: true; url: string; fileName: string }
+	| { success: false; error: string }
 > {
 	const userId = await getUserId();
 	const data = downloadSchema.parse(input);
@@ -422,13 +475,18 @@ export async function deleteImportBatchAction(input: {
 		}
 
 		if (batch.attachmentId) {
-			await db.delete(attachments).where(eq(attachments.id, batch.attachmentId));
+			await db
+				.delete(attachments)
+				.where(eq(attachments.id, batch.attachmentId));
 		}
 
 		await db
 			.delete(importBatches)
 			.where(
-				and(eq(importBatches.userId, userId), eq(importBatches.id, data.batchId)),
+				and(
+					eq(importBatches.userId, userId),
+					eq(importBatches.id, data.batchId),
+				),
 			);
 
 		revalidatePath("/transactions/import");

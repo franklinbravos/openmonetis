@@ -1,16 +1,18 @@
 "use server";
 
-import { and, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { z } from "zod";
 import {
+	attachments,
 	cards,
 	categories,
+	financialAccounts,
 	importBatches,
 	invoices,
 	transactions,
-	attachments,
 } from "@/db/schema";
+import { updateInvoicePaymentStatusAction } from "@/features/invoices/actions";
 import {
 	buildTransactionRecords,
 	fetchOwnedCategoryIds,
@@ -19,17 +21,24 @@ import {
 	validateCartaoOwnership,
 	validateContaOwnership,
 } from "@/features/transactions/actions/core";
+import { IMPORT_BATCH_STATUS } from "@/features/transactions/lib/import-batch-status";
 import { getInstallmentBasePeriod } from "@/features/transactions/lib/import-installments";
-import { updateInvoicePaymentStatusAction } from "@/features/invoices/actions";
-import { revalidateForEntity } from "@/shared/lib/actions/helpers";
 import { buildInvoicePaymentNote } from "@/shared/lib/accounts/constants";
+import { revalidateForEntity } from "@/shared/lib/actions/helpers";
 import { getUserId } from "@/shared/lib/auth/server";
 import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants";
 import { db } from "@/shared/lib/db";
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
-import { deleteS3Object } from "@/shared/lib/storage/presign";
+import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { uuidSchema } from "@/shared/lib/schemas/common";
-import { IMPORT_BATCH_STATUS } from "@/features/transactions/lib/import-batch-status";
+import { deleteS3Object } from "@/shared/lib/storage/presign";
+import {
+	TRANSFER_CATEGORY_NAME,
+	TRANSFER_CONDITION,
+	TRANSFER_ESTABLISHMENT_ENTRADA,
+	TRANSFER_ESTABLISHMENT_SAIDA,
+	TRANSFER_PAYMENT_METHOD,
+} from "@/shared/lib/transfers/constants";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 import { parseLocalDateString } from "@/shared/utils/date";
 
@@ -64,57 +73,81 @@ const importRowSchema = z
 		transactionType: z.enum(["income", "expense"]),
 		categoryId: uuidSchema("Category").nullable().optional(),
 		payerId: uuidSchema("Payer").nullable().optional(),
-		kind: z.enum(["transaction", "invoice_payment"]).default("transaction"),
+		kind: z
+			.enum(["transaction", "invoice_payment", "transfer"])
+			.default("transaction"),
 		invoicePaymentCardId: uuidSchema("Cartão").nullable().optional(),
 		invoicePaymentPeriod: z
 			.string()
 			.regex(/^\d{4}-\d{2}$/, "Período inválido.")
 			.nullable()
 			.optional(),
+		transferPeerAccountId: uuidSchema("Conta").nullable().optional(),
 		installmentImport: installmentImportSchema.nullable().optional(),
 		recurrenceImport: recurrenceImportSchema.nullable().optional(),
 	})
 	.superRefine((row, ctx) => {
-		if (row.kind !== "invoice_payment") return;
+		if (row.kind === "invoice_payment") {
+			if (!row.invoicePaymentCardId) {
+				ctx.addIssue({
+					code: "custom",
+					message: "Cartão obrigatório para pagamento de fatura.",
+					path: ["invoicePaymentCardId"],
+				});
+			}
 
-		if (!row.invoicePaymentCardId) {
-			ctx.addIssue({
-				code: "custom",
-				message: "Cartão obrigatório para pagamento de fatura.",
-				path: ["invoicePaymentCardId"],
-			});
+			if (!row.invoicePaymentPeriod) {
+				ctx.addIssue({
+					code: "custom",
+					message: "Período da fatura obrigatório.",
+					path: ["invoicePaymentPeriod"],
+				});
+			}
+			return;
 		}
 
-		if (!row.invoicePaymentPeriod) {
+		if (row.kind !== "transfer") return;
+
+		if (!row.transferPeerAccountId) {
 			ctx.addIssue({
 				code: "custom",
-				message: "Período da fatura obrigatório.",
-				path: ["invoicePaymentPeriod"],
+				message: "Conta obrigatória para transferência.",
+				path: ["transferPeerAccountId"],
 			});
 		}
 	});
 
-const importSchema = z.object({
-	rows: z.array(importRowSchema).min(1, "Selecione ao menos uma transação."),
-	payerId: uuidSchema("Payer").nullable().optional(),
-	accountId: uuidSchema("FinancialAccount").nullable().optional(),
-	cardId: uuidSchema("Cartão").nullable().optional(),
-	paymentMethod: z.string().min(1),
-	invoicePeriod: z
-		.string()
-		.regex(/^\d{4}-\d{2}$/, "Período inválido.")
-		.nullable()
-		.optional(),
-	payInvoice: z.boolean().optional(),
-	paymentDate: z
-		.string()
-		.regex(/^\d{4}-\d{2}-\d{2}$/, "Data de pagamento inválida.")
-		.optional(),
-	paymentAccountId: uuidSchema("FinancialAccount").nullable().optional(),
-	sourceFileName: z.string().trim().min(1).optional(),
-	sourceFileSize: z.number().int().positive().optional(),
-	importBatchId: z.string().uuid().optional(),
-});
+const importSchema = z
+	.object({
+		rows: z.array(importRowSchema),
+		payerId: uuidSchema("Payer").nullable().optional(),
+		accountId: uuidSchema("FinancialAccount").nullable().optional(),
+		cardId: uuidSchema("Cartão").nullable().optional(),
+		paymentMethod: z.string().min(1),
+		invoicePeriod: z
+			.string()
+			.regex(/^\d{4}-\d{2}$/, "Período inválido.")
+			.nullable()
+			.optional(),
+		payInvoice: z.boolean().optional(),
+		paymentDate: z
+			.string()
+			.regex(/^\d{4}-\d{2}-\d{2}$/, "Data de pagamento inválida.")
+			.optional(),
+		paymentAccountId: uuidSchema("FinancialAccount").nullable().optional(),
+		sourceFileName: z.string().trim().min(1).optional(),
+		sourceFileSize: z.number().int().positive().optional(),
+		importBatchId: z.string().uuid().optional(),
+	})
+	.superRefine((data, ctx) => {
+		if (data.rows.length === 0 && !data.payInvoice) {
+			ctx.addIssue({
+				code: "custom",
+				message: "Selecione ao menos uma transação.",
+				path: ["rows"],
+			});
+		}
+	});
 
 type ImportInput = z.infer<typeof importSchema>;
 
@@ -221,6 +254,155 @@ export async function fetchInvoicePeriodDuplicateSnapshots(
 		);
 }
 
+export async function fetchAccountImportDuplicateSnapshots(
+	accountId: string,
+	dateFrom: string,
+	dateTo: string,
+) {
+	const userId = await getUserId();
+	const fromDate = parseLocalDateString(dateFrom);
+	const toDate = parseLocalDateString(dateTo);
+
+	return db
+		.select({
+			id: transactions.id,
+			ofxFitId: transactions.ofxFitId,
+			name: transactions.name,
+			amount: transactions.amount,
+			purchaseDate: transactions.purchaseDate,
+			transactionType: transactions.transactionType,
+			currentInstallment: transactions.currentInstallment,
+			installmentCount: transactions.installmentCount,
+			payerId: transactions.payerId,
+			categoryId: transactions.categoryId,
+		})
+		.from(transactions)
+		.where(
+			and(
+				eq(transactions.userId, userId),
+				eq(transactions.accountId, accountId),
+				gte(transactions.purchaseDate, fromDate),
+				lte(transactions.purchaseDate, toDate),
+			),
+		)
+		.then((rows) =>
+			rows.map((row) => ({
+				id: row.id,
+				ofxFitId: row.ofxFitId,
+				name: row.name,
+				amount: row.amount,
+				purchaseDate: row.purchaseDate,
+				transactionType: row.transactionType,
+				currentInstallment: row.currentInstallment,
+				installmentCount: row.installmentCount,
+				payerId: row.payerId,
+				categoryId: row.categoryId,
+			})),
+		);
+}
+
+const linkImportSchema = z.object({
+	existingTransactionId: uuidSchema("Lançamento"),
+	importedDescription: z.string().trim().min(1, "Descrição obrigatória."),
+	externalId: z.string().nullable().optional(),
+	mergeDescription: z.enum(["import", "existing"]),
+	fallbackPayerId: uuidSchema("Pessoa").nullable().optional(),
+});
+
+function appendReplacedNameToNote(
+	existingNote: string | null,
+	label: string,
+	replacedName: string,
+): string | null {
+	const trimmed = replacedName.trim();
+	if (!trimmed) return existingNote;
+
+	const line = `${label}: ${trimmed}`;
+	return existingNote ? `${existingNote}\n${line}` : line;
+}
+
+export async function linkImportToExistingAction(
+	input: z.infer<typeof linkImportSchema>,
+): Promise<{ success: true } | { success: false; error: string }> {
+	try {
+		const userId = await getUserId();
+		const data = linkImportSchema.parse(input);
+
+		const existing = await db.query.transactions.findFirst({
+			columns: {
+				id: true,
+				name: true,
+				note: true,
+				ofxFitId: true,
+				payerId: true,
+			},
+			where: and(
+				eq(transactions.userId, userId),
+				eq(transactions.id, data.existingTransactionId),
+			),
+		});
+
+		if (!existing) {
+			return { success: false, error: "Lançamento não encontrado." };
+		}
+
+		const adminPayerId = await getAdminPayerId(userId);
+		let nextPayerId = existing.payerId;
+
+		if (!nextPayerId) {
+			const candidatePayerId = data.fallbackPayerId ?? adminPayerId;
+			if (candidatePayerId) {
+				const ownedPayerIds = await fetchOwnedPayerIds(userId, [
+					candidatePayerId,
+				]);
+				if (ownedPayerIds.has(candidatePayerId)) {
+					nextPayerId = candidatePayerId;
+				}
+			}
+		}
+
+		let nextName = existing.name;
+		let nextNote = existing.note;
+		const imported = data.importedDescription.trim();
+		const registered = existing.name.trim();
+
+		if (data.mergeDescription === "import") {
+			nextName = data.importedDescription;
+			if (registered && registered !== imported) {
+				nextNote = appendReplacedNameToNote(
+					existing.note,
+					"Cadastro",
+					existing.name,
+				);
+			}
+		} else if (imported && imported !== registered) {
+			nextNote = appendReplacedNameToNote(existing.note, "Extrato", imported);
+		}
+
+		await db
+			.update(transactions)
+			.set({
+				name: nextName,
+				note: nextNote,
+				ofxFitId: existing.ofxFitId ?? data.externalId ?? null,
+				payerId: nextPayerId,
+			})
+			.where(
+				and(
+					eq(transactions.userId, userId),
+					eq(transactions.id, data.existingTransactionId),
+				),
+			);
+
+		await revalidateForEntity("transactions", userId);
+
+		return { success: true };
+	} catch (error) {
+		console.error("linkImportToExistingAction", error);
+		return { success: false, error: "Não foi possível vincular o lançamento." };
+	}
+}
+
 export async function deleteImportDuplicateTransaction(
 	transactionId: string,
 ): Promise<{ success: boolean; error?: string }> {
@@ -263,6 +445,7 @@ export async function importTransactionsAction(
 
 	const payerIdsByRow = rows.map((row) => row.payerId ?? payerId ?? null);
 	const hasInvoicePayments = rows.some((row) => row.kind === "invoice_payment");
+	const hasTransferRows = rows.some((row) => row.kind === "transfer");
 
 	if (payerIdsByRow.some((id) => !id)) {
 		return { success: false, error: "Pessoa obrigatória." };
@@ -275,27 +458,61 @@ export async function importTransactionsAction(
 		};
 	}
 
+	if (hasTransferRows && !accountId) {
+		return {
+			success: false,
+			error: "Transferências exigem uma conta corrente selecionada.",
+		};
+	}
+
 	const invoicePaymentCardIds = rows
 		.filter((row) => row.kind === "invoice_payment")
 		.map((row) => row.invoicePaymentCardId)
 		.filter((id): id is string => Boolean(id));
 
+	const transferPeerAccountIds = rows
+		.filter((row) => row.kind === "transfer")
+		.map((row) => row.transferPeerAccountId)
+		.filter((id): id is string => Boolean(id));
+
+	if (
+		hasTransferRows &&
+		transferPeerAccountIds.some((peerId) => peerId === accountId)
+	) {
+		return {
+			success: false,
+			error:
+				"A outra conta da transferência deve ser diferente da conta do extrato.",
+		};
+	}
+
 	// Valida ownership
-	const [ownedPayerIds, ownedCategoryIds, accountOk, cardOk, invoiceCardsOk] =
-		await Promise.all([
-			fetchOwnedPayerIds(userId, payerIdsByRow),
-			fetchOwnedCategoryIds(
-				userId,
-				rows.map((row) => row.categoryId),
+	const [
+		ownedPayerIds,
+		ownedCategoryIds,
+		accountOk,
+		cardOk,
+		invoiceCardsOk,
+		transferPeersOk,
+	] = await Promise.all([
+		fetchOwnedPayerIds(userId, payerIdsByRow),
+		fetchOwnedCategoryIds(
+			userId,
+			rows.map((row) => row.categoryId),
+		),
+		validateContaOwnership(userId, accountId),
+		validateCartaoOwnership(userId, cardId),
+		Promise.all(
+			invoicePaymentCardIds.map((cardIdValue) =>
+				validateCartaoOwnership(userId, cardIdValue),
 			),
-			validateContaOwnership(userId, accountId),
-			validateCartaoOwnership(userId, cardId),
-			Promise.all(
-				invoicePaymentCardIds.map((cardIdValue) =>
-					validateCartaoOwnership(userId, cardIdValue),
-				),
-			).then((results) => results.every(Boolean)),
-		]);
+		).then((results) => results.every(Boolean)),
+		Promise.all(
+			transferPeerAccountIds.map((peerId) =>
+				validateContaOwnership(userId, peerId),
+			),
+		).then((results) => results.every(Boolean)),
+	]);
 
 	if (payerIdsByRow.some((id) => id && !ownedPayerIds.has(id))) {
 		return { success: false, error: "Pessoa não encontrada." };
@@ -312,9 +529,16 @@ export async function importTransactionsAction(
 	if (!invoiceCardsOk) {
 		return { success: false, error: "Cartão da fatura não encontrado." };
 	}
+	if (!transferPeersOk) {
+		return { success: false, error: "Conta da transferência não encontrada." };
+	}
 
-	const hasInstallmentImports = rows.some((row) => row.installmentImport?.enabled);
-	const hasRecurrenceImports = rows.some((row) => row.recurrenceImport?.enabled);
+	const hasInstallmentImports = rows.some(
+		(row) => row.installmentImport?.enabled,
+	);
+	const hasRecurrenceImports = rows.some(
+		(row) => row.recurrenceImport?.enabled,
+	);
 	if (hasInstallmentImports && !cardId) {
 		return {
 			success: false,
@@ -353,10 +577,103 @@ export async function importTransactionsAction(
 	}
 
 	if (rows.length === 0) {
-		return { success: true, imported: 0, skipped: 0, importBatchId: "" };
+		if (!payInvoice) {
+			return { success: true, imported: 0, skipped: 0, importBatchId: "" };
+		}
+
+		if (!cardId || !invoicePeriod) {
+			return {
+				success: false,
+				error: "Selecione o cartão e a fatura para pagar.",
+			};
+		}
+
+		if (!paymentAccountId) {
+			return {
+				success: false,
+				error: "Selecione a conta de pagamento da fatura.",
+			};
+		}
+
+		const importBatchId = parsed.data.importBatchId ?? randomUUID();
+
+		if (parsed.data.importBatchId) {
+			const existingUploadBatch = await db.query.importBatches.findFirst({
+				columns: { id: true },
+				where: and(
+					eq(importBatches.userId, userId),
+					eq(importBatches.id, parsed.data.importBatchId),
+				),
+			});
+
+			if (!existingUploadBatch) {
+				return {
+					success: false,
+					error:
+						"Registro de upload não encontrado. Envie o arquivo novamente.",
+				};
+			}
+		}
+
+		const payResult = await updateInvoicePaymentStatusAction({
+			cardId,
+			period: invoicePeriod,
+			status: INVOICE_PAYMENT_STATUS.PAID,
+			paymentDate,
+			paymentAccountId: paymentAccountId ?? undefined,
+		});
+
+		if (!payResult.success) {
+			return {
+				success: false,
+				error: payResult.error,
+			};
+		}
+
+		await revalidateForEntity("cards", userId);
+
+		const batchPayload = {
+			sourceFileName: parsed.data.sourceFileName ?? "Importação sem arquivo",
+			sourceFileSize: parsed.data.sourceFileSize ?? null,
+			cardId,
+			invoicePeriod,
+			accountId: accountId ?? null,
+			importedCount: 0,
+			skippedCount: 0,
+			status: IMPORT_BATCH_STATUS.IMPORTED,
+			draftData: null,
+		};
+
+		const existingBatch = await db.query.importBatches.findFirst({
+			columns: { id: true },
+			where: and(
+				eq(importBatches.userId, userId),
+				eq(importBatches.id, importBatchId),
+			),
+		});
+
+		if (existingBatch) {
+			await db
+				.update(importBatches)
+				.set(batchPayload)
+				.where(eq(importBatches.id, importBatchId));
+		} else {
+			await db.insert(importBatches).values({
+				id: importBatchId,
+				userId,
+				...batchPayload,
+			});
+		}
+
+		return {
+			success: true,
+			imported: 0,
+			skipped: 0,
+			importBatchId,
+		};
 	}
 
-	let importBatchId = parsed.data.importBatchId ?? randomUUID();
+	const importBatchId = parsed.data.importBatchId ?? randomUUID();
 
 	if (parsed.data.importBatchId) {
 		const existingUploadBatch = await db.query.importBatches.findFirst({
@@ -383,6 +700,47 @@ export async function importTransactionsAction(
 			eq(categories.name, INVOICE_PAYMENT_CATEGORY_NAME),
 		),
 	});
+
+	const transferCategory = hasTransferRows
+		? await db.query.categories.findFirst({
+				columns: { id: true },
+				where: and(
+					eq(categories.userId, userId),
+					eq(categories.name, TRANSFER_CATEGORY_NAME),
+				),
+			})
+		: null;
+
+	if (hasTransferRows && !transferCategory) {
+		return {
+			success: false,
+			error: `Categoria "${TRANSFER_CATEGORY_NAME}" não encontrada.`,
+		};
+	}
+
+	const transferAccountIds = hasTransferRows
+		? Array.from(
+				new Set(
+					[accountId, ...transferPeerAccountIds].filter((id): id is string =>
+						Boolean(id),
+					),
+				),
+			)
+		: [];
+
+	const transferAccounts = hasTransferRows
+		? await db.query.financialAccounts.findMany({
+				columns: { id: true, name: true },
+				where: and(
+					eq(financialAccounts.userId, userId),
+					inArray(financialAccounts.id, transferAccountIds),
+				),
+			})
+		: [];
+
+	const transferAccountsById = new Map(
+		transferAccounts.map((account) => [account.id, account.name]),
+	);
 
 	const invoiceCards = hasInvoicePayments
 		? await db.query.cards.findMany({
@@ -522,7 +880,8 @@ export async function importTransactionsAction(
 		return [
 			{
 				name: row.description,
-				transactionType: row.transactionType === "income" ? "Receita" : "Despesa",
+				transactionType:
+					row.transactionType === "income" ? "Receita" : "Despesa",
 				condition: "À vista",
 				paymentMethod: importPaymentMethod,
 				amount: (row.transactionType === "expense"
@@ -541,6 +900,81 @@ export async function importTransactionsAction(
 				currentInstallment: null,
 				seriesId: null,
 				ofxFitId: row.externalId,
+				importBatchId,
+			},
+		];
+	});
+
+	const transferRecords: TransactionInsert[] = rows.flatMap((row, rowIndex) => {
+		if (row.kind !== "transfer") return [];
+
+		const peerAccountId = row.transferPeerAccountId;
+		if (!peerAccountId || !accountId) {
+			throw new Error("Transferência incompleta.");
+		}
+
+		const fromAccountId =
+			row.transactionType === "expense" ? accountId : peerAccountId;
+		const toAccountId =
+			row.transactionType === "expense" ? peerAccountId : accountId;
+		const fromAccountName =
+			transferAccountsById.get(fromAccountId) ?? "Conta origem";
+		const toAccountName =
+			transferAccountsById.get(toAccountId) ?? "Conta destino";
+		const transferId = randomUUID();
+		const purchaseDate = parseLocalDateString(row.date);
+		const period =
+			invoicePeriod ??
+			`${purchaseDate.getFullYear()}-${String(purchaseDate.getMonth() + 1).padStart(2, "0")}`;
+		const transferNote = `de ${fromAccountName} -> ${toAccountName}`;
+		const payerIdValue = payerIdsByRow[rowIndex];
+		if (!payerIdValue) return [];
+
+		const importAccountIsSource = row.transactionType === "expense";
+
+		return [
+			{
+				name: TRANSFER_ESTABLISHMENT_SAIDA,
+				transactionType: "Transferência" as const,
+				condition: TRANSFER_CONDITION,
+				paymentMethod: TRANSFER_PAYMENT_METHOD,
+				note: transferNote,
+				amount: formatDecimalForDbRequired(-Math.abs(row.amount)),
+				purchaseDate,
+				period,
+				isSettled: true,
+				userId,
+				payerId: payerIdValue,
+				accountId: fromAccountId,
+				cardId: null,
+				categoryId: transferCategory?.id ?? null,
+				installmentCount: null,
+				currentInstallment: null,
+				seriesId: null,
+				transferId,
+				ofxFitId: importAccountIsSource ? row.externalId : null,
+				importBatchId,
+			},
+			{
+				name: TRANSFER_ESTABLISHMENT_ENTRADA,
+				transactionType: "Transferência" as const,
+				condition: TRANSFER_CONDITION,
+				paymentMethod: TRANSFER_PAYMENT_METHOD,
+				note: transferNote,
+				amount: formatDecimalForDbRequired(Math.abs(row.amount)),
+				purchaseDate,
+				period,
+				isSettled: true,
+				userId,
+				payerId: payerIdValue,
+				accountId: toAccountId,
+				cardId: null,
+				categoryId: transferCategory?.id ?? null,
+				installmentCount: null,
+				currentInstallment: null,
+				seriesId: null,
+				transferId,
+				ofxFitId: importAccountIsSource ? null : row.externalId,
 				importBatchId,
 			},
 		];
@@ -586,6 +1020,7 @@ export async function importTransactionsAction(
 	const inserted = await db.transaction(async (tx) => {
 		const allRecords = [
 			...regularRecords,
+			...transferRecords,
 			...invoicePaymentRecords.map(
 				({ settleCardId, settlePeriod, ...record }) => record,
 			),
@@ -635,6 +1070,9 @@ export async function importTransactionsAction(
 	if (hasInvoicePayments || payInvoice) {
 		await revalidateForEntity("cards", userId);
 	}
+	if (hasTransferRows) {
+		await revalidateForEntity("accounts", userId);
+	}
 
 	if (payInvoice && cardId && invoicePeriod) {
 		const payResult = await updateInvoicePaymentStatusAction({
@@ -654,7 +1092,10 @@ export async function importTransactionsAction(
 	}
 
 	const skippedCount =
-		regularRecords.length + invoicePaymentRecords.length - inserted.length;
+		regularRecords.length +
+		transferRecords.length +
+		invoicePaymentRecords.length -
+		inserted.length;
 
 	const batchPayload = {
 		sourceFileName: parsed.data.sourceFileName ?? "Importação sem arquivo",

@@ -4,7 +4,11 @@ import { Badge } from "@/shared/components/ui/badge";
 import { Card } from "@/shared/components/ui/card";
 import type { ImportStatement } from "@/shared/lib/import/types";
 import { resolveLogoSrc } from "@/shared/lib/logo";
-import { formatDate, formatDateOnlyLabel } from "@/shared/utils/date";
+import {
+	formatDate,
+	formatDateOnly,
+	formatDateOnlyLabel,
+} from "@/shared/utils/date";
 import { displayPeriod } from "@/shared/utils/period";
 import { cn } from "@/shared/utils/ui";
 
@@ -25,15 +29,12 @@ interface ImportSummaryProps {
 	duplicates: number;
 	duplicateVerified?: number;
 	duplicateMismatch?: number;
+	linkSuggestions?: number;
 	uncategorized: number;
 	withoutPayer: number;
 }
 
-function AccountCardIdentity({
-	label,
-	logo,
-	isCard,
-}: AccountCardSummary) {
+function AccountCardIdentity({ label, logo, isCard }: AccountCardSummary) {
 	const logoSrc = resolveLogoSrc(logo);
 	const Icon = isCard ? RiBankCard2Line : RiBankLine;
 
@@ -101,6 +102,29 @@ function ImportSummaryInvoiceHighlight({
 	);
 }
 
+function ImportSummaryStatementPeriodHighlight({
+	period,
+	className,
+}: {
+	period: { from: string; to: string };
+	className?: string;
+}) {
+	return (
+		<div
+			className={cn(
+				"flex flex-col gap-1 rounded-md border border-primary/25 bg-background/70 px-3 py-2 shadow-xs",
+				className,
+			)}
+		>
+			<p className="flex items-center gap-1.5 font-semibold text-foreground text-sm">
+				<RiCalendarLine className="size-4 shrink-0 text-primary" aria-hidden />
+				{formatDateOnly(period.from) ?? "—"} →{" "}
+				{formatDateOnly(period.to) ?? "—"}
+			</p>
+		</div>
+	);
+}
+
 export function ImportSummary({
 	statement,
 	invoicePeriod = null,
@@ -112,10 +136,17 @@ export function ImportSummary({
 	duplicates,
 	duplicateVerified = 0,
 	duplicateMismatch = 0,
+	linkSuggestions = 0,
 	uncategorized,
 	withoutPayer,
 }: ImportSummaryProps) {
 	const displayName = accountCard?.label ?? statement.source;
+	const isCardImport = accountCard?.isCard ?? statement.isCreditCard;
+	const showInvoiceHighlight =
+		isCardImport &&
+		(Boolean(invoicePeriod) || (isPaidInvoiceImport && Boolean(paymentDate)));
+	const showStatementPeriodHighlight =
+		!isCardImport && Boolean(statement.period);
 
 	return (
 		<Card className="flex flex-col gap-2 p-4 text-sm shadow-none bg-primary/10 sm:gap-1 sm:p-5">
@@ -141,12 +172,21 @@ export function ImportSummary({
 					</div>
 				</div>
 
-				{(invoicePeriod || (isPaidInvoiceImport && paymentDate)) && (
-					<ImportSummaryInvoiceHighlight
-						invoicePeriod={invoicePeriod}
-						paymentDate={paymentDate}
-						isPaidInvoiceImport={isPaidInvoiceImport}
-					/>
+				{(showInvoiceHighlight || showStatementPeriodHighlight) && (
+					<>
+						{showInvoiceHighlight ? (
+							<ImportSummaryInvoiceHighlight
+								invoicePeriod={invoicePeriod}
+								paymentDate={paymentDate}
+								isPaidInvoiceImport={isPaidInvoiceImport}
+							/>
+						) : null}
+						{showStatementPeriodHighlight && statement.period ? (
+							<ImportSummaryStatementPeriodHighlight
+								period={statement.period}
+							/>
+						) : null}
+					</>
 				)}
 			</div>
 
@@ -165,19 +205,29 @@ export function ImportSummary({
 				) : null}
 			</div>
 
-			{/* Desktop: fatura e pagamento na segunda linha quando aplicável */}
-			{(invoicePeriod || (isPaidInvoiceImport && paymentDate)) && (
-				<ImportSummaryInvoiceHighlight
-					className="hidden md:flex md:flex-row md:items-center md:gap-4"
-					invoicePeriod={invoicePeriod}
-					paymentDate={paymentDate}
-					isPaidInvoiceImport={isPaidInvoiceImport}
-				/>
+			{/* Desktop: fatura ou período do extrato na segunda linha quando aplicável */}
+			{(showInvoiceHighlight || showStatementPeriodHighlight) && (
+				<>
+					{showInvoiceHighlight ? (
+						<ImportSummaryInvoiceHighlight
+							className="hidden md:flex md:flex-row md:items-center md:gap-4"
+							invoicePeriod={invoicePeriod}
+							paymentDate={paymentDate}
+							isPaidInvoiceImport={isPaidInvoiceImport}
+						/>
+					) : null}
+					{showStatementPeriodHighlight && statement.period ? (
+						<ImportSummaryStatementPeriodHighlight
+							className="hidden md:flex md:flex-row md:items-center md:gap-4"
+							period={statement.period}
+						/>
+					) : null}
+				</>
 			)}
 
 			{/* Estatísticas da revisão */}
 			<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground text-xs sm:gap-x-4 sm:text-sm">
-				{statement.period && (
+				{statement.period && isCardImport && (
 					<span className="hidden items-center gap-1 lg:flex">
 						<RiCalendarLine className="size-3.5 shrink-0" aria-hidden />
 						{formatDate(statement.period.from)} →{" "}
@@ -195,6 +245,14 @@ export function ImportSummary({
 						{duplicateVerified > 0 || duplicateMismatch > 0
 							? ` (${duplicateVerified} conferido${duplicateVerified !== 1 ? "s" : ""}${duplicateMismatch > 0 ? `, ${duplicateMismatch} divergência${duplicateMismatch !== 1 ? "s" : ""}` : ""})`
 							: ""}
+					</span>
+				)}
+
+				{linkSuggestions > 0 && (
+					<span className="text-sky-700 dark:text-sky-300">
+						{linkSuggestions} possível{linkSuggestions !== 1 ? "is" : ""}{" "}
+						vínculo
+						{linkSuggestions !== 1 ? "s" : ""}
 					</span>
 				)}
 

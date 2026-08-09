@@ -83,7 +83,9 @@ async function fetchTransactionDescriptionMemory(
 }
 
 function getEligiblePrefixKeys(keys: string[]): string[] {
-	return keys.filter((key) => key.length >= MIN_DESCRIPTION_PREFIX_MATCH_LENGTH);
+	return keys.filter(
+		(key) => key.length >= MIN_DESCRIPTION_PREFIX_MATCH_LENGTH,
+	);
 }
 
 function resolvePrefixMemoryForKeys(

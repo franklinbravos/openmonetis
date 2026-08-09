@@ -5,13 +5,15 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { fetchCardImportPdfPasswordAttemptsAction } from "@/features/cards/actions/fetch-import-pdf-password-attempts-action";
 import { saveCardImportPdfPasswordAction } from "@/features/cards/actions/import-pdf-password-action";
+import { deleteImportBatchAction } from "@/features/transactions/actions/import-batch-history-action";
 import { ImportDuplicateFileDialog } from "@/features/transactions/components/import/import-duplicate-file-dialog";
 import { ImportPdfPasswordDialog } from "@/features/transactions/components/import/import-pdf-password-dialog";
+import { isImportBatchImported } from "@/features/transactions/lib/import-batch-status";
 import {
 	findDuplicateImportFile,
 	type ImportFileHistoryEntry,
 } from "@/features/transactions/lib/import-file-duplicate";
-import { isImportBatchImported } from "@/features/transactions/lib/import-batch-status";
+import { CARD_IMPORT_PDF_PASSWORD_RULES } from "@/shared/lib/cards/import-pdf-password";
 import {
 	isSupportedImportFile,
 	parseImportFile,
@@ -24,7 +26,6 @@ import {
 } from "@/shared/lib/import/pdf-password";
 import type { ImportStatement } from "@/shared/lib/import/types";
 import { generateXlsTemplate } from "@/shared/lib/import/xls-parser";
-import { CARD_IMPORT_PDF_PASSWORD_RULES } from "@/shared/lib/cards/import-pdf-password";
 import { cn } from "@/shared/utils/ui";
 
 type UploadParsedOptions = {
@@ -43,20 +44,27 @@ interface UploadZoneProps {
 	autoPdfPasswordAttempts?: string[];
 	importHistory?: ImportFileHistoryEntry[];
 	resumeBatchId?: string | null;
+	onDuplicateBatchCleared?: () => void;
 }
 
 const ACCEPTED_FORMATS = ".ofx,.qfx,.csv,.txt,.pdf,.xlsx,.xls";
 
 const FORMAT_LABEL = ".ofx · .qfx · .csv · .txt · .pdf · .xlsx · .xls";
 
+// Referência estável para o default da prop opcional — evita que o useEffect de
+// sincronização dispare a cada render (novo array a cada render geraria loop).
+const EMPTY_AUTO_PDF_PASSWORD_ATTEMPTS: string[] = [];
+
 export function UploadZone({
 	onParsed,
 	error: externalError = null,
 	onErrorClear,
 	linkedCardId = null,
-	autoPdfPasswordAttempts: initialAutoPdfPasswordAttempts = [],
+	autoPdfPasswordAttempts:
+		initialAutoPdfPasswordAttempts = EMPTY_AUTO_PDF_PASSWORD_ATTEMPTS,
 	importHistory = [],
 	resumeBatchId = null,
+	onDuplicateBatchCleared,
 }: UploadZoneProps) {
 	const [error, setError] = useState<string | null>(null);
 	const [dragging, setDragging] = useState(false);
@@ -88,14 +96,14 @@ export function UploadZone({
 
 		let cancelled = false;
 
-		void fetchCardImportPdfPasswordAttemptsAction({ cardId: linkedCardId }).then(
-			(result) => {
-				if (cancelled) return;
-				if (result.success) {
-					setAutoPdfPasswordAttempts(result.attempts);
-				}
-			},
-		);
+		void fetchCardImportPdfPasswordAttemptsAction({
+			cardId: linkedCardId,
+		}).then((result) => {
+			if (cancelled) return;
+			if (result.success) {
+				setAutoPdfPasswordAttempts(result.attempts);
+			}
+		});
 
 		return () => {
 			cancelled = true;
@@ -158,17 +166,15 @@ export function UploadZone({
 					const result = await saveCardImportPdfPasswordAction({
 						cardId: linkedCardId,
 						rule:
-							options.savePasswordRule ??
-							CARD_IMPORT_PDF_PASSWORD_RULES.fixed,
+							options.savePasswordRule ?? CARD_IMPORT_PDF_PASSWORD_RULES.fixed,
 						secret: options.explicitPassword?.trim() ?? "",
 					});
 
 					if (result.success) {
 						toast.success(result.message);
-						const refreshed =
-							await fetchCardImportPdfPasswordAttemptsAction({
-								cardId: linkedCardId,
-							});
+						const refreshed = await fetchCardImportPdfPasswordAttemptsAction({
+							cardId: linkedCardId,
+						});
 						if (refreshed.success) {
 							setAutoPdfPasswordAttempts(refreshed.attempts);
 						}
@@ -191,7 +197,8 @@ export function UploadZone({
 			const mappedError: Error = mapPdfLoadError(
 				err,
 				Boolean(
-					options?.explicitPassword?.trim() || autoPdfPasswordAttempts.length > 0,
+					options?.explicitPassword?.trim() ||
+						autoPdfPasswordAttempts.length > 0,
 				),
 			);
 
@@ -246,6 +253,27 @@ export function UploadZone({
 		setDuplicateEntry(null);
 		setDuplicatePendingFile(null);
 		await parseFile(file, { existingBatchId });
+	};
+
+	const handleStartNewDuplicateImport = async () => {
+		if (!duplicatePendingFile || !duplicateEntry) return;
+		const file = duplicatePendingFile;
+		const entry = duplicateEntry;
+		setDuplicateEntry(null);
+		setDuplicatePendingFile(null);
+
+		if (!isImportBatchImported(entry.status)) {
+			const result = await deleteImportBatchAction({ batchId: entry.id });
+			if (!result.success) {
+				toast.error(
+					result.error ?? "Não foi possível remover a importação anterior.",
+				);
+				return;
+			}
+			onDuplicateBatchCleared?.();
+		}
+
+		await parseFile(file);
 	};
 
 	const handlePasswordSubmit = async (
@@ -379,9 +407,16 @@ export function UploadZone({
 					}}
 					fileName={duplicatePendingFile.name}
 					previousImport={duplicateEntry}
-					onConfirm={() => {
+					onConfirmContinue={() => {
 						void handleConfirmDuplicateImport();
 					}}
+					onConfirmNewImport={
+						isImportBatchImported(duplicateEntry.status)
+							? undefined
+							: () => {
+									void handleStartNewDuplicateImport();
+								}
+					}
 				/>
 			) : null}
 		</div>

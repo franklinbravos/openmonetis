@@ -1,14 +1,17 @@
 "use client";
 
 import {
+	RiAddLine,
 	RiArrowDownSLine,
 	RiArrowRightDownLine,
 	RiArrowRightUpLine,
 	RiBankCardLine,
 	RiCheckboxCircleFill,
+	RiExchangeLine,
+	RiLinksLine,
 	RiMore2Line,
 } from "@remixicon/react";
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { CategorySearchSelect } from "@/features/transactions/components/dialogs/transaction-dialog/category-search-select";
 import {
 	AccountCardSelectContent,
@@ -17,6 +20,13 @@ import {
 } from "@/features/transactions/components/select-items";
 import type { SelectOption } from "@/features/transactions/components/types";
 import { groupAndSortCategories } from "@/features/transactions/lib/category-helpers";
+import type { ImportDuplicateValidation } from "@/features/transactions/lib/import-duplicate-match";
+import {
+	isImportLinkSuggestion,
+	isImportRowLinked,
+	isImportRowResolved,
+	isVerifiedImportDuplicate,
+} from "@/features/transactions/lib/import-duplicate-match";
 import {
 	buildInstallmentImportPreview,
 	createManualInstallmentImport,
@@ -24,7 +34,6 @@ import {
 	type ReviewInstallmentImport,
 	type ReviewRecurrenceImport,
 } from "@/features/transactions/lib/import-installments";
-import { getConditionIcon } from "@/shared/utils/icons";
 import MoneyValues from "@/shared/components/money-values";
 import { PeriodPicker } from "@/shared/components/period-picker";
 import { Badge } from "@/shared/components/ui/badge";
@@ -43,7 +52,6 @@ import {
 } from "@/shared/components/ui/dropdown-menu";
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
-import { Switch } from "@/shared/components/ui/switch";
 import {
 	Select,
 	SelectContent,
@@ -51,6 +59,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/shared/components/ui/select";
+import { Switch } from "@/shared/components/ui/switch";
 import {
 	Table,
 	TableBody,
@@ -65,16 +74,19 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/shared/components/ui/tooltip";
-import type { ImportDuplicateValidation } from "@/features/transactions/lib/import-duplicate-match";
-import { isVerifiedImportDuplicate } from "@/features/transactions/lib/import-duplicate-match";
 import type { ImportedTransaction } from "@/shared/lib/import/types";
 import { formatCurrency } from "@/shared/utils/currency";
 import { formatDate } from "@/shared/utils/date";
+import { getConditionIcon } from "@/shared/utils/icons";
 import { cn } from "@/shared/utils/ui";
 
 function getDuplicateRowClassName(row: ReviewRow) {
-	if (isVerifiedImportDuplicate(row)) {
+	if (isVerifiedImportDuplicate(row) || isImportRowLinked(row)) {
 		return "border-emerald-500/40 bg-emerald-500/8";
+	}
+
+	if (isImportLinkSuggestion(row)) {
+		return "border-sky-500/40 bg-sky-500/5";
 	}
 
 	if (!row.isDuplicate || row.selected) return "";
@@ -176,10 +188,10 @@ function ReviewVerifiedExistingPayer({
 				className={cn(
 					"text-muted-foreground",
 					fullWidth && "w-full",
-					compact && "size-8 shrink-0 justify-center px-0",
+					(compact || !fullWidth) && "size-8 shrink-0 justify-center px-0",
 				)}
 			>
-				{compact ? "—" : "Sem pessoa"}
+				{compact || !fullWidth ? "—" : "Sem pessoa"}
 			</ReviewVerifiedExistingValue>
 		);
 	}
@@ -189,25 +201,29 @@ function ReviewVerifiedExistingPayer({
 			className={cn(
 				"gap-2",
 				fullWidth && "w-full",
-				compact && "size-8 shrink-0 justify-center px-0",
+				compact || !fullWidth
+					? "size-8 shrink-0 justify-center px-0"
+					: undefined,
 			)}
 		>
 			<PayerSelectTriggerValue
 				label={payerOption.label}
 				avatarUrl={payerOption.avatarUrl}
-				showLabel={!compact}
+				showLabel={fullWidth}
 			/>
 		</ReviewVerifiedExistingValue>
 	);
 
-	if (!compact) return content;
+	if (compact || !fullWidth) {
+		return (
+			<Tooltip>
+				<TooltipTrigger asChild>{content}</TooltipTrigger>
+				<TooltipContent>{payerOption.label}</TooltipContent>
+			</Tooltip>
+		);
+	}
 
-	return (
-		<Tooltip>
-			<TooltipTrigger asChild>{content}</TooltipTrigger>
-			<TooltipContent>{payerOption.label}</TooltipContent>
-		</Tooltip>
-	);
+	return content;
 }
 
 function ReviewVerifiedExistingCategory({
@@ -244,12 +260,17 @@ function ReviewVerifiedExistingCategory({
 
 function getReviewRowKindLabel(row: ReviewRow): string {
 	if (row.kind === "invoice_payment") return "Pgto. fatura";
+	if (row.kind === "transfer") return "Transferência";
 	return row.transactionType === "income" ? "Receita" : "Despesa";
 }
 
 function getReviewRowKindIcon(row: ReviewRow) {
 	if (row.kind === "invoice_payment") {
 		return <RiBankCardLine className="size-3.5" aria-hidden />;
+	}
+
+	if (row.kind === "transfer") {
+		return <RiExchangeLine className="size-3.5" aria-hidden />;
 	}
 
 	if (row.transactionType === "income") {
@@ -264,11 +285,53 @@ function getReviewRowKindIconClassName(row: ReviewRow): string {
 		return "border-primary/30 bg-primary/5 text-primary";
 	}
 
+	if (row.kind === "transfer") {
+		return "border-info/30 bg-info/5 text-info";
+	}
+
 	if (row.transactionType === "income") {
 		return "border-success/30 bg-success/5 text-success";
 	}
 
 	return "border-destructive/30 bg-destructive/5 text-destructive";
+}
+
+type ReviewKindSelectValue =
+	| "expense"
+	| "income"
+	| "invoice_payment"
+	| "transfer";
+
+function getReviewKindSelectRow(
+	value: ReviewKindSelectValue,
+): Pick<ReviewRow, "kind" | "transactionType"> {
+	if (value === "invoice_payment") {
+		return { kind: "invoice_payment", transactionType: "expense" };
+	}
+
+	if (value === "transfer") {
+		return { kind: "transfer", transactionType: "expense" };
+	}
+
+	return {
+		kind: "transaction",
+		transactionType: value,
+	};
+}
+
+function ReviewRowKindOptionIcon({ value }: { value: ReviewKindSelectValue }) {
+	const pseudoRow = getReviewKindSelectRow(value) as ReviewRow;
+
+	return (
+		<span
+			className={cn(
+				"inline-flex size-5 shrink-0 items-center justify-center rounded-md border",
+				getReviewRowKindIconClassName(pseudoRow),
+			)}
+		>
+			{getReviewRowKindIcon(pseudoRow)}
+		</span>
+	);
 }
 
 function ReviewVerifiedExistingType({
@@ -355,25 +418,98 @@ function ReviewDuplicateStatus({
 
 			{isVerified ? (
 				<p className="text-emerald-700 text-xs dark:text-emerald-400">
-					Os dados da fatura batem com o lançamento existente.
+					Os dados do extrato batem com o lançamento existente.
 				</p>
 			) : null}
 
 			{hasMismatch && validation ? (
-				<div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs">
+				<div className="min-w-0 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs">
 					<p className="font-medium text-amber-800 dark:text-amber-300">
 						Diferenças encontradas:
 					</p>
-					<ul className="mt-1 space-y-1 text-amber-900/90 dark:text-amber-100/90">
+					<ul className="mt-1 space-y-1 break-words text-amber-900/90 whitespace-normal dark:text-amber-100/90">
 						{validation.mismatches.map((mismatch) => (
-							<li key={mismatch.field}>
-								<span className="font-medium">{mismatch.label}:</span> fatura{" "}
+							<li key={mismatch.field} className="break-words">
+								<span className="font-medium">{mismatch.label}:</span> extrato{" "}
 								{mismatch.imported} · cadastro {mismatch.existing}
 							</li>
 						))}
 					</ul>
 				</div>
 			) : null}
+		</div>
+	);
+}
+
+function ReviewLinkSuggestionStatus({
+	row,
+	index,
+	onLinkDuplicate,
+	onDismissLinkSuggestion,
+}: {
+	row: ReviewRow;
+	index: number;
+	onLinkDuplicate: (index: number) => void;
+	onDismissLinkSuggestion: (index: number) => void;
+}) {
+	if (!isImportLinkSuggestion(row) || !row.duplicateValidation) return null;
+
+	const validation = row.duplicateValidation;
+	const matchedFields = [
+		validation.matchScore.date ? "data" : null,
+		validation.matchScore.amount ? "valor" : null,
+		validation.matchScore.description ? "descrição" : null,
+	].filter((field): field is string => field !== null);
+
+	return (
+		<div className="min-w-0 space-y-2">
+			<Badge
+				variant="outline"
+				className="w-fit border-sky-500/40 text-[10px] text-sky-700 dark:text-sky-300"
+			>
+				Possível vínculo
+			</Badge>
+			<p className="break-words text-sky-800 text-xs whitespace-normal dark:text-sky-300">
+				{matchedFields.length > 0
+					? `${matchedFields.join(" e ")} batem com um lançamento existente.`
+					: "Dois campos batem com um lançamento existente."}
+			</p>
+			<div className="flex flex-wrap gap-1.5">
+				<Button
+					type="button"
+					size="sm"
+					className="h-7 gap-1.5 px-2 text-xs"
+					onClick={() => onLinkDuplicate(index)}
+				>
+					<RiLinksLine className="size-3.5 shrink-0" aria-hidden />
+					Vincular
+				</Button>
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					className="h-7 gap-1.5 px-2 text-xs"
+					onClick={() => onDismissLinkSuggestion(index)}
+				>
+					<RiAddLine className="size-3.5 shrink-0" aria-hidden />
+					Importar novo
+				</Button>
+			</div>
+		</div>
+	);
+}
+
+function ReviewLinkedStatus({ row }: { row: ReviewRow }) {
+	if (!isImportRowLinked(row)) return null;
+
+	return (
+		<div className="flex flex-wrap items-center gap-1.5">
+			<Badge variant="success" className="text-[10px]">
+				Vinculado ao cadastro
+			</Badge>
+			<p className="text-emerald-700 text-xs dark:text-emerald-400">
+				As informações foram unidas ao lançamento existente.
+			</p>
 		</div>
 	);
 }
@@ -386,7 +522,7 @@ const categoryGroupByTransactionType: Record<
 	income: "receita",
 };
 
-export type ReviewRowKind = "transaction" | "invoice_payment";
+export type ReviewRowKind = "transaction" | "invoice_payment" | "transfer";
 
 export type ReviewRow = ImportedTransaction & {
 	selected: boolean;
@@ -397,16 +533,31 @@ export type ReviewRow = ImportedTransaction & {
 	kind: ReviewRowKind;
 	invoicePaymentCardId: string | null;
 	invoicePaymentPeriod: string | null;
+	transferPeerAccountId: string | null;
 	installmentImport: ReviewInstallmentImport | null;
 	recurrenceImport: ReviewRecurrenceImport | null;
 	reimported?: boolean;
+	linked?: boolean;
+	/** Nome exatamente como veio do extrato/fatura; não muda ao editar na revisão. */
+	sourceDescription: string;
 };
+
+function resolveReviewExistingPayerId(
+	row: ReviewRow,
+	defaultPayerId: string | null,
+): string | null {
+	return (
+		row.duplicateValidation?.existingPayerId ?? row.payerId ?? defaultPayerId
+	);
+}
 
 interface ReviewTableProps {
 	rows: ReviewRow[];
+	defaultPayerId: string | null;
 	payerOptions: SelectOption[];
 	categoryOptions: SelectOption[];
 	cardOptions: SelectOption[];
+	transferAccountOptions: SelectOption[];
 	isCard: boolean;
 	invoicePeriod: string | null;
 	onToggle: (index: number) => void;
@@ -416,17 +567,26 @@ interface ReviewTableProps {
 	onCreateCategory: (index: number) => void;
 	onRowTypeChange: (
 		index: number,
-		type: "expense" | "income" | "invoice_payment",
+		type: "expense" | "income" | "invoice_payment" | "transfer",
 	) => void;
 	onInvoicePaymentCardChange: (index: number, cardId: string | null) => void;
 	onInvoicePaymentPeriodChange: (index: number, period: string | null) => void;
+	onTransferPeerAccountChange: (
+		index: number,
+		accountId: string | null,
+	) => void;
 	onDescriptionChange: (index: number, description: string) => void;
 	onInstallmentToggle: (index: number, enabled: boolean) => void;
 	onInstallmentDismiss: (index: number) => void;
 	onInstallmentCountChange: (index: number, installmentCount: number) => void;
-	onInstallmentCurrentChange: (index: number, currentInstallment: number) => void;
+	onInstallmentCurrentChange: (
+		index: number,
+		currentInstallment: number,
+	) => void;
 	onUndoDuplicate: (index: number) => void;
 	onEditDuplicate: (index: number) => void;
+	onLinkDuplicate: (index: number) => void;
+	onDismissLinkSuggestion: (index: number) => void;
 	onConvertToInstallment: (index: number) => void;
 	onConvertToRecurrence: (index: number) => void;
 	onRecurrenceToggle: (index: number, enabled: boolean) => void;
@@ -435,9 +595,11 @@ interface ReviewTableProps {
 
 export function ReviewTable({
 	rows,
+	defaultPayerId,
 	payerOptions,
 	categoryOptions,
 	cardOptions,
+	transferAccountOptions,
 	isCard,
 	invoicePeriod,
 	onToggle,
@@ -448,6 +610,7 @@ export function ReviewTable({
 	onRowTypeChange,
 	onInvoicePaymentCardChange,
 	onInvoicePaymentPeriodChange,
+	onTransferPeerAccountChange,
 	onDescriptionChange,
 	onInstallmentToggle,
 	onInstallmentDismiss,
@@ -455,12 +618,16 @@ export function ReviewTable({
 	onInstallmentCurrentChange,
 	onUndoDuplicate,
 	onEditDuplicate,
+	onLinkDuplicate,
+	onDismissLinkSuggestion,
 	onConvertToInstallment,
 	onConvertToRecurrence,
 	onRecurrenceToggle,
 	onRecurrenceCountChange,
 }: ReviewTableProps) {
-	const importableRows = rows.filter((row) => !isVerifiedImportDuplicate(row));
+	const importableRows = rows.filter(
+		(row) => !isImportRowResolved(row) && !isImportLinkSuggestion(row),
+	);
 	const allSelected =
 		importableRows.length > 0 && importableRows.every((row) => row.selected);
 	const someSelected = importableRows.some((row) => row.selected);
@@ -470,11 +637,13 @@ export function ReviewTable({
 			<div className="rounded-lg border">
 				<ReviewMobileList
 					rows={rows}
+					defaultPayerId={defaultPayerId}
 					allSelected={allSelected}
 					someSelected={someSelected}
 					payerOptions={payerOptions}
 					categoryOptions={categoryOptions}
 					cardOptions={cardOptions}
+					transferAccountOptions={transferAccountOptions}
 					isCard={isCard}
 					invoicePeriod={invoicePeriod}
 					onToggle={onToggle}
@@ -485,6 +654,7 @@ export function ReviewTable({
 					onRowTypeChange={onRowTypeChange}
 					onInvoicePaymentCardChange={onInvoicePaymentCardChange}
 					onInvoicePaymentPeriodChange={onInvoicePaymentPeriodChange}
+					onTransferPeerAccountChange={onTransferPeerAccountChange}
 					onDescriptionChange={onDescriptionChange}
 					onInstallmentToggle={onInstallmentToggle}
 					onInstallmentDismiss={onInstallmentDismiss}
@@ -492,6 +662,8 @@ export function ReviewTable({
 					onInstallmentCurrentChange={onInstallmentCurrentChange}
 					onUndoDuplicate={onUndoDuplicate}
 					onEditDuplicate={onEditDuplicate}
+					onLinkDuplicate={onLinkDuplicate}
+					onDismissLinkSuggestion={onDismissLinkSuggestion}
 					onConvertToInstallment={onConvertToInstallment}
 					onConvertToRecurrence={onConvertToRecurrence}
 					onRecurrenceToggle={onRecurrenceToggle}
@@ -513,7 +685,7 @@ export function ReviewTable({
 							</TableHead>
 							<TableHead className="w-24">Data</TableHead>
 							<TableHead>Descrição</TableHead>
-							<TableHead className="w-44 max-md:w-12">Pessoa</TableHead>
+							<TableHead className="w-12 text-center">Pessoa</TableHead>
 							<TableHead className="w-44">Categoria / Fatura</TableHead>
 							<TableHead className="w-28">Tipo</TableHead>
 							<TableHead className="w-28 text-right">Valor</TableHead>
@@ -527,9 +699,11 @@ export function ReviewTable({
 									categoryGroupByTransactionType[row.transactionType],
 							);
 
-							if (isVerifiedImportDuplicate(row)) {
-								const existingPayerId =
-									row.duplicateValidation?.existingPayerId ?? null;
+							if (isVerifiedImportDuplicate(row) || isImportRowLinked(row)) {
+								const existingPayerId = resolveReviewExistingPayerId(
+									row,
+									defaultPayerId,
+								);
 								const existingCategoryId =
 									row.duplicateValidation?.existingCategoryId ?? null;
 
@@ -541,25 +715,38 @@ export function ReviewTable({
 										<TableCell className="w-10">
 											<RiCheckboxCircleFill
 												className="size-5 text-emerald-600 dark:text-emerald-400"
-												aria-label="Lançamento conferido"
+												aria-label={
+													isImportRowLinked(row)
+														? "Lançamento vinculado"
+														: "Lançamento conferido"
+												}
 											/>
 										</TableCell>
 										<TableCell className="text-muted-foreground text-sm">
 											{formatDate(row.date)}
 										</TableCell>
-										<TableCell className="max-w-[280px] text-sm">
-											<ReviewVerifiedDuplicateDescription
-												row={row}
-												index={index}
-												onEditDuplicate={onEditDuplicate}
-												onUndoDuplicate={onUndoDuplicate}
-											/>
+										<TableCell className="max-w-[280px] min-w-0 whitespace-normal text-sm">
+											{isImportRowLinked(row) ? (
+												<div className="space-y-1">
+													<p className="font-medium">{row.description}</p>
+													<ReviewLinkedStatus row={row} />
+												</div>
+											) : (
+												<ReviewVerifiedDuplicateDescription
+													row={row}
+													index={index}
+													onEditDuplicate={onEditDuplicate}
+													onUndoDuplicate={onUndoDuplicate}
+												/>
+											)}
 										</TableCell>
-										<TableCell className="max-md:w-12">
-											<ReviewVerifiedExistingPayer
-												payerId={existingPayerId}
-												payerOptions={payerOptions}
-											/>
+										<TableCell className="w-12 text-center">
+											<div className="flex justify-center">
+												<ReviewVerifiedExistingPayer
+													payerId={existingPayerId}
+													payerOptions={payerOptions}
+												/>
+											</div>
 										</TableCell>
 										<TableCell>
 											<ReviewVerifiedExistingCategory
@@ -600,14 +787,15 @@ export function ReviewTable({
 										<Checkbox
 											checked={row.selected}
 											onCheckedChange={() => onToggle(index)}
+											disabled={isImportLinkSuggestion(row)}
 											aria-label={`Selecionar ${row.description}`}
 										/>
 									</TableCell>
 									<TableCell className="text-muted-foreground text-sm">
 										{formatDate(row.date)}
 									</TableCell>
-									<TableCell className="max-w-[200px] text-sm">
-										<div className="space-y-2">
+									<TableCell className="max-w-[200px] min-w-0 whitespace-normal text-sm">
+										<div className="min-w-0 space-y-2">
 											<ReviewDescriptionField
 												row={row}
 												index={index}
@@ -615,6 +803,8 @@ export function ReviewTable({
 												invoicePeriod={invoicePeriod}
 												onDescriptionChange={onDescriptionChange}
 												onUndoDuplicate={onUndoDuplicate}
+												onLinkDuplicate={onLinkDuplicate}
+												onDismissLinkSuggestion={onDismissLinkSuggestion}
 												onConvertToInstallment={onConvertToInstallment}
 												onConvertToRecurrence={onConvertToRecurrence}
 											/>
@@ -636,13 +826,15 @@ export function ReviewTable({
 											/>
 										</div>
 									</TableCell>
-									<TableCell className="max-md:w-12">
-										<ReviewPayerSelect
-											row={row}
-											index={index}
-											payerOptions={payerOptions}
-											onPayerChange={onPayerChange}
-										/>
+									<TableCell className="w-12 text-center">
+										<div className="flex justify-center">
+											<ReviewPayerSelect
+												row={row}
+												index={index}
+												payerOptions={payerOptions}
+												onPayerChange={onPayerChange}
+											/>
+										</div>
 									</TableCell>
 									<TableCell>
 										{row.kind === "invoice_payment" ? (
@@ -650,11 +842,18 @@ export function ReviewTable({
 												row={row}
 												index={index}
 												cardOptions={cardOptions}
-												onInvoicePaymentCardChange={
-													onInvoicePaymentCardChange
-												}
+												onInvoicePaymentCardChange={onInvoicePaymentCardChange}
 												onInvoicePaymentPeriodChange={
 													onInvoicePaymentPeriodChange
+												}
+											/>
+										) : row.kind === "transfer" ? (
+											<ReviewTransferFields
+												row={row}
+												index={index}
+												accountOptions={transferAccountOptions}
+												onTransferPeerAccountChange={
+													onTransferPeerAccountChange
 												}
 											/>
 										) : (
@@ -671,6 +870,7 @@ export function ReviewTable({
 										<ReviewRowKindSelect
 											row={row}
 											index={index}
+											isCard={isCard}
 											onRowTypeChange={onRowTypeChange}
 										/>
 									</TableCell>
@@ -708,6 +908,7 @@ type ReviewRowHandlers = Pick<
 	| "onRowTypeChange"
 	| "onInvoicePaymentCardChange"
 	| "onInvoicePaymentPeriodChange"
+	| "onTransferPeerAccountChange"
 	| "onDescriptionChange"
 	| "onInstallmentToggle"
 	| "onInstallmentDismiss"
@@ -715,6 +916,8 @@ type ReviewRowHandlers = Pick<
 	| "onInstallmentCurrentChange"
 	| "onUndoDuplicate"
 	| "onEditDuplicate"
+	| "onLinkDuplicate"
+	| "onDismissLinkSuggestion"
 	| "onConvertToInstallment"
 	| "onConvertToRecurrence"
 	| "onRecurrenceToggle"
@@ -726,28 +929,34 @@ type ReviewRowHandlers = Pick<
 type ReviewRowSharedProps = ReviewRowHandlers & {
 	row: ReviewRow;
 	index: number;
+	defaultPayerId: string | null;
 	payerOptions: SelectOption[];
 	categoryOptions: SelectOption[];
 	cardOptions: SelectOption[];
+	transferAccountOptions: SelectOption[];
 };
 
 function ReviewMobileList({
 	rows,
+	defaultPayerId,
 	allSelected,
 	someSelected,
 	payerOptions,
 	categoryOptions,
 	cardOptions,
+	transferAccountOptions,
 	onToggle,
 	onToggleAll,
 	...handlers
 }: ReviewRowHandlers & {
 	rows: ReviewRow[];
+	defaultPayerId: string | null;
 	allSelected: boolean;
 	someSelected: boolean;
 	payerOptions: SelectOption[];
 	categoryOptions: SelectOption[];
 	cardOptions: SelectOption[];
+	transferAccountOptions: SelectOption[];
 	onToggle: (index: number) => void;
 	onToggleAll: (selected: boolean) => void;
 }) {
@@ -770,9 +979,11 @@ function ReviewMobileList({
 					key={row.externalId ?? `${row.date}-${index}`}
 					row={row}
 					index={index}
+					defaultPayerId={defaultPayerId}
 					payerOptions={payerOptions}
 					categoryOptions={categoryOptions}
 					cardOptions={cardOptions}
+					transferAccountOptions={transferAccountOptions}
 					onToggle={onToggle}
 					{...handlers}
 				/>
@@ -784,9 +995,11 @@ function ReviewMobileList({
 function ReviewMobileCard({
 	row,
 	index,
+	defaultPayerId,
 	payerOptions,
 	categoryOptions,
 	cardOptions,
+	transferAccountOptions,
 	onToggle,
 	onPayerChange,
 	onCategoryChange,
@@ -794,6 +1007,7 @@ function ReviewMobileCard({
 	onRowTypeChange,
 	onInvoicePaymentCardChange,
 	onInvoicePaymentPeriodChange,
+	onTransferPeerAccountChange,
 	onDescriptionChange,
 	onInstallmentToggle,
 	onInstallmentDismiss,
@@ -801,6 +1015,8 @@ function ReviewMobileCard({
 	onInstallmentCurrentChange,
 	onUndoDuplicate,
 	onEditDuplicate,
+	onLinkDuplicate,
+	onDismissLinkSuggestion,
 	onConvertToInstallment,
 	onConvertToRecurrence,
 	onRecurrenceToggle,
@@ -813,8 +1029,8 @@ function ReviewMobileCard({
 			option.group === categoryGroupByTransactionType[row.transactionType],
 	);
 
-	if (isVerifiedImportDuplicate(row)) {
-		const existingPayerId = row.duplicateValidation?.existingPayerId ?? null;
+	if (isVerifiedImportDuplicate(row) || isImportRowLinked(row)) {
+		const existingPayerId = resolveReviewExistingPayerId(row, defaultPayerId);
 		const existingCategoryId =
 			row.duplicateValidation?.existingCategoryId ?? null;
 
@@ -847,12 +1063,19 @@ function ReviewMobileCard({
 							)}
 						/>
 					</div>
-					<ReviewVerifiedDuplicateDescription
-						row={row}
-						index={index}
-						onEditDuplicate={onEditDuplicate}
-						onUndoDuplicate={onUndoDuplicate}
-					/>
+					{isImportRowLinked(row) ? (
+						<div className="space-y-1">
+							<p className="min-w-0 font-medium">{row.description}</p>
+							<ReviewLinkedStatus row={row} />
+						</div>
+					) : (
+						<ReviewVerifiedDuplicateDescription
+							row={row}
+							index={index}
+							onEditDuplicate={onEditDuplicate}
+							onUndoDuplicate={onUndoDuplicate}
+						/>
+					)}
 					<div className="flex items-center gap-1.5">
 						<ReviewVerifiedExistingType
 							transactionType={row.transactionType}
@@ -888,6 +1111,7 @@ function ReviewMobileCard({
 					<Checkbox
 						checked={row.selected}
 						onCheckedChange={() => onToggle(index)}
+						disabled={isImportLinkSuggestion(row)}
 						aria-label={`Selecionar ${row.description}`}
 						className="shrink-0"
 					/>
@@ -916,6 +1140,8 @@ function ReviewMobileCard({
 						invoicePeriod={invoicePeriod}
 						onDescriptionChange={onDescriptionChange}
 						onUndoDuplicate={onUndoDuplicate}
+						onLinkDuplicate={onLinkDuplicate}
+						onDismissLinkSuggestion={onDismissLinkSuggestion}
 						onConvertToInstallment={onConvertToInstallment}
 						onConvertToRecurrence={onConvertToRecurrence}
 						fullWidth
@@ -947,6 +1173,7 @@ function ReviewMobileCard({
 					<ReviewRowKindSelect
 						row={row}
 						index={index}
+						isCard={isCard}
 						onRowTypeChange={onRowTypeChange}
 						compact
 					/>
@@ -964,6 +1191,14 @@ function ReviewMobileCard({
 							cardOptions={cardOptions}
 							onInvoicePaymentCardChange={onInvoicePaymentCardChange}
 							onInvoicePaymentPeriodChange={onInvoicePaymentPeriodChange}
+							compact
+						/>
+					) : row.kind === "transfer" ? (
+						<ReviewTransferFields
+							row={row}
+							index={index}
+							accountOptions={transferAccountOptions}
+							onTransferPeerAccountChange={onTransferPeerAccountChange}
 							compact
 						/>
 					) : (
@@ -1001,7 +1236,10 @@ function ReviewInstallmentFields({
 	onInstallmentToggle: (index: number, enabled: boolean) => void;
 	onInstallmentDismiss: (index: number) => void;
 	onInstallmentCountChange: (index: number, installmentCount: number) => void;
-	onInstallmentCurrentChange: (index: number, currentInstallment: number) => void;
+	onInstallmentCurrentChange: (
+		index: number,
+		currentInstallment: number,
+	) => void;
 }) {
 	const [expanded, setExpanded] = useState(false);
 	const installment = row.installmentImport;
@@ -1138,8 +1376,8 @@ function ReviewInstallmentFields({
 					</>
 				) : (
 					<p className="text-muted-foreground text-xs leading-relaxed">
-						Este lançamento parece ser uma parcela de compra no cartão. Ative para
-						importar o parcelamento completo.
+						Este lançamento parece ser uma parcela de compra no cartão. Ative
+						para importar o parcelamento completo.
 					</p>
 				)}
 			</CollapsibleContent>
@@ -1192,7 +1430,9 @@ function ReviewRecurrenceFields({
 							<p className="truncate font-medium text-foreground text-sm">
 								Recorrência
 							</p>
-							<p className="truncate text-muted-foreground text-xs">{summary}</p>
+							<p className="truncate text-muted-foreground text-xs">
+								{summary}
+							</p>
 						</div>
 					</button>
 				</CollapsibleTrigger>
@@ -1240,6 +1480,8 @@ function ReviewDescriptionField({
 	invoicePeriod,
 	onDescriptionChange,
 	onUndoDuplicate,
+	onLinkDuplicate,
+	onDismissLinkSuggestion,
 	onConvertToInstallment,
 	onConvertToRecurrence,
 	fullWidth = false,
@@ -1249,6 +1491,8 @@ function ReviewDescriptionField({
 	| "index"
 	| "onDescriptionChange"
 	| "onUndoDuplicate"
+	| "onLinkDuplicate"
+	| "onDismissLinkSuggestion"
 	| "onConvertToInstallment"
 	| "onConvertToRecurrence"
 	| "isCard"
@@ -1258,7 +1502,9 @@ function ReviewDescriptionField({
 		"w-full bg-transparent text-sm outline-none focus:rounded focus:ring-1 focus:ring-ring";
 
 	const canConvert =
-		row.kind === "transaction" && !isVerifiedImportDuplicate(row);
+		row.kind === "transaction" &&
+		!isImportRowResolved(row) &&
+		!isImportLinkSuggestion(row);
 	const canConvertToInstallment =
 		canConvert &&
 		isCard &&
@@ -1266,8 +1512,7 @@ function ReviewDescriptionField({
 		row.transactionType === "expense" &&
 		!row.recurrenceImport?.enabled &&
 		!row.installmentImport?.enabled;
-	const canConvertToRecurrence =
-		canConvert && !row.installmentImport?.enabled;
+	const canConvertToRecurrence = canConvert && !row.installmentImport?.enabled;
 
 	const convertActions =
 		canConvertToInstallment || canConvertToRecurrence ? (
@@ -1310,12 +1555,9 @@ function ReviewDescriptionField({
 		) : null;
 
 	return (
-		<div className="space-y-1">
+		<div className="min-w-0 space-y-1">
 			<div
-				className={cn(
-					"flex gap-1",
-					fullWidth ? "items-start" : "items-center",
-				)}
+				className={cn("flex gap-1", fullWidth ? "items-start" : "items-center")}
 			>
 				{convertActions}
 				{fullWidth ? (
@@ -1342,11 +1584,23 @@ function ReviewDescriptionField({
 					Pagamento de fatura
 				</Badge>
 			)}
+			{row.kind === "transfer" && (
+				<Badge variant="outline" className="text-[10px]">
+					Transferência
+				</Badge>
+			)}
 			<ReviewDuplicateStatus
 				row={row}
 				index={index}
 				onUndoDuplicate={onUndoDuplicate}
 			/>
+			<ReviewLinkSuggestionStatus
+				row={row}
+				index={index}
+				onLinkDuplicate={onLinkDuplicate}
+				onDismissLinkSuggestion={onDismissLinkSuggestion}
+			/>
+			<ReviewLinkedStatus row={row} />
 		</div>
 	);
 }
@@ -1354,15 +1608,17 @@ function ReviewDescriptionField({
 function ReviewRowKindSelect({
 	row,
 	index,
+	isCard,
 	onRowTypeChange,
 	fullWidth = false,
 	compact = false,
 }: {
 	row: ReviewRow;
 	index: number;
+	isCard: boolean;
 	onRowTypeChange: (
 		index: number,
-		type: "expense" | "income" | "invoice_payment",
+		type: "expense" | "income" | "invoice_payment" | "transfer",
 	) => void;
 	fullWidth?: boolean;
 	compact?: boolean;
@@ -1370,11 +1626,19 @@ function ReviewRowKindSelect({
 	const select = (
 		<Select
 			value={
-				row.kind === "invoice_payment" ? "invoice_payment" : row.transactionType
+				row.kind === "invoice_payment"
+					? "invoice_payment"
+					: row.kind === "transfer"
+						? "transfer"
+						: row.transactionType
 			}
 			onValueChange={(value) => {
 				if (value === "invoice_payment") {
 					onRowTypeChange(index, "invoice_payment");
+					return;
+				}
+				if (value === "transfer") {
+					onRowTypeChange(index, "transfer");
 					return;
 				}
 				onRowTypeChange(index, value as "expense" | "income");
@@ -1387,7 +1651,7 @@ function ReviewRowKindSelect({
 								"size-8 shrink-0 p-0 [&>svg]:hidden",
 								getReviewRowKindIconClassName(row),
 							)
-						: "h-8 text-xs",
+						: "h-8 gap-2 text-xs",
 					fullWidth && !compact && "w-full",
 				)}
 				aria-label={compact ? getReviewRowKindLabel(row) : undefined}
@@ -1397,13 +1661,47 @@ function ReviewRowKindSelect({
 						{getReviewRowKindIcon(row)}
 					</span>
 				) : (
-					<SelectValue />
+					<span className="flex min-w-0 items-center gap-2">
+						<ReviewRowKindOptionIcon
+							value={
+								row.kind === "invoice_payment"
+									? "invoice_payment"
+									: row.kind === "transfer"
+										? "transfer"
+										: row.transactionType
+							}
+						/>
+						<span className="truncate">{getReviewRowKindLabel(row)}</span>
+					</span>
 				)}
 			</SelectTrigger>
 			<SelectContent>
-				<SelectItem value="expense">Despesa</SelectItem>
-				<SelectItem value="income">Receita</SelectItem>
-				<SelectItem value="invoice_payment">Pgto. fatura</SelectItem>
+				<SelectItem value="expense" textValue="Despesa">
+					<span className="flex items-center gap-2">
+						<ReviewRowKindOptionIcon value="expense" />
+						<span>Despesa</span>
+					</span>
+				</SelectItem>
+				<SelectItem value="income" textValue="Receita">
+					<span className="flex items-center gap-2">
+						<ReviewRowKindOptionIcon value="income" />
+						<span>Receita</span>
+					</span>
+				</SelectItem>
+				<SelectItem value="invoice_payment" textValue="Pgto. fatura">
+					<span className="flex items-center gap-2">
+						<ReviewRowKindOptionIcon value="invoice_payment" />
+						<span>Pgto. fatura</span>
+					</span>
+				</SelectItem>
+				{!isCard ? (
+					<SelectItem value="transfer" textValue="Transferência">
+						<span className="flex items-center gap-2">
+							<ReviewRowKindOptionIcon value="transfer" />
+							<span>Transferência</span>
+						</span>
+					</SelectItem>
+				) : null}
 			</SelectContent>
 		</Select>
 	);
@@ -1454,7 +1752,9 @@ function ReviewInvoicePaymentFields({
 					onInvoicePaymentCardChange(index, value || null)
 				}
 			>
-				<SelectTrigger className={cn("h-8 text-xs", compact && "min-w-0 flex-1")}>
+				<SelectTrigger
+					className={cn("h-8 text-xs", compact && "min-w-0 flex-1")}
+				>
 					<SelectValue placeholder="Cartão…">
 						{selectedCard ? (
 							<AccountCardSelectContent
@@ -1487,6 +1787,84 @@ function ReviewInvoicePaymentFields({
 					compact ? "w-[5.5rem] shrink-0 px-2" : "w-full",
 				)}
 			/>
+		</div>
+	);
+}
+
+function ReviewTransferFields({
+	row,
+	index,
+	accountOptions,
+	onTransferPeerAccountChange,
+	fullWidth = false,
+	compact = false,
+}: {
+	row: ReviewRow;
+	index: number;
+	accountOptions: SelectOption[];
+	onTransferPeerAccountChange: (
+		index: number,
+		accountId: string | null,
+	) => void;
+	fullWidth?: boolean;
+	compact?: boolean;
+}) {
+	const selectedAccount = accountOptions.find(
+		(option) => option.value === row.transferPeerAccountId,
+	);
+	const peerLabel =
+		row.transactionType === "income" ? "Conta origem" : "Conta destino";
+
+	return (
+		<div
+			className={cn(
+				compact
+					? "flex min-w-0 flex-1 items-center gap-1"
+					: "flex flex-col gap-1.5",
+				fullWidth ? "w-full" : compact ? undefined : "min-w-[12rem]",
+			)}
+		>
+			{!compact ? (
+				<Label className="text-xs text-muted-foreground">{peerLabel}</Label>
+			) : null}
+			<Select
+				value={row.transferPeerAccountId ?? ""}
+				onValueChange={(value) =>
+					onTransferPeerAccountChange(index, value || null)
+				}
+			>
+				<SelectTrigger
+					className={cn(
+						"h-8 text-xs",
+						compact && "min-w-0 flex-1",
+						!row.transferPeerAccountId && "border-destructive/40",
+					)}
+					aria-label={peerLabel}
+				>
+					<SelectValue
+						placeholder={
+							compact ? "Conta…" : `Selecione a ${peerLabel.toLowerCase()}`
+						}
+					>
+						{selectedAccount ? (
+							<AccountCardSelectContent
+								label={selectedAccount.label}
+								logo={selectedAccount.logo}
+							/>
+						) : null}
+					</SelectValue>
+				</SelectTrigger>
+				<SelectContent>
+					{accountOptions.map((option) => (
+						<SelectItem key={option.value} value={option.value}>
+							<AccountCardSelectContent
+								label={option.label}
+								logo={option.logo}
+							/>
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
 		</div>
 	);
 }
@@ -1553,31 +1931,26 @@ function ReviewPayerSelect({
 			<SelectTrigger
 				className={cn(
 					"h-8 text-xs",
-					compact
-						? "size-8 shrink-0 px-1 [&>svg]:hidden"
-						: fullWidth
-							? "w-full"
-							: "max-md:px-1.5 max-md:[&>svg]:hidden",
+					compact || !fullWidth
+						? "size-8 shrink-0 px-1.5 [&>svg]:hidden"
+						: "w-full",
 				)}
-				aria-label={compact ? payerOption?.label ?? "Pessoa" : undefined}
+				aria-label={payerOption?.label ?? "Pessoa"}
 			>
 				<SelectValue placeholder={compact ? undefined : "Pessoa…"}>
 					{payerOption ? (
 						<PayerSelectTriggerValue
 							label={payerOption.label}
 							avatarUrl={payerOption.avatarUrl}
-							showLabel={!compact && fullWidth}
+							showLabel={fullWidth}
 						/>
 					) : null}
 				</SelectValue>
 			</SelectTrigger>
 			<SelectContent>
 				{payerOptions.map((opt) => (
-					<SelectItem key={opt.value} value={opt.value}>
-						<PayerSelectContent
-							label={opt.label}
-							avatarUrl={opt.avatarUrl}
-						/>
+					<SelectItem key={opt.value} value={opt.value} textValue={opt.label}>
+						<PayerSelectContent label={opt.label} avatarUrl={opt.avatarUrl} />
 					</SelectItem>
 				))}
 			</SelectContent>
@@ -1586,7 +1959,12 @@ function ReviewPayerSelect({
 
 	if (!payerOption) {
 		return (
-			<div className={cn(compact ? "shrink-0" : fullWidth ? "w-full" : "w-fit")}>
+			<div
+				className={cn(
+					"flex justify-center",
+					compact ? "shrink-0" : fullWidth ? "w-full" : "shrink-0",
+				)}
+			>
 				{select}
 			</div>
 		);
@@ -1595,13 +1973,16 @@ function ReviewPayerSelect({
 	return (
 		<Tooltip>
 			<TooltipTrigger asChild>
-				<div className={cn(compact ? "shrink-0" : fullWidth ? "w-full" : "w-fit")}>
+				<div
+					className={cn(
+						"flex justify-center",
+						compact ? "shrink-0" : fullWidth ? "w-full" : "shrink-0",
+					)}
+				>
 					{select}
 				</div>
 			</TooltipTrigger>
-			<TooltipContent className={compact || fullWidth ? undefined : "md:hidden"}>
-				{payerOption.label}
-			</TooltipContent>
+			<TooltipContent>{payerOption.label}</TooltipContent>
 		</Tooltip>
 	);
 }

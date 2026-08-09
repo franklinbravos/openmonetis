@@ -36,7 +36,9 @@ export async function uploadImportSourceFile({
 		return await uploadImportSourceFileDirectAction(formData);
 	} catch (error) {
 		const message =
-			error instanceof Error ? error.message : "Erro ao enviar o arquivo original.";
+			error instanceof Error
+				? error.message
+				: "Erro ao enviar o arquivo original.";
 		return { success: false, error: message };
 	}
 }

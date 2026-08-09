@@ -20,36 +20,41 @@ import {
 	fetchImportDescriptionMemory,
 	saveCategoryMappings,
 } from "@/features/transactions/actions/category-memory-action";
-import {
-	checkDuplicateFitIds,
-	deleteImportDuplicateTransaction,
-	deleteTransactionByFitId,
-	fetchImportDuplicateSnapshots,
-	fetchInvoicePeriodDuplicateSnapshots,
-	importTransactionsAction,
-	undoImportAction,
-} from "@/features/transactions/actions/import-action";
-import {
-	fetchImportBatchHistoryAction,
-	getImportBatchResumeAction,
-	registerImportUploadAction,
-	saveImportBatchDraftAction,
-	syncImportBatchContextAction,
-} from "@/features/transactions/actions/import-batch-history-action";
 import { fetchTransactionByIdAction } from "@/features/transactions/actions/fetch-by-id";
 import {
 	fetchTransactionDialogOptionsAction,
 	type TransactionDialogOptions,
 } from "@/features/transactions/actions/fetch-dialog-options";
+import {
+	checkDuplicateFitIds,
+	deleteImportDuplicateTransaction,
+	deleteTransactionByFitId,
+	fetchAccountImportDuplicateSnapshots,
+	fetchImportDuplicateSnapshots,
+	fetchInvoicePeriodDuplicateSnapshots,
+	importTransactionsAction,
+	linkImportToExistingAction,
+	undoImportAction,
+} from "@/features/transactions/actions/import-action";
+import {
+	deleteImportBatchAction,
+	fetchImportBatchHistoryAction,
+	getImportBatchDraftAction,
+	getImportBatchResumeAction,
+	registerImportUploadAction,
+	saveImportBatchDraftAction,
+	syncImportBatchContextAction,
+} from "@/features/transactions/actions/import-batch-history-action";
 import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
-import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
-import { ImportConfirmDialog } from "@/features/transactions/components/import/import-confirm-dialog";
-import { ImportInvoicePeriodMismatchDialog } from "@/features/transactions/components/import/import-invoice-period-mismatch-dialog";
 import {
 	decodeAccountCard,
 	encodeAccountCard,
 	GlobalFields,
 } from "@/features/transactions/components/import/global-fields";
+import { ImportConfirmDialog } from "@/features/transactions/components/import/import-confirm-dialog";
+import { ImportFileHistory } from "@/features/transactions/components/import/import-file-history";
+import { ImportInvoicePeriodMismatchDialog } from "@/features/transactions/components/import/import-invoice-period-mismatch-dialog";
+import { ImportLinkDialog } from "@/features/transactions/components/import/import-link-dialog";
 import { ImportSteps } from "@/features/transactions/components/import/import-steps";
 import { ImportSummary } from "@/features/transactions/components/import/import-summary";
 import {
@@ -57,34 +62,35 @@ import {
 	ReviewTable,
 } from "@/features/transactions/components/import/review-table";
 import { UploadZone } from "@/features/transactions/components/import/upload-zone";
-import { ImportFileHistory } from "@/features/transactions/components/import/import-file-history";
-import type { SelectOption, TransactionItem } from "@/features/transactions/components/types";
-import type { ImportFileHistoryEntry } from "@/features/transactions/lib/import-file-duplicate";
-import { IMPORT_BATCH_STATUS } from "@/features/transactions/lib/import-batch-status";
+import type {
+	SelectOption,
+	TransactionItem,
+} from "@/features/transactions/components/types";
 import {
 	applyImportBatchDraftToRows,
 	buildImportBatchDraft,
 	extractImportBatchDraftGlobals,
 	type ImportBatchDraftData,
 } from "@/features/transactions/lib/import-batch-draft";
-import { normalizeDescriptionKey } from "@/features/transactions/lib/import-utils";
-import { Button } from "@/shared/components/ui/button";
+import { IMPORT_BATCH_STATUS } from "@/features/transactions/lib/import-batch-status";
 import {
-	Alert,
-	AlertDescription,
-	AlertTitle,
-} from "@/shared/components/ui/alert";
+	buildAccountImportHistoryHref,
+	buildAccountStatementHref,
+	buildInvoiceImportHistoryHref,
+} from "@/features/transactions/lib/import-continue-href";
 import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@/shared/components/ui/card";
-import { Skeleton } from "@/shared/components/ui/skeleton";
-import type { CategoryType } from "@/shared/lib/categories/constants";
-import type { ImportStatement } from "@/shared/lib/import/types";
-import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants";
+	buildImportDuplicateValidation,
+	type ImportDuplicateValidation,
+	isImportLinkSuggestion,
+	isImportRowResolved,
+	isVerifiedImportDuplicate,
+	resolveSemanticImportMatches,
+} from "@/features/transactions/lib/import-duplicate-match";
+import type { ImportFileHistoryEntry } from "@/features/transactions/lib/import-file-duplicate";
+import {
+	filterImportHistoryEntries,
+	hasImportHistoryFilter,
+} from "@/features/transactions/lib/import-file-duplicate";
 import {
 	buildReviewInstallmentImport,
 	countImportRecords,
@@ -94,31 +100,45 @@ import {
 	isValidRecurrenceImport,
 } from "@/features/transactions/lib/import-installments";
 import {
-	resolveInvoicePeriodFromMetadata,
-	resolveInvoicePeriodFromStatement,
-	resolveImportPaymentDate,
-	resolveUploadInvoicePeriodFromStatement,
-} from "@/features/transactions/lib/import-invoice-period";
-import {
-	type InvoiceImportContext,
-	validateInvoiceImportContext,
-} from "@/features/transactions/lib/validate-invoice-import-context";
-import {
-	buildImportDuplicateValidation,
-	type ImportDuplicateValidation,
-	findSemanticDuplicateSnapshot,
-	isVerifiedImportDuplicate,
-} from "@/features/transactions/lib/import-duplicate-match";
-import { uploadImportSourceFile } from "@/features/transactions/lib/upload-import-source";
-import { parseImportFile } from "@/shared/lib/import/parse-import-file";
-import { mapPdfLoadError } from "@/shared/lib/import/pdf-password";
-import {
 	guessInvoicePaymentCardId,
 	guessInvoicePaymentPeriod,
 	isInvoicePaymentDescription,
 } from "@/features/transactions/lib/import-invoice-payment";
+import {
+	resolveImportPaymentDate,
+	resolveInvoicePeriodFromMetadata,
+	resolveInvoicePeriodFromStatement,
+	resolveUploadInvoicePeriodFromStatement,
+} from "@/features/transactions/lib/import-invoice-period";
+import { normalizeDescriptionKey } from "@/features/transactions/lib/import-utils";
+import { uploadImportSourceFile } from "@/features/transactions/lib/upload-import-source";
+import {
+	type InvoiceImportContext,
+	validateInvoiceImportContext,
+} from "@/features/transactions/lib/validate-invoice-import-context";
+import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
+import {
+	Alert,
+	AlertDescription,
+	AlertTitle,
+} from "@/shared/components/ui/alert";
+import { Button } from "@/shared/components/ui/button";
+import {
+	Card,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "@/shared/components/ui/card";
+import { Skeleton } from "@/shared/components/ui/skeleton";
+import type { CategoryType } from "@/shared/lib/categories/constants";
+import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants";
+import { buildPeriodFromTransactions } from "@/shared/lib/import/helpers";
+import { parseImportFile } from "@/shared/lib/import/parse-import-file";
+import { mapPdfLoadError } from "@/shared/lib/import/pdf-password";
+import type { ImportStatement } from "@/shared/lib/import/types";
 import { getTodayDateString } from "@/shared/utils/date";
-import { displayPeriod } from "@/shared/utils/period";
+import { displayPeriod, formatPeriodForUrl } from "@/shared/utils/period";
 
 function fileFromBase64(
 	base64: string,
@@ -138,6 +158,11 @@ const categoryGroupByTransactionType = {
 	income: "receita",
 } as const;
 
+// Referências estáveis para defaults de props opcionais — evitam que useEffects de
+// sincronização disparem a cada render (novo array a cada render geraria loop).
+const EMPTY_AUTO_PDF_PASSWORD_ATTEMPTS: string[] = [];
+const EMPTY_INITIAL_IMPORT_HISTORY: ImportFileHistoryEntry[] = [];
+
 const normalizeCategoryName = (value: string) => value.trim().toLowerCase();
 
 function mergeSelectOptions(
@@ -145,10 +170,7 @@ function mergeSelectOptions(
 	extra: SelectOption[],
 ): SelectOption[] {
 	const extraIds = new Set(extra.map((option) => option.value));
-	return [
-		...base.filter((option) => !extraIds.has(option.value)),
-		...extra,
-	];
+	return [...base.filter((option) => !extraIds.has(option.value)), ...extra];
 }
 
 function mapSelectOptionsToCategories(options: SelectOption[]): Category[] {
@@ -168,6 +190,7 @@ interface ImportPageProps {
 	categoryOptions: SelectOption[];
 	defaultPayerId: string | null;
 	initialCardId?: string | null;
+	initialAccountId?: string | null;
 	initialInvoicePeriod?: string | null;
 	initialPaymentAccountId?: string | null;
 	invoiceContext?: InvoiceImportContext | null;
@@ -175,6 +198,7 @@ interface ImportPageProps {
 	autoPdfPasswordAttempts?: string[];
 	initialImportHistory?: ImportFileHistoryEntry[];
 	initialResumeBatchId?: string | null;
+	importMountKey: string;
 }
 
 export function ImportPage({
@@ -184,13 +208,15 @@ export function ImportPage({
 	categoryOptions,
 	defaultPayerId,
 	initialCardId = null,
+	initialAccountId = null,
 	initialInvoicePeriod = null,
 	initialPaymentAccountId = null,
 	invoiceContext = null,
 	linkedCardId = null,
-	autoPdfPasswordAttempts = [],
-	initialImportHistory = [],
+	autoPdfPasswordAttempts = EMPTY_AUTO_PDF_PASSWORD_ATTEMPTS,
+	initialImportHistory = EMPTY_INITIAL_IMPORT_HISTORY,
 	initialResumeBatchId = null,
+	importMountKey,
 }: ImportPageProps) {
 	const router = useRouter();
 	const [isPending, startTransition] = useTransition();
@@ -200,7 +226,9 @@ export function ImportPage({
 
 	const prefilledAccountCardValue = initialCardId
 		? encodeAccountCard("card", initialCardId)
-		: null;
+		: initialAccountId
+			? encodeAccountCard("account", initialAccountId)
+			: null;
 
 	const [statement, setStatement] = useState<ImportStatement | null>(null);
 	const [rows, setRows] = useState<ReviewRow[]>([]);
@@ -246,41 +274,97 @@ export function ImportPage({
 	} | null>(null);
 	const [importHistory, setImportHistory] = useState(initialImportHistory);
 
-	const refreshImportHistory = useCallback(async () => {
+	const importHistoryFilter = useMemo(() => {
 		const decoded = accountCardValue
 			? decodeAccountCard(accountCardValue)
 			: null;
-		const historyCardId =
-			decoded?.type === "card"
-				? decoded.id
-				: activeInvoiceContext?.cardId ?? initialCardId ?? null;
-		const historyInvoicePeriod =
-			invoicePeriod ??
-			activeInvoiceContext?.invoicePeriod ??
-			initialInvoicePeriod ??
-			null;
 
-		const entries = await fetchImportBatchHistoryAction({
-			cardId: activeInvoiceContext ? historyCardId : null,
-			invoicePeriod: activeInvoiceContext ? historyInvoicePeriod : null,
-			limit: 50,
-		});
-		setImportHistory(entries);
+		if (activeInvoiceContext) {
+			return {
+				cardId: activeInvoiceContext.cardId,
+				invoicePeriod:
+					invoicePeriod ??
+					activeInvoiceContext.invoicePeriod ??
+					initialInvoicePeriod ??
+					null,
+				accountId: null,
+			};
+		}
+
+		if (decoded?.type === "card") {
+			return {
+				cardId: decoded.id,
+				invoicePeriod: invoicePeriod ?? initialInvoicePeriod ?? null,
+				accountId: null,
+			};
+		}
+
+		if (decoded?.type === "account") {
+			return {
+				cardId: null,
+				invoicePeriod: null,
+				accountId: decoded.id,
+			};
+		}
+
+		if (initialAccountId) {
+			return {
+				cardId: null,
+				invoicePeriod: null,
+				accountId: initialAccountId,
+			};
+		}
+
+		if (initialCardId) {
+			return {
+				cardId: initialCardId,
+				invoicePeriod: invoicePeriod ?? initialInvoicePeriod ?? null,
+				accountId: null,
+			};
+		}
+
+		return {
+			cardId: null,
+			invoicePeriod: null,
+			accountId: null,
+		};
 	}, [
 		accountCardValue,
 		activeInvoiceContext,
-		initialCardId,
-		initialInvoicePeriod,
 		invoicePeriod,
+		initialInvoicePeriod,
+		initialAccountId,
+		initialCardId,
 	]);
-	const [editTransaction, setEditTransaction] = useState<TransactionItem | null>(
-		null,
+
+	const contextualImportHistory = useMemo(
+		() =>
+			hasImportHistoryFilter(importHistoryFilter)
+				? filterImportHistoryEntries(importHistory, importHistoryFilter)
+				: importHistory,
+		[importHistory, importHistoryFilter],
 	);
+
+	const refreshImportHistory = useCallback(async () => {
+		const entries = await fetchImportBatchHistoryAction({
+			cardId: importHistoryFilter.cardId,
+			invoicePeriod: importHistoryFilter.cardId
+				? importHistoryFilter.invoicePeriod
+				: null,
+			accountId: importHistoryFilter.accountId,
+			limit: 50,
+		});
+		setImportHistory(entries);
+	}, [importHistoryFilter]);
+	const [editTransaction, setEditTransaction] =
+		useState<TransactionItem | null>(null);
 	const [editDialogOpen, setEditDialogOpen] = useState(false);
+	const [linkDialogIndex, setLinkDialogIndex] = useState<number | null>(null);
+	const [isLinking, setIsLinking] = useState(false);
 	const [editDialogOptions, setEditDialogOptions] =
 		useState<TransactionDialogOptions | null>(null);
 
-	const importSessionKey = `${initialCardId ?? ""}|${initialInvoicePeriod ?? ""}`;
+	const importSessionKey = importMountKey;
 	const previousSessionKeyRef = useRef(importSessionKey);
 	const resumeAttemptedRef = useRef(false);
 
@@ -298,7 +382,11 @@ export function ImportPage({
 		setActiveInvoiceContext(invoiceContext);
 		setPayerId(defaultPayerId);
 		setAccountCardValue(
-			initialCardId ? encodeAccountCard("card", initialCardId) : null,
+			initialCardId
+				? encodeAccountCard("card", initialCardId)
+				: initialAccountId
+					? encodeAccountCard("account", initialAccountId)
+					: null,
 		);
 		setInvoicePeriod(initialInvoicePeriod);
 		setPaymentAccountId(
@@ -313,6 +401,7 @@ export function ImportPage({
 		invoiceContext,
 		defaultPayerId,
 		initialCardId,
+		initialAccountId,
 		initialInvoicePeriod,
 		initialPaymentAccountId,
 		accountOptions,
@@ -335,6 +424,11 @@ export function ImportPage({
 	useEffect(() => {
 		setImportHistory(initialImportHistory);
 	}, [initialImportHistory]);
+
+	useEffect(() => {
+		if (!hasImportHistoryFilter(importHistoryFilter)) return;
+		void refreshImportHistory();
+	}, [importHistoryFilter, refreshImportHistory]);
 
 	useEffect(() => {
 		if (previousSessionKeyRef.current === importSessionKey) return;
@@ -385,7 +479,7 @@ export function ImportPage({
 			? decodeAccountCard(accountCardValue)
 			: null;
 		const cardId =
-			decoded?.type === "card" ? decoded.id : initialCardId ?? null;
+			decoded?.type === "card" ? decoded.id : (initialCardId ?? null);
 		if (!cardId) return null;
 		return cardOptions.find((option) => option.value === cardId) ?? null;
 	}, [accountCardValue, cardOptions, initialCardId]);
@@ -396,8 +490,7 @@ export function ImportPage({
 			: null;
 		if (!decoded) return null;
 
-		const options =
-			decoded.type === "card" ? cardOptions : accountOptions;
+		const options = decoded.type === "card" ? cardOptions : accountOptions;
 		const option = options.find((entry) => entry.value === decoded.id);
 		if (!option) return null;
 
@@ -458,6 +551,17 @@ export function ImportPage({
 				initialInvoicePeriod ??
 				null;
 
+			const resolvedAccountId = (() => {
+				const decoded = accountCardValue
+					? decodeAccountCard(accountCardValue)
+					: null;
+				if (decoded?.type === "account") return decoded.id;
+				return initialAccountId ?? null;
+			})();
+
+			const statementPeriod =
+				stmt.period ?? buildPeriodFromTransactions(stmt.transactions);
+
 			setIsChecking(true);
 
 			try {
@@ -468,11 +572,15 @@ export function ImportPage({
 				const shouldFetchInvoiceSnapshots =
 					stmt.isCreditCard && resolvedCardId && resolvedInvoicePeriod;
 
+				const shouldFetchAccountSnapshots =
+					!stmt.isCreditCard && resolvedAccountId && statementPeriod;
+
 				const [
 					duplicates,
 					descriptionMemory,
 					duplicateSnapshots,
 					invoicePeriodSnapshots,
+					accountImportSnapshots,
 				] = await Promise.all([
 					checkDuplicateFitIds(fitIds).then((ids) => new Set(ids)),
 					fetchImportDescriptionMemory(
@@ -485,6 +593,13 @@ export function ImportPage({
 								resolvedInvoicePeriod,
 							)
 						: Promise.resolve([]),
+					shouldFetchAccountSnapshots
+						? fetchAccountImportDuplicateSnapshots(
+								resolvedAccountId,
+								statementPeriod.from,
+								statementPeriod.to,
+							)
+						: Promise.resolve([]),
 				]);
 
 				const duplicateSnapshotByFitId = new Map(
@@ -493,97 +608,108 @@ export function ImportPage({
 					),
 				);
 
-				const builtRows = stmt.transactions.map((t) => {
-						const isInvoicePayment = isInvoicePaymentDescription(
-							t.description,
-						);
-						const guessedCardId = isInvoicePayment
-							? guessInvoicePaymentCardId(t.description, cardOptions)
-							: null;
-						const guessedPeriod = isInvoicePayment
-							? guessInvoicePaymentPeriod(
-									t.date,
-									cardOptions,
-									guessedCardId,
-								)
-							: null;
+				const semanticCandidates =
+					invoicePeriodSnapshots.length > 0
+						? invoicePeriodSnapshots
+						: accountImportSnapshots;
 
-						const descriptionKey = normalizeDescriptionKey(t.description);
-						const remembered = descriptionMemory[descriptionKey];
-
-						let mappedCategoryId = remembered?.categoryId ?? null;
-						const mappedPayerId = remembered?.payerId ?? payerId;
-
-						if (t.categoryRaw) {
-							const categoryRaw = normalizeCategoryName(t.categoryRaw);
-							const matchedOption = categoryOptions.find(
-								(opt) => normalizeCategoryName(opt.label) === categoryRaw,
-							);
-							if (matchedOption) {
-								mappedCategoryId = matchedOption.value;
-							}
-						}
-
-						if (isInvoicePayment && pagamentosCategoryId) {
-							mappedCategoryId = pagamentosCategoryId;
-						}
-
-						const installmentImport = isInvoicePayment
+				const rowInputs = stmt.transactions.map((t) => {
+					const isInvoicePayment = isInvoicePaymentDescription(t.description);
+					return {
+						...t,
+						installmentImport: isInvoicePayment
 							? null
-							: buildReviewInstallmentImport(t.description);
+							: buildReviewInstallmentImport(t.description),
+					};
+				});
 
-						let isDuplicate = t.externalId
-							? duplicates.has(t.externalId)
-							: false;
-						let existingSnapshot = t.externalId
-							? duplicateSnapshotByFitId.get(t.externalId)
-							: undefined;
+				const semanticMatches = resolveSemanticImportMatches(
+					rowInputs,
+					semanticCandidates,
+				);
 
-						if (!isDuplicate && invoicePeriodSnapshots.length > 0) {
-							const semanticMatch = findSemanticDuplicateSnapshot(
-								{ ...t, installmentImport },
-								invoicePeriodSnapshots,
-							);
-							if (semanticMatch) {
+				const builtRows = stmt.transactions.map((t, index) => {
+					const isInvoicePayment = isInvoicePaymentDescription(t.description);
+					const guessedCardId = isInvoicePayment
+						? guessInvoicePaymentCardId(t.description, cardOptions)
+						: null;
+					const guessedPeriod = isInvoicePayment
+						? guessInvoicePaymentPeriod(t.date, cardOptions, guessedCardId)
+						: null;
+
+					const descriptionKey = normalizeDescriptionKey(t.description);
+					const remembered = descriptionMemory[descriptionKey];
+
+					let mappedCategoryId = remembered?.categoryId ?? null;
+					const mappedPayerId = remembered?.payerId ?? payerId;
+
+					if (t.categoryRaw) {
+						const categoryRaw = normalizeCategoryName(t.categoryRaw);
+						const matchedOption = categoryOptions.find(
+							(opt) => normalizeCategoryName(opt.label) === categoryRaw,
+						);
+						if (matchedOption) {
+							mappedCategoryId = matchedOption.value;
+						}
+					}
+
+					if (isInvoicePayment && pagamentosCategoryId) {
+						mappedCategoryId = pagamentosCategoryId;
+					}
+
+					const installmentImport = rowInputs[index].installmentImport;
+
+					let isDuplicate = t.externalId ? duplicates.has(t.externalId) : false;
+					let existingSnapshot = t.externalId
+						? duplicateSnapshotByFitId.get(t.externalId)
+						: undefined;
+					let duplicateValidation: ImportDuplicateValidation | null = null;
+
+					if (isDuplicate && existingSnapshot) {
+						duplicateValidation = buildImportDuplicateValidation(
+							{
+								...t,
+								installmentImport,
+							},
+							existingSnapshot,
+						);
+					} else {
+						const semanticMatch = semanticMatches.get(index);
+						if (semanticMatch) {
+							duplicateValidation = semanticMatch.validation;
+							if (semanticMatch.validation.status !== "link_suggestion") {
 								isDuplicate = true;
-								existingSnapshot = semanticMatch;
+								existingSnapshot = semanticMatch.existing;
 							}
 						}
+					}
 
-						const duplicateValidation: ImportDuplicateValidation | null =
-							isDuplicate && existingSnapshot
-								? buildImportDuplicateValidation(
-										{
-											...t,
-											installmentImport,
-										},
-										existingSnapshot,
-									)
-								: null;
+					const isLinkSuggestion =
+						duplicateValidation?.status === "link_suggestion";
 
-						return {
-							...t,
-							isDuplicate,
-							selected: isDuplicate ? false : true,
-							duplicateValidation,
-							payerId: mappedPayerId,
-							kind: isInvoicePayment
-								? ("invoice_payment" as const)
-								: ("transaction" as const),
-							invoicePaymentCardId: guessedCardId,
-							invoicePaymentPeriod: guessedPeriod,
-							installmentImport,
-							recurrenceImport: null,
-							categoryId: isInvoicePayment
-								? pagamentosCategoryId
-								: isCategoryCompatible(
-										mappedCategoryId,
-										t.transactionType,
-									)
-									? mappedCategoryId
-									: null,
-						};
-					});
+					return {
+						...t,
+						sourceDescription: t.description,
+						isDuplicate,
+						selected: isDuplicate || isLinkSuggestion ? false : true,
+						duplicateValidation,
+						linked: false,
+						payerId: mappedPayerId,
+						kind: isInvoicePayment
+							? ("invoice_payment" as const)
+							: ("transaction" as const),
+						invoicePaymentCardId: guessedCardId,
+						invoicePaymentPeriod: guessedPeriod,
+						transferPeerAccountId: null,
+						installmentImport,
+						recurrenceImport: null,
+						categoryId: isInvoicePayment
+							? pagamentosCategoryId
+							: isCategoryCompatible(mappedCategoryId, t.transactionType)
+								? mappedCategoryId
+								: null,
+					};
+				});
 
 				const draftData = options?.draftData ?? null;
 				const rowsWithDraft = draftData
@@ -610,6 +736,8 @@ export function ImportPage({
 		},
 		[
 			activeInvoiceContext,
+			accountCardValue,
+			initialAccountId,
 			initialCardId,
 			initialInvoicePeriod,
 			isCategoryCompatible,
@@ -711,7 +839,7 @@ export function ImportPage({
 					const batchCardId =
 						decodedForBatch?.type === "card"
 							? decodedForBatch.id
-							: initialCardId ?? null;
+							: (initialCardId ?? null);
 					const batchAccountId =
 						decodedForBatch?.type === "account" ? decodedForBatch.id : null;
 					const batchInvoicePeriod = resolveUploadInvoicePeriodFromStatement(
@@ -768,9 +896,8 @@ export function ImportPage({
 				? decodeAccountCard(accountCardValue)
 				: null;
 			const uploadCardId =
-				decoded?.type === "card" ? decoded.id : initialCardId ?? null;
-			const uploadAccountId =
-				decoded?.type === "account" ? decoded.id : null;
+				decoded?.type === "card" ? decoded.id : (initialCardId ?? null);
+			const uploadAccountId = decoded?.type === "account" ? decoded.id : null;
 			const uploadInvoicePeriod = resolveUploadInvoicePeriodFromStatement(
 				stmt,
 				{
@@ -823,8 +950,18 @@ export function ImportPage({
 				void refreshImportHistory();
 			}
 
+			let draftData = options?.draftData ?? null;
+			if (!draftData && options?.existingBatchId) {
+				const draftResult = await getImportBatchDraftAction({
+					batchId: options.existingBatchId,
+				});
+				if (draftResult.success) {
+					draftData = draftResult.draftData;
+				}
+			}
+
 			await processParsedStatement(stmt, {
-				draftData: options?.draftData ?? null,
+				draftData,
 			});
 		},
 		[
@@ -992,8 +1129,7 @@ export function ImportPage({
 			const registerResult = await registerImportUploadAction({
 				sourceFileName: sourceFile.name,
 				sourceFileSize: sourceFile.size,
-				cardId:
-					decoded?.type === "card" ? decoded.id : initialCardId ?? null,
+				cardId: decoded?.type === "card" ? decoded.id : (initialCardId ?? null),
 				invoicePeriod: filePeriod,
 				accountId: decoded?.type === "account" ? decoded.id : null,
 			});
@@ -1004,7 +1140,7 @@ export function ImportPage({
 					file: sourceFile,
 					batchId: registerResult.importBatchId,
 					cardId:
-						decoded?.type === "card" ? decoded.id : initialCardId ?? null,
+						decoded?.type === "card" ? decoded.id : (initialCardId ?? null),
 					invoicePeriod: filePeriod,
 					accountId: decoded?.type === "account" ? decoded.id : null,
 				});
@@ -1023,7 +1159,7 @@ export function ImportPage({
 					file: sourceFile,
 					batchId: uploadImportBatchId,
 					cardId:
-						decoded?.type === "card" ? decoded.id : initialCardId ?? null,
+						decoded?.type === "card" ? decoded.id : (initialCardId ?? null),
 					invoicePeriod: filePeriod,
 					accountId: decoded?.type === "account" ? decoded.id : null,
 					existingBatchId: uploadImportBatchId,
@@ -1034,7 +1170,7 @@ export function ImportPage({
 					batchId: uploadImportBatchId,
 					invoicePeriod: filePeriod,
 					cardId:
-						decoded?.type === "card" ? decoded.id : initialCardId ?? null,
+						decoded?.type === "card" ? decoded.id : (initialCardId ?? null),
 					accountId: decoded?.type === "account" ? decoded.id : null,
 				});
 			}
@@ -1079,7 +1215,13 @@ export function ImportPage({
 	const toggleRow = (index: number) => {
 		setRows((prev) =>
 			prev.map((r, i) => {
-				if (i !== index || isVerifiedImportDuplicate(r)) return r;
+				if (
+					i !== index ||
+					isImportRowResolved(r) ||
+					isImportLinkSuggestion(r)
+				) {
+					return r;
+				}
 				return { ...r, selected: !r.selected };
 			}),
 		);
@@ -1088,7 +1230,9 @@ export function ImportPage({
 	const toggleAll = (selected: boolean) => {
 		setRows((prev) =>
 			prev.map((r) =>
-				isVerifiedImportDuplicate(r) ? { ...r, selected: false } : { ...r, selected },
+				isImportRowResolved(r) || isImportLinkSuggestion(r)
+					? { ...r, selected: false }
+					: { ...r, selected },
 			),
 		);
 	};
@@ -1107,7 +1251,7 @@ export function ImportPage({
 
 	const handleRowTypeChange = (
 		index: number,
-		type: "expense" | "income" | "invoice_payment",
+		type: "expense" | "income" | "invoice_payment" | "transfer",
 	) => {
 		setRows((prev) =>
 			prev.map((row, rowIndex) => {
@@ -1127,6 +1271,22 @@ export function ImportPage({
 						invoicePaymentPeriod:
 							row.invoicePaymentPeriod ??
 							guessInvoicePaymentPeriod(row.date, cardOptions, cardId),
+						transferPeerAccountId: null,
+						installmentImport: null,
+						recurrenceImport: null,
+					};
+				}
+
+				if (type === "transfer") {
+					return {
+						...row,
+						kind: "transfer" as const,
+						categoryId: null,
+						invoicePaymentCardId: null,
+						invoicePaymentPeriod: null,
+						transferPeerAccountId: row.transferPeerAccountId,
+						installmentImport: null,
+						recurrenceImport: null,
 					};
 				}
 
@@ -1136,6 +1296,7 @@ export function ImportPage({
 					transactionType: type,
 					invoicePaymentCardId: null,
 					invoicePaymentPeriod: null,
+					transferPeerAccountId: null,
 					categoryId: isCategoryCompatible(row.categoryId, type)
 						? row.categoryId
 						: null,
@@ -1174,6 +1335,17 @@ export function ImportPage({
 		);
 	};
 
+	const handleTransferPeerAccountChange = (
+		index: number,
+		accountId: string | null,
+	) => {
+		setRows((prev) =>
+			prev.map((row, rowIndex) =>
+				rowIndex === index ? { ...row, transferPeerAccountId: accountId } : row,
+			),
+		);
+	};
+
 	const handlePayerChange = (index: number, payerId: string | null) => {
 		setRows((prev) =>
 			prev.map((r, i) => (i === index ? { ...r, payerId } : r)),
@@ -1184,7 +1356,8 @@ export function ImportPage({
 		const row = rows[index];
 		if (!row) return;
 
-		const existingTransactionId = row.duplicateValidation?.existingTransactionId;
+		const existingTransactionId =
+			row.duplicateValidation?.existingTransactionId;
 		const result = existingTransactionId
 			? await deleteImportDuplicateTransaction(existingTransactionId)
 			: row.externalId
@@ -1246,6 +1419,68 @@ export function ImportPage({
 			await processParsedStatement(statement);
 		}
 	}, [statement, processParsedStatement]);
+
+	const handleOpenLinkDuplicate = useCallback((index: number) => {
+		setLinkDialogIndex(index);
+	}, []);
+
+	const handleDismissLinkSuggestion = useCallback((index: number) => {
+		setRows((prev) =>
+			prev.map((row, rowIndex) =>
+				rowIndex === index
+					? { ...row, duplicateValidation: null, selected: true }
+					: row,
+			),
+		);
+	}, []);
+
+	const handleConfirmLinkDuplicate = useCallback(
+		async (mergeDescription: "import" | "existing") => {
+			if (linkDialogIndex === null) return;
+
+			const row = rows[linkDialogIndex];
+			const validation = row?.duplicateValidation;
+			if (!validation || validation.status !== "link_suggestion") return;
+
+			const resolvedPayerId =
+				validation.existingPayerId ?? row.payerId ?? payerId ?? defaultPayerId;
+
+			setIsLinking(true);
+			try {
+				const result = await linkImportToExistingAction({
+					existingTransactionId: validation.existingTransactionId,
+					importedDescription: row.description,
+					externalId: row.externalId,
+					mergeDescription,
+					fallbackPayerId: resolvedPayerId,
+				});
+
+				if (!result.success) {
+					toast.error(result.error);
+					return;
+				}
+
+				setRows((prev) =>
+					prev.map((currentRow, rowIndex) =>
+						rowIndex === linkDialogIndex
+							? {
+									...currentRow,
+									linked: true,
+									selected: false,
+									payerId: resolvedPayerId,
+									duplicateValidation: null,
+								}
+							: currentRow,
+					),
+				);
+				setLinkDialogIndex(null);
+				toast.success("Lançamento vinculado ao cadastro existente.");
+			} finally {
+				setIsLinking(false);
+			}
+		},
+		[linkDialogIndex, rows, payerId, defaultPayerId],
+	);
 
 	const handleDescriptionChange = (index: number, description: string) => {
 		setRows((prev) =>
@@ -1387,7 +1622,10 @@ export function ImportPage({
 		);
 	};
 
-	const handleRecurrenceCountChange = (index: number, recurrenceCount: number) => {
+	const handleRecurrenceCountChange = (
+		index: number,
+		recurrenceCount: number,
+	) => {
 		setRows((prev) =>
 			prev.map((row, rowIndex) => {
 				if (rowIndex !== index || !row.recurrenceImport) return row;
@@ -1462,8 +1700,7 @@ export function ImportPage({
 
 		const matchesTransactionType = (
 			transactionType: ReviewRow["transactionType"],
-		) =>
-			category.type === categoryGroupByTransactionType[transactionType];
+		) => category.type === categoryGroupByTransactionType[transactionType];
 
 		if (categoryCreateBulk) {
 			setRows((prev) =>
@@ -1497,6 +1734,22 @@ export function ImportPage({
 			: "despesa";
 
 	const isCard = accountCardValue?.startsWith("card:") ?? false;
+	const importAccountId = useMemo(() => {
+		const decoded = accountCardValue
+			? decodeAccountCard(accountCardValue)
+			: null;
+		return decoded?.type === "account"
+			? decoded.id
+			: (initialAccountId ?? null);
+	}, [accountCardValue, initialAccountId]);
+
+	const transferAccountOptions = useMemo(
+		() =>
+			importAccountId
+				? accountOptions.filter((option) => option.value !== importAccountId)
+				: accountOptions,
+		[accountOptions, importAccountId],
+	);
 	const isPaidInvoiceImport = Boolean(
 		statement?.isCreditCard && statement.invoice?.isPaid,
 	);
@@ -1506,9 +1759,11 @@ export function ImportPage({
 		duplicateCount,
 		duplicateVerifiedCount,
 		duplicateMismatchCount,
+		linkSuggestionCount,
 		uncategorizedCount,
 		withoutPayerCount,
 		unresolvedInvoicePayments,
+		unresolvedTransfers,
 		hasInvoicePayments,
 	} = useMemo(() => {
 		const selected = rows.filter((r) => r.selected);
@@ -1522,6 +1777,7 @@ export function ImportPage({
 			duplicateMismatchCount: duplicateRows.filter(
 				(r) => r.duplicateValidation?.status === "mismatch",
 			).length,
+			linkSuggestionCount: rows.filter(isImportLinkSuggestion).length,
 			uncategorizedCount: selected.filter(
 				(r) => r.kind === "transaction" && !r.categoryId,
 			).length,
@@ -1530,6 +1786,9 @@ export function ImportPage({
 				(r) =>
 					r.kind === "invoice_payment" &&
 					(!r.invoicePaymentCardId || !r.invoicePaymentPeriod),
+			).length,
+			unresolvedTransfers: selected.filter(
+				(r) => r.kind === "transfer" && !r.transferPeerAccountId,
 			).length,
 			hasInvoicePayments: selected.some((r) => r.kind === "invoice_payment"),
 		};
@@ -1548,11 +1807,26 @@ export function ImportPage({
 	).length;
 
 	const importRecordCount = countImportRecords(selectedRows);
+	const importableRows = rows.filter(
+		(row) => !isImportRowResolved(row) && !isImportLinkSuggestion(row),
+	);
+	const canPayImportedInvoiceOnly =
+		isPaidInvoiceImport &&
+		!!paymentAccountId &&
+		!!accountCardValue &&
+		(!isCard || !!invoicePeriod) &&
+		rows.length > 0 &&
+		selectedRows.length === 0 &&
+		importableRows.length === 0;
 
 	const importSummary = useMemo(() => {
 		const verifiedCount = rows.filter(isVerifiedImportDuplicate).length;
+		const linkedCount = rows.filter((row) => row.linked).length;
 		const excludedCount = rows.filter(
-			(row) => !row.selected && !isVerifiedImportDuplicate(row),
+			(row) =>
+				!row.selected &&
+				!isImportRowResolved(row) &&
+				!isImportLinkSuggestion(row),
 		).length;
 		const replacedCount = selectedRows.filter((row) => row.reimported).length;
 		const installmentBackfillCount = selectedRows.reduce((total, row) => {
@@ -1562,6 +1836,7 @@ export function ImportPage({
 
 		return {
 			verifiedCount,
+			linkedCount,
 			excludedCount,
 			replacedCount,
 			installmentBackfillCount,
@@ -1573,19 +1848,52 @@ export function ImportPage({
 			? decodeAccountCard(accountCardValue)
 			: null;
 		const cardId =
-			decoded?.type === "card" ? decoded.id : initialCardId ?? null;
-		const period = invoicePeriod ?? initialInvoicePeriod;
+			decoded?.type === "card"
+				? decoded.id
+				: (initialCardId ??
+					linkedCardId ??
+					activeInvoiceContext?.cardId ??
+					null);
+		const period =
+			invoicePeriod ??
+			initialInvoicePeriod ??
+			activeInvoiceContext?.invoicePeriod ??
+			null;
 
 		if (!cardId || !period) return null;
-		return `/cards/${cardId}/invoice?periodo=${encodeURIComponent(period)}`;
-	}, [accountCardValue, initialCardId, initialInvoicePeriod, invoicePeriod]);
+		return `/cards/${cardId}/invoice?periodo=${formatPeriodForUrl(period)}`;
+	}, [
+		accountCardValue,
+		activeInvoiceContext?.cardId,
+		activeInvoiceContext?.invoicePeriod,
+		initialCardId,
+		initialInvoicePeriod,
+		invoicePeriod,
+		linkedCardId,
+	]);
+
+	const returnToAccountStatementHref = useMemo(() => {
+		const decoded = accountCardValue
+			? decodeAccountCard(accountCardValue)
+			: null;
+		const accountId =
+			decoded?.type === "account" ? decoded.id : (initialAccountId ?? null);
+		const period = invoicePeriod ?? initialInvoicePeriod ?? null;
+
+		if (!accountId || !period) return null;
+		return buildAccountStatementHref(accountId, period);
+	}, [accountCardValue, initialAccountId, initialInvoicePeriod, invoicePeriod]);
+
+	const returnToSourceHref =
+		returnToInvoiceHref ?? returnToAccountStatementHref;
 
 	const canImport =
-		selectedRows.length > 0 &&
+		(selectedRows.length > 0 || canPayImportedInvoiceOnly) &&
 		!!accountCardValue &&
 		uncategorizedCount === 0 &&
 		withoutPayerCount === 0 &&
 		unresolvedInvoicePayments === 0 &&
+		unresolvedTransfers === 0 &&
 		invalidInstallmentCount === 0 &&
 		invalidRecurrenceCount === 0 &&
 		(!isCard || !!invoicePeriod) &&
@@ -1645,8 +1953,8 @@ export function ImportPage({
 
 			void refreshImportHistory();
 
-			if (returnToInvoiceHref) {
-				router.push(returnToInvoiceHref);
+			if (returnToSourceHref) {
+				router.replace(returnToSourceHref);
 				return;
 			}
 
@@ -1654,13 +1962,42 @@ export function ImportPage({
 		});
 	};
 
-	const handleConfirmCancelImport = () => {
-		if (returnToInvoiceHref) {
-			router.push(returnToInvoiceHref);
-			return;
+	const handleConfirmCancelImport = async () => {
+		const batchId =
+			uploadImportBatchId ??
+			awaitingResumeBatch?.batchId ??
+			initialResumeBatchId ??
+			null;
+
+		if (batchId) {
+			const result = await deleteImportBatchAction({ batchId });
+			if (!result.success) {
+				toast.error(result.error ?? "Não foi possível descartar a importação.");
+				throw new Error(result.error ?? "discard failed");
+			}
 		}
 
+		resumeAttemptedRef.current = true;
+
+		if (initialResumeBatchId) {
+			const params = new URLSearchParams(window.location.search);
+			params.delete("lote");
+			const query = params.toString();
+			router.replace(
+				query
+					? `${window.location.pathname}?${query}`
+					: window.location.pathname,
+			);
+		}
+
+		await refreshImportHistory();
+
 		resetImportState();
+
+		if (returnToSourceHref) {
+			router.replace(returnToSourceHref);
+			return;
+		}
 	};
 
 	const handleImport = () => {
@@ -1673,6 +2010,17 @@ export function ImportPage({
 		const accountId = decoded?.type === "account" ? decoded.id : null;
 		const paymentMethod =
 			decoded?.type === "card" ? "Cartão de crédito" : "Pix";
+		const importedInvoicePeriod = invoicePeriod ?? initialInvoicePeriod;
+		const invoiceReturnHref =
+			cardId && importedInvoicePeriod
+				? `/cards/${cardId}/invoice?periodo=${formatPeriodForUrl(importedInvoicePeriod)}`
+				: null;
+		const accountReturnHref =
+			accountId && importedInvoicePeriod
+				? buildAccountStatementHref(accountId, importedInvoicePeriod)
+				: initialAccountId && importedInvoicePeriod
+					? buildAccountStatementHref(initialAccountId, importedInvoicePeriod)
+					: null;
 
 		startTransition(async () => {
 			const result = await importTransactionsAction({
@@ -1687,6 +2035,7 @@ export function ImportPage({
 					kind: r.kind,
 					invoicePaymentCardId: r.invoicePaymentCardId,
 					invoicePaymentPeriod: r.invoicePaymentPeriod,
+					transferPeerAccountId: r.transferPeerAccountId,
 					installmentImport:
 						r.installmentImport?.enabled &&
 						isValidInstallmentImport(r.installmentImport)
@@ -1730,6 +2079,7 @@ export function ImportPage({
 			saveCategoryMappings(
 				selectedRows.map((r) => ({
 					description: r.description,
+					sourceDescription: r.sourceDescription,
 					categoryId: r.categoryId,
 					payerId: r.payerId,
 				})),
@@ -1756,15 +2106,14 @@ export function ImportPage({
 				}
 			}
 			const msg = isPaidInvoiceImport
-				? result.skipped > 0
-					? `Fatura paga com ${result.imported} lançamentos importados (${result.skipped} duplicatas ignoradas).`
-					: `Fatura paga com ${result.imported} lançamento${result.imported !== 1 ? "s" : ""} importado${result.imported !== 1 ? "s" : ""}.`
+				? result.imported > 0
+					? result.skipped > 0
+						? `Fatura paga com ${result.imported} lançamentos importados (${result.skipped} duplicatas ignoradas).`
+						: `Fatura paga com ${result.imported} lançamento${result.imported !== 1 ? "s" : ""} importado${result.imported !== 1 ? "s" : ""}.`
+					: "Fatura marcada como paga."
 				: result.skipped > 0
 					? `${result.imported} importados, ${result.skipped} duplicatas ignoradas.`
 					: `${result.imported} lançamento${result.imported !== 1 ? "s" : ""} importado${result.imported !== 1 ? "s" : ""}.`;
-
-			resetImportState();
-			router.push(returnToInvoiceHref ?? "/transactions");
 
 			toast.success(msg, {
 				duration: 8000,
@@ -1782,6 +2131,19 @@ export function ImportPage({
 						}
 					: undefined,
 			});
+
+			if (invoiceReturnHref) {
+				router.replace(invoiceReturnHref);
+				return;
+			}
+
+			if (accountReturnHref) {
+				router.replace(accountReturnHref);
+				return;
+			}
+
+			resetImportState();
+			router.replace("/transactions");
 		});
 	};
 
@@ -1811,9 +2173,31 @@ export function ImportPage({
 		? null
 		: "Importe transações a partir de extratos ou faturas (.ofx, .csv, .txt, .pdf) ou planilha .xlsx exportada pelo seu banco.";
 
+	const accountImportName = useMemo(() => {
+		if (importHistoryFilter.cardId) return null;
+		const accountId = importHistoryFilter.accountId;
+		if (!accountId) return null;
+		return (
+			accountOptions.find((option) => option.value === accountId)?.label ?? null
+		);
+	}, [accountOptions, importHistoryFilter]);
+
 	const importHistoryTitle = activeInvoiceContext
 		? `Importações desta fatura (${displayPeriod(activeInvoiceContext.invoicePeriod)})`
-		: "Importações recentes";
+		: accountImportName
+			? `Importações desta conta (${accountImportName})`
+			: importHistoryFilter.cardId
+				? "Importações deste cartão"
+				: "Importações recentes";
+
+	const importHistoryViewAllHref = activeInvoiceContext
+		? buildInvoiceImportHistoryHref(
+				activeInvoiceContext.cardId,
+				activeInvoiceContext.invoicePeriod,
+			)
+		: importHistoryFilter.accountId
+			? buildAccountImportHistoryHref(importHistoryFilter.accountId)
+			: "/transactions/import/history";
 
 	return (
 		<Card>
@@ -1847,8 +2231,8 @@ export function ImportPage({
 													<span className="font-medium text-foreground">
 														{awaitingResumeBatch.sourceFileName}
 													</span>{" "}
-													não está salvo no servidor. Selecione o mesmo arquivo na
-													área abaixo para continuar esta importação.
+													não está salvo no servidor. Selecione o mesmo arquivo
+													na área abaixo para continuar esta importação.
 												</span>
 												<Button
 													type="button"
@@ -1871,21 +2255,27 @@ export function ImportPage({
 										onErrorClear={() => setFileError(null)}
 										linkedCardId={linkedCardId}
 										autoPdfPasswordAttempts={autoPdfPasswordAttempts}
-										importHistory={importHistory}
+										importHistory={contextualImportHistory}
 										resumeBatchId={awaitingResumeBatch?.batchId ?? null}
+										onDuplicateBatchCleared={() => {
+											void refreshImportHistory();
+										}}
 									/>
 									<ImportFileHistory
-										entries={importHistory}
+										entries={contextualImportHistory}
 										title={importHistoryTitle}
 										compact
 										limit={10}
-										viewAllHref="/transactions/import/history"
+										allowDelete
+										viewAllHref={importHistoryViewAllHref}
 										onContinueImport={handleContinueImportFromHistory}
 										resumingBatchId={resumingBatchId}
 										description={
 											activeInvoiceContext
 												? "Arquivos já enviados para esta fatura. Reprocessar não cria entrada nova — só um novo upload registra outro item. O sistema avisa se você tentar enviar o mesmo arquivo de novo."
-												: "Arquivos importados recentemente nesta conta. Reprocessar reutiliza o registro existente."
+												: hasImportHistoryFilter(importHistoryFilter)
+													? "Arquivos já enviados para esta conta. Reprocessar reutiliza o registro existente."
+													: "Arquivos importados recentemente. Reprocessar reutiliza o registro existente."
 										}
 									/>
 								</div>
@@ -1915,6 +2305,7 @@ export function ImportPage({
 								duplicates={duplicateCount}
 								duplicateVerified={duplicateVerifiedCount}
 								duplicateMismatch={duplicateMismatchCount}
+								linkSuggestions={linkSuggestionCount}
 								uncategorized={uncategorizedCount}
 								withoutPayer={withoutPayerCount}
 							/>
@@ -1941,9 +2332,11 @@ export function ImportPage({
 
 							<ReviewTable
 								rows={rows}
+								defaultPayerId={defaultPayerId}
 								payerOptions={payerOptions}
 								categoryOptions={mergedCategoryOptions}
 								cardOptions={cardOptions}
+								transferAccountOptions={transferAccountOptions}
 								isCard={isCard}
 								invoicePeriod={invoicePeriod}
 								onToggle={toggleRow}
@@ -1954,6 +2347,7 @@ export function ImportPage({
 								onRowTypeChange={handleRowTypeChange}
 								onInvoicePaymentCardChange={handleInvoicePaymentCardChange}
 								onInvoicePaymentPeriodChange={handleInvoicePaymentPeriodChange}
+								onTransferPeerAccountChange={handleTransferPeerAccountChange}
 								onDescriptionChange={handleDescriptionChange}
 								onInstallmentToggle={handleInstallmentToggle}
 								onInstallmentDismiss={handleInstallmentDismiss}
@@ -1961,6 +2355,8 @@ export function ImportPage({
 								onInstallmentCurrentChange={handleInstallmentCurrentChange}
 								onUndoDuplicate={handleUndoDuplicate}
 								onEditDuplicate={handleEditDuplicate}
+								onLinkDuplicate={handleOpenLinkDuplicate}
+								onDismissLinkSuggestion={handleDismissLinkSuggestion}
 								onConvertToInstallment={handleConvertToInstallment}
 								onConvertToRecurrence={handleConvertToRecurrence}
 								onRecurrenceToggle={handleRecurrenceToggle}
@@ -1990,7 +2386,10 @@ export function ImportPage({
 											<RiSaveLine className="size-4" aria-hidden />
 											{isSavingDraft ? "Salvando…" : "Continuar depois"}
 										</Button>
-										{rows.length > 0 && !canSaveDraft && !isPending && !isSavingDraft ? (
+										{rows.length > 0 &&
+										!canSaveDraft &&
+										!isPending &&
+										!isSavingDraft ? (
 											<p className="text-muted-foreground text-sm sm:max-w-xs">
 												{uploadImportBatchId
 													? "Aguarde o processamento para salvar o rascunho."
@@ -2009,6 +2408,12 @@ export function ImportPage({
 												{unresolvedInvoicePayments} pagamento
 												{unresolvedInvoicePayments !== 1 ? "s" : ""} de fatura
 												sem cartão ou período.
+											</p>
+										) : unresolvedTransfers > 0 ? (
+											<p className="text-muted-foreground text-sm">
+												{unresolvedTransfers} transferência
+												{unresolvedTransfers !== 1 ? "s" : ""} sem a outra conta
+												selecionada.
 											</p>
 										) : hasInvoicePayments &&
 											!accountCardValue.startsWith("account:") ? (
@@ -2037,6 +2442,16 @@ export function ImportPage({
 											<p className="text-muted-foreground text-sm">
 												Revise os dados da recorrência antes de importar.
 											</p>
+										) : importableRows.length > 0 &&
+											selectedRows.length === 0 ? (
+											<p className="text-muted-foreground text-sm">
+												Selecione ao menos um lançamento para importar.
+											</p>
+										) : canPayImportedInvoiceOnly ? (
+											<p className="text-muted-foreground text-sm">
+												Lançamentos já importados. Confirme para marcar a fatura
+												como paga.
+											</p>
 										) : null}
 										<Button
 											onClick={handleRequestImport}
@@ -2048,7 +2463,9 @@ export function ImportPage({
 													? "Processando…"
 													: "Importando…"
 												: isPaidInvoiceImport
-													? `Pagar fatura (${importRecordCount} lançamento${importRecordCount !== 1 ? "s" : ""})`
+													? canPayImportedInvoiceOnly
+														? "Pagar fatura"
+														: `Pagar fatura (${importRecordCount} lançamento${importRecordCount !== 1 ? "s" : ""})`
 													: `Importar ${importRecordCount} lançamento${importRecordCount !== 1 ? "s" : ""}`}
 										</Button>
 									</div>
@@ -2104,6 +2521,22 @@ export function ImportPage({
 				allCategories={allCategoriesForDialog}
 				defaultType={categoryCreateDefaultType}
 			/>
+			{linkDialogIndex !== null && rows[linkDialogIndex] ? (
+				<ImportLinkDialog
+					open={linkDialogIndex !== null}
+					onOpenChange={(open) => {
+						if (!open) setLinkDialogIndex(null);
+					}}
+					importedDescription={rows[linkDialogIndex].description}
+					importedDate={rows[linkDialogIndex].date}
+					importedAmount={rows[linkDialogIndex].amount}
+					validation={rows[linkDialogIndex].duplicateValidation}
+					isPending={isLinking}
+					onConfirm={(mergeDescription) =>
+						void handleConfirmLinkDuplicate(mergeDescription)
+					}
+				/>
+			) : null}
 			{editDialogOptions && editTransaction ? (
 				<TransactionDialog
 					mode="update"

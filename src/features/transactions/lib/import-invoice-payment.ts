@@ -6,6 +6,7 @@ const INVOICE_PAYMENT_PATTERNS = [
 	/pagamento\s+(efetuado\s+)?pagamento\s+fatura/i,
 	/^pagamento\s+fatura/i,
 	/pagto\s+fatura/i,
+	/^pagamento\s+recebido$/i,
 ];
 
 export function isInvoicePaymentDescription(description: string): boolean {
@@ -42,9 +43,5 @@ export function guessInvoicePaymentPeriod(
 	const card = cardOptions.find((option) => option.value === cardId);
 	if (!card) return null;
 
-	return deriveCreditCardPeriod(
-		paymentDate,
-		card.closingDay,
-		card.dueDay,
-	);
+	return deriveCreditCardPeriod(paymentDate, card.closingDay, card.dueDay);
 }

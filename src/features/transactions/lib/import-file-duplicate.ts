@@ -12,7 +12,40 @@ export type ImportFileHistoryEntry = {
 	cardId: string | null;
 	invoicePeriod: string | null;
 	cardName: string | null;
+	accountId: string | null;
+	accountName: string | null;
 };
+
+export type ImportHistoryFilter = {
+	cardId: string | null;
+	invoicePeriod: string | null;
+	accountId: string | null;
+};
+
+export function hasImportHistoryFilter(filter: ImportHistoryFilter): boolean {
+	return Boolean(filter.cardId || filter.accountId);
+}
+
+export function filterImportHistoryEntries(
+	entries: ImportFileHistoryEntry[],
+	filter: ImportHistoryFilter,
+): ImportFileHistoryEntry[] {
+	if (filter.cardId) {
+		return entries.filter(
+			(entry) =>
+				entry.cardId === filter.cardId &&
+				(!filter.invoicePeriod || entry.invoicePeriod === filter.invoicePeriod),
+		);
+	}
+
+	if (filter.accountId) {
+		return entries.filter(
+			(entry) => entry.accountId === filter.accountId && entry.cardId == null,
+		);
+	}
+
+	return entries;
+}
 
 function normalizeImportFileName(value: string): string {
 	return value.trim().toLowerCase();

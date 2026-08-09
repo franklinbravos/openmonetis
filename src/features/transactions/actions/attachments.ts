@@ -60,11 +60,9 @@ type UploadTokenPayload = {
 };
 
 function getUploadTokenSecret(): string {
-	const secret = process.env.BETTER_AUTH_SECRET;
+	const secret = process.env.APP_SECRET;
 	if (!secret) {
-		throw new Error(
-			"BETTER_AUTH_SECRET is required. Set it in your .env file.",
-		);
+		throw new Error("APP_SECRET is required. Set it in your .env file.");
 	}
 	return secret;
 }

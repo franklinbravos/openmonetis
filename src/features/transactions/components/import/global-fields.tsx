@@ -193,9 +193,7 @@ export function GlobalFields({
 						<Label>Conta de pagamento</Label>
 						<Select
 							value={paymentAccountId ?? ""}
-							onValueChange={(value) =>
-								onPaymentAccountChange?.(value || null)
-							}
+							onValueChange={(value) => onPaymentAccountChange?.(value || null)}
 						>
 							<SelectTrigger className="w-full">
 								<SelectValue placeholder="Selecionar conta…">

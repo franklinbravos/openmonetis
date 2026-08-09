@@ -38,8 +38,8 @@ export function ImportInvoicePeriodMismatchDialog({
 					<DialogTitle>Fatura diferente detectada</DialogTitle>
 					<DialogDescription>
 						O arquivo enviado é da fatura de{" "}
-						<span className="font-medium text-foreground">{fileLabel}</span>, mas
-						você veio da fatura de{" "}
+						<span className="font-medium text-foreground">{fileLabel}</span>,
+						mas você veio da fatura de{" "}
 						<span className="font-medium text-foreground">{expectedLabel}</span>{" "}
 						do cartão {cardName}.
 					</DialogDescription>

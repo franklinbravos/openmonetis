@@ -49,25 +49,29 @@ export function ImportConfirmDialog({
 					</DialogTitle>
 					<DialogDescription>
 						{isPaidInvoiceImport
-							? "Os lançamentos serão importados e a fatura será marcada como paga."
+							? importCount > 0
+								? "Os lançamentos serão importados e a fatura será marcada como paga."
+								: "Os lançamentos já estão importados. A fatura será marcada como paga."
 							: "Revise o resumo abaixo antes de concluir a importação."}
 					</DialogDescription>
 				</DialogHeader>
 
 				<div className="space-y-3 rounded-md border bg-muted/20 p-4 text-sm">
-					<SummaryRow
-						label="Serão importados"
-						value={importCount}
-						tone="success"
-						prefix="+"
-						emphasis
-					/>
-					{verifiedCount > 0 ? (
+					{importCount > 0 ? (
 						<SummaryRow
-							label="Conferidos"
-							value={verifiedCount}
-							tone="info"
+							label="Serão importados"
+							value={importCount}
+							tone="success"
+							prefix="+"
+							emphasis
 						/>
+					) : isPaidInvoiceImport ? (
+						<p className="text-muted-foreground text-sm leading-relaxed">
+							Nenhum lançamento novo será importado.
+						</p>
+					) : null}
+					{verifiedCount > 0 ? (
+						<SummaryRow label="Conferidos" value={verifiedCount} tone="info" />
 					) : null}
 					{editedCount > 0 ? (
 						<SummaryRow label="Serão editados" value={editedCount} />

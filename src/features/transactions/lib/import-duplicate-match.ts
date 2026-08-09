@@ -31,8 +31,17 @@ export type ImportDuplicateMismatch = {
 	existing: string;
 };
 
+export type ImportDuplicateStatus = "match" | "mismatch" | "link_suggestion";
+
+export type ImportMatchScore = {
+	date: boolean;
+	amount: boolean;
+	description: boolean;
+};
+
 export type ImportDuplicateValidation = {
-	status: "match" | "mismatch";
+	status: ImportDuplicateStatus;
+	matchScore: ImportMatchScore;
 	mismatches: ImportDuplicateMismatch[];
 	existingTransactionId: string;
 	existingPayerId: string | null;
@@ -131,8 +140,32 @@ function getImportedDescriptionForMatch(row: ImportRowForMatch): string {
 	return resolveImportMatchIdentity(row).baseName;
 }
 
+const TRANSFER_TRANSACTION_TYPE = "Transferência";
+
 function mapDbTransactionType(value: string): "income" | "expense" {
 	return value === "Receita" ? "income" : "expense";
+}
+
+function isTransferDbTransactionType(value: string): boolean {
+	return value === TRANSFER_TRANSACTION_TYPE;
+}
+
+function amountsMatchForImportDuplicate(
+	importedType: "income" | "expense",
+	importedAmount: number,
+	existingType: string,
+	existingAmount: number,
+): boolean {
+	const normalizedExistingAmount = Math.abs(existingAmount);
+	if (Math.abs(importedAmount - normalizedExistingAmount) > 0.009) {
+		return false;
+	}
+
+	if (isTransferDbTransactionType(existingType)) {
+		return true;
+	}
+
+	return importedType === mapDbTransactionType(existingType);
 }
 
 function formatTransactionTypeLabel(type: "income" | "expense"): string {
@@ -147,31 +180,53 @@ function formatInstallmentLabel(
 	return `${current}/${total}`;
 }
 
+export function scoreImportAgainstSnapshot(
+	row: ImportRowForMatch,
+	existing: ImportDuplicateSnapshot,
+): ImportMatchScore {
+	const importedDate = row.date;
+	const existingDate = toDateOnlyString(existing.purchaseDate);
+	const importedType = row.transactionType;
+	const importedAmount = row.amount;
+	const importedIdentity = resolveImportMatchIdentity(row);
+	const existingIdentity = resolveExistingMatchIdentity(existing);
+
+	return {
+		date: Boolean(
+			importedDate && existingDate && importedDate === existingDate,
+		),
+		amount: amountsMatchForImportDuplicate(
+			importedType,
+			importedAmount,
+			existing.transactionType,
+			Number(existing.amount),
+		),
+		description:
+			importedIdentity.baseName === existingIdentity.baseName &&
+			installmentsAreCompatible(importedIdentity, existingIdentity),
+	};
+}
+
+export function countImportMatchScore(score: ImportMatchScore): number {
+	return Number(score.date) + Number(score.amount) + Number(score.description);
+}
+
+function linkSuggestionPriority(score: ImportMatchScore): number {
+	if (score.date && score.amount) return 3;
+	if (score.date && score.description) return 2;
+	if (score.amount && score.description) return 1;
+	return 0;
+}
+
 export function findSemanticDuplicateSnapshot(
 	row: ImportRowForMatch,
 	candidates: ImportDuplicateSnapshot[],
 ): ImportDuplicateSnapshot | null {
-	const importedDate = row.date;
-	if (!importedDate) return null;
-
-	const importedAmount = row.amount;
-	const importedIdentity = resolveImportMatchIdentity(row);
-
 	for (const existing of candidates) {
-		const existingDate = toDateOnlyString(existing.purchaseDate);
-		if (existingDate !== importedDate) continue;
-
-		const existingAmount = Math.abs(Number(existing.amount));
-		if (Math.abs(importedAmount - existingAmount) > 0.009) continue;
-
-		const existingIdentity = resolveExistingMatchIdentity(existing);
-		if (importedIdentity.baseName !== existingIdentity.baseName) continue;
-
-		if (!installmentsAreCompatible(importedIdentity, existingIdentity)) {
-			continue;
+		const score = scoreImportAgainstSnapshot(row, existing);
+		if (countImportMatchScore(score) === 3) {
+			return existing;
 		}
-
-		return existing;
 	}
 
 	return null;
@@ -180,7 +235,9 @@ export function findSemanticDuplicateSnapshot(
 export function buildImportDuplicateValidation(
 	row: ImportRowForMatch,
 	existing: ImportDuplicateSnapshot,
+	forcedStatus?: ImportDuplicateStatus,
 ): ImportDuplicateValidation {
+	const matchScore = scoreImportAgainstSnapshot(row, existing);
 	const mismatches: ImportDuplicateMismatch[] = [];
 
 	const importedDate = row.date;
@@ -207,7 +264,10 @@ export function buildImportDuplicateValidation(
 
 	const importedType = row.transactionType;
 	const existingType = mapDbTransactionType(existing.transactionType);
-	if (importedType !== existingType) {
+	if (
+		!isTransferDbTransactionType(existing.transactionType) &&
+		importedType !== existingType
+	) {
 		mismatches.push({
 			field: "type",
 			label: "Tipo",
@@ -254,8 +314,23 @@ export function buildImportDuplicateValidation(
 		}
 	}
 
+	let status: ImportDuplicateStatus;
+	if (forcedStatus) {
+		status = forcedStatus;
+	} else if (
+		countImportMatchScore(matchScore) === 3 &&
+		mismatches.length === 0
+	) {
+		status = "match";
+	} else if (countImportMatchScore(matchScore) === 3) {
+		status = "mismatch";
+	} else {
+		status = "link_suggestion";
+	}
+
 	return {
-		status: mismatches.length === 0 ? "match" : "mismatch",
+		status,
+		matchScore,
 		mismatches,
 		existingTransactionId: existing.id,
 		existingPayerId: existing.payerId,
@@ -263,14 +338,131 @@ export function buildImportDuplicateValidation(
 	};
 }
 
+export type ResolvedImportSemanticMatch = {
+	existing: ImportDuplicateSnapshot;
+	validation: ImportDuplicateValidation;
+};
+
+export function resolveSemanticImportMatches(
+	rows: ImportRowForMatch[],
+	candidates: ImportDuplicateSnapshot[],
+): Map<number, ResolvedImportSemanticMatch> {
+	const results = new Map<number, ResolvedImportSemanticMatch>();
+	if (rows.length === 0 || candidates.length === 0) return results;
+
+	const scoreMatrix = rows.map((row) =>
+		candidates.map((candidate) => scoreImportAgainstSnapshot(row, candidate)),
+	);
+
+	const candidateHasPerfectMatchInFile = candidates.map((_, candidateIndex) =>
+		scoreMatrix.some(
+			(rowScores) => countImportMatchScore(rowScores[candidateIndex]) === 3,
+		),
+	);
+
+	const claimedExistingIds = new Set<string>();
+
+	for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+		const row = rows[rowIndex];
+		let bestCandidateIndex: number | null = null;
+		let bestScore = 0;
+		let bestPriority = -1;
+
+		for (
+			let candidateIndex = 0;
+			candidateIndex < candidates.length;
+			candidateIndex++
+		) {
+			const score = scoreMatrix[rowIndex][candidateIndex];
+			const total = countImportMatchScore(score);
+			if (total < 2) continue;
+
+			if (total === 3) {
+				if (bestScore < 3) {
+					bestCandidateIndex = candidateIndex;
+					bestScore = 3;
+					bestPriority = 99;
+				}
+				continue;
+			}
+
+			if (candidateHasPerfectMatchInFile[candidateIndex]) {
+				continue;
+			}
+
+			const priority = linkSuggestionPriority(score);
+			if (
+				bestScore < 3 &&
+				(bestCandidateIndex === null ||
+					priority > bestPriority ||
+					(priority === bestPriority && bestScore < 2))
+			) {
+				bestCandidateIndex = candidateIndex;
+				bestScore = 2;
+				bestPriority = priority;
+			}
+		}
+
+		if (bestCandidateIndex === null) continue;
+
+		const existing = candidates[bestCandidateIndex];
+		if (bestScore === 2 && claimedExistingIds.has(existing.id)) {
+			continue;
+		}
+
+		const validation = buildImportDuplicateValidation(
+			row,
+			existing,
+			bestScore === 2 ? "link_suggestion" : undefined,
+		);
+
+		results.set(rowIndex, { existing, validation });
+
+		if (bestScore === 3) {
+			claimedExistingIds.add(existing.id);
+		} else {
+			claimedExistingIds.add(existing.id);
+		}
+	}
+
+	return results;
+}
+
+export function isImportLinkSuggestion(row: {
+	duplicateValidation: ImportDuplicateValidation | null;
+	reimported?: boolean;
+	linked?: boolean;
+}): boolean {
+	return (
+		row.duplicateValidation?.status === "link_suggestion" &&
+		!row.reimported &&
+		!row.linked
+	);
+}
+
+export function isImportRowLinked(row: { linked?: boolean }): boolean {
+	return row.linked === true;
+}
+
 export function isVerifiedImportDuplicate(row: {
 	isDuplicate: boolean;
 	duplicateValidation: ImportDuplicateValidation | null;
 	reimported?: boolean;
+	linked?: boolean;
 }): boolean {
 	return (
 		row.isDuplicate &&
 		row.duplicateValidation?.status === "match" &&
-		!row.reimported
+		!row.reimported &&
+		!row.linked
 	);
+}
+
+export function isImportRowResolved(row: {
+	isDuplicate: boolean;
+	duplicateValidation: ImportDuplicateValidation | null;
+	reimported?: boolean;
+	linked?: boolean;
+}): boolean {
+	return isVerifiedImportDuplicate(row) || isImportRowLinked(row);
 }

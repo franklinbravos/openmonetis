@@ -79,7 +79,9 @@ export function CardImportPdfPasswordFields({
 					<Input
 						id="card-import-pdf-secret"
 						type={
-							rule === CARD_IMPORT_PDF_PASSWORD_RULES.fixed ? "password" : "text"
+							rule === CARD_IMPORT_PDF_PASSWORD_RULES.fixed
+								? "password"
+								: "text"
 						}
 						autoComplete="off"
 						value={secret}

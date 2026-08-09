@@ -10,17 +10,17 @@ import {
 	sql,
 } from "drizzle-orm";
 import { cards, financialAccounts, invoices, transactions } from "@/db/schema";
+import {
+	CARD_IMPORT_PDF_PASSWORD_RULES,
+	type CardImportPdfPasswordRule,
+	isCardImportPdfPasswordRule,
+} from "@/shared/lib/cards/import-pdf-password";
 import { db } from "@/shared/lib/db";
 import {
 	INVOICE_PAYMENT_STATUS,
 	INVOICE_STATUS_VALUES,
 	type InvoicePaymentStatus,
 } from "@/shared/lib/invoices";
-import {
-	CARD_IMPORT_PDF_PASSWORD_RULES,
-	type CardImportPdfPasswordRule,
-	isCardImportPdfPasswordRule,
-} from "@/shared/lib/cards/import-pdf-password";
 import { loadLogoOptions } from "@/shared/lib/logo/options";
 import {
 	formatPeriodMonthShort,
@@ -211,7 +211,9 @@ async function fetchCardsByStatus(
 		accountName:
 			(card.financialAccount as { name?: string } | null)?.name ??
 			"Conta não encontrada",
-		importPdfPasswordRule: isCardImportPdfPasswordRule(card.importPdfPasswordRule)
+		importPdfPasswordRule: isCardImportPdfPasswordRule(
+			card.importPdfPasswordRule,
+		)
 			? card.importPdfPasswordRule
 			: CARD_IMPORT_PDF_PASSWORD_RULES.none,
 		hasImportPdfPasswordSecret: Boolean(card.importPdfPasswordSecret),
