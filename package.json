@@ -19,7 +19,7 @@
 		"test:e2e:install": "playwright install chromium",
 		"env:setup": "node setup.mjs",
 		"db:baseline": "node scripts/build-supabase-baseline.mjs",
-		"supabase:push": "supabase db push",
+		"supabase:push": "supabase db push --yes",
 		"postinstall": "cp node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs public/pdf.worker.min.mjs",
 		"docker:up": "docker compose up -d",
 		"//docker:up": "Sobe app (Docker Hub) + banco PostgreSQL em background",

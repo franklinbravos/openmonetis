@@ -9,9 +9,18 @@ function required(name) {
 	return value;
 }
 
+function resolveSupabaseUrl() {
+	return (
+		process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ||
+		process.env.SUPABASE_URL?.trim() ||
+		""
+	);
+}
+
 function getBackend() {
+	const supabaseUrl = resolveSupabaseUrl();
 	if (
-		process.env.SUPABASE_URL?.trim() &&
+		supabaseUrl &&
 		process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() &&
 		process.env.SUPABASE_STORAGE_BUCKET?.trim()
 	) {
@@ -29,7 +38,10 @@ function getBackend() {
 }
 
 async function testSupabase() {
-	const url = required("SUPABASE_URL");
+	const url = resolveSupabaseUrl();
+	if (!url) {
+		throw new Error("Variável ausente: NEXT_PUBLIC_SUPABASE_URL ou SUPABASE_URL");
+	}
 	const serviceRoleKey = required("SUPABASE_SERVICE_ROLE_KEY");
 	const bucket = required("SUPABASE_STORAGE_BUCKET");
 	const testKey = `__healthcheck__/openmonetis-${Date.now()}.txt`;
@@ -146,7 +158,7 @@ async function main() {
 	const backend = getBackend();
 	if (!backend) {
 		throw new Error(
-			"Configure Supabase (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_STORAGE_BUCKET) ou S3_* no .env.",
+			"Configure Supabase (NEXT_PUBLIC_SUPABASE_URL ou SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_STORAGE_BUCKET) ou S3_* no .env.",
 		);
 	}
 
