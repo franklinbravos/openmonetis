@@ -40,7 +40,8 @@ COPY --from=deps /app/public/pdf.worker.min.mjs ./public/pdf.worker.min.mjs
 
 # Variáveis de ambiente necessárias para o build
 ENV NEXT_TELEMETRY_DISABLED=1 \
-    NODE_ENV=production
+    NODE_ENV=production \
+    NODE_OPTIONS="--max-old-space-size=4096"
 
 # Nota: a integração Logo.dev não precisa mais de build args. O token
 # `LOGO_DEV_TOKEN` é lido em runtime no servidor — basta configurá-lo no

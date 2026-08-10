@@ -37,6 +37,11 @@ const nextConfig: NextConfig = {
 		prefetchInlining: true,
 		turbopackFileSystemCacheForDev: true,
 		optimizePackageImports: ["@remixicon/react"],
+		serverActions: {
+			bodySizeLimit: "52mb",
+		},
+		// Reduz o pico de memória do build em servidores com pouca RAM (Coolify).
+		cpus: 2,
 	},
 
 	// Headers for Safari compatibility
