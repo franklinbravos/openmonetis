@@ -11,7 +11,7 @@ import { getSupabaseAdmin } from "@/shared/lib/supabase/admin";
 import type { Database } from "@/shared/lib/supabase/database.types";
 
 /** Incrementar ao alterar a API pública do bridge (invalida cache em db.ts). */
-export const DRIZZLE_BRIDGE_VERSION = 5;
+export const DRIZZLE_BRIDGE_VERSION = 7;
 
 type ColumnFilter = {
 	table?: string;
@@ -115,6 +115,19 @@ function isPgColumn(value: unknown): value is PgColumn {
 		"columnType" in value &&
 		"name" in value
 	);
+}
+
+function isPgTable(value: unknown): value is Table {
+	if (typeof value !== "object" || value === null || isPgColumn(value)) {
+		return false;
+	}
+
+	try {
+		getTableName(value as Table);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 function getSqlChunks(where: SQL | undefined): unknown[] {
@@ -687,14 +700,22 @@ function computeAggregateValue(
 			(entry) => entry.name === "valor" || entry.name === "amount",
 		) ?? columns.at(-1);
 
-	return joinRows.reduce((total, joinRow) => {
+	const amountColumnTable = amountColumn ? columnTable(amountColumn) : undefined;
+	const rowsToSum =
+		amountColumnTable === ctx.mainTable
+			? [ctx.mainRow]
+			: joinRows.length > 0
+				? joinRows
+				: [ctx.mainRow];
+
+	return rowsToSum.reduce((total, row) => {
 		const joinCtx: RowEvalContext = {
 			...ctx,
 			joinRows: new Map(ctx.joinRows),
 		};
 		const joinTableName = amountColumn ? columnTable(amountColumn) : undefined;
-		if (joinTableName) {
-			joinCtx.joinRows.set(joinTableName, joinRow);
+		if (joinTableName && joinTableName !== ctx.mainTable) {
+			joinCtx.joinRows.set(joinTableName, row);
 		}
 
 		if (text.includes("case when")) {
@@ -712,8 +733,10 @@ function computeAggregateValue(
 			}
 		}
 
+		const amountSourceRow =
+			amountColumnTable === ctx.mainTable ? ctx.mainRow : row;
 		const rawAmount = amountColumn
-			? columnValueFromMappedRow(joinRow, amountColumn)
+			? columnValueFromMappedRow(amountSourceRow, amountColumn)
 			: 0;
 		const amount = Number(rawAmount ?? 0);
 		if (text.includes("abs(")) {
@@ -958,6 +981,8 @@ function fromDbRow(
 	for (const [jsKey, column] of Object.entries(columns)) {
 		if (column.name in row) {
 			mapped[jsKey] = row[column.name];
+		} else if (jsKey in row) {
+			mapped[jsKey] = row[jsKey];
 		}
 	}
 	return mapped;
@@ -1738,11 +1763,7 @@ class SupabaseSelectBuilder {
 					rawRow as unknown as Record<string, unknown>,
 					this.joins,
 				);
-				aggregate += computeAggregateValue(
-					expr,
-					[rawRow as unknown as Record<string, unknown>],
-					ctx,
-				);
+				aggregate += computeAggregateValue(expr, [ctx.mainRow], ctx);
 			}
 			result[alias] = aggregate;
 		}
@@ -1934,6 +1955,14 @@ class SupabaseSelectBuilder {
 		const result: Record<string, unknown> = {};
 
 		for (const [alias, expr] of Object.entries(this.shape)) {
+			if (
+				isPgTable(expr) &&
+				this.fromTable &&
+				getTableName(expr) === getTableName(this.fromTable)
+			) {
+				result[alias] = fromDbRow(this.fromTable, row);
+				continue;
+			}
 			if (isPgColumn(expr)) {
 				result[alias] = resolveShapeColumnValue(
 					row,
@@ -1958,10 +1987,6 @@ class SupabaseSelectBuilder {
 
 		if (Object.keys(this.shape).length === 0) {
 			return fromDbRow(this.fromTable, row);
-		}
-
-		if (this.shape.transaction && this.fromTable === schema.transactions) {
-			result.transaction = fromDbRow(this.fromTable, row);
 		}
 
 		for (const join of this.joins) {

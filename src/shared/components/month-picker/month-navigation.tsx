@@ -71,23 +71,29 @@ export default function MonthNavigation({
 		handleNavigate(buildHref(dateToPeriod(date)));
 	};
 
+	const handleArrowNavigate = () => {
+		setIsPickerOpen(false);
+		startTransition(() => {});
+	};
+
 	const content = (
 		<>
-			<div className="relative w-full min-h-8 md:grid md:grid-cols-[1fr_auto_1fr] md:items-center md:gap-2">
-				<div aria-hidden className="hidden min-w-0 md:block" />
+			<div className="grid w-full min-h-8 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 md:grid-cols-[1fr_auto_1fr] md:gap-2">
+				<div className="flex min-w-0 items-center justify-start gap-1">
+					{toolbarSlotId ? (
+						<div
+							id={toolbarSlotId}
+							className="flex items-center justify-start gap-1 md:hidden"
+						/>
+					) : null}
+				</div>
 
-				{toolbarSlotId ? (
-					<div
-						id={toolbarSlotId}
-						className="absolute top-1/2 left-0 z-10 flex -translate-y-1/2 items-center justify-start gap-1 md:hidden"
-					/>
-				) : null}
-
-				<div className="flex min-w-0 items-center justify-center max-md:px-10">
+				<div className="flex min-w-0 items-center justify-center">
 					<NavigationButton
 						direction="left"
 						disabled={isPending}
-						onClick={() => handleNavigate(prevTarget)}
+						href={prevTarget}
+						onNavigate={handleArrowNavigate}
 					/>
 
 					<Popover open={isPickerOpen} onOpenChange={setIsPickerOpen}>
@@ -125,11 +131,12 @@ export default function MonthNavigation({
 					<NavigationButton
 						direction="right"
 						disabled={isPending}
-						onClick={() => handleNavigate(nextTarget)}
+						href={nextTarget}
+						onNavigate={handleArrowNavigate}
 					/>
 				</div>
 
-				<div className="absolute top-1/2 right-0 z-10 flex -translate-y-1/2 items-center justify-end gap-1 md:static md:z-auto md:translate-y-0">
+				<div className="flex min-w-0 items-center justify-end gap-1">
 					{toolbarSlotId ? (
 						<div
 							id={getToolbarEndSlotId(toolbarSlotId)}
