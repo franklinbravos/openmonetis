@@ -1,7 +1,11 @@
 "use client";
 
 import { supabase } from "@/shared/lib/auth/client";
-import { getGoogleOAuthCallbackUrl } from "@/shared/lib/auth/google-callback-url";
+import {
+	getGoogleOAuthCallbackUrl,
+	getGoogleOAuthConsoleSetup,
+	GOOGLE_OAUTH_REDIRECT_URI_COOKIE,
+} from "@/shared/lib/auth/google-callback-url";
 
 const GSI_SCRIPT_URL = "https://accounts.google.com/gsi/client";
 
@@ -87,22 +91,19 @@ function isGoogleOAuthReady(): boolean {
 	return Boolean(window.google?.accounts?.oauth2);
 }
 
-function isPopupLikelyBlocked(): boolean {
-	try {
-		const popup = window.open("about:blank", "_blank", "width=1,height=1");
-		if (!popup) return true;
-		popup.close();
-		return false;
-	} catch {
-		return true;
-	}
+function isEmbeddedPreview(): boolean {
+	return typeof window !== "undefined" && window.self !== window.top;
 }
 
-/** Preview embutido (Cursor/iframe) — popup costuma falhar; usar redirect. */
-function shouldPreferRedirect(): boolean {
-	if (typeof window === "undefined") return true;
-	if (window.self !== window.top) return true;
-	return isPopupLikelyBlocked();
+function logRedirectSetupHint(): void {
+	if (process.env.NODE_ENV !== "development") return;
+
+	const { javascriptOrigin, redirectUri } = getGoogleOAuthConsoleSetup();
+	console.info(
+		"[OpenMonetis] Login Google por redirect — cadastre no Google Cloud Console → Credentials (tipo Web application):\n" +
+			`  Origem JavaScript: ${javascriptOrigin}\n` +
+			`  URI de redirecionamento: ${redirectUri}`,
+	);
 }
 
 /** Pré-carrega o script GIS para preservar o gesto de clique no popup. */
@@ -139,17 +140,26 @@ async function exchangeGoogleCode(
 	}
 }
 
+function persistGoogleRedirectUri(redirectUri: string): void {
+	if (typeof document === "undefined") return;
+	document.cookie = `${GOOGLE_OAUTH_REDIRECT_URI_COOKIE}=${encodeURIComponent(redirectUri)}; path=/; max-age=600; SameSite=Lax`;
+}
+
 function startGoogleRedirect(clientId: string): void {
 	const oauth2 = window.google?.accounts?.oauth2;
 	if (!oauth2) return;
+
+	const redirectUri = getGoogleOAuthCallbackUrl();
+	persistGoogleRedirectUri(redirectUri);
+	logRedirectSetupHint();
 
 	const client = oauth2.initCodeClient({
 		client_id: clientId,
 		scope: "openid email profile",
 		ux_mode: "redirect",
-		redirect_uri: getGoogleOAuthCallbackUrl(),
+		redirect_uri: redirectUri,
 		callback: () => {
-			// Redirect mode: o callback roda em /auth/google/callback
+			// Redirect mode: o callback roda em /auth/google/callback (route handler)
 		},
 	});
 
@@ -157,8 +167,7 @@ function startGoogleRedirect(clientId: string): void {
 }
 
 /**
- * Redirect completo (sem popup) — funciona em browsers que bloqueiam popups
- * (ex.: preview embutido do Cursor).
+ * Redirect completo (sem popup) — usado em iframe/preview ou quando o popup falha.
  */
 export async function signInWithGoogleRedirect(): Promise<GoogleSignInResult> {
 	const clientId = getPublicGoogleClientId();
@@ -182,16 +191,25 @@ export async function signInWithGoogleRedirect(): Promise<GoogleSignInResult> {
 
 /**
  * Login Google direto (accounts.google.com → app) sem redirect pelo domínio Supabase.
- * Usa popup quando possível; cai para redirect se o script não estiver pronto,
- * se o browser bloquear popups ou se estiver em iframe/preview.
+ * Tenta popup (postmessage) quando possível; cai para redirect só em iframe ou se o popup falhar.
  */
-export function signInWithGoogleDirect(): Promise<GoogleSignInResult> {
+export async function signInWithGoogleDirect(): Promise<GoogleSignInResult> {
 	const clientId = getPublicGoogleClientId();
 	if (!clientId) {
-		return Promise.resolve({ error: "Login com Google não está configurado." });
+		return { error: "Login com Google não está configurado." };
 	}
 
-	if (!isGoogleOAuthReady() || shouldPreferRedirect()) {
+	try {
+		await loadGoogleScript();
+	} catch {
+		return { error: "Falha ao carregar Google Sign-In." };
+	}
+
+	if (!isGoogleOAuthReady()) {
+		return { error: "Google Sign-In indisponível no momento." };
+	}
+
+	if (isEmbeddedPreview()) {
 		return signInWithGoogleRedirect();
 	}
 

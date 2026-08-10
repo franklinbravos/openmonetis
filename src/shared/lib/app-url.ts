@@ -20,6 +20,41 @@ export function getAppOrigin(): string {
 	return "";
 }
 
+function isLoopbackHostname(hostname: string): boolean {
+	return (
+		hostname === "localhost" ||
+		hostname === "127.0.0.1" ||
+		hostname === "[::1]" ||
+		hostname === "0.0.0.0"
+	);
+}
+
+/**
+ * Em dev, alinha 127.0.0.1 ↔ localhost para bater com o Google Cloud Console.
+ */
+export function normalizeOAuthOrigin(origin: string): string {
+	const configured = getAppOrigin();
+	if (!configured || !origin) return origin;
+
+	try {
+		const current = new URL(origin);
+		const canonical = new URL(configured);
+
+		if (
+			process.env.NODE_ENV === "development" &&
+			isLoopbackHostname(current.hostname) &&
+			isLoopbackHostname(canonical.hostname) &&
+			current.port === canonical.port
+		) {
+			return canonical.origin;
+		}
+	} catch {
+		return origin;
+	}
+
+	return origin;
+}
+
 export function getAppUrl(path = ""): string {
 	const origin = getAppOrigin();
 	if (!origin) return path || "/";

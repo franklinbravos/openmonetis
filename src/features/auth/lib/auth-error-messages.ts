@@ -19,7 +19,9 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
 	popup_blocked_by_browser:
 		"O navegador bloqueou o popup do Google. O login será feito por redirecionamento — se não abrir, use Chrome ou Safari em http://localhost:3050.",
 	redirect_uri_mismatch:
-		"URI de redirecionamento não autorizada no Google. Em Google Cloud Console → Credentials, cadastre http://localhost:3050/auth/google/callback e abra o app em http://localhost:3050 (não use 127.0.0.1, IP da rede nem preview embutido).",
+		"URI de redirecionamento não autorizada no Google. No Google Cloud Console → Credentials (tipo Web application), cadastre a origem JavaScript e a URI de redirecionamento exatamente como você abre o app (ex.: http://localhost:3050 e http://localhost:3050/auth/google/callback). Se usar 127.0.0.1 ou outro host, cadastre esse host também.",
+	google_invalid_grant:
+		"Código do Google inválido ou já usado. Volte ao login e tente de novo — não recarregue a página de retorno do Google.",
 };
 
 export function getAuthErrorMessage(

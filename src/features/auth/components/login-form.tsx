@@ -21,6 +21,7 @@ import { AuthCardShell } from "./auth-card-shell";
 import { AuthErrorAlert } from "./auth-error-alert";
 import { AuthHeader } from "./auth-header";
 import { GoogleAuthButton } from "./google-auth-button";
+import { GoogleOAuthSetupHint } from "./google-oauth-setup-hint";
 
 type DivProps = React.ComponentProps<"div">;
 
@@ -153,6 +154,8 @@ export function LoginForm({
 						/>
 
 						<AuthErrorAlert error={error} />
+
+						{isGoogleAvailable ? <GoogleOAuthSetupHint /> : null}
 
 						<Field>
 							<FieldLabel htmlFor="email">E-mail</FieldLabel>

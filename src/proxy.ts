@@ -127,8 +127,51 @@ async function getSessionUser(request: NextRequest) {
 	return { user: data.user, response, sessionCookies, authHeaders };
 }
 
+function isLoopbackHostname(hostname: string): boolean {
+	return (
+		hostname === "localhost" ||
+		hostname === "127.0.0.1" ||
+		hostname === "[::1]" ||
+		hostname === "0.0.0.0"
+	);
+}
+
+/** Dev: 127.0.0.1 → localhost quando APP_URL usa localhost (evita OAuth mismatch). */
+function redirectLoopbackToCanonicalAppUrl(
+	request: NextRequest,
+): NextResponse | null {
+	if (process.env.NODE_ENV !== "development") return null;
+
+	const appUrl =
+		process.env.APP_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
+	if (!appUrl) return null;
+
+	let canonical: URL;
+	try {
+		canonical = new URL(appUrl);
+	} catch {
+		return null;
+	}
+
+	if (!isLoopbackHostname(canonical.hostname)) return null;
+
+	const requestUrl = new URL(request.url);
+	if (!isLoopbackHostname(requestUrl.hostname)) return null;
+	if (requestUrl.hostname === canonical.hostname) return null;
+	if (requestUrl.port !== canonical.port) return null;
+
+	requestUrl.hostname = canonical.hostname;
+	requestUrl.protocol = canonical.protocol;
+	return NextResponse.redirect(requestUrl);
+}
+
 export default async function proxy(request: NextRequest) {
 	const { pathname } = request.nextUrl;
+
+	const loopbackRedirect = redirectLoopbackToCanonicalAppUrl(request);
+	if (loopbackRedirect) {
+		return loopbackRedirect;
+	}
 
 	const publicDomain = process.env.PUBLIC_DOMAIN?.replace(
 		/^https?:\/\//,

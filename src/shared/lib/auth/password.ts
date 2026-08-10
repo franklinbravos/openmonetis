@@ -44,6 +44,12 @@ export async function userUsesGoogleAuth(userId: string): Promise<boolean> {
 	const admin = getSupabaseAdmin();
 	const { data, error } = await admin.auth.admin.getUserById(userId);
 	if (error || !data.user) return false;
+
+	const providers = data.user.app_metadata?.providers;
+	if (Array.isArray(providers) && providers.includes("google")) {
+		return true;
+	}
+
 	return (
 		data.user.identities?.some((identity) => identity.provider === "google") ??
 		false
