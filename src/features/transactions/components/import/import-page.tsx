@@ -76,6 +76,7 @@ import { IMPORT_BATCH_STATUS } from "@/features/transactions/lib/import-batch-st
 import {
 	buildAccountImportHistoryHref,
 	buildAccountStatementHref,
+	buildImportLandingHref,
 	buildInvoiceImportHistoryHref,
 } from "@/features/transactions/lib/import-continue-href";
 import {
@@ -134,7 +135,7 @@ import { Skeleton } from "@/shared/components/ui/skeleton";
 import type { CategoryType } from "@/shared/lib/categories/constants";
 import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants";
 import { buildPeriodFromTransactions } from "@/shared/lib/import/helpers";
-import { parseImportFile } from "@/shared/lib/import/parse-import-file";
+import { parseImportFileClient } from "@/features/transactions/lib/parse-import-file-client";
 import { mapPdfLoadError } from "@/shared/lib/import/pdf-password";
 import type { ImportStatement } from "@/shared/lib/import/types";
 import { getTodayDateString } from "@/shared/utils/date";
@@ -407,19 +408,50 @@ export function ImportPage({
 		accountOptions,
 	]);
 
-	const exitReviewAfterDraft = useCallback(() => {
-		setStatement(null);
-		setRows([]);
-		setSourceFile(null);
-		setUploadImportBatchId(null);
-		setImportSourceStored(false);
-		setAwaitingResumeBatch(null);
-		setFileError(null);
-		setPeriodMismatch(null);
-		setConfirmOpen(false);
-		setIsChecking(false);
-		void refreshImportHistory();
-	}, [refreshImportHistory]);
+	const ensureImportBatchIdForDraft = useCallback(async () => {
+		if (uploadImportBatchId) {
+			return uploadImportBatchId;
+		}
+
+		if (!sourceFile) {
+			return null;
+		}
+
+		const decoded = accountCardValue
+			? decodeAccountCard(accountCardValue)
+			: null;
+		const registerResult = await registerImportUploadAction({
+			sourceFileName: sourceFile.name,
+			sourceFileSize: sourceFile.size,
+			cardId:
+				decoded?.type === "card" ? decoded.id : (initialCardId ?? null),
+			invoicePeriod:
+				invoicePeriod ??
+				initialInvoicePeriod ??
+				activeInvoiceContext?.invoicePeriod ??
+				null,
+			accountId: decoded?.type === "account" ? decoded.id : null,
+		});
+
+		if (!registerResult.success) {
+			toast.error(
+				registerResult.error ??
+					"Não foi possível registrar a importação para salvar o rascunho.",
+			);
+			return null;
+		}
+
+		setUploadImportBatchId(registerResult.importBatchId);
+		return registerResult.importBatchId;
+	}, [
+		accountCardValue,
+		activeInvoiceContext?.invoicePeriod,
+		initialCardId,
+		initialInvoicePeriod,
+		invoicePeriod,
+		sourceFile,
+		uploadImportBatchId,
+	]);
 
 	useEffect(() => {
 		setImportHistory(initialImportHistory);
@@ -766,12 +798,11 @@ export function ImportPage({
 			accountId: string | null;
 			existingBatchId?: string | null;
 		}) => {
-			const reusedBatch = existingBatchId
-				? importHistory.find((entry) => entry.id === existingBatchId)
-				: null;
-
-			if (existingBatchId && reusedBatch?.hasAttachment) {
-				setImportSourceStored(true);
+			if (
+				existingBatchId &&
+				importSourceStored &&
+				uploadImportBatchId === batchId
+			) {
 				if (batchInvoicePeriod) {
 					await syncImportBatchContextAction({
 						batchId,
@@ -804,7 +835,7 @@ export function ImportPage({
 
 			return uploadResult;
 		},
-		[importHistory],
+		[importSourceStored, uploadImportBatchId],
 	);
 
 	const handleParsed = useCallback(
@@ -906,6 +937,16 @@ export function ImportPage({
 				},
 			);
 
+			let draftData = options?.draftData ?? null;
+			if (!draftData && options?.existingBatchId) {
+				const draftResult = await getImportBatchDraftAction({
+					batchId: options.existingBatchId,
+				});
+				if (draftResult.success) {
+					draftData = draftResult.draftData;
+				}
+			}
+
 			let batchId = options?.existingBatchId ?? null;
 			const reusedBatch = batchId
 				? importHistory.find((entry) => entry.id === batchId)
@@ -948,16 +989,6 @@ export function ImportPage({
 				}
 
 				void refreshImportHistory();
-			}
-
-			let draftData = options?.draftData ?? null;
-			if (!draftData && options?.existingBatchId) {
-				const draftResult = await getImportBatchDraftAction({
-					batchId: options.existingBatchId,
-				});
-				if (draftResult.success) {
-					draftData = draftResult.draftData;
-				}
 			}
 
 			await processParsedStatement(stmt, {
@@ -1022,12 +1053,22 @@ export function ImportPage({
 						sourceFileName: result.sourceFileName,
 						draftData: result.draftData,
 					});
+					if (result.draftData) {
+						toast.message(
+							"Selecione o mesmo arquivo abaixo para restaurar o rascunho.",
+						);
+					} else {
+						toast.error(
+							"Arquivo não encontrado no servidor. Envie o PDF novamente.",
+						);
+					}
 					return;
 				}
 
 				setImportSourceStored(true);
 
-				const statement = await parseImportFile(file, {
+				const statement = await parseImportFileClient(file, {
+					cardId: linkedCardId,
 					pdfPasswordCandidates:
 						autoPdfPasswordAttempts.length > 0
 							? autoPdfPasswordAttempts
@@ -1060,7 +1101,7 @@ export function ImportPage({
 				setResumingBatchId(null);
 			}
 		},
-		[autoPdfPasswordAttempts, handleParsed, resumingBatchId],
+		[autoPdfPasswordAttempts, handleParsed, linkedCardId, resumingBatchId],
 	);
 
 	const handleUploadParsed = useCallback(
@@ -1085,22 +1126,6 @@ export function ImportPage({
 			});
 		},
 		[awaitingResumeBatch, handleParsed],
-	);
-
-	const handleContinueImportFromHistory = useCallback(
-		(entry: ImportFileHistoryEntry) => {
-			if (resumingBatchId) return;
-
-			setStatement(null);
-			setRows([]);
-			setSourceFile(null);
-			setFileError(null);
-			setPeriodMismatch(null);
-			setConfirmOpen(false);
-
-			void resumeImportBatch(entry.id);
-		},
-		[resumeImportBatch, resumingBatchId],
 	);
 
 	useEffect(() => {
@@ -1887,6 +1912,37 @@ export function ImportPage({
 	const returnToSourceHref =
 		returnToInvoiceHref ?? returnToAccountStatementHref;
 
+	const navigateAfterImportDraftSaved = useCallback(() => {
+		resumeAttemptedRef.current = true;
+
+		const href =
+			returnToSourceHref ??
+			buildImportLandingHref({
+				cardId:
+					initialCardId ??
+					linkedCardId ??
+					activeInvoiceContext?.cardId ??
+					null,
+				accountId: initialAccountId,
+				invoicePeriod:
+					invoicePeriod ??
+					initialInvoicePeriod ??
+					activeInvoiceContext?.invoicePeriod ??
+					null,
+			});
+
+		window.location.assign(href);
+	}, [
+		activeInvoiceContext?.cardId,
+		activeInvoiceContext?.invoicePeriod,
+		initialAccountId,
+		initialCardId,
+		initialInvoicePeriod,
+		invoicePeriod,
+		linkedCardId,
+		returnToSourceHref,
+	]);
+
 	const canImport =
 		(selectedRows.length > 0 || canPayImportedInvoiceOnly) &&
 		!!accountCardValue &&
@@ -1902,15 +1958,53 @@ export function ImportPage({
 		!isPending;
 
 	const canSaveDraft =
-		!!uploadImportBatchId && rows.length > 0 && !isPending && !isSavingDraft;
+		!!statement && rows.length > 0 && !isPending && !isSavingDraft;
 
 	const handleSaveDraft = () => {
-		if (!uploadImportBatchId || rows.length === 0) {
+		if (!statement || rows.length === 0) {
 			toast.error("Nenhum progresso para salvar.");
 			return;
 		}
 
 		startSaveDraftTransition(async () => {
+			const batchId = await ensureImportBatchIdForDraft();
+			if (!batchId) {
+				toast.error(
+					"Não foi possível salvar o rascunho. Reenvie o arquivo e tente novamente.",
+				);
+				return;
+			}
+
+			if (!sourceFile) {
+				toast.error(
+					"Arquivo original indisponível. Reenvie o PDF para salvar o progresso.",
+				);
+				return;
+			}
+
+			const decoded = accountCardValue
+				? decodeAccountCard(accountCardValue)
+				: null;
+			const cardId = decoded?.type === "card" ? decoded.id : null;
+			const accountId = decoded?.type === "account" ? decoded.id : null;
+
+			const uploadResult = await persistImportSourceToStorage({
+				file: sourceFile,
+				batchId,
+				cardId: cardId ?? initialCardId ?? null,
+				invoicePeriod,
+				accountId,
+				existingBatchId: batchId,
+			});
+
+			if (!uploadResult.success) {
+				toast.error(
+					uploadResult.error ??
+						"Não foi possível salvar o arquivo no servidor.",
+				);
+				return;
+			}
+
 			const draftData = buildImportBatchDraft({
 				payerId,
 				accountCardValue,
@@ -1920,14 +2014,8 @@ export function ImportPage({
 				rows,
 			});
 
-			const decoded = accountCardValue
-				? decodeAccountCard(accountCardValue)
-				: null;
-			const cardId = decoded?.type === "card" ? decoded.id : null;
-			const accountId = decoded?.type === "account" ? decoded.id : null;
-
 			const result = await saveImportBatchDraftAction({
-				batchId: uploadImportBatchId,
+				batchId,
 				draftData,
 				cardId,
 				invoicePeriod,
@@ -1945,20 +2033,17 @@ export function ImportPage({
 
 			setImportHistory((previous) =>
 				previous.map((entry) =>
-					entry.id === uploadImportBatchId
-						? { ...entry, status: IMPORT_BATCH_STATUS.DRAFT }
+					entry.id === batchId
+						? {
+								...entry,
+								status: IMPORT_BATCH_STATUS.DRAFT,
+								hasAttachment: true,
+							}
 						: entry,
 				),
 			);
 
-			void refreshImportHistory();
-
-			if (returnToSourceHref) {
-				router.replace(returnToSourceHref);
-				return;
-			}
-
-			exitReviewAfterDraft();
+			navigateAfterImportDraftSaved();
 		});
 	};
 
@@ -1982,6 +2067,7 @@ export function ImportPage({
 		if (initialResumeBatchId) {
 			const params = new URLSearchParams(window.location.search);
 			params.delete("lote");
+			params.delete("retomar");
 			const query = params.toString();
 			router.replace(
 				query
@@ -2268,7 +2354,6 @@ export function ImportPage({
 										limit={10}
 										allowDelete
 										viewAllHref={importHistoryViewAllHref}
-										onContinueImport={handleContinueImportFromHistory}
 										resumingBatchId={resumingBatchId}
 										description={
 											activeInvoiceContext
@@ -2387,13 +2472,11 @@ export function ImportPage({
 											{isSavingDraft ? "Salvando…" : "Continuar depois"}
 										</Button>
 										{rows.length > 0 &&
-										!canSaveDraft &&
+										isChecking &&
 										!isPending &&
 										!isSavingDraft ? (
 											<p className="text-muted-foreground text-sm sm:max-w-xs">
-												{uploadImportBatchId
-													? "Aguarde o processamento para salvar o rascunho."
-													: "Envie o arquivo novamente para habilitar “Continuar depois”."}
+												Aguarde o processamento para salvar o rascunho.
 											</p>
 										) : null}
 									</div>

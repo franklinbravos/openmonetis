@@ -1,7 +1,7 @@
 "use client";
 
-import { RiDownloadLine, RiUploadCloud2Line } from "@remixicon/react";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { RiCheckLine, RiCloseLine, RiDownloadLine, RiLoader4Line, RiUploadCloud2Line } from "@remixicon/react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { fetchCardImportPdfPasswordAttemptsAction } from "@/features/cards/actions/fetch-import-pdf-password-attempts-action";
 import { saveCardImportPdfPasswordAction } from "@/features/cards/actions/import-pdf-password-action";
@@ -14,10 +14,9 @@ import {
 	type ImportFileHistoryEntry,
 } from "@/features/transactions/lib/import-file-duplicate";
 import { CARD_IMPORT_PDF_PASSWORD_RULES } from "@/shared/lib/cards/import-pdf-password";
-import {
-	isSupportedImportFile,
-	parseImportFile,
-} from "@/shared/lib/import/parse-import-file";
+import { parseImportFileClient } from "@/features/transactions/lib/parse-import-file-client";
+import type { ImportUploadLogStatus } from "@/features/transactions/lib/parse-import-file-client";
+import { isSupportedImportFile } from "@/shared/lib/import/parse-import-file";
 import {
 	isPdfPasswordError,
 	logPdfPasswordDebug,
@@ -26,7 +25,14 @@ import {
 } from "@/shared/lib/import/pdf-password";
 import type { ImportStatement } from "@/shared/lib/import/types";
 import { generateXlsTemplate } from "@/shared/lib/import/xls-parser";
+import { formatBytes } from "@/shared/utils/number";
 import { cn } from "@/shared/utils/ui";
+
+type UploadLogEntry = {
+	id: string;
+	message: string;
+	status: ImportUploadLogStatus;
+};
 
 type UploadParsedOptions = {
 	existingBatchId?: string;
@@ -55,6 +61,42 @@ const FORMAT_LABEL = ".ofx · .qfx · .csv · .txt · .pdf · .xlsx · .xls";
 // sincronização dispare a cada render (novo array a cada render geraria loop).
 const EMPTY_AUTO_PDF_PASSWORD_ATTEMPTS: string[] = [];
 
+function UploadLogStatusIcon({ status }: { status: ImportUploadLogStatus }) {
+	if (status === "pending") {
+		return (
+			<RiLoader4Line
+				aria-hidden
+				className="mt-0.5 size-3.5 shrink-0 animate-spin text-primary"
+			/>
+		);
+	}
+
+	if (status === "success") {
+		return (
+			<RiCheckLine
+				aria-hidden
+				className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+			/>
+		);
+	}
+
+	if (status === "error") {
+		return (
+			<RiCloseLine
+				aria-hidden
+				className="mt-0.5 size-3.5 shrink-0 text-destructive"
+			/>
+		);
+	}
+
+	return (
+		<span
+			aria-hidden
+			className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground/60"
+		/>
+	);
+}
+
 export function UploadZone({
 	onParsed,
 	error: externalError = null,
@@ -81,8 +123,62 @@ export function UploadZone({
 	const [autoPdfPasswordAttempts, setAutoPdfPasswordAttempts] = useState(
 		initialAutoPdfPasswordAttempts,
 	);
+	const [uploadLogs, setUploadLogs] = useState<UploadLogEntry[]>([]);
+	const [activeFileName, setActiveFileName] = useState<string | null>(null);
 	const [isSavingPassword, startSavePasswordTransition] = useTransition();
 	const inputRef = useRef<HTMLInputElement>(null);
+	const uploadLogIdRef = useRef(0);
+
+	const appendUploadLog = useCallback(
+		(message: string, status: ImportUploadLogStatus = "info") => {
+			setUploadLogs((previous) => {
+				if (status === "error") {
+					let replacedPending = false;
+
+					const withFailedPending = previous.map((entry) => {
+						if (entry.status !== "pending" || replacedPending) {
+							return entry;
+						}
+
+						replacedPending = true;
+						return {
+							...entry,
+							status: "error" as const,
+							message,
+						};
+					});
+
+					if (replacedPending) {
+						return withFailedPending;
+					}
+				}
+
+				const finalized = previous.map((entry) =>
+					entry.status === "pending"
+						? { ...entry, status: "success" as const }
+						: entry,
+				);
+
+				uploadLogIdRef.current += 1;
+
+				return [
+					...finalized,
+					{
+						id: `upload-log-${uploadLogIdRef.current}`,
+						message,
+						status,
+					},
+				];
+			});
+		},
+		[],
+	);
+
+	const resetUploadLogs = useCallback(() => {
+		uploadLogIdRef.current = 0;
+		setUploadLogs([]);
+		setActiveFileName(null);
+	}, []);
 
 	useEffect(() => {
 		setAutoPdfPasswordAttempts(initialAutoPdfPasswordAttempts);
@@ -127,11 +223,25 @@ export function UploadZone({
 		onErrorClear?.();
 
 		if (!isSupportedImportFile(file.name)) {
+			resetUploadLogs();
+			setActiveFileName(file.name);
+			appendUploadLog(`Arquivo selecionado: ${file.name}`, "info");
+			appendUploadLog(
+				"Formato não suportado. Use .ofx, .qfx, .csv, .txt, .pdf, .xlsx ou .xls.",
+				"error",
+			);
 			setError(
 				"Formato não suportado. Use .ofx, .qfx, .csv, .txt, .pdf, .xlsx ou .xls.",
 			);
 			return;
 		}
+
+		resetUploadLogs();
+		setActiveFileName(file.name);
+		appendUploadLog(
+			`Arquivo selecionado: ${file.name} (${formatBytes(file.size)})`,
+			"info",
+		);
 
 		setParsing(true);
 
@@ -143,19 +253,24 @@ export function UploadZone({
 				autoCandidateCount: autoPdfPasswordAttempts.length,
 			});
 
-			const statement = await parseImportFile(file, {
+			const statement = await parseImportFileClient(file, {
 				pdfPassword: options?.explicitPassword?.trim(),
+				cardId: linkedCardId,
 				pdfPasswordCandidates: options?.explicitPassword?.trim()
 					? undefined
 					: autoPdfPasswordAttempts.length > 0
 						? autoPdfPasswordAttempts
 						: undefined,
+				onLog: appendUploadLog,
 			});
 
 			if (statement.transactions.length === 0) {
+				appendUploadLog("Nenhuma transação encontrada no arquivo.", "error");
 				setError("Nenhuma transação encontrada no arquivo.");
 				return;
 			}
+
+			appendUploadLog("Importação pronta para revisão.", "success");
 
 			if (
 				options?.savePasswordToCard &&
@@ -203,6 +318,7 @@ export function UploadZone({
 			);
 
 			if (isPdfPasswordError(mappedError)) {
+				appendUploadLog(mappedError.message, "error");
 				setPendingFile(file);
 				setPasswordDialogOpen(true);
 				setPasswordError(
@@ -215,12 +331,14 @@ export function UploadZone({
 			}
 
 			if (options?.explicitPassword) {
+				appendUploadLog(mappedError.message, "error");
 				setPendingFile(file);
 				setPasswordDialogOpen(true);
 				setPasswordError(mappedError.message);
 				return;
 			}
 
+			appendUploadLog(mappedError.message, "error");
 			setError(mappedError.message);
 		} finally {
 			setParsing(false);
@@ -317,6 +435,7 @@ export function UploadZone({
 
 	const displayError = externalError ?? error;
 	const isBusy = parsing || isSavingPassword;
+	const showUploadLog = uploadLogs.length > 0;
 
 	return (
 		<div className="flex flex-col gap-2 md:gap-3">
@@ -336,22 +455,65 @@ export function UploadZone({
 					if (file) void handleFile(file);
 				}}
 				className={cn(
-					"flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-8 transition-colors md:gap-4 md:p-16",
+					"flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-8 transition-colors md:gap-4",
+					showUploadLog ? "md:p-8" : "md:p-16",
 					dragging
 						? "border-primary bg-primary/5"
 						: "border-border hover:border-primary/50 hover:bg-muted/50",
 					isBusy && "pointer-events-none opacity-60",
 				)}
 			>
-				<RiUploadCloud2Line className="size-10 text-muted-foreground md:size-14" />
-				<div className="text-center">
+				<RiUploadCloud2Line
+					className={cn(
+						"text-muted-foreground",
+						showUploadLog ? "size-8 md:size-10" : "size-10 md:size-14",
+					)}
+				/>
+				<div className="w-full text-center">
 					<p className="font-medium text-sm">
 						{isBusy
-							? "Lendo arquivo..."
-							: "Arraste um arquivo aqui ou clique para selecionar"}
+							? "Processando arquivo..."
+							: showUploadLog
+								? "Último upload"
+								: "Arraste um arquivo aqui ou clique para selecionar"}
 					</p>
-					<p className="mt-1 text-muted-foreground text-xs">{FORMAT_LABEL}</p>
+					{!showUploadLog ? (
+						<p className="mt-1 text-muted-foreground text-xs">{FORMAT_LABEL}</p>
+					) : null}
 				</div>
+
+				{showUploadLog ? (
+					<div className="mt-1 w-full max-w-lg border-border/70 border-t pt-3 text-left">
+						{activeFileName ? (
+							<p className="mb-2 truncate font-medium text-foreground text-xs">
+								{activeFileName}
+							</p>
+						) : null}
+						<ul
+							className="flex max-h-36 flex-col gap-1.5 overflow-y-auto"
+							aria-live="polite"
+							aria-relevant="additions text"
+						>
+							{uploadLogs.map((entry) => (
+								<li
+									key={entry.id}
+									className="flex items-start gap-2 text-xs leading-relaxed"
+								>
+									<UploadLogStatusIcon status={entry.status} />
+									<span
+										className={cn(
+											"text-muted-foreground",
+											entry.status === "error" && "text-destructive",
+											entry.status === "success" && "text-foreground",
+										)}
+									>
+										{entry.message}
+									</span>
+								</li>
+							))}
+						</ul>
+					</div>
+				) : null}
 			</button>
 
 			<input

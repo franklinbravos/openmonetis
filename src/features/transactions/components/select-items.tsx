@@ -12,6 +12,7 @@ import {
 import { resolveLogoSrc } from "@/shared/lib/logo";
 import { getAvatarSrc } from "@/shared/lib/payers/utils";
 import { getConditionIcon, getPaymentMethodIcon } from "@/shared/utils/icons";
+import { cn } from "@/shared/utils/ui";
 
 type SelectItemContentProps = {
 	label: string;
@@ -24,13 +25,22 @@ export function PayerSelectTriggerValue({
 	label,
 	avatarUrl,
 	showLabel = false,
-}: SelectItemContentProps & { showLabel?: boolean }) {
+	avatarClassName,
+}: SelectItemContentProps & {
+	showLabel?: boolean;
+	avatarClassName?: string;
+}) {
 	const avatarSrc = getAvatarSrc(avatarUrl);
 	const initial = label.charAt(0).toUpperCase() || "?";
 
 	return (
 		<span className="flex min-w-0 items-center gap-2">
-			<Avatar className="size-6 shrink-0 border border-border/60 bg-background">
+			<Avatar
+				className={cn(
+					"size-6 shrink-0 border border-border/60 bg-background",
+					avatarClassName,
+				)}
+			>
 				<AvatarImage src={avatarSrc} alt={`Avatar de ${label}`} />
 				<AvatarFallback className="text-xs font-medium uppercase">
 					{initial}

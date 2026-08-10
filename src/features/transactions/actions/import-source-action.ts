@@ -2,13 +2,15 @@
 
 import crypto, { randomUUID } from "node:crypto";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { z } from "zod/v4";
-import { attachments, importBatches } from "@/db/schema";
+import { importBatches } from "@/db/schema";
 import { IMPORT_BATCH_STATUS } from "@/features/transactions/lib/import-batch-status";
 import { handleActionError } from "@/shared/lib/actions/helpers";
 import { MAX_FILE_SIZE } from "@/shared/lib/attachments/config";
 import { getUser, getUserId } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import { getSupabaseAdmin } from "@/shared/lib/supabase/admin";
 import {
 	isAllowedImportSourceMimeType,
 	resolveImportFileMimeType,
@@ -179,53 +181,99 @@ async function attachImportSourceFileToBatch({
 	invoicePeriod,
 	accountId,
 }: AttachImportSourceInput): Promise<void> {
-	const [attachment] = await db
-		.insert(attachments)
-		.values({
-			userId,
-			fileKey,
-			fileName: sourceFileName,
-			fileSize,
-			mimeType,
-		})
-		.returning({ id: attachments.id });
+	const supabase = getSupabaseAdmin();
 
-	const existingBatch = await db.query.importBatches.findFirst({
-		columns: { id: true },
-		where: and(
-			eq(importBatches.userId, userId),
-			eq(importBatches.id, importBatchId),
-		),
-	});
+	const { data: attachment, error: attachmentError } = await supabase
+		.from("anexos")
+		.insert({
+			user_id: userId,
+			chave_arquivo: fileKey,
+			nome_arquivo: sourceFileName,
+			tamanho_bytes: fileSize,
+			mime_type: mimeType,
+		})
+		.select("id")
+		.single();
+
+	if (attachmentError || !attachment?.id) {
+		throw (
+			attachmentError ??
+			new Error("Não foi possível registrar o anexo da importação.")
+		);
+	}
+
+	const { data: existingBatch, error: batchReadError } = await supabase
+		.from("import_batches")
+		.select("id, status")
+		.eq("id", importBatchId)
+		.eq("user_id", userId)
+		.maybeSingle();
+
+	if (batchReadError) {
+		throw batchReadError;
+	}
+
+	const status =
+		importedCount > 0
+			? IMPORT_BATCH_STATUS.IMPORTED
+			: existingBatch?.status === IMPORT_BATCH_STATUS.DRAFT
+				? IMPORT_BATCH_STATUS.DRAFT
+				: IMPORT_BATCH_STATUS.UPLOADED;
 
 	const batchPayload = {
-		attachmentId: attachment.id,
-		sourceFileName,
-		sourceFileSize: fileSize,
-		importedCount,
-		skippedCount,
-		cardId,
-		invoicePeriod,
-		accountId,
-		status:
-			importedCount > 0
-				? IMPORT_BATCH_STATUS.IMPORTED
-				: IMPORT_BATCH_STATUS.UPLOADED,
+		anexo_id: attachment.id,
+		nome_arquivo_origem: sourceFileName,
+		tamanho_arquivo_origem: fileSize,
+		importados: importedCount,
+		ignorados: skippedCount,
+		cartao_id: cardId,
+		periodo_fatura: invoicePeriod,
+		conta_id: accountId,
+		status,
 	};
 
 	if (existingBatch) {
-		await db
-			.update(importBatches)
-			.set(batchPayload)
-			.where(eq(importBatches.id, importBatchId));
+		const { error: updateError } = await supabase
+			.from("import_batches")
+			.update(batchPayload)
+			.eq("id", importBatchId)
+			.eq("user_id", userId);
+
+		if (updateError) {
+			throw updateError;
+		}
+
 		return;
 	}
 
-	await db.insert(importBatches).values({
+	const { error: insertError } = await supabase.from("import_batches").insert({
 		id: importBatchId,
-		userId,
+		user_id: userId,
 		...batchPayload,
 	});
+
+	if (insertError) {
+		throw insertError;
+	}
+}
+
+async function verifyImportBatchAttachmentLinked(
+	userId: string,
+	importBatchId: string,
+): Promise<boolean> {
+	const supabase = getSupabaseAdmin();
+	const { data, error } = await supabase
+		.from("import_batches")
+		.select("anexo_id")
+		.eq("id", importBatchId)
+		.eq("user_id", userId)
+		.maybeSingle();
+
+	if (error) {
+		throw error;
+	}
+
+	return Boolean(data?.anexo_id);
 }
 
 export async function uploadImportSourceFileDirectAction(
@@ -299,6 +347,21 @@ export async function uploadImportSourceFileDirectAction(
 					? accountIdRaw
 					: null,
 		});
+
+		const attachmentLinked = await verifyImportBatchAttachmentLinked(
+			user.id,
+			importBatchId,
+		);
+		if (!attachmentLinked) {
+			return {
+				success: false,
+				error:
+					"Arquivo enviado ao storage, mas não foi vinculado ao lote de importação.",
+			};
+		}
+
+		revalidatePath("/transactions/import");
+		revalidatePath("/transactions/import/history");
 
 		return { success: true };
 	} catch (error) {

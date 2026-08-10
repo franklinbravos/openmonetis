@@ -1,7 +1,7 @@
 "use client";
 
 import { RiAddFill, RiCheckLine, RiExpandUpDownLine } from "@remixicon/react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/shared/components/ui/button";
 import {
 	Command,
@@ -39,10 +39,58 @@ type CategorySearchSelectProps = {
 	onCreateCategory?: () => void;
 	disabled?: boolean;
 	triggerClassName?: string;
+	enableCategoryTabFlow?: boolean;
 };
+
+const IMPORT_REVIEW_CATEGORY_SELECTOR = "[data-import-review-category]";
+
+function scrollImportReviewCategoryIntoView(element: HTMLElement) {
+	const card = element.closest("article");
+	const target = card instanceof HTMLElement ? card : element;
+	target.scrollIntoView({
+		behavior: "smooth",
+		block: "center",
+		inline: "nearest",
+	});
+}
+
+function focusAdjacentImportReviewCategory(
+	current: HTMLElement,
+	direction: 1 | -1,
+) {
+	const triggers = Array.from(
+		document.querySelectorAll<HTMLElement>(IMPORT_REVIEW_CATEGORY_SELECTOR),
+	);
+	const currentIndex = triggers.indexOf(current);
+	if (currentIndex === -1) return false;
+
+	const next = triggers[currentIndex + direction];
+	if (!next) return false;
+
+	next.focus({ preventScroll: true });
+	scrollImportReviewCategoryIntoView(next);
+	return true;
+}
 
 const getCategorySearchValue = (option: SelectOption) =>
 	[option.label, option.categoryPath, option.value].filter(Boolean).join(" ");
+
+function isCategoryTypeaheadKey(event: React.KeyboardEvent) {
+	if (event.ctrlKey || event.metaKey || event.altKey) return false;
+	return event.key.length === 1;
+}
+
+function syncCommandSearchInput(input: HTMLInputElement, nextValue: string) {
+	const descriptor = Object.getOwnPropertyDescriptor(
+		HTMLInputElement.prototype,
+		"value",
+	);
+	descriptor?.set?.call(input, nextValue);
+	input.dispatchEvent(new Event("input", { bubbles: true }));
+	input.focus({ preventScroll: true });
+	const cursor = nextValue.length;
+	input.setSelectionRange(cursor, cursor);
+}
 
 export function CategorySearchSelect({
 	id,
@@ -57,9 +105,13 @@ export function CategorySearchSelect({
 	onCreateCategory,
 	disabled,
 	triggerClassName,
+	enableCategoryTabFlow = false,
 }: CategorySearchSelectProps) {
 	const [searchValue, setSearchValue] = useState("");
 	const [internalOpen, setInternalOpen] = useState(false);
+	const popoverContentRef = useRef<HTMLDivElement>(null);
+	const pendingTypeaheadRef = useRef("");
+	const shouldFocusSearchOnOpenRef = useRef(false);
 	const isOpenControlled = open !== undefined;
 	const popoverOpen = isOpenControlled ? open : internalOpen;
 	const selectedOption = categoryOptions.find(
@@ -69,6 +121,10 @@ export function CategorySearchSelect({
 	const handleOpenChange = (nextOpen: boolean) => {
 		if (!nextOpen) {
 			setSearchValue("");
+			pendingTypeaheadRef.current = "";
+			shouldFocusSearchOnOpenRef.current = false;
+		} else {
+			shouldFocusSearchOnOpenRef.current = true;
 		}
 		if (!isOpenControlled) {
 			setInternalOpen(nextOpen);
@@ -81,6 +137,40 @@ export function CategorySearchSelect({
 		handleOpenChange(false);
 	};
 
+	const openSearch = (initialSearch = "") => {
+		pendingTypeaheadRef.current = initialSearch;
+		setSearchValue(initialSearch);
+		shouldFocusSearchOnOpenRef.current = true;
+		handleOpenChange(true);
+	};
+
+	const focusSearchInput = (initialSearch: string) => {
+		const input = popoverContentRef.current?.querySelector(
+			"[data-slot=command-input]",
+		);
+		if (!(input instanceof HTMLInputElement)) {
+			return false;
+		}
+
+		setSearchValue(initialSearch);
+		syncCommandSearchInput(input, initialSearch);
+		return true;
+	};
+
+	useLayoutEffect(() => {
+		if (!popoverOpen || !shouldFocusSearchOnOpenRef.current) return;
+
+		shouldFocusSearchOnOpenRef.current = false;
+		const initialSearch = pendingTypeaheadRef.current;
+		pendingTypeaheadRef.current = "";
+
+		if (!focusSearchInput(initialSearch)) {
+			requestAnimationFrame(() => {
+				focusSearchInput(initialSearch);
+			});
+		}
+	}, [popoverOpen]);
+
 	return (
 		<Popover open={popoverOpen} onOpenChange={handleOpenChange}>
 			<PopoverTrigger asChild>
@@ -91,6 +181,58 @@ export function CategorySearchSelect({
 					role="combobox"
 					aria-expanded={popoverOpen}
 					disabled={disabled}
+					{...(enableCategoryTabFlow
+						? { "data-import-review-category": "" }
+						: {})}
+					onKeyDown={(event) => {
+						if (
+							enableCategoryTabFlow &&
+							!popoverOpen &&
+							event.key === "Tab"
+						) {
+							const moved = focusAdjacentImportReviewCategory(
+								event.currentTarget,
+								event.shiftKey ? -1 : 1,
+							);
+							if (moved) {
+								event.preventDefault();
+							}
+							return;
+						}
+
+						if (popoverOpen) {
+							if (isCategoryTypeaheadKey(event)) {
+								event.preventDefault();
+								const nextSearch = searchValue + event.key;
+								setSearchValue(nextSearch);
+								focusSearchInput(nextSearch);
+								return;
+							}
+
+							if (event.key === "Backspace") {
+								event.preventDefault();
+								const nextSearch = searchValue.slice(0, -1);
+								setSearchValue(nextSearch);
+								focusSearchInput(nextSearch);
+							}
+							return;
+						}
+
+						if (isCategoryTypeaheadKey(event)) {
+							event.preventDefault();
+							openSearch(event.key);
+							return;
+						}
+
+						if (
+							event.key === "ArrowDown" ||
+							event.key === "Enter" ||
+							event.key === " "
+						) {
+							event.preventDefault();
+							openSearch();
+						}
+					}}
 					className={cn(
 						"h-9 w-full justify-between border-input bg-transparent px-3 py-2 font-normal shadow-none hover:bg-transparent",
 						!selectedOption && "text-muted-foreground",
@@ -119,8 +261,12 @@ export function CategorySearchSelect({
 				</Button>
 			</PopoverTrigger>
 			<PopoverContent
+				ref={popoverContentRef}
 				className="w-[var(--radix-popover-trigger-width)] p-0"
 				align="start"
+				onOpenAutoFocus={(event) => {
+					event.preventDefault();
+				}}
 			>
 				<Command shouldFilter>
 					<CommandInput

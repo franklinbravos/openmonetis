@@ -19,7 +19,7 @@ import {
 	isImportBatchDraft,
 	isImportBatchImported,
 } from "@/features/transactions/lib/import-batch-status";
-import { buildImportContinueHref } from "@/features/transactions/lib/import-continue-href";
+import { buildImportResumeHref } from "@/features/transactions/lib/import-continue-href";
 import type { ImportFileHistoryEntry } from "@/features/transactions/lib/import-file-duplicate";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
 import { Badge } from "@/shared/components/ui/badge";
@@ -47,7 +47,6 @@ type ImportFileHistoryProps = {
 	limit?: number;
 	viewAllHref?: string;
 	viewAllLabel?: string;
-	onContinueImport?: (entry: ImportFileHistoryEntry) => void;
 	resumingBatchId?: string | null;
 	allowDelete?: boolean;
 };
@@ -134,14 +133,12 @@ function ImportFileHistoryStatusText({
 function ImportFileHistoryActions({
 	entry,
 	layout = "column",
-	onContinueImport,
 	resumingBatchId = null,
 	allowDelete = false,
 	onRequestDelete,
 }: {
 	entry: ImportFileHistoryEntry;
 	layout?: "column" | "row";
-	onContinueImport?: (entry: ImportFileHistoryEntry) => void;
 	resumingBatchId?: string | null;
 	allowDelete?: boolean;
 	onRequestDelete?: (entry: ImportFileHistoryEntry) => void;
@@ -166,32 +163,19 @@ function ImportFileHistoryActions({
 			)}
 		>
 			{canResumeOrReprocess ? (
-				onContinueImport ? (
-					<Button
-						type="button"
-						variant="outline"
-						size="sm"
-						className="h-8 gap-1.5 border-primary/25 px-2.5 text-xs text-foreground hover:bg-primary/5 hover:text-foreground"
-						disabled={isResumingThisEntry || isResumingOtherEntry}
-						onClick={() => onContinueImport(entry)}
-					>
-						<RiPlayLine className="size-3.5" aria-hidden />
-						{isResumingThisEntry ? "Carregando…" : continueLabel}
-					</Button>
-				) : (
-					<Button
-						type="button"
-						variant="outline"
-						size="sm"
-						className="h-8 gap-1.5 border-primary/25 px-2.5 text-xs text-foreground hover:bg-primary/5 hover:text-foreground"
-						asChild
-					>
-						<Link href={buildImportContinueHref(entry)}>
-							<RiPlayLine className="size-3.5" aria-hidden />
-							{continueLabel}
-						</Link>
-					</Button>
-				)
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					className="h-8 gap-1.5 border-primary/25 px-2.5 text-xs text-foreground hover:bg-primary/5 hover:text-foreground"
+					disabled={isResumingThisEntry || isResumingOtherEntry}
+					onClick={() => {
+						window.location.assign(buildImportResumeHref(entry));
+					}}
+				>
+					<RiPlayLine className="size-3.5" aria-hidden />
+					{isResumingThisEntry ? "Carregando…" : continueLabel}
+				</Button>
 			) : null}
 			{entry.hasAttachment ? (
 				<Button
@@ -237,13 +221,11 @@ function ImportFileHistoryActions({
 
 function ImportFileHistoryCardRow({
 	entry,
-	onContinueImport,
 	resumingBatchId,
 	allowDelete,
 	onRequestDelete,
 }: {
 	entry: ImportFileHistoryEntry;
-	onContinueImport?: (entry: ImportFileHistoryEntry) => void;
 	resumingBatchId?: string | null;
 	allowDelete?: boolean;
 	onRequestDelete?: (entry: ImportFileHistoryEntry) => void;
@@ -270,7 +252,6 @@ function ImportFileHistoryCardRow({
 			<ImportFileHistoryActions
 				entry={entry}
 				layout="column"
-				onContinueImport={onContinueImport}
 				resumingBatchId={resumingBatchId}
 				allowDelete={allowDelete}
 				onRequestDelete={onRequestDelete}
@@ -281,13 +262,11 @@ function ImportFileHistoryCardRow({
 
 function ImportFileHistoryTableRow({
 	entry,
-	onContinueImport,
 	resumingBatchId,
 	allowDelete,
 	onRequestDelete,
 }: {
 	entry: ImportFileHistoryEntry;
-	onContinueImport?: (entry: ImportFileHistoryEntry) => void;
 	resumingBatchId?: string | null;
 	allowDelete?: boolean;
 	onRequestDelete?: (entry: ImportFileHistoryEntry) => void;
@@ -315,7 +294,6 @@ function ImportFileHistoryTableRow({
 				<ImportFileHistoryActions
 					entry={entry}
 					layout="row"
-					onContinueImport={onContinueImport}
 					resumingBatchId={resumingBatchId}
 					allowDelete={allowDelete}
 					onRequestDelete={onRequestDelete}
@@ -336,7 +314,6 @@ export function ImportFileHistory({
 	limit,
 	viewAllHref,
 	viewAllLabel = "Ver todas as importações",
-	onContinueImport,
 	resumingBatchId = null,
 	allowDelete = false,
 }: ImportFileHistoryProps) {
@@ -400,7 +377,6 @@ export function ImportFileHistory({
 						<ImportFileHistoryCardRow
 							key={entry.id}
 							entry={entry}
-							onContinueImport={onContinueImport}
 							resumingBatchId={resumingBatchId}
 							allowDelete={allowDelete}
 							onRequestDelete={setPendingDeleteEntry}
@@ -423,7 +399,6 @@ export function ImportFileHistory({
 								<ImportFileHistoryTableRow
 									key={entry.id}
 									entry={entry}
-									onContinueImport={onContinueImport}
 									resumingBatchId={resumingBatchId}
 									allowDelete={allowDelete}
 									onRequestDelete={setPendingDeleteEntry}

@@ -102,6 +102,27 @@ function getDuplicateRowClassName(row: ReviewRow) {
 	return "opacity-50";
 }
 
+function isReviewRowClassified(row: ReviewRow): boolean {
+	if (isVerifiedImportDuplicate(row) || isImportRowLinked(row)) {
+		return false;
+	}
+
+	if (row.kind === "invoice_payment") {
+		return Boolean(row.invoicePaymentCardId && row.invoicePaymentPeriod);
+	}
+
+	if (row.kind === "transfer") {
+		return Boolean(row.transferPeerAccountId);
+	}
+
+	return Boolean(row.categoryId);
+}
+
+function getReviewRowClassifiedClassName(row: ReviewRow): string {
+	if (!isReviewRowClassified(row)) return "";
+	return "border-emerald-500/40 bg-emerald-500/8";
+}
+
 function ReviewVerifiedDuplicateDescription({
 	row,
 	index,
@@ -789,6 +810,7 @@ export function ReviewTable({
 											onCheckedChange={() => onToggle(index)}
 											disabled={isImportLinkSuggestion(row)}
 											aria-label={`Selecionar ${row.description}`}
+											tabIndex={-1}
 										/>
 									</TableCell>
 									<TableCell className="text-muted-foreground text-sm">
@@ -807,6 +829,7 @@ export function ReviewTable({
 												onDismissLinkSuggestion={onDismissLinkSuggestion}
 												onConvertToInstallment={onConvertToInstallment}
 												onConvertToRecurrence={onConvertToRecurrence}
+												excludeFromTabOrder
 											/>
 											<ReviewInstallmentFields
 												row={row}
@@ -833,6 +856,7 @@ export function ReviewTable({
 												index={index}
 												payerOptions={payerOptions}
 												onPayerChange={onPayerChange}
+												skipPeerTabStops
 											/>
 										</div>
 									</TableCell>
@@ -846,6 +870,7 @@ export function ReviewTable({
 												onInvoicePaymentPeriodChange={
 													onInvoicePaymentPeriodChange
 												}
+												skipPeerTabStops
 											/>
 										) : row.kind === "transfer" ? (
 											<ReviewTransferFields
@@ -855,6 +880,7 @@ export function ReviewTable({
 												onTransferPeerAccountChange={
 													onTransferPeerAccountChange
 												}
+												skipPeerTabStops
 											/>
 										) : (
 											<ReviewCategorySelect
@@ -863,6 +889,7 @@ export function ReviewTable({
 												categoryOptions={categoryOptionsForRow}
 												onCategoryChange={onCategoryChange}
 												onCreateCategory={onCreateCategory}
+												keyboardCategoryFlow
 											/>
 										)}
 									</TableCell>
@@ -872,6 +899,7 @@ export function ReviewTable({
 											index={index}
 											isCard={isCard}
 											onRowTypeChange={onRowTypeChange}
+											skipPeerTabStops
 										/>
 									</TableCell>
 									<TableCell className="text-right text-sm">
@@ -961,7 +989,7 @@ function ReviewMobileList({
 	onToggleAll: (selected: boolean) => void;
 }) {
 	return (
-		<div className="flex flex-col gap-2 p-2 md:hidden">
+		<div className="flex flex-col gap-1.5 p-2 md:hidden">
 			<div className="sticky top-0 z-10 flex items-center gap-2 rounded-md border border-border/60 bg-background px-3 py-2">
 				<Checkbox
 					checked={allSelected}
@@ -1098,76 +1126,166 @@ function ReviewMobileCard({
 		);
 	}
 
+	const isClassified = isReviewRowClassified(row);
+
 	return (
 		<article
 			className={cn(
-				"rounded-lg border bg-card p-3 shadow-xs transition-colors",
-				row.selected && "border-primary/40 ring-1 ring-primary/15",
+				"rounded-lg border shadow-xs transition-colors scroll-mt-20 scroll-mb-44",
+				isClassified ? "p-2" : "bg-card p-3",
+				!isClassified && "bg-card",
+				!isClassified &&
+					row.selected &&
+					"border-primary/40 ring-1 ring-primary/15",
 				getDuplicateRowClassName(row),
+				getReviewRowClassifiedClassName(row),
 			)}
 		>
-			<div className="space-y-3">
-				<div className="flex items-center gap-2">
-					<Checkbox
-						checked={row.selected}
-						onCheckedChange={() => onToggle(index)}
-						disabled={isImportLinkSuggestion(row)}
-						aria-label={`Selecionar ${row.description}`}
-						className="shrink-0"
-					/>
-					<p className="min-w-0 flex-1 text-muted-foreground text-xs">
-						{formatDate(row.date)}
-					</p>
-					<MoneyValues
-						amount={
-							row.transactionType === "expense" ? -row.amount : row.amount
-						}
-						showPositiveSign={row.transactionType === "income"}
-						className={cn(
-							"shrink-0 text-sm font-medium",
-							row.transactionType === "income"
-								? "text-success"
-								: "text-foreground",
-						)}
-					/>
-				</div>
+			<div className={cn(isClassified ? "space-y-1.5" : "space-y-3")}>
+				{isClassified ? (
+					<div className="flex items-start gap-2">
+						<Checkbox
+							checked={row.selected}
+							onCheckedChange={() => onToggle(index)}
+							disabled={isImportLinkSuggestion(row)}
+							aria-label={`Selecionar ${row.description}`}
+							className="mt-0.5 shrink-0"
+							tabIndex={-1}
+						/>
+						<div className="min-w-0 flex-1">
+							<div className="flex items-center gap-1.5">
+								<RiCheckboxCircleFill
+									className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+									aria-hidden
+								/>
+								<p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+									{formatDate(row.date)}
+								</p>
+								<MoneyValues
+									amount={
+										row.transactionType === "expense" ? -row.amount : row.amount
+									}
+									showPositiveSign={row.transactionType === "income"}
+									className={cn(
+										"shrink-0 text-sm font-medium",
+										row.transactionType === "income"
+											? "text-success"
+											: "text-foreground",
+									)}
+								/>
+							</div>
+							<ReviewDescriptionField
+								row={row}
+								index={index}
+								isCard={isCard}
+								invoicePeriod={invoicePeriod}
+								onDescriptionChange={onDescriptionChange}
+								onUndoDuplicate={onUndoDuplicate}
+								onLinkDuplicate={onLinkDuplicate}
+								onDismissLinkSuggestion={onDismissLinkSuggestion}
+								onConvertToInstallment={onConvertToInstallment}
+								onConvertToRecurrence={onConvertToRecurrence}
+								fullWidth
+								compact
+								excludeFromTabOrder
+							/>
+						</div>
+					</div>
+				) : (
+					<>
+						<div className="flex items-center gap-2">
+							<Checkbox
+								checked={row.selected}
+								onCheckedChange={() => onToggle(index)}
+								disabled={isImportLinkSuggestion(row)}
+								aria-label={`Selecionar ${row.description}`}
+								className="shrink-0"
+								tabIndex={-1}
+							/>
+							<p className="min-w-0 flex-1 text-muted-foreground text-xs">
+								{formatDate(row.date)}
+							</p>
+							<MoneyValues
+								amount={
+									row.transactionType === "expense" ? -row.amount : row.amount
+								}
+								showPositiveSign={row.transactionType === "income"}
+								className={cn(
+									"shrink-0 text-sm font-medium",
+									row.transactionType === "income"
+										? "text-success"
+										: "text-foreground",
+								)}
+							/>
+						</div>
 
-				<div className="space-y-2">
-					<ReviewDescriptionField
-						row={row}
-						index={index}
-						isCard={isCard}
-						invoicePeriod={invoicePeriod}
-						onDescriptionChange={onDescriptionChange}
-						onUndoDuplicate={onUndoDuplicate}
-						onLinkDuplicate={onLinkDuplicate}
-						onDismissLinkSuggestion={onDismissLinkSuggestion}
-						onConvertToInstallment={onConvertToInstallment}
-						onConvertToRecurrence={onConvertToRecurrence}
-						fullWidth
-					/>
-					<ReviewInstallmentFields
-						row={row}
-						index={index}
-						isCard={isCard}
-						invoicePeriod={invoicePeriod}
-						onInstallmentToggle={onInstallmentToggle}
-						onInstallmentDismiss={onInstallmentDismiss}
-						onInstallmentCountChange={onInstallmentCountChange}
-						onInstallmentCurrentChange={onInstallmentCurrentChange}
-					/>
-					<ReviewRecurrenceFields
-						row={row}
-						index={index}
-						onRecurrenceToggle={onRecurrenceToggle}
-						onRecurrenceCountChange={onRecurrenceCountChange}
-					/>
-					<ReviewDuplicateStatus
-						row={row}
-						index={index}
-						onUndoDuplicate={onUndoDuplicate}
-					/>
-				</div>
+						<div className="space-y-2">
+							<ReviewDescriptionField
+								row={row}
+								index={index}
+								isCard={isCard}
+								invoicePeriod={invoicePeriod}
+								onDescriptionChange={onDescriptionChange}
+								onUndoDuplicate={onUndoDuplicate}
+								onLinkDuplicate={onLinkDuplicate}
+								onDismissLinkSuggestion={onDismissLinkSuggestion}
+								onConvertToInstallment={onConvertToInstallment}
+								onConvertToRecurrence={onConvertToRecurrence}
+								fullWidth
+								excludeFromTabOrder
+							/>
+							<ReviewInstallmentFields
+								row={row}
+								index={index}
+								isCard={isCard}
+								invoicePeriod={invoicePeriod}
+								onInstallmentToggle={onInstallmentToggle}
+								onInstallmentDismiss={onInstallmentDismiss}
+								onInstallmentCountChange={onInstallmentCountChange}
+								onInstallmentCurrentChange={onInstallmentCurrentChange}
+							/>
+							<ReviewRecurrenceFields
+								row={row}
+								index={index}
+								onRecurrenceToggle={onRecurrenceToggle}
+								onRecurrenceCountChange={onRecurrenceCountChange}
+							/>
+							<ReviewDuplicateStatus
+								row={row}
+								index={index}
+								onUndoDuplicate={onUndoDuplicate}
+							/>
+						</div>
+					</>
+				)}
+
+				{isClassified ? (
+					<>
+						<ReviewInstallmentFields
+							row={row}
+							index={index}
+							isCard={isCard}
+							invoicePeriod={invoicePeriod}
+							onInstallmentToggle={onInstallmentToggle}
+							onInstallmentDismiss={onInstallmentDismiss}
+							onInstallmentCountChange={onInstallmentCountChange}
+							onInstallmentCurrentChange={onInstallmentCurrentChange}
+							compact
+						/>
+						<ReviewRecurrenceFields
+							row={row}
+							index={index}
+							onRecurrenceToggle={onRecurrenceToggle}
+							onRecurrenceCountChange={onRecurrenceCountChange}
+							compact
+						/>
+						<ReviewDuplicateStatus
+							row={row}
+							index={index}
+							onUndoDuplicate={onUndoDuplicate}
+						/>
+					</>
+				) : null}
 
 				<div className="flex items-center gap-1.5">
 					<ReviewRowKindSelect
@@ -1176,6 +1294,8 @@ function ReviewMobileCard({
 						isCard={isCard}
 						onRowTypeChange={onRowTypeChange}
 						compact
+						dense={isClassified}
+						skipPeerTabStops
 					/>
 					<ReviewPayerSelect
 						row={row}
@@ -1183,6 +1303,8 @@ function ReviewMobileCard({
 						payerOptions={payerOptions}
 						onPayerChange={onPayerChange}
 						compact
+						dense={isClassified}
+						skipPeerTabStops
 					/>
 					{row.kind === "invoice_payment" ? (
 						<ReviewInvoicePaymentFields
@@ -1192,6 +1314,8 @@ function ReviewMobileCard({
 							onInvoicePaymentCardChange={onInvoicePaymentCardChange}
 							onInvoicePaymentPeriodChange={onInvoicePaymentPeriodChange}
 							compact
+							dense={isClassified}
+							skipPeerTabStops
 						/>
 					) : row.kind === "transfer" ? (
 						<ReviewTransferFields
@@ -1200,6 +1324,8 @@ function ReviewMobileCard({
 							accountOptions={transferAccountOptions}
 							onTransferPeerAccountChange={onTransferPeerAccountChange}
 							compact
+							dense={isClassified}
+							skipPeerTabStops
 						/>
 					) : (
 						<ReviewCategorySelect
@@ -1209,6 +1335,8 @@ function ReviewMobileCard({
 							onCategoryChange={onCategoryChange}
 							onCreateCategory={onCreateCategory}
 							compact
+							dense={isClassified}
+							keyboardCategoryFlow
 						/>
 					)}
 				</div>
@@ -1228,6 +1356,7 @@ function ReviewInstallmentFields({
 	onInstallmentDismiss,
 	onInstallmentCountChange,
 	onInstallmentCurrentChange,
+	compact = false,
 }: {
 	row: ReviewRow;
 	index: number;
@@ -1240,6 +1369,7 @@ function ReviewInstallmentFields({
 		index: number,
 		currentInstallment: number,
 	) => void;
+	compact?: boolean;
 }) {
 	const [expanded, setExpanded] = useState(false);
 	const installment = row.installmentImport;
@@ -1283,7 +1413,10 @@ function ReviewInstallmentFields({
 		<Collapsible
 			open={expanded}
 			onOpenChange={setExpanded}
-			className="rounded-md border border-dashed border-border/70 bg-muted/20 p-3"
+			className={cn(
+				"rounded-md border border-dashed border-border/70 bg-muted/20",
+				compact ? "p-2" : "p-3",
+			)}
 		>
 			<div className="flex items-center gap-2">
 				<CollapsibleTrigger asChild>
@@ -1390,11 +1523,13 @@ function ReviewRecurrenceFields({
 	index,
 	onRecurrenceToggle,
 	onRecurrenceCountChange,
+	compact = false,
 }: {
 	row: ReviewRow;
 	index: number;
 	onRecurrenceToggle: (index: number, enabled: boolean) => void;
 	onRecurrenceCountChange: (index: number, recurrenceCount: number) => void;
+	compact?: boolean;
 }) {
 	const [expanded, setExpanded] = useState(false);
 
@@ -1411,7 +1546,10 @@ function ReviewRecurrenceFields({
 		<Collapsible
 			open={expanded}
 			onOpenChange={setExpanded}
-			className="rounded-md border border-dashed border-border/70 bg-muted/20 p-3"
+			className={cn(
+				"rounded-md border border-dashed border-border/70 bg-muted/20",
+				compact ? "p-2" : "p-3",
+			)}
 		>
 			<div className="flex items-center gap-2">
 				<CollapsibleTrigger asChild>
@@ -1485,6 +1623,8 @@ function ReviewDescriptionField({
 	onConvertToInstallment,
 	onConvertToRecurrence,
 	fullWidth = false,
+	compact = false,
+	excludeFromTabOrder = false,
 }: Pick<
 	ReviewRowSharedProps,
 	| "row"
@@ -1497,11 +1637,14 @@ function ReviewDescriptionField({
 	| "onConvertToRecurrence"
 	| "isCard"
 	| "invoicePeriod"
-> & { fullWidth?: boolean }) {
-	const fieldClassName =
-		"w-full bg-transparent text-sm outline-none focus:rounded focus:ring-1 focus:ring-ring";
+> & { fullWidth?: boolean; compact?: boolean; excludeFromTabOrder?: boolean }) {
+	const fieldClassName = cn(
+		"w-full bg-transparent outline-none focus:rounded focus:ring-1 focus:ring-ring",
+		compact ? "text-xs leading-tight" : "text-sm",
+	);
 
 	const canConvert =
+		!compact &&
 		row.kind === "transaction" &&
 		!isImportRowResolved(row) &&
 		!isImportLinkSuggestion(row);
@@ -1555,16 +1698,17 @@ function ReviewDescriptionField({
 		) : null;
 
 	return (
-		<div className="min-w-0 space-y-1">
+		<div className={cn("min-w-0", compact ? "space-y-0" : "space-y-1")}>
 			<div
 				className={cn("flex gap-1", fullWidth ? "items-start" : "items-center")}
 			>
 				{convertActions}
-				{fullWidth ? (
+				{fullWidth && !compact ? (
 					<textarea
 						value={row.description}
 						onChange={(event) => onDescriptionChange(index, event.target.value)}
 						rows={2}
+						tabIndex={excludeFromTabOrder ? -1 : undefined}
 						className={cn(
 							fieldClassName,
 							"min-h-10 min-w-0 flex-1 resize-none wrap-break-word leading-snug",
@@ -1575,32 +1719,41 @@ function ReviewDescriptionField({
 						type="text"
 						value={row.description}
 						onChange={(event) => onDescriptionChange(index, event.target.value)}
-						className={cn(fieldClassName, "min-w-0 flex-1")}
+						tabIndex={excludeFromTabOrder ? -1 : undefined}
+						className={cn(
+							fieldClassName,
+							"min-w-0 flex-1",
+							compact && "truncate font-medium",
+						)}
 					/>
 				)}
 			</div>
-			{row.kind === "invoice_payment" && (
+			{!compact && row.kind === "invoice_payment" && (
 				<Badge variant="outline" className="text-[10px]">
 					Pagamento de fatura
 				</Badge>
 			)}
-			{row.kind === "transfer" && (
+			{!compact && row.kind === "transfer" && (
 				<Badge variant="outline" className="text-[10px]">
 					Transferência
 				</Badge>
 			)}
-			<ReviewDuplicateStatus
-				row={row}
-				index={index}
-				onUndoDuplicate={onUndoDuplicate}
-			/>
-			<ReviewLinkSuggestionStatus
-				row={row}
-				index={index}
-				onLinkDuplicate={onLinkDuplicate}
-				onDismissLinkSuggestion={onDismissLinkSuggestion}
-			/>
-			<ReviewLinkedStatus row={row} />
+			{!compact ? (
+				<>
+					<ReviewDuplicateStatus
+						row={row}
+						index={index}
+						onUndoDuplicate={onUndoDuplicate}
+					/>
+					<ReviewLinkSuggestionStatus
+						row={row}
+						index={index}
+						onLinkDuplicate={onLinkDuplicate}
+						onDismissLinkSuggestion={onDismissLinkSuggestion}
+					/>
+					<ReviewLinkedStatus row={row} />
+				</>
+			) : null}
 		</div>
 	);
 }
@@ -1612,6 +1765,8 @@ function ReviewRowKindSelect({
 	onRowTypeChange,
 	fullWidth = false,
 	compact = false,
+	dense = false,
+	skipPeerTabStops = false,
 }: {
 	row: ReviewRow;
 	index: number;
@@ -1622,7 +1777,10 @@ function ReviewRowKindSelect({
 	) => void;
 	fullWidth?: boolean;
 	compact?: boolean;
+	dense?: boolean;
+	skipPeerTabStops?: boolean;
 }) {
+	const controlSize = dense ? "size-9" : "size-8";
 	const select = (
 		<Select
 			value={
@@ -1645,10 +1803,13 @@ function ReviewRowKindSelect({
 			}}
 		>
 			<SelectTrigger
+				size={compact ? "sm" : "default"}
+				tabIndex={skipPeerTabStops ? -1 : undefined}
 				className={cn(
 					compact
 						? cn(
-								"size-8 shrink-0 p-0 [&>svg]:hidden",
+								"shrink-0 justify-center p-0 [&>svg]:hidden",
+								controlSize,
 								getReviewRowKindIconClassName(row),
 							)
 						: "h-8 gap-2 text-xs",
@@ -1724,6 +1885,8 @@ function ReviewInvoicePaymentFields({
 	onInvoicePaymentPeriodChange,
 	fullWidth = false,
 	compact = false,
+	dense = false,
+	skipPeerTabStops = false,
 }: {
 	row: ReviewRow;
 	index: number;
@@ -1732,10 +1895,13 @@ function ReviewInvoicePaymentFields({
 	onInvoicePaymentPeriodChange: (index: number, period: string | null) => void;
 	fullWidth?: boolean;
 	compact?: boolean;
+	dense?: boolean;
+	skipPeerTabStops?: boolean;
 }) {
 	const selectedCard = cardOptions.find(
 		(option) => option.value === row.invoicePaymentCardId,
 	);
+	const controlHeight = dense ? "h-7" : "h-8";
 
 	return (
 		<div
@@ -1753,7 +1919,8 @@ function ReviewInvoicePaymentFields({
 				}
 			>
 				<SelectTrigger
-					className={cn("h-8 text-xs", compact && "min-w-0 flex-1")}
+					tabIndex={skipPeerTabStops ? -1 : undefined}
+					className={cn(controlHeight, "text-xs", compact && "min-w-0 flex-1")}
 				>
 					<SelectValue placeholder="Cartão…">
 						{selectedCard ? (
@@ -1782,8 +1949,10 @@ function ReviewInvoicePaymentFields({
 				onChange={(value) => onInvoicePaymentPeriodChange(index, value || null)}
 				placeholder="Fatura…"
 				size="sm"
+				tabIndex={skipPeerTabStops ? -1 : undefined}
 				className={cn(
-					"h-8 justify-start text-xs",
+					controlHeight,
+					"justify-start text-xs",
 					compact ? "w-[5.5rem] shrink-0 px-2" : "w-full",
 				)}
 			/>
@@ -1798,6 +1967,8 @@ function ReviewTransferFields({
 	onTransferPeerAccountChange,
 	fullWidth = false,
 	compact = false,
+	dense = false,
+	skipPeerTabStops = false,
 }: {
 	row: ReviewRow;
 	index: number;
@@ -1808,7 +1979,10 @@ function ReviewTransferFields({
 	) => void;
 	fullWidth?: boolean;
 	compact?: boolean;
+	dense?: boolean;
+	skipPeerTabStops?: boolean;
 }) {
+	const controlHeight = dense ? "h-7" : "h-8";
 	const selectedAccount = accountOptions.find(
 		(option) => option.value === row.transferPeerAccountId,
 	);
@@ -1834,8 +2008,10 @@ function ReviewTransferFields({
 				}
 			>
 				<SelectTrigger
+					tabIndex={skipPeerTabStops ? -1 : undefined}
 					className={cn(
-						"h-8 text-xs",
+						controlHeight,
+						"text-xs",
 						compact && "min-w-0 flex-1",
 						!row.transferPeerAccountId && "border-destructive/40",
 					)}
@@ -1877,6 +2053,8 @@ function ReviewCategorySelect({
 	onCreateCategory,
 	fullWidth = false,
 	compact = false,
+	dense = false,
+	keyboardCategoryFlow = false,
 }: {
 	row: ReviewRow;
 	index: number;
@@ -1885,6 +2063,8 @@ function ReviewCategorySelect({
 	onCreateCategory: (index: number) => void;
 	fullWidth?: boolean;
 	compact?: boolean;
+	dense?: boolean;
+	keyboardCategoryFlow?: boolean;
 }) {
 	const categoryGroups = groupAndSortCategories(categoryOptions);
 
@@ -1896,9 +2076,12 @@ function ReviewCategorySelect({
 			categoryOptions={categoryOptions}
 			placeholder="Categoria…"
 			onCreateCategory={() => onCreateCategory(index)}
+			enableCategoryTabFlow={keyboardCategoryFlow}
 			triggerClassName={cn(
-				"h-8 text-xs",
+				dense ? "h-7" : "h-8",
+				"text-xs",
 				compact ? "min-w-0 flex-1" : fullWidth && "w-full",
+				row.categoryId && "border-emerald-500/30 bg-emerald-500/5",
 			)}
 		/>
 	);
@@ -1911,6 +2094,8 @@ function ReviewPayerSelect({
 	onPayerChange,
 	fullWidth = false,
 	compact = false,
+	dense = false,
+	skipPeerTabStops = false,
 }: {
 	row: ReviewRow;
 	index: number;
@@ -1918,10 +2103,13 @@ function ReviewPayerSelect({
 	onPayerChange: (index: number, payerId: string | null) => void;
 	fullWidth?: boolean;
 	compact?: boolean;
+	dense?: boolean;
+	skipPeerTabStops?: boolean;
 }) {
 	const payerOption = payerOptions.find(
 		(option) => option.value === row.payerId,
 	);
+	const compactAvatarTrigger = compact && !fullWidth;
 
 	const select = (
 		<Select
@@ -1929,11 +2117,18 @@ function ReviewPayerSelect({
 			onValueChange={(value) => onPayerChange(index, value || null)}
 		>
 			<SelectTrigger
+				size={compactAvatarTrigger ? "sm" : "default"}
+				tabIndex={skipPeerTabStops ? -1 : undefined}
 				className={cn(
-					"h-8 text-xs",
-					compact || !fullWidth
-						? "size-8 shrink-0 px-1.5 [&>svg]:hidden"
-						: "w-full",
+					"text-xs",
+					compactAvatarTrigger
+						? "size-9 shrink-0 justify-center p-0 [&>svg]:hidden"
+						: cn(
+								dense ? "h-7" : "h-8",
+								compact || !fullWidth
+									? "size-8 shrink-0 px-1.5 [&>svg]:hidden"
+									: "w-full",
+							),
 				)}
 				aria-label={payerOption?.label ?? "Pessoa"}
 			>
@@ -1943,6 +2138,7 @@ function ReviewPayerSelect({
 							label={payerOption.label}
 							avatarUrl={payerOption.avatarUrl}
 							showLabel={fullWidth}
+							avatarClassName={compactAvatarTrigger ? "size-8" : undefined}
 						/>
 					) : null}
 				</SelectValue>

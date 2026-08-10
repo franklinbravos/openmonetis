@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { RiUploadCloud2Line } from "@remixicon/react";
 import type { Metadata } from "next";
 import { connection } from "next/server";
@@ -43,7 +42,33 @@ function resolveImportPrefill(searchParams: ResolvedSearchParams | undefined) {
 		initialAccountId: accountId,
 		initialInvoicePeriod: invoicePeriod,
 		initialResumeBatchId: getSingleParam(searchParams ?? {}, "lote"),
+		initialResumeNonce: getSingleParam(searchParams ?? {}, "retomar"),
 	};
+}
+
+function buildImportMountKey({
+	resumeBatchId,
+	resumeNonce,
+	cardId,
+	accountId,
+	invoicePeriod,
+}: {
+	resumeBatchId: string | null;
+	resumeNonce: string | null;
+	cardId: string | null;
+	accountId: string | null;
+	invoicePeriod: string | null;
+}) {
+	if (resumeBatchId) {
+		return `resume:${resumeBatchId}:${resumeNonce ?? "0"}`;
+	}
+
+	return [
+		"import",
+		cardId ?? "no-card",
+		accountId ?? "no-account",
+		invoicePeriod ?? "no-period",
+	].join(":");
 }
 
 export async function generateMetadata({
@@ -55,6 +80,7 @@ export async function generateMetadata({
 		initialAccountId,
 		initialInvoicePeriod,
 		initialResumeBatchId,
+		initialResumeNonce,
 	} = resolveImportPrefill(resolvedSearchParams);
 
 	if (initialCardId && initialInvoicePeriod) {
@@ -83,6 +109,7 @@ export default async function Page({ searchParams }: PageProps) {
 		initialAccountId,
 		initialInvoicePeriod,
 		initialResumeBatchId,
+		initialResumeNonce,
 	} = resolveImportPrefill(resolvedSearchParams);
 	const filterSources = await fetchTransactionFilterSources(userId);
 	const sluggedFilters = buildSluggedFilters(filterSources);
@@ -141,7 +168,14 @@ export default async function Page({ searchParams }: PageProps) {
 		limit: 20,
 	});
 
-	const importMountKey = initialResumeBatchId ?? randomUUID();
+	const importMountKey = buildImportMountKey({
+		resumeBatchId: initialResumeBatchId,
+		resumeNonce: initialResumeNonce,
+		cardId: validCardId,
+		accountId: validAccountId,
+		invoicePeriod:
+			validCardId || validAccountId ? initialInvoicePeriod : null,
+	});
 
 	return (
 		<main className="flex flex-col gap-6">

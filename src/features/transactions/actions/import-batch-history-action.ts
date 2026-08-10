@@ -25,6 +25,28 @@ import {
 	headS3Object,
 } from "@/shared/lib/storage/presign";
 
+async function resolveImportBatchFileKey(
+	batch: {
+		attachment?: { fileKey?: string | null } | null;
+		attachmentId?: string | null;
+	},
+): Promise<string | null> {
+	if (batch.attachment?.fileKey) {
+		return batch.attachment.fileKey;
+	}
+
+	if (!batch.attachmentId) {
+		return null;
+	}
+
+	const attachment = await db.query.attachments.findFirst({
+		columns: { fileKey: true },
+		where: eq(attachments.id, batch.attachmentId),
+	});
+
+	return attachment?.fileKey ?? null;
+}
+
 const historySchema = z.object({
 	cardId: uuidSchema("Cartão").nullable().optional(),
 	invoicePeriod: z
@@ -313,6 +335,7 @@ export async function getImportBatchResumeAction(input: {
 				invoicePeriod: true,
 				status: true,
 				draftData: true,
+				attachmentId: true,
 			},
 			where: and(
 				eq(importBatches.userId, userId),
@@ -335,7 +358,7 @@ export async function getImportBatchResumeAction(input: {
 			return { success: false, error: "Esta importação já foi concluída." };
 		}
 
-		const fileKey = batch.attachment?.fileKey;
+		const fileKey = await resolveImportBatchFileKey(batch);
 		let downloadUrl: string | null = null;
 		let fileContentBase64: string | null = null;
 		let mimeType: string | null = null;
@@ -400,6 +423,7 @@ export async function getImportBatchDownloadUrlAction(input: {
 	const batch = await db.query.importBatches.findFirst({
 		columns: {
 			sourceFileName: true,
+			attachmentId: true,
 		},
 		where: and(
 			eq(importBatches.userId, userId),
@@ -414,7 +438,7 @@ export async function getImportBatchDownloadUrlAction(input: {
 		},
 	});
 
-	const fileKey = batch?.attachment?.fileKey;
+	const fileKey = batch ? await resolveImportBatchFileKey(batch) : null;
 	if (!batch || !fileKey) {
 		return { success: false, error: "Arquivo de importação não encontrado." };
 	}
@@ -470,8 +494,9 @@ export async function deleteImportBatchAction(input: {
 				),
 			);
 
-		if (batch.attachment?.fileKey) {
-			await deleteS3Object(batch.attachment.fileKey).catch(() => {});
+		const fileKey = await resolveImportBatchFileKey(batch);
+		if (fileKey) {
+			await deleteS3Object(fileKey).catch(() => {});
 		}
 
 		if (batch.attachmentId) {

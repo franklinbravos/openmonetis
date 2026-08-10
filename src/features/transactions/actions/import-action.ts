@@ -9,10 +9,10 @@ import {
 	categories,
 	financialAccounts,
 	importBatches,
-	invoices,
 	transactions,
 } from "@/db/schema";
 import { updateInvoicePaymentStatusAction } from "@/features/invoices/actions";
+import { upsertInvoicePaymentStatus } from "@/features/invoices/lib/upsert-invoice-payment";
 import {
 	buildTransactionRecords,
 	fetchOwnedCategoryIds,
@@ -1026,30 +1026,52 @@ export async function importTransactionsAction(
 			),
 		];
 
+		const fitIdsInBatch = [
+			...new Set(
+				allRecords
+					.map((record) => record.ofxFitId)
+					.filter((fitId): fitId is string => Boolean(fitId)),
+			),
+		];
+
+		const existingFitIds = new Set<string>();
+		if (fitIdsInBatch.length > 0) {
+			const duplicateRows = await tx
+				.select({ ofxFitId: transactions.ofxFitId })
+				.from(transactions)
+				.where(
+					and(
+						eq(transactions.userId, userId),
+						inArray(transactions.ofxFitId, fitIdsInBatch),
+					),
+				);
+
+			for (const row of duplicateRows) {
+				if (row.ofxFitId) {
+					existingFitIds.add(row.ofxFitId);
+				}
+			}
+		}
+
+		const recordsToInsert = allRecords.filter(
+			(record) => !record.ofxFitId || !existingFitIds.has(record.ofxFitId),
+		);
+
 		const insertedRows =
-			allRecords.length > 0
+			recordsToInsert.length > 0
 				? await tx
 						.insert(transactions)
-						.values(allRecords)
-						.onConflictDoNothing()
+						.values(recordsToInsert)
 						.returning({ id: transactions.id })
 				: [];
 
 		for (const record of invoicePaymentRecords) {
-			await tx
-				.insert(invoices)
-				.values({
-					cardId: record.settleCardId,
-					period: record.settlePeriod,
-					paymentStatus: INVOICE_PAYMENT_STATUS.PAID,
-					userId,
-				})
-				.onConflictDoUpdate({
-					target: [invoices.userId, invoices.cardId, invoices.period],
-					set: {
-						paymentStatus: INVOICE_PAYMENT_STATUS.PAID,
-					},
-				});
+			await upsertInvoicePaymentStatus(tx, {
+				userId,
+				cardId: record.settleCardId,
+				period: record.settlePeriod,
+				paymentStatus: INVOICE_PAYMENT_STATUS.PAID,
+			});
 
 			await tx
 				.update(transactions)

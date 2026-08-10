@@ -27,6 +27,17 @@ export function buildImportContinueHref(
 	return query ? `/transactions/import?${query}` : "/transactions/import";
 }
 
+/** Navegação ao retomar rascunho — `retomar` força remount mesmo com o mesmo `lote`. */
+export function buildImportResumeHref(
+	entry: Parameters<typeof buildImportContinueHref>[0],
+): string {
+	const params = new URLSearchParams(
+		buildImportContinueHref(entry).split("?")[1] ?? "",
+	);
+	params.set("retomar", String(Date.now()));
+	return `/transactions/import?${params.toString()}`;
+}
+
 export function buildInvoiceImportHistoryHref(
 	cardId: string,
 	invoicePeriod: string,
@@ -55,6 +66,29 @@ export function buildAccountImportHref(
 	}
 
 	return `/transactions/import?${params.toString()}`;
+}
+
+export function buildImportLandingHref(input: {
+	cardId?: string | null;
+	accountId?: string | null;
+	invoicePeriod?: string | null;
+}): string {
+	const params = new URLSearchParams();
+
+	if (input.cardId) {
+		params.set("cartao", input.cardId);
+	}
+
+	if (input.accountId && !input.cardId) {
+		params.set("conta", input.accountId);
+	}
+
+	if (input.invoicePeriod) {
+		params.set("periodo", input.invoicePeriod);
+	}
+
+	const query = params.toString();
+	return query ? `/transactions/import?${query}` : "/transactions/import";
 }
 
 export function buildAccountStatementHref(
