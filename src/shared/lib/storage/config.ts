@@ -1,9 +1,10 @@
+import { isSupabaseProjectConfigured } from "@/shared/lib/supabase/env";
+
 export type StorageBackend = "supabase" | "s3";
 
 export function isSupabaseStorageConfigured(): boolean {
 	return Boolean(
-		process.env.SUPABASE_URL?.trim() &&
-			process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() &&
+		isSupabaseProjectConfigured() &&
 			process.env.SUPABASE_STORAGE_BUCKET?.trim(),
 	);
 }
@@ -40,5 +41,5 @@ export function getStorageBucket(): string {
 
 export function getStorageConfigurationErrorMessage(): string {
 	if (isObjectStorageConfigured()) return "";
-	return "Storage não configurado. Defina SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY e SUPABASE_STORAGE_BUCKET (ou as variáveis S3_* para providers compatíveis).";
+	return "Storage não configurado. Defina NEXT_PUBLIC_SUPABASE_URL (ou SUPABASE_URL), SUPABASE_SERVICE_ROLE_KEY e SUPABASE_STORAGE_BUCKET (ou as variáveis S3_* para providers compatíveis).";
 }

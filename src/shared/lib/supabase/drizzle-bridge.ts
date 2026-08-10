@@ -10,6 +10,9 @@ import * as schema from "@/db/schema";
 import { getSupabaseAdmin } from "@/shared/lib/supabase/admin";
 import type { Database } from "@/shared/lib/supabase/database.types";
 
+/** Incrementar ao alterar a API pública do bridge (invalida cache em db.ts). */
+export const DRIZZLE_BRIDGE_VERSION = 5;
+
 type ColumnFilter = {
 	table?: string;
 	column: string;
@@ -90,6 +93,12 @@ const RELATION_SELECTS: Record<string, Record<string, string>> = {
 	},
 	budgets: {
 		category: "categorias!categoria_id(*)",
+	},
+	importBatches: {
+		attachment: "anexos!anexo_id(*)",
+		user: "user!user_id(*)",
+		card: "cartoes!cartao_id(*)",
+		account: "contas!conta_id(*)",
 	},
 	notes: {
 		attachments: "anotacoes_anexos(*, anexo:anexos(*))",
@@ -1061,12 +1070,12 @@ async function runFind<T extends Table>(
 	if (single) {
 		const row = Array.isArray(data) ? data[0] : data;
 		if (!row) return undefined as never;
-		return mapRow(row as Record<string, unknown>) as never;
+		return mapRow(row as unknown as Record<string, unknown>) as never;
 	}
 
 	if (!data) return [] as never;
 
-	return (data as Record<string, unknown>[]).map(mapRow) as never;
+	return (data as unknown as Record<string, unknown>[]).map(mapRow) as never;
 }
 
 function resolveRelationTable(
@@ -1085,6 +1094,12 @@ function resolveRelationTable(
 		cards: { account: schema.financialAccounts },
 		invoices: { card: schema.cards },
 		budgets: { category: schema.categories },
+		importBatches: {
+			attachment: schema.attachments,
+			user: schema.user,
+			card: schema.cards,
+			account: schema.financialAccounts,
+		},
 	};
 	return map[parentKey]?.[relation] ?? null;
 }
@@ -1111,69 +1126,205 @@ function createQueryApi(client: SupabaseClient<Database>) {
 	return { query };
 }
 
+function conflictColumnsToDb(columns: PgColumn[]): string {
+	return columns.map((column) => column.name).join(",");
+}
+
+function buildInsertReturningSelect(
+	table: Table,
+	shape?: Record<string, unknown> | null,
+): string {
+	if (!shape) return "*";
+
+	const columns = getTableColumns(table);
+	const selected = Object.entries(shape)
+		.map(([jsKey, value]) => {
+			if (isPgColumn(value)) return value.name;
+			if (value === true) return columns[jsKey]?.name ?? jsKey;
+			return null;
+		})
+		.filter((column): column is string => Boolean(column));
+
+	return selected.length > 0 ? selected.join(",") : "*";
+}
+
+function mapInsertReturningRows(
+	table: Table,
+	shape: Record<string, unknown> | null | undefined,
+	rows: Record<string, unknown>[],
+): Record<string, unknown>[] {
+	if (!shape) {
+		return rows.map((row) => fromDbRow(table, row));
+	}
+
+	return rows.map((row) => {
+		const mapped = fromDbRow(table, row);
+		const result: Record<string, unknown> = {};
+
+		for (const key of Object.keys(shape)) {
+			if (key in mapped) {
+				result[key] = mapped[key];
+			}
+		}
+
+		return result;
+	});
+}
+
+type InsertConflictConfig =
+	| { mode: "nothing"; columns?: PgColumn[] }
+	| { mode: "update"; columns: PgColumn[]; set: Record<string, unknown> };
+
 function createInsertBuilder(client: SupabaseClient<Database>, table: Table) {
 	const tableName = getTableName(table);
+
+	function createValuesBuilder(rows: Record<string, unknown>[]) {
+		const payload = rows.map((row) => toDbRow(table, row));
+		let conflict: InsertConflictConfig | null = null;
+
+		const buildWritePayload = () => {
+			if (conflict?.mode === "update") {
+				const setDb = toDbRow(table, conflict.set);
+				return payload.map((row) => ({ ...row, ...setDb }));
+			}
+			return payload;
+		};
+
+		const buildUpsertOptions = () => {
+			if (!conflict) return null;
+
+			const onConflict =
+				conflict.columns && conflict.columns.length > 0
+					? conflictColumnsToDb(conflict.columns)
+					: undefined;
+
+			if (conflict.mode === "nothing") {
+				return {
+					onConflict,
+					ignoreDuplicates: true as const,
+				};
+			}
+
+			return { onConflict };
+		};
+
+		let executed = false;
+		let execution: Promise<unknown[]> | null = null;
+
+		const run = async (
+			returningShape?: Record<string, unknown> | null,
+		): Promise<unknown[]> => {
+			const writePayload = buildWritePayload();
+			const upsertOptions = buildUpsertOptions();
+			const select = buildInsertReturningSelect(table, returningShape);
+
+			if (upsertOptions) {
+				const { data, error } = await client
+					.from(tableName as keyof Database["public"]["Tables"])
+					.upsert(writePayload as never[], upsertOptions)
+					.select(select);
+				if (error) {
+					console.error("[bridge] upsert falhou", {
+						table: tableName,
+						error: error.message,
+					});
+					throw error;
+				}
+				return mapInsertReturningRows(
+					table,
+					returningShape,
+					(data ?? []) as unknown as Record<string, unknown>[],
+				);
+			}
+
+			const { data, error } = await client
+				.from(tableName as keyof Database["public"]["Tables"])
+				.insert(writePayload as never[])
+				.select(select);
+			if (error) {
+				console.error("[bridge] insert falhou", {
+					table: tableName,
+					error: error.message,
+				});
+				throw error;
+			}
+			return mapInsertReturningRows(
+				table,
+				returningShape,
+				(data ?? []) as unknown as Record<string, unknown>[],
+			);
+		};
+
+		const execute = async (
+			returningShape?: Record<string, unknown> | null,
+		): Promise<unknown[]> => {
+			if (executed) return execution ?? Promise.resolve([]);
+			executed = true;
+			execution = run(returningShape);
+			return execution;
+		};
+
+		const createThenable = (
+			returningShape?: Record<string, unknown> | null,
+		) => ({
+			async execute() {
+				await execute(returningShape);
+			},
+			// biome-ignore lint/suspicious/noThenProperty: thenable necessário para `await db.insert(...)` (API compatível com Drizzle)
+			then<TResult1 = unknown[], TResult2 = never>(
+				onfulfilled?:
+					| ((value: unknown[]) => TResult1 | PromiseLike<TResult1>)
+					| null,
+				onrejected?:
+					| ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
+					| null,
+			) {
+				return execute(returningShape).then(onfulfilled, onrejected);
+			},
+		});
+
+		const chain = {
+			onConflictDoNothing(options?: { target?: PgColumn[] }) {
+				conflict = { mode: "nothing", columns: options?.target };
+				return chain;
+			},
+			onConflictDoUpdate(options: {
+				target: PgColumn[];
+				set: Record<string, unknown>;
+			}) {
+				conflict = {
+					mode: "update",
+					columns: options.target,
+					set: options.set,
+				};
+				return chain;
+			},
+			returning(shape?: Record<string, unknown>) {
+				return createThenable(shape ?? null);
+			},
+			async execute() {
+				await execute(null);
+			},
+			// biome-ignore lint/suspicious/noThenProperty: thenable necessário para `await db.insert(...)` (API compatível com Drizzle)
+			then<TResult1 = unknown[], TResult2 = never>(
+				onfulfilled?:
+					| ((value: unknown[]) => TResult1 | PromiseLike<TResult1>)
+					| null,
+				onrejected?:
+					| ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
+					| null,
+			) {
+				return execute(null).then(onfulfilled, onrejected);
+			},
+		};
+
+		return chain;
+	}
+
 	return {
 		values(values: Record<string, unknown> | Record<string, unknown>[]) {
 			const rows = Array.isArray(values) ? values : [values];
-			const payload = rows.map((row) => toDbRow(table, row));
-
-			const insertAndSelect = async () => {
-				const { data, error } = await client
-					.from(tableName as keyof Database["public"]["Tables"])
-					.insert(payload as never[])
-					.select();
-				if (error) {
-					console.error("[bridge] insert falhou", {
-						table: tableName,
-						error: error.message,
-					});
-					throw error;
-				}
-				return (data ?? []).map((row) =>
-					fromDbRow(table, row as Record<string, unknown>),
-				);
-			};
-
-			const insertOnly = async () => {
-				const { error } = await client
-					.from(tableName as keyof Database["public"]["Tables"])
-					.insert(payload as never[]);
-				if (error) {
-					console.error("[bridge] insert falhou", {
-						table: tableName,
-						error: error.message,
-					});
-					throw error;
-				}
-			};
-
-			let executed = false;
-			let execution: Promise<unknown[]> | null = null;
-			const execute = async (): Promise<unknown[]> => {
-				if (executed) return execution ?? Promise.resolve([]);
-				executed = true;
-				execution = insertAndSelect();
-				return execution;
-			};
-
-			return {
-				returning: () => execute(),
-				async execute() {
-					await insertOnly();
-				},
-				// biome-ignore lint/suspicious/noThenProperty: thenable necessário para `await db.insert(...)` (API compatível com Drizzle)
-				then<TResult1 = unknown[], TResult2 = never>(
-					onfulfilled?:
-						| ((value: unknown[]) => TResult1 | PromiseLike<TResult1>)
-						| null,
-					onrejected?:
-						| ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
-						| null,
-				) {
-					return execute().then(onfulfilled, onrejected);
-				},
-			};
+			return createValuesBuilder(rows);
 		},
 	};
 }
@@ -1235,28 +1386,62 @@ function createUpdateBuilder(client: SupabaseClient<Database>, table: Table) {
 			const payload = toDbRow(table, values);
 			return {
 				where(where: SQL) {
-					return {
-						returning: async () => {
-							let query = client
-								.from(tableName as keyof Database["public"]["Tables"])
-								.update(payload as never)
-								.select();
-							query = applyFilters(query, parseWhere(where), tableName);
-							const { data, error } = await query;
-							if (error) throw error;
-							return (data ?? []).map((row) =>
-								fromDbRow(table, row as Record<string, unknown>),
-							);
-						},
+					let executed = false;
+					let execution: Promise<unknown[]> | null = null;
+
+					const run = async (
+						withReturning: boolean,
+					): Promise<unknown[]> => {
+						// biome-ignore lint/suspicious/noExplicitAny: o builder muda de tipo entre update() e select()
+						let query: any = client
+							.from(tableName as keyof Database["public"]["Tables"])
+							.update(payload as never);
+						if (withReturning) {
+							query = query.select();
+						}
+						query = applyFilters(query, parseWhere(where), tableName);
+						const { data, error } = await query;
+						if (error) {
+							console.error("[bridge] update falhou", {
+								table: tableName,
+								error: error.message,
+							});
+							throw error;
+						}
+						if (!withReturning) return [];
+						return (data ?? []).map((row: Record<string, unknown>) =>
+							fromDbRow(table, row),
+						);
+					};
+
+					const execute = async (
+						withReturning = false,
+					): Promise<unknown[]> => {
+						if (executed) return execution ?? Promise.resolve([]);
+						executed = true;
+						execution = run(withReturning);
+						return execution;
+					};
+
+					const thenable = {
+						returning: async () => execute(true),
 						async execute() {
-							let query = client
-								.from(tableName as keyof Database["public"]["Tables"])
-								.update(payload as never);
-							query = applyFilters(query, parseWhere(where), tableName);
-							const { error } = await query;
-							if (error) throw error;
+							await execute(false);
+						},
+						// biome-ignore lint/suspicious/noThenProperty: thenable necessário para `await db.update(...).where(...)` (API compatível com Drizzle)
+						then<TResult1 = unknown[], TResult2 = never>(
+							onfulfilled?:
+								| ((value: unknown[]) => TResult1 | PromiseLike<TResult1>)
+								| null,
+							onrejected?:
+								| ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
+								| null,
+						) {
+							return execute(false).then(onfulfilled, onrejected);
 						},
 					};
+
+					return thenable;
 				},
 			};
 		},
@@ -1370,8 +1555,20 @@ class SupabaseSelectBuilder {
 			shapeEntries.length > 0 &&
 			shapeEntries.every(([, expr]) => {
 				const text = sqlExpressionText(expr);
-				return text.includes("count(") || text.includes("sum(");
+				return text.includes("count(") && !text.includes("sum(");
 			});
+		const isSumOnlyShape =
+			shapeEntries.length > 0 &&
+			this.joins.length === 0 &&
+			shapeEntries.every(([, expr]) => {
+				const text = sqlExpressionText(expr);
+				return text.includes("sum(") && !text.includes("count(");
+			});
+
+		if (isSumOnlyShape) {
+			return this.executeSumOnlyShape(tableName, shapeEntries);
+		}
+
 		if (isCountOnlyShape) {
 			const parsedFilters = parseWhere(this.whereClause);
 			const { api } = partitionFilters(parsedFilters, tableName);
@@ -1461,14 +1658,14 @@ class SupabaseSelectBuilder {
 			if (!this.fromTable || deferred.length === 0) return true;
 			const ctx = buildRowEvalContext(
 				this.fromTable,
-				row as Record<string, unknown>,
+				row as unknown as Record<string, unknown>,
 				this.joins,
 			);
 			return rowMatchesDeferredFilters(ctx, deferred);
 		});
 
 		let mappedRows = rows.map((row) =>
-			this.mapSelectRow(row as Record<string, unknown>),
+			this.mapSelectRow(row as unknown as Record<string, unknown>),
 		);
 
 		// Ordenação JS para colunas de tabelas relacionadas (ex: attachments.createdAt).
@@ -1485,6 +1682,72 @@ class SupabaseSelectBuilder {
 		}
 
 		return this.dedupeMappedRows(mappedRows);
+	}
+
+	private async executeSumOnlyShape(
+		tableName: string,
+		shapeEntries: [string, unknown][],
+	): Promise<unknown[]> {
+		if (!this.fromTable) {
+			throw new Error("select().from() é obrigatório");
+		}
+
+		const sumColumnNames = new Set<string>();
+		for (const [, expr] of shapeEntries) {
+			for (const column of extractSqlColumns(expr)) {
+				sumColumnNames.add(column.name);
+			}
+		}
+
+		const selectColumns =
+			sumColumnNames.size > 0 ? Array.from(sumColumnNames).join(",") : "*";
+
+		const parsedFilters = parseWhere(this.whereClause);
+		const { api, deferred } = partitionFilters(parsedFilters, tableName);
+
+		let query = this.client
+			.from(tableName as keyof Database["public"]["Tables"])
+			.select(selectColumns);
+		query = applyFilters(query, api, tableName);
+
+		const { data, error } = await query;
+		if (error) {
+			console.error("[bridge] sum falhou", {
+				table: tableName,
+				error: error.message,
+			});
+			throw error;
+		}
+
+		const rows = (data ?? []).filter((row) => {
+			if (!this.fromTable || deferred.length === 0) return true;
+			const ctx = buildRowEvalContext(
+				this.fromTable,
+				row as unknown as Record<string, unknown>,
+				this.joins,
+			);
+			return rowMatchesDeferredFilters(ctx, deferred);
+		});
+
+		const result: Record<string, unknown> = {};
+		for (const [alias, expr] of shapeEntries) {
+			let aggregate = 0;
+			for (const rawRow of rows) {
+				const ctx = buildRowEvalContext(
+					this.fromTable,
+					rawRow as unknown as Record<string, unknown>,
+					this.joins,
+				);
+				aggregate += computeAggregateValue(
+					expr,
+					[rawRow as unknown as Record<string, unknown>],
+					ctx,
+				);
+			}
+			result[alias] = aggregate;
+		}
+
+		return [result];
 	}
 
 	private dedupeMappedRows(
