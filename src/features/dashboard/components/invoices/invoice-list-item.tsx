@@ -33,6 +33,7 @@ import {
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import { getAvatarSrc } from "@/shared/lib/payers/utils";
 import { isDateOnlyPast } from "@/shared/utils/date";
+import { cn } from "@/shared/utils/ui";
 import { InvoiceLogo } from "./invoice-logo";
 
 type InvoiceListItemProps = {
@@ -62,27 +63,33 @@ export function InvoiceListItem({ invoice, onPay }: InvoiceListItemProps) {
 			? absolutePaymentInfo?.label
 			: null;
 
-	const linkNode = (
-		<Link prefetch href={detailHref} className={styles.titleLink}>
-			<span className="truncate">{invoice.cardName}</span>
-		</Link>
+	const titleNode = (
+		<span className={cn(styles.title, "truncate")}>{invoice.cardName}</span>
 	);
 
 	return (
 		<li className={styles.row}>
-			<div className={styles.main}>
-				<InvoiceLogo
-					cardName={invoice.cardName}
-					logo={invoice.logo}
-					size={36}
-					containerClassName="size-9.5"
-				/>
+			<Link
+				href={detailHref}
+				prefetch
+				className={cn(
+					"flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md transition-colors",
+					"hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+				)}
+			>
+				<div className={styles.main}>
+					<InvoiceLogo
+						cardName={invoice.cardName}
+						logo={invoice.logo}
+						size={36}
+						containerClassName="size-9.5"
+					/>
 
-				<div className={styles.textStack}>
-					<div className="flex max-w-full items-center gap-1">
-						{hasBreakdown ? (
-							<HoverCard openDelay={150}>
-								<HoverCardTrigger asChild>{linkNode}</HoverCardTrigger>
+					<div className={styles.textStack}>
+						<div className="flex max-w-full items-center gap-1">
+							{hasBreakdown ? (
+								<HoverCard openDelay={150}>
+									<HoverCardTrigger asChild>{titleNode}</HoverCardTrigger>
 								<HoverCardContent align="start" className="w-80 space-y-3">
 									<p className="text-xs text-muted-foreground">
 										Distribuição por pessoa
@@ -135,7 +142,7 @@ export function InvoiceListItem({ invoice, onPay }: InvoiceListItemProps) {
 								</HoverCardContent>
 							</HoverCard>
 						) : (
-							linkNode
+							titleNode
 						)}
 						{hasMultiplePayers ? (
 							<Tooltip>
@@ -201,36 +208,39 @@ export function InvoiceListItem({ invoice, onPay }: InvoiceListItemProps) {
 				</div>
 			</div>
 
-			<div className={styles.trailing}>
-				<MoneyValues
-					className={styles.trailingValue}
-					amount={Math.abs(invoice.totalAmount)}
-				/>
-				{isPaid ? (
-					<span className={`${styles.trailingMeta} text-success`}>
-						<RiCheckboxCircleFill className="size-3.5" /> Pago
-					</span>
-				) : (
-					<Button
-						type="button"
-						size="sm"
-						variant="link"
-						className={styles.actionButton}
-						onClick={() => onPay(invoice.id)}
-					>
-						{isOverdue ? (
-							<span className="overdue-blink">
-								<span className="overdue-blink-primary text-destructive">
-									Atrasado
-								</span>
-								<span className="overdue-blink-secondary">Pagar</span>
+				<div className={styles.trailing}>
+					<MoneyValues
+						className={styles.trailingValue}
+						amount={Math.abs(invoice.totalAmount)}
+					/>
+					{isPaid ? (
+						<span className={`${styles.trailingMeta} text-success`}>
+							<RiCheckboxCircleFill className="size-3.5" /> Pago
+						</span>
+					) : null}
+				</div>
+			</Link>
+
+			{!isPaid ? (
+				<Button
+					type="button"
+					size="sm"
+					variant="link"
+					className={styles.actionButton}
+					onClick={() => onPay(invoice.id)}
+				>
+					{isOverdue ? (
+						<span className="overdue-blink">
+							<span className="overdue-blink-primary text-destructive">
+								Atrasado
 							</span>
-						) : (
-							<span>Pagar</span>
-						)}
-					</Button>
-				)}
-			</div>
+							<span className="overdue-blink-secondary">Pagar</span>
+						</span>
+					) : (
+						<span>Pagar</span>
+					)}
+				</Button>
+			) : null}
 		</li>
 	);
 }

@@ -23,6 +23,7 @@ import {
 	PERIOD_FORMAT_REGEX,
 } from "@/shared/lib/invoices";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { upsertInvoicePaymentStatus } from "@/features/invoices/lib/upsert-invoice-payment";
 import {
 	formatCurrency,
 	formatDecimalForDbRequired,
@@ -87,20 +88,12 @@ export async function updateInvoicePaymentStatusAction(
 				throw new Error("Cartão não encontrado.");
 			}
 
-			await tx
-				.insert(invoices)
-				.values({
-					cardId: data.cardId,
-					period: data.period,
-					paymentStatus: data.status,
-					userId: user.id,
-				})
-				.onConflictDoUpdate({
-					target: [invoices.userId, invoices.cardId, invoices.period],
-					set: {
-						paymentStatus: data.status,
-					},
-				});
+			await upsertInvoicePaymentStatus(tx, {
+				userId: user.id,
+				cardId: data.cardId,
+				period: data.period,
+				paymentStatus: data.status,
+			});
 
 			const shouldMarkAsPaid = data.status === INVOICE_PAYMENT_STATUS.PAID;
 

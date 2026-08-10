@@ -24,6 +24,7 @@ interface PeriodPickerProps {
 	placeholder?: string;
 	variant?: "default" | "outline" | "ghost";
 	size?: "default" | "sm" | "lg";
+	tabIndex?: number;
 }
 
 export function PeriodPicker({
@@ -34,6 +35,7 @@ export function PeriodPicker({
 	placeholder = "Selecione o período",
 	variant = "outline",
 	size = "default",
+	tabIndex,
 }: PeriodPickerProps) {
 	const [open, setOpen] = useState(false);
 
@@ -51,6 +53,7 @@ export function PeriodPicker({
 					variant={variant}
 					size={size}
 					disabled={disabled}
+					tabIndex={tabIndex}
 					className={cn(
 						"justify-start text-left font-normal capitalize",
 						!value && "text-muted-foreground",
