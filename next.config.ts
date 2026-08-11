@@ -40,8 +40,9 @@ const nextConfig: NextConfig = {
 		serverActions: {
 			bodySizeLimit: "52mb",
 		},
-		// Reduz o pico de memória do build em servidores com pouca RAM (Coolify).
-		cpus: 2,
+		// Usa mais núcleos no build (CI tem 4+ vCPU). Para evitar OOM em
+		// servidores com pouca RAM, sobrescreva via NEXT_BUILD_CPUS=2 no host.
+		cpus: Number(process.env.NEXT_BUILD_CPUS ?? 4),
 	},
 
 	// Headers for Safari compatibility

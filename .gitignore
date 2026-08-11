@@ -152,3 +152,4 @@ playground/
 
 # Amostras financeiras locais (podem conter dados sensíveis)
 /samples/
+/.ignore
