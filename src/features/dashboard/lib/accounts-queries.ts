@@ -1,21 +1,23 @@
-import { and, eq, sql } from "drizzle-orm";
-import { financialAccounts, transactions } from "@/db/schema";
+import { isAccountInactive } from "@/shared/lib/accounts/constants";
 import {
-	INITIAL_BALANCE_NOTE,
-	isAccountInactive,
-} from "@/shared/lib/accounts/constants";
-import { db } from "@/shared/lib/db";
+	type AccountWithoutMovements,
+	fetchAccountsWithoutMovements,
+} from "@/shared/lib/accounts/queries";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { callRpc } from "@/shared/lib/supabase/rpc";
 import { safeToNumber as toNumber } from "@/shared/utils/number";
 
-type RawDashboardAccount = {
+type AccountBalancesRow = {
 	id: string;
-	name: string;
-	accountType: string;
+	nome: string;
+	tipo_conta: string;
 	status: string;
-	logo: string | null;
-	initialBalance: string | number | null;
-	balanceMovements: unknown;
+	anotacao: string | null;
+	logo: string;
+	saldo_inicial: string | number | null;
+	excluir_do_saldo: boolean;
+	excluir_saldo_inicial_receitas: boolean;
+	saldo_movimentacoes: string | number | null;
 };
 
 export type DashboardAccount = {
@@ -34,74 +36,55 @@ type DashboardAccountsSnapshot = {
 	accounts: DashboardAccount[];
 };
 
+const toDashboardAccount = (row: AccountBalancesRow): DashboardAccount => {
+	const initialBalance = toNumber(row.saldo_inicial);
+
+	return {
+		id: row.id,
+		name: row.nome,
+		accountType: row.tipo_conta,
+		status: row.status,
+		logo: row.logo,
+		initialBalance,
+		balance: initialBalance + toNumber(row.saldo_movimentacoes),
+		excludeFromBalance: row.excluir_do_saldo,
+	};
+};
+
+const toDashboardAccountWithoutMovements = (
+	row: AccountWithoutMovements,
+): DashboardAccount => {
+	const initialBalance = toNumber(row.initialBalance);
+
+	return {
+		id: row.id,
+		name: row.name,
+		accountType: row.accountType,
+		status: row.status,
+		logo: row.logo,
+		initialBalance,
+		balance: initialBalance,
+		excludeFromBalance: row.excludeFromBalance,
+	};
+};
+
 export async function fetchDashboardAccounts(
 	userId: string,
 ): Promise<DashboardAccountsSnapshot> {
 	const adminPayerId = await getAdminPayerId(userId);
 
-	const rows = await db
-		.select({
-			id: financialAccounts.id,
-			name: financialAccounts.name,
-			accountType: financialAccounts.accountType,
-			status: financialAccounts.status,
-			logo: financialAccounts.logo,
-			initialBalance: financialAccounts.initialBalance,
-			excludeFromBalance: financialAccounts.excludeFromBalance,
-			balanceMovements: sql<number>`
-        coalesce(
-          sum(
-            case
-              when ${transactions.note} = ${INITIAL_BALANCE_NOTE} then 0
-              else ${transactions.amount}
-            end
-          ),
-          0
-        )
-      `,
-		})
-		.from(financialAccounts)
-		.leftJoin(
-			transactions,
-			and(
-				eq(transactions.accountId, financialAccounts.id),
-				eq(transactions.userId, userId),
-				eq(transactions.isSettled, true),
-				adminPayerId ? eq(transactions.payerId, adminPayerId) : sql`false`,
-			),
-		)
-		.where(eq(financialAccounts.userId, userId))
-		.groupBy(
-			financialAccounts.id,
-			financialAccounts.name,
-			financialAccounts.accountType,
-			financialAccounts.status,
-			financialAccounts.logo,
-			financialAccounts.initialBalance,
-			financialAccounts.excludeFromBalance,
-		);
+	const accounts = adminPayerId
+		? (
+				await callRpc<AccountBalancesRow>("get_account_balances", {
+					p_user_id: userId,
+					p_admin_payer_id: adminPayerId,
+				})
+			).map(toDashboardAccount)
+		: (await fetchAccountsWithoutMovements(userId)).map(
+				toDashboardAccountWithoutMovements,
+			);
 
-	const accounts = rows
-		.map(
-			(
-				row: RawDashboardAccount & { excludeFromBalance: boolean },
-			): DashboardAccount => {
-				const initialBalance = toNumber(row.initialBalance);
-				const balanceMovements = toNumber(row.balanceMovements);
-
-				return {
-					id: row.id,
-					name: row.name,
-					accountType: row.accountType,
-					status: row.status,
-					logo: row.logo,
-					initialBalance,
-					balance: initialBalance + balanceMovements,
-					excludeFromBalance: row.excludeFromBalance,
-				};
-			},
-		)
-		.sort((a, b) => b.balance - a.balance);
+	accounts.sort((left, right) => right.balance - left.balance);
 
 	const totalBalance = accounts
 		.filter(

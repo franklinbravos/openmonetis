@@ -1,22 +1,10 @@
-import {
-	and,
-	asc,
-	eq,
-	gte,
-	ilike,
-	isNull,
-	lte,
-	not,
-	or,
-	sql,
-	sum,
-} from "drizzle-orm";
-import { cards, financialAccounts, transactions } from "@/db/schema";
+import { and, asc, eq, ilike, isNull, not, or } from "drizzle-orm";
+import { financialAccounts, transactions } from "@/db/schema";
 import { ACCOUNT_AUTO_INVOICE_NOTE_PREFIX } from "@/shared/lib/accounts/constants";
 import { excludeTransactionsFromExcludedAccounts } from "@/shared/lib/accounts/query-filters";
 import { db } from "@/shared/lib/db";
+import { callRpc, callRpcOne, toRpcNumber } from "@/shared/lib/supabase/rpc";
 import { toDateOnlyString } from "@/shared/utils/date";
-import { safeToNumber as toNumber } from "@/shared/utils/number";
 import {
 	addMonthsToPeriod,
 	buildPeriodRange,
@@ -86,32 +74,25 @@ type BaseFilters = {
 	period: string;
 };
 
+type PayerMonthlyBreakdownRow = {
+	payment_method: string | null;
+	transaction_type: string | null;
+	total_amount: string | number | null;
+};
+
 export async function fetchPayerMonthlyBreakdown({
 	userId,
 	payerId,
 	period,
 }: BaseFilters): Promise<PayerMonthlyBreakdown> {
-	const rows = await db
-		.select({
-			paymentMethod: transactions.paymentMethod,
-			transactionType: transactions.transactionType,
-			totalAmount: sum(transactions.amount).as("total"),
-		})
-		.from(transactions)
-		.leftJoin(
-			financialAccounts,
-			eq(transactions.accountId, financialAccounts.id),
-		)
-		.where(
-			and(
-				eq(transactions.userId, userId),
-				eq(transactions.payerId, payerId),
-				eq(transactions.period, period),
-				excludeAutoInvoiceEntries(),
-				excludeTransactionsFromExcludedAccounts(),
-			),
-		)
-		.groupBy(transactions.paymentMethod, transactions.transactionType);
+	const rows = await callRpc<PayerMonthlyBreakdownRow>(
+		"get_payer_monthly_breakdown",
+		{
+			p_user_id: userId,
+			p_payer_id: payerId,
+			p_period: period,
+		},
+	);
 
 	const paymentSplits: PayerMonthlyBreakdown["paymentSplits"] = {
 		card: 0,
@@ -122,17 +103,17 @@ export async function fetchPayerMonthlyBreakdown({
 	let totalIncomes = 0;
 
 	for (const row of rows) {
-		const total = Math.abs(toNumber(row.totalAmount));
-		if (row.transactionType === DESPESA) {
+		const total = Math.abs(toRpcNumber(row.total_amount));
+		if (row.transaction_type === DESPESA) {
 			totalExpenses += total;
-			if (row.paymentMethod === PAYMENT_METHOD_CARD) {
+			if (row.payment_method === PAYMENT_METHOD_CARD) {
 				paymentSplits.card += total;
-			} else if (row.paymentMethod === PAYMENT_METHOD_BOLETO) {
+			} else if (row.payment_method === PAYMENT_METHOD_BOLETO) {
 				paymentSplits.boleto += total;
 			} else {
 				paymentSplits.instant += total;
 			}
-		} else if (row.transactionType === RECEITA) {
+		} else if (row.transaction_type === RECEITA) {
 			totalIncomes += total;
 		}
 	}
@@ -143,6 +124,12 @@ export async function fetchPayerMonthlyBreakdown({
 		paymentSplits,
 	};
 }
+
+type PayerHistoryRow = {
+	period: string | null;
+	transaction_type: string | null;
+	total_amount: string | number | null;
+};
 
 export async function fetchPayerHistory({
 	userId,
@@ -155,28 +142,12 @@ export async function fetchPayerHistory({
 	const start = windowPeriods[0];
 	const end = windowPeriods[windowPeriods.length - 1];
 
-	const rows = await db
-		.select({
-			period: transactions.period,
-			transactionType: transactions.transactionType,
-			totalAmount: sum(transactions.amount).as("total"),
-		})
-		.from(transactions)
-		.leftJoin(
-			financialAccounts,
-			eq(transactions.accountId, financialAccounts.id),
-		)
-		.where(
-			and(
-				eq(transactions.userId, userId),
-				eq(transactions.payerId, payerId),
-				gte(transactions.period, start),
-				lte(transactions.period, end),
-				excludeAutoInvoiceEntries(),
-				excludeTransactionsFromExcludedAccounts(),
-			),
-		)
-		.groupBy(transactions.period, transactions.transactionType);
+	const rows = await callRpc<PayerHistoryRow>("get_payer_history", {
+		p_user_id: userId,
+		p_payer_id: payerId,
+		p_start_period: start,
+		p_end_period: end,
+	});
 
 	const totalsByPeriod = new Map<
 		string,
@@ -192,10 +163,10 @@ export async function fetchPayerHistory({
 		if (!key || !totalsByPeriod.has(key)) continue;
 		const bucket = totalsByPeriod.get(key);
 		if (!bucket) continue;
-		const total = Math.abs(toNumber(row.totalAmount));
-		if (row.transactionType === DESPESA) {
+		const total = Math.abs(toRpcNumber(row.total_amount));
+		if (row.transaction_type === DESPESA) {
 			bucket.despesas += total;
-		} else if (row.transactionType === RECEITA) {
+		} else if (row.transaction_type === RECEITA) {
 			bucket.receitas += total;
 		}
 	}
@@ -208,91 +179,60 @@ export async function fetchPayerHistory({
 	}));
 }
 
+type PayerCardUsageRow = {
+	card_id: string | null;
+	card_name: string | null;
+	card_logo: string | null;
+	total_amount: string | number | null;
+};
+
 export async function fetchPayerCardUsage({
 	userId,
 	payerId,
 	period,
 }: BaseFilters): Promise<PayerCardUsageItem[]> {
-	const rows = await db
-		.select({
-			cardId: transactions.cardId,
-			cardName: cards.name,
-			cardLogo: cards.logo,
-			totalAmount: sum(transactions.amount).as("total"),
-		})
-		.from(transactions)
-		.innerJoin(cards, eq(transactions.cardId, cards.id))
-		.leftJoin(
-			financialAccounts,
-			eq(transactions.accountId, financialAccounts.id),
-		)
-		.where(
-			and(
-				eq(transactions.userId, userId),
-				eq(transactions.payerId, payerId),
-				eq(transactions.period, period),
-				eq(transactions.paymentMethod, PAYMENT_METHOD_CARD),
-				excludeAutoInvoiceEntries(),
-				excludeTransactionsFromExcludedAccounts(),
-			),
-		)
-		.groupBy(transactions.cardId, cards.name, cards.logo);
+	const rows = await callRpc<PayerCardUsageRow>("get_payer_card_usage", {
+		p_user_id: userId,
+		p_payer_id: payerId,
+		p_period: period,
+	});
 
 	const items: PayerCardUsageItem[] = [];
 
 	for (const row of rows) {
-		if (!row.cardId) {
+		if (!row.card_id) {
 			continue;
 		}
 
 		items.push({
-			id: row.cardId,
-			name: row.cardName ?? "Cartão",
-			logo: row.cardLogo ?? null,
-			amount: Math.abs(toNumber(row.totalAmount)),
+			id: row.card_id,
+			name: row.card_name ?? "Cartão",
+			logo: row.card_logo ?? null,
+			amount: Math.abs(toRpcNumber(row.total_amount)),
 		});
 	}
 
 	return items.sort((a, b) => b.amount - a.amount);
 }
 
-export async function fetchPayerBoletoStats({
-	userId,
-	payerId,
-	period,
-}: BaseFilters): Promise<PayerBoletoStats> {
-	const rows = await db
-		.select({
-			isSettled: transactions.isSettled,
-			totalAmount: sum(transactions.amount).as("total"),
-			totalCount: sql<number>`count(${transactions.id})`.as("count"),
-		})
-		.from(transactions)
-		.leftJoin(
-			financialAccounts,
-			eq(transactions.accountId, financialAccounts.id),
-		)
-		.where(
-			and(
-				eq(transactions.userId, userId),
-				eq(transactions.payerId, payerId),
-				eq(transactions.period, period),
-				eq(transactions.paymentMethod, PAYMENT_METHOD_BOLETO),
-				excludeAutoInvoiceEntries(),
-				excludeTransactionsFromExcludedAccounts(),
-			),
-		)
-		.groupBy(transactions.isSettled);
+export type PayerBoletoStatsRow = {
+	is_settled: boolean | null;
+	total_amount: string | number | null;
+	total_count: string | number | null;
+};
 
+export function buildPayerBoletoStats(
+	rows: PayerBoletoStatsRow[],
+): PayerBoletoStats {
 	let paidAmount = 0;
 	let pendingAmount = 0;
 	let paidCount = 0;
 	let pendingCount = 0;
 
 	for (const row of rows) {
-		const total = Math.abs(toNumber(row.totalAmount));
-		const count = toNumber(row.totalCount);
-		if (row.isSettled) {
+		const total = Math.abs(toRpcNumber(row.total_amount));
+		const count = toRpcNumber(row.total_count);
+		if (row.is_settled) {
 			paidAmount += total;
 			paidCount += count;
 		} else {
@@ -308,6 +248,20 @@ export async function fetchPayerBoletoStats({
 		paidCount,
 		pendingCount,
 	};
+}
+
+export async function fetchPayerBoletoStats({
+	userId,
+	payerId,
+	period,
+}: BaseFilters): Promise<PayerBoletoStats> {
+	const rows = await callRpc<PayerBoletoStatsRow>("get_payer_boleto_stats", {
+		p_user_id: userId,
+		p_payer_id: payerId,
+		p_period: period,
+	});
+
+	return buildPayerBoletoStats(rows);
 }
 
 export async function fetchPayerBoletoItems({
@@ -348,7 +302,7 @@ export async function fetchPayerBoletoItems({
 		items.push({
 			id: row.id,
 			name: row.name,
-			amount: Math.abs(toNumber(row.amount)),
+			amount: Math.abs(toRpcNumber(row.amount)),
 			dueDate: toDateOnlyString(row.dueDate),
 			boletoPaymentDate: toDateOnlyString(row.boletoPaymentDate),
 			isSettled: Boolean(row.isSettled),
@@ -359,35 +313,27 @@ export async function fetchPayerBoletoItems({
 	return items;
 }
 
+type PayerPaymentStatusRow = {
+	paid_amount: string | number | null;
+	paid_count: string | number | null;
+	pending_amount: string | number | null;
+	pending_count: string | number | null;
+};
+
 export async function fetchPayerPaymentStatus({
 	userId,
 	payerId,
 	period,
 }: BaseFilters): Promise<PayerPaymentStatusData> {
-	const rows = await db
-		.select({
-			paidAmount: sql<string>`coalesce(sum(case when ${transactions.isSettled} = true then abs(${transactions.amount}) else 0 end), 0)`,
-			paidCount: sql<number>`sum(case when ${transactions.isSettled} = true then 1 else 0 end)`,
-			pendingAmount: sql<string>`coalesce(sum(case when (${transactions.isSettled} = false or ${transactions.isSettled} is null) then abs(${transactions.amount}) else 0 end), 0)`,
-			pendingCount: sql<number>`sum(case when (${transactions.isSettled} = false or ${transactions.isSettled} is null) then 1 else 0 end)`,
-		})
-		.from(transactions)
-		.leftJoin(
-			financialAccounts,
-			eq(transactions.accountId, financialAccounts.id),
-		)
-		.where(
-			and(
-				eq(transactions.userId, userId),
-				eq(transactions.payerId, payerId),
-				eq(transactions.period, period),
-				eq(transactions.transactionType, DESPESA),
-				excludeAutoInvoiceEntries(),
-				excludeTransactionsFromExcludedAccounts(),
-			),
-		);
+	const row = await callRpcOne<PayerPaymentStatusRow>(
+		"get_payer_payment_status",
+		{
+			p_user_id: userId,
+			p_payer_id: payerId,
+			p_period: period,
+		},
+	);
 
-	const row = rows[0];
 	if (!row) {
 		return {
 			paidAmount: 0,
@@ -398,10 +344,10 @@ export async function fetchPayerPaymentStatus({
 		};
 	}
 
-	const paidAmount = toNumber(row.paidAmount);
-	const paidCount = toNumber(row.paidCount);
-	const pendingAmount = toNumber(row.pendingAmount);
-	const pendingCount = toNumber(row.pendingCount);
+	const paidAmount = toRpcNumber(row.paid_amount);
+	const paidCount = toRpcNumber(row.paid_count);
+	const pendingAmount = toRpcNumber(row.pending_amount);
+	const pendingCount = toRpcNumber(row.pending_count);
 
 	return {
 		paidAmount,

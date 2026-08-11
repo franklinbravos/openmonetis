@@ -444,7 +444,7 @@ export async function deleteTransactionAction(
 				and(eq(transactions.id, data.id), eq(transactions.userId, user.id)),
 			);
 
-		await cleanupAttachmentsAfterTransactionDelete(linkedAttachments);
+		await cleanupAttachmentsAfterTransactionDelete(linkedAttachments, user.id);
 
 		if (existing.payerId) {
 			const notificationEntries = buildEntriesByPayer([

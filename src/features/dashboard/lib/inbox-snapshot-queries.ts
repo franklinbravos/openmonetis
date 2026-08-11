@@ -1,7 +1,12 @@
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { cacheLife, cacheTag } from "next/cache";
 import { cards, financialAccounts, inboxItems } from "@/db/schema";
 import { db } from "@/shared/lib/db";
+import { callRpc, toRpcNumber } from "@/shared/lib/supabase/rpc";
+
+type InboxCountRow = {
+	total: string | number | null;
+};
 
 type DashboardInboxItem = {
 	id: string;
@@ -27,12 +32,11 @@ export async function fetchDashboardInboxSnapshot(
 	cacheLife({ revalidate: 3 });
 
 	const [countRows, items, userCards, userAccounts] = await Promise.all([
-		db
-			.select({ total: count() })
-			.from(inboxItems)
-			.where(
-				and(eq(inboxItems.userId, userId), eq(inboxItems.status, "pending")),
-			),
+		callRpc<InboxCountRow>("get_inbox_count", {
+			p_user_id: userId,
+			p_status: "pending",
+			p_source_app_name: null,
+		}),
 		db
 			.select({
 				id: inboxItems.id,
@@ -67,7 +71,7 @@ export async function fetchDashboardInboxSnapshot(
 	}
 
 	return {
-		pendingCount: Number(countRows[0]?.total ?? 0),
+		pendingCount: toRpcNumber(countRows[0]?.total),
 		recentItems: items,
 		logoMap,
 	};

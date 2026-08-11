@@ -1,31 +1,10 @@
-import {
-	and,
-	count,
-	desc,
-	eq,
-	gte,
-	ilike,
-	inArray,
-	isNull,
-	lte,
-	ne,
-	not,
-	or,
-	sql,
-	sum,
-} from "drizzle-orm";
-import { categories, financialAccounts, transactions } from "@/db/schema";
-import {
-	ACCOUNT_AUTO_INVOICE_NOTE_PREFIX,
-	INITIAL_BALANCE_NOTE,
-} from "@/shared/lib/accounts/constants";
-import { excludeTransactionsFromExcludedAccounts } from "@/shared/lib/accounts/query-filters";
+import { eq } from "drizzle-orm";
+import { categories } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { callRpc } from "@/shared/lib/supabase/rpc";
 import { safeToNumber } from "@/shared/utils/number";
 import { getPreviousPeriod } from "@/shared/utils/period";
-
-const DESPESA = "Despesa";
 
 type EstablishmentData = {
 	name: string;
@@ -42,6 +21,26 @@ type TopCategoryData = {
 	totalAmount: number;
 	transactionCount: number;
 };
+
+type TopEstablishmentRow = {
+	name: string;
+	count: unknown;
+	total_amount: unknown;
+};
+
+type EstablishmentCategoryRow = {
+	establishment_name: string | null;
+	category_id: string | null;
+	count: unknown;
+};
+
+type TopCategoryRow = {
+	category_id: string | null;
+	total_amount: unknown;
+	count: unknown;
+};
+
+type CategoryInfo = { id: string; name: string; icon: string | null };
 
 export type TopEstablishmentsData = {
 	establishments: EstablishmentData[];
@@ -67,6 +66,53 @@ function buildPeriodRange(currentPeriod: string, months: number): string[] {
 		p = getPreviousPeriod(p);
 	}
 	return periods;
+}
+
+export function buildEstablishments(
+	rows: TopEstablishmentRow[],
+	categoriesByEstablishment: EstablishmentCategoryRow[],
+	categoryMap: Map<string, CategoryInfo>,
+): EstablishmentData[] {
+	const categoriesByEstablishmentMap = new Map<
+		string,
+		Array<{ name: string; count: number }>
+	>();
+
+	for (const categoryRow of categoriesByEstablishment) {
+		if (!categoryRow.establishment_name || !categoryRow.category_id) {
+			continue;
+		}
+
+		const current =
+			categoriesByEstablishmentMap.get(categoryRow.establishment_name) ?? [];
+		current.push({
+			name: categoryMap.get(categoryRow.category_id)?.name || "Sem categoria",
+			count: Number(categoryRow.count) || 0,
+		});
+		categoriesByEstablishmentMap.set(categoryRow.establishment_name, current);
+	}
+
+	return rows.map((est) => {
+		const cnt = Number(est.count) || 0;
+		const total = Math.abs(safeToNumber(est.total_amount));
+
+		const estCategories = (categoriesByEstablishmentMap.get(est.name) ?? [])
+			.sort(
+				(
+					a: { name: string; count: number },
+					b: { name: string; count: number },
+				) => b.count - a.count,
+			)
+			.slice(0, 3);
+
+		return {
+			name: est.name,
+			count: cnt,
+			totalAmount: total,
+			avgAmount: cnt > 0 ? total / cnt : 0,
+			categories: estCategories,
+		};
+	});
 }
 
 export async function fetchTopEstablishmentsData(
@@ -101,72 +147,37 @@ export async function fetchTopEstablishmentsData(
 		};
 	}
 
-	const baseExpenseConditions = [
-		eq(transactions.userId, userId),
-		gte(transactions.period, startPeriod),
-		lte(transactions.period, currentPeriod),
-		eq(transactions.payerId, adminPayerId),
-		eq(transactions.transactionType, DESPESA),
-	] as const;
-	const exclusionConditions = [
-		or(
-			isNull(transactions.note),
-			not(ilike(transactions.note, `${ACCOUNT_AUTO_INVOICE_NOTE_PREFIX}%`)),
-		),
-		or(
-			isNull(transactions.note),
-			ne(transactions.note, INITIAL_BALANCE_NOTE),
-			isNull(financialAccounts.excludeInitialBalanceFromIncome),
-			eq(financialAccounts.excludeInitialBalanceFromIncome, false),
-		),
-		excludeTransactionsFromExcludedAccounts(),
-	] as const;
+	const establishmentsData = await callRpc<TopEstablishmentRow>(
+		"get_top_establishments",
+		{
+			p_user_id: userId,
+			p_admin_payer_id: adminPayerId,
+			p_start_period: startPeriod,
+			p_end_period: currentPeriod,
+		},
+	);
 
-	// Fetch establishments with transaction count and total amount
-	const establishmentsData = await db
-		.select({
-			name: transactions.name,
-			count: count().as("count"),
-			totalAmount: sum(transactions.amount).as("total"),
-		})
-		.from(transactions)
-		.leftJoin(
-			financialAccounts,
-			eq(transactions.accountId, financialAccounts.id),
-		)
-		.where(and(...baseExpenseConditions, ...exclusionConditions))
-		.groupBy(transactions.name)
-		.orderBy(desc(sql`count`))
-		.limit(50);
+	const establishmentNames = establishmentsData.map((est) => est.name);
 
-	const establishmentNames = establishmentsData
-		.map((est) => est.name)
-		.filter((name): name is string => !!name);
-
-	const categoriesByEstablishment =
+	const [topCategoriesData, categoriesByEstablishment] = await Promise.all([
+		callRpc<TopCategoryRow>("get_top_categories", {
+			p_user_id: userId,
+			p_admin_payer_id: adminPayerId,
+			p_start_period: startPeriod,
+			p_end_period: currentPeriod,
+		}),
 		establishmentNames.length > 0
-			? await db
-					.select({
-						establishmentName: transactions.name,
-						categoryId: transactions.categoryId,
-						count: count().as("count"),
-					})
-					.from(transactions)
-					.leftJoin(
-						financialAccounts,
-						eq(transactions.accountId, financialAccounts.id),
-					)
-					.where(
-						and(
-							...baseExpenseConditions,
-							...exclusionConditions,
-							inArray(transactions.name, establishmentNames),
-						),
-					)
-					.groupBy(transactions.name, transactions.categoryId)
-			: [];
+			? callRpc<EstablishmentCategoryRow>("get_establishment_categories", {
+					p_user_id: userId,
+					p_admin_payer_id: adminPayerId,
+					p_start_period: startPeriod,
+					p_end_period: currentPeriod,
+					p_names: establishmentNames,
+				})
+			: Promise.resolve([]),
+	]);
 
-	// Fetch all category names
+	// Fetch all category names (select simples, permanece no bridge)
 	const allCategories = await db
 		.select({
 			id: categories.id,
@@ -176,87 +187,27 @@ export async function fetchTopEstablishmentsData(
 		.from(categories)
 		.where(eq(categories.userId, userId));
 
-	type CategoryInfo = { id: string; name: string; icon: string | null };
 	const categoryMap = new Map<string, CategoryInfo>(
-		allCategories.map((c): [string, CategoryInfo] => [c.id, c as CategoryInfo]),
+		allCategories.map((c): [string, CategoryInfo] => [c.id, c]),
 	);
 
-	// Build establishment data with categories
-	type EstablishmentRow = (typeof establishmentsData)[0];
-	const categoriesByEstablishmentMap = new Map<
-		string,
-		Array<{ name: string; count: number }>
-	>();
-
-	for (const categoryRow of categoriesByEstablishment) {
-		if (!categoryRow.establishmentName || !categoryRow.categoryId) {
-			continue;
-		}
-
-		const current =
-			categoriesByEstablishmentMap.get(categoryRow.establishmentName) ?? [];
-		current.push({
-			name:
-				categoryMap.get(categoryRow.categoryId as string)?.name ||
-				"Sem categoria",
-			count: Number(categoryRow.count) || 0,
-		});
-		categoriesByEstablishmentMap.set(categoryRow.establishmentName, current);
-	}
-
-	const establishments: EstablishmentData[] = establishmentsData.map(
-		(est: EstablishmentRow) => {
-			const cnt = Number(est.count) || 0;
-			const total = Math.abs(safeToNumber(est.totalAmount));
-
-			const estCategories = (categoriesByEstablishmentMap.get(est.name) ?? [])
-				.sort(
-					(
-						a: { name: string; count: number },
-						b: { name: string; count: number },
-					) => b.count - a.count,
-				)
-				.slice(0, 3);
-
-			return {
-				name: est.name,
-				count: cnt,
-				totalAmount: total,
-				avgAmount: cnt > 0 ? total / cnt : 0,
-				categories: estCategories,
-			};
-		},
+	const establishments = buildEstablishments(
+		establishmentsData,
+		categoriesByEstablishment,
+		categoryMap,
 	);
 
 	// Fetch top categories by spending
-	const topCategoriesData = await db
-		.select({
-			categoryId: transactions.categoryId,
-			totalAmount: sum(transactions.amount).as("total"),
-			count: count().as("count"),
-		})
-		.from(transactions)
-		.leftJoin(
-			financialAccounts,
-			eq(transactions.accountId, financialAccounts.id),
-		)
-		.where(and(...baseExpenseConditions, ...exclusionConditions))
-		.groupBy(transactions.categoryId)
-		.orderBy(sql`total ASC`)
-		.limit(10);
-
-	type TopCategoryRow = (typeof topCategoriesData)[0];
-
 	const topCategories: TopCategoryData[] = topCategoriesData
-		.filter((c: TopCategoryRow) => c.categoryId)
-		.map((cat: TopCategoryRow) => {
-			const catInfo = categoryMap.get(cat.categoryId as string);
+		.filter((category) => category.category_id)
+		.map((category) => {
+			const catInfo = categoryMap.get(category.category_id as string);
 			return {
-				id: cat.categoryId as string,
+				id: category.category_id as string,
 				name: catInfo?.name || "Sem categoria",
 				icon: catInfo?.icon || null,
-				totalAmount: Math.abs(safeToNumber(cat.totalAmount)),
-				transactionCount: Number(cat.count) || 0,
+				totalAmount: Math.abs(safeToNumber(category.total_amount)),
+				transactionCount: Number(category.count) || 0,
 			};
 		});
 

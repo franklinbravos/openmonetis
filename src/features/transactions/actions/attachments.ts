@@ -1,7 +1,7 @@
 "use server";
 
 import crypto, { randomUUID } from "node:crypto";
-import { and, count, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { z } from "zod/v4";
 import { attachments, transactionAttachments, transactions } from "@/db/schema";
 import {
@@ -19,7 +19,9 @@ import {
 	deleteS3Object,
 	headS3Object,
 } from "@/shared/lib/storage/presign";
+import { callRpc, callRpcOne } from "@/shared/lib/supabase/rpc";
 import type { ActionResult } from "@/shared/lib/types/actions";
+import { safeToNumber } from "@/shared/utils/number";
 
 const UPLOAD_TOKEN_EXPIRY_SECONDS = 10 * 60;
 
@@ -380,12 +382,15 @@ export async function detachTransactionAttachmentAction(input: {
 				),
 			);
 
-		const [remaining] = await db
-			.select({ total: count() })
-			.from(transactionAttachments)
-			.where(eq(transactionAttachments.attachmentId, data.attachmentId));
+		const remaining = await callRpcOne<{ total: unknown }>(
+			"get_attachment_remaining",
+			{
+				p_user_id: user.id,
+				p_attachment_id: data.attachmentId,
+			},
+		);
 
-		if (!remaining || remaining.total === 0) {
+		if (!remaining || safeToNumber(remaining.total) === 0) {
 			await deleteS3Object(attachment.fileKey);
 			await db.delete(attachments).where(eq(attachments.id, data.attachmentId));
 		}
@@ -489,12 +494,15 @@ export async function detachAttachmentBulkAction(input: {
 				);
 		}
 
-		const [remaining] = await db
-			.select({ total: count() })
-			.from(transactionAttachments)
-			.where(eq(transactionAttachments.attachmentId, data.attachmentId));
+		const remaining = await callRpcOne<{ total: unknown }>(
+			"get_attachment_remaining",
+			{
+				p_user_id: user.id,
+				p_attachment_id: data.attachmentId,
+			},
+		);
 
-		if (!remaining || remaining.total === 0) {
+		if (!remaining || safeToNumber(remaining.total) === 0) {
 			await deleteS3Object(attachment.fileKey);
 			await db.delete(attachments).where(eq(attachments.id, data.attachmentId));
 		}
@@ -510,21 +518,23 @@ export async function detachAttachmentBulkAction(input: {
 /** Limpa anexos órfãos do S3 após deletar transações. Chame APÓS o delete. */
 export async function cleanupAttachmentsAfterTransactionDelete(
 	attachmentData: Array<{ id: string; fileKey: string }>,
+	userId: string,
 ): Promise<void> {
 	if (attachmentData.length === 0) return;
 
 	const uniqueIds = [...new Set(attachmentData.map((a) => a.id))];
 
-	const remaining = await db
-		.select({
-			attachmentId: transactionAttachments.attachmentId,
-			total: count(),
-		})
-		.from(transactionAttachments)
-		.where(inArray(transactionAttachments.attachmentId, uniqueIds))
-		.groupBy(transactionAttachments.attachmentId);
+	const remaining = await callRpc<{ attachment_id: string; total: unknown }>(
+		"get_attachments_remaining_counts",
+		{
+			p_user_id: userId,
+			p_attachment_ids: uniqueIds,
+		},
+	);
 
-	const remainingMap = new Map(remaining.map((r) => [r.attachmentId, r.total]));
+	const remainingMap = new Map(
+		remaining.map((row) => [row.attachment_id, safeToNumber(row.total)]),
+	);
 
 	for (const att of attachmentData) {
 		if (!remainingMap.has(att.id) || (remainingMap.get(att.id) ?? 0) === 0) {

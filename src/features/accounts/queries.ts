@@ -1,9 +1,12 @@
-import { and, eq, ilike, not, sql } from "drizzle-orm";
-import { financialAccounts, transactions } from "@/db/schema";
-import { INITIAL_BALANCE_NOTE } from "@/shared/lib/accounts/constants";
-import { db } from "@/shared/lib/db";
+import { isAccountInactive } from "@/shared/lib/accounts/constants";
+import {
+	type AccountWithoutMovements,
+	fetchAccountsWithoutMovements,
+} from "@/shared/lib/accounts/queries";
 import { loadLogoOptions } from "@/shared/lib/logo/options";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { callRpc } from "@/shared/lib/supabase/rpc";
+import { safeToNumber } from "@/shared/utils/number";
 
 export type AccountData = {
 	id: string;
@@ -18,112 +21,81 @@ export type AccountData = {
 	excludeInitialBalanceFromIncome: boolean;
 };
 
-async function fetchAccountsByStatus(
-	userId: string,
-	archived: boolean,
-): Promise<{ accounts: AccountData[]; logoOptions: string[] }> {
-	const adminPayerId = await getAdminPayerId(userId);
+type AccountBalancesRow = {
+	id: string;
+	nome: string;
+	tipo_conta: string;
+	status: string;
+	anotacao: string | null;
+	logo: string;
+	saldo_inicial: string | number | null;
+	excluir_do_saldo: boolean;
+	excluir_saldo_inicial_receitas: boolean;
+	saldo_movimentacoes: string | number | null;
+};
 
-	const [accountRows, logoOptions] = await Promise.all([
-		db
-			.select({
-				id: financialAccounts.id,
-				name: financialAccounts.name,
-				accountType: financialAccounts.accountType,
-				status: financialAccounts.status,
-				note: financialAccounts.note,
-				logo: financialAccounts.logo,
-				initialBalance: financialAccounts.initialBalance,
-				excludeFromBalance: financialAccounts.excludeFromBalance,
-				excludeInitialBalanceFromIncome:
-					financialAccounts.excludeInitialBalanceFromIncome,
-				balanceMovements: sql<number>`
-          coalesce(
-            sum(
-              case
-                when ${transactions.note} = ${INITIAL_BALANCE_NOTE} then 0
-                else ${transactions.amount}
-              end
-            ),
-            0
-          )
-        `,
-			})
-			.from(financialAccounts)
-			.leftJoin(
-				transactions,
-				and(
-					eq(transactions.accountId, financialAccounts.id),
-					eq(transactions.userId, userId),
-					eq(transactions.isSettled, true),
-					adminPayerId ? eq(transactions.payerId, adminPayerId) : sql`false`,
-				),
-			)
-			.where(
-				and(
-					eq(financialAccounts.userId, userId),
-					archived
-						? ilike(financialAccounts.status, "inativa")
-						: not(ilike(financialAccounts.status, "inativa")),
-				),
-			)
-			.groupBy(
-				financialAccounts.id,
-				financialAccounts.name,
-				financialAccounts.accountType,
-				financialAccounts.status,
-				financialAccounts.note,
-				financialAccounts.logo,
-				financialAccounts.initialBalance,
-				financialAccounts.excludeFromBalance,
-				financialAccounts.excludeInitialBalanceFromIncome,
-			),
-		loadLogoOptions(),
-	]);
+const toAccountData = (row: AccountBalancesRow): AccountData => {
+	const initialBalance = safeToNumber(row.saldo_inicial);
 
-	const accounts = accountRows.map((account) => ({
-		id: account.id,
-		name: account.name,
-		accountType: account.accountType,
-		status: account.status,
-		note: account.note,
-		logo: account.logo,
-		initialBalance: Number(account.initialBalance ?? 0),
-		balance:
-			Number(account.initialBalance ?? 0) +
-			Number(account.balanceMovements ?? 0),
-		excludeFromBalance: account.excludeFromBalance,
-		excludeInitialBalanceFromIncome: account.excludeInitialBalanceFromIncome,
-	}));
+	return {
+		id: row.id,
+		name: row.nome,
+		accountType: row.tipo_conta,
+		status: row.status,
+		note: row.anotacao,
+		logo: row.logo,
+		initialBalance,
+		balance: initialBalance + safeToNumber(row.saldo_movimentacoes),
+		excludeFromBalance: row.excluir_do_saldo,
+		excludeInitialBalanceFromIncome: row.excluir_saldo_inicial_receitas,
+	};
+};
 
-	return { accounts, logoOptions };
-}
+const toAccountDataWithoutMovements = (
+	row: AccountWithoutMovements,
+): AccountData => {
+	const initialBalance = safeToNumber(row.initialBalance);
 
-async function fetchAccountsForUser(
-	userId: string,
-): Promise<{ accounts: AccountData[]; logoOptions: string[] }> {
-	return fetchAccountsByStatus(userId, false);
-}
-
-async function fetchInactiveForUser(
-	userId: string,
-): Promise<{ accounts: AccountData[]; logoOptions: string[] }> {
-	return fetchAccountsByStatus(userId, true);
-}
+	return {
+		id: row.id,
+		name: row.name,
+		accountType: row.accountType,
+		status: row.status,
+		note: row.note,
+		logo: row.logo,
+		initialBalance,
+		balance: initialBalance,
+		excludeFromBalance: row.excludeFromBalance,
+		excludeInitialBalanceFromIncome: row.excludeInitialBalanceFromIncome,
+	};
+};
 
 export async function fetchAllAccountsForUser(userId: string): Promise<{
 	activeAccounts: AccountData[];
 	archivedAccounts: AccountData[];
 	logoOptions: string[];
 }> {
-	const [activeData, archivedData] = await Promise.all([
-		fetchAccountsForUser(userId),
-		fetchInactiveForUser(userId),
+	const adminPayerId = await getAdminPayerId(userId);
+
+	const [accountRows, logoOptions] = await Promise.all([
+		adminPayerId
+			? callRpc<AccountBalancesRow>("get_account_balances", {
+					p_user_id: userId,
+					p_admin_payer_id: adminPayerId,
+				}).then((rows) => rows.map(toAccountData))
+			: fetchAccountsWithoutMovements(userId).then((rows) =>
+					rows.map(toAccountDataWithoutMovements),
+				),
+		loadLogoOptions(),
 	]);
 
 	return {
-		activeAccounts: activeData.accounts,
-		archivedAccounts: archivedData.accounts,
-		logoOptions: activeData.logoOptions,
+		activeAccounts: accountRows.filter(
+			(account) => !isAccountInactive(account.status),
+		),
+		archivedAccounts: accountRows.filter((account) =>
+			isAccountInactive(account.status),
+		),
+		logoOptions,
 	};
 }

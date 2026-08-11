@@ -1,10 +1,5 @@
-import { and, eq, inArray, or, sql } from "drizzle-orm";
-import {
-	budgets,
-	categories,
-	financialAccounts,
-	transactions,
-} from "@/db/schema";
+import { and, eq } from "drizzle-orm";
+import { budgets, categories } from "@/db/schema";
 import {
 	buildCategoryBreakdownData,
 	type DashboardCategoryBreakdownData,
@@ -16,19 +11,24 @@ import type {
 	GoalProgressItem,
 	GoalsProgressData,
 } from "@/features/dashboard/goals-progress/goals-progress-queries";
-import {
-	buildDashboardAdminFilters,
-	excludeAutoInvoiceEntries,
-	excludeInitialBalanceWhenConfigured,
-	excludeRefundEntries,
-	excludeTransactionsFromExcludedAccounts,
-} from "@/features/dashboard/lib/transaction-filters";
 import { db } from "@/shared/lib/db";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { callRpc } from "@/shared/lib/supabase/rpc";
 import { safeToNumber as toNumber } from "@/shared/utils/number";
 import { getPreviousPeriod } from "@/shared/utils/period";
 
 const BUDGET_CRITICAL_THRESHOLD = 80;
+
+type CategoryOverviewRpcRow = {
+	category_id: string;
+	category_name: string;
+	category_icon: string | null;
+	category_type: string | null;
+	period: string | null;
+	condition: string;
+	total: string | number | null;
+	absolute_total: string | number | null;
+};
 
 type CategorySnapshotRow = {
 	categoryId: string;
@@ -37,9 +37,22 @@ type CategorySnapshotRow = {
 	categoryType: string | null;
 	period: string | null;
 	condition: string;
-	total: number;
-	absoluteTotal: number;
+	total: unknown;
+	absoluteTotal: unknown;
 };
+
+const mapCategoryOverviewRow = (
+	row: CategoryOverviewRpcRow,
+): CategorySnapshotRow => ({
+	categoryId: row.category_id,
+	categoryName: row.category_name,
+	categoryIcon: row.category_icon,
+	categoryType: row.category_type,
+	period: row.period,
+	condition: row.condition,
+	total: row.total,
+	absoluteTotal: row.absolute_total,
+});
 
 type BudgetSnapshotRow = {
 	budgetId: string;
@@ -136,53 +149,12 @@ export async function fetchDashboardCategoryOverview(
 
 	const previousPeriod = getPreviousPeriod(period);
 
-	const [transactionRows, budgetRows, categoryRows] = await Promise.all([
-		db
-			.select({
-				categoryId: categories.id,
-				categoryName: categories.name,
-				categoryIcon: categories.icon,
-				categoryType: categories.type,
-				period: transactions.period,
-				condition: transactions.condition,
-				total: sql<number>`coalesce(sum(${transactions.amount}), 0)`,
-				absoluteTotal: sql<number>`coalesce(sum(abs(${transactions.amount})), 0)`,
-			})
-			.from(transactions)
-			.innerJoin(categories, eq(transactions.categoryId, categories.id))
-			.leftJoin(
-				financialAccounts,
-				eq(transactions.accountId, financialAccounts.id),
-			)
-			.where(
-				and(
-					...buildDashboardAdminFilters({ userId, adminPayerId }),
-					inArray(transactions.period, [period, previousPeriod]),
-					excludeTransactionsFromExcludedAccounts(),
-					or(
-						and(
-							eq(transactions.transactionType, "Despesa"),
-							eq(categories.type, "despesa"),
-							excludeAutoInvoiceEntries(),
-						),
-						and(
-							eq(transactions.transactionType, "Receita"),
-							eq(categories.type, "receita"),
-							excludeAutoInvoiceEntries(),
-							excludeRefundEntries(),
-							excludeInitialBalanceWhenConfigured(),
-						),
-					),
-				),
-			)
-			.groupBy(
-				categories.id,
-				categories.name,
-				categories.icon,
-				categories.type,
-				transactions.period,
-				transactions.condition,
-			),
+	const [rawTransactionRows, budgetRows, categoryRows] = await Promise.all([
+		callRpc<CategoryOverviewRpcRow>("get_category_overview", {
+			p_user_id: userId,
+			p_admin_payer_id: adminPayerId,
+			p_periods: [period, previousPeriod],
+		}),
 		db
 			.select({
 				budgetId: budgets.id,
@@ -202,9 +174,10 @@ export async function fetchDashboardCategoryOverview(
 		}),
 	]);
 
-	const snapshotRows = transactionRows as CategorySnapshotRow[];
-	const incomeRows = aggregateCategoryRows(snapshotRows, "receita");
-	const expenseRows = aggregateCategoryRows(snapshotRows, "despesa");
+	const transactionRows = rawTransactionRows.map(mapCategoryOverviewRow);
+
+	const incomeRows = aggregateCategoryRows(transactionRows, "receita");
+	const expenseRows = aggregateCategoryRows(transactionRows, "despesa");
 	const budgetAmountRows = (budgetRows as BudgetSnapshotRow[]).map((row) => ({
 		categoryId: row.categoryId,
 		amount: row.amount,
@@ -224,7 +197,7 @@ export async function fetchDashboardCategoryOverview(
 		});
 
 	const currentExpenseMap = new Map<string, number>();
-	for (const row of snapshotRows) {
+	for (const row of transactionRows) {
 		if (
 			row.categoryType === "despesa" &&
 			row.period === period &&

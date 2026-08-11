@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, isNull, ne, not, or, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
 	cards,
@@ -7,7 +7,7 @@ import {
 	financialAccounts,
 	invoices,
 	payers,
-	transactions,
+	type transactions,
 } from "@/db/schema";
 import {
 	PAYMENT_METHODS,
@@ -24,6 +24,7 @@ import { revalidateForEntity } from "@/shared/lib/actions/helpers";
 import { db } from "@/shared/lib/db";
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import { noteSchema, uuidSchema } from "@/shared/lib/schemas/common";
+import { callRpcOne } from "@/shared/lib/supabase/rpc";
 import { addMonthsToDate, parseLocalDateString } from "@/shared/utils/date";
 import { addMonthsToPeriod, MONTH_NAMES } from "@/shared/utils/period";
 
@@ -224,26 +225,11 @@ export async function validateCardLimit({
 		return { ok: true };
 	}
 
-	const conditions = [
-		eq(transactions.userId, userId),
-		eq(transactions.cardId, cardId),
-		or(isNull(transactions.isSettled), eq(transactions.isSettled, false)),
-		or(
-			ne(transactions.condition, "Recorrente"),
-			sql`${transactions.purchaseDate} <= current_date`,
-		),
-	];
-
-	if (excludeTransactionIds.length > 0) {
-		conditions.push(not(inArray(transactions.id, excludeTransactionIds)));
-	}
-
-	const [row] = await db
-		.select({
-			total: sql<number>`coalesce(sum(${transactions.amount}), 0)`,
-		})
-		.from(transactions)
-		.where(and(...conditions));
+	const row = await callRpcOne<{ total: unknown }>("get_card_open_amount", {
+		p_user_id: userId,
+		p_card_id: cardId,
+		p_exclude_transaction_ids: excludeTransactionIds,
+	});
 
 	const sumAmount = Number(row?.total ?? 0);
 	const inUse = sumAmount < 0 ? Math.abs(sumAmount) : 0;

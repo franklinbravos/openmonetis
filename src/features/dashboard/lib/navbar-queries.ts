@@ -1,11 +1,16 @@
-import { and, asc, eq, ilike, not, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { cacheLife, cacheTag } from "next/cache";
-import { cards, financialAccounts, payers, transactions } from "@/db/schema";
+import { payers } from "@/db/schema";
 import { fetchPendingInboxCount } from "@/features/inbox/queries";
 import type { NavbarFinanceLinks } from "@/shared/components/navigation/navbar/nav-items";
-import { INITIAL_BALANCE_NOTE } from "@/shared/lib/accounts/constants";
+import { isAccountInactive } from "@/shared/lib/accounts/constants";
+import {
+	type AccountWithoutMovements,
+	fetchAccountsWithoutMovements,
+} from "@/shared/lib/accounts/queries";
 import { db } from "@/shared/lib/db";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { callRpc } from "@/shared/lib/supabase/rpc";
 import { getBusinessDateString } from "@/shared/utils/date";
 import { safeToNumber } from "@/shared/utils/number";
 import {
@@ -18,6 +23,22 @@ type DashboardNavbarData = {
 	inboxPendingCount: number;
 	notificationsSnapshot: DashboardNotificationsSnapshot;
 	financeLinks: NavbarFinanceLinks;
+};
+
+type NavbarCardRow = {
+	card_id: string;
+	card_name: string;
+	card_logo: string | null;
+	amount: string | number | null;
+};
+
+type NavbarAccountRow = {
+	id: string;
+	nome: string;
+	status: string;
+	logo: string;
+	saldo_inicial: string | number | null;
+	saldo_movimentacoes: string | number | null;
 };
 
 async function fetchAdminPayerAvatarUrl(
@@ -38,6 +59,17 @@ async function fetchAdminPayerAvatarUrl(
 	return payer?.avatarUrl ?? null;
 }
 
+const toNavbarAccountRow = (
+	row: AccountWithoutMovements,
+): NavbarAccountRow => ({
+	id: row.id,
+	nome: row.name,
+	status: row.status,
+	logo: row.logo,
+	saldo_inicial: row.initialBalance,
+	saldo_movimentacoes: null,
+});
+
 async function fetchDashboardNavbarDataInternal(
 	userId: string,
 ): Promise<DashboardNavbarData> {
@@ -53,66 +85,18 @@ async function fetchDashboardNavbarDataInternal(
 		fetchAdminPayerAvatarUrl(userId, adminPayerId),
 		fetchDashboardNotifications(userId, currentPeriod),
 		fetchPendingInboxCount(userId),
-		db
-			.select({
-				id: cards.id,
-				name: cards.name,
-				logo: cards.logo,
-				amount: sql<number>`coalesce(sum(${transactions.amount}), 0)`,
-			})
-			.from(cards)
-			.leftJoin(
-				transactions,
-				and(
-					eq(transactions.cardId, cards.id),
-					eq(transactions.userId, userId),
-					eq(transactions.period, currentPeriod),
+		callRpc<NavbarCardRow>("get_navbar_cards", {
+			p_user_id: userId,
+			p_period: currentPeriod,
+		}),
+		adminPayerId
+			? callRpc<NavbarAccountRow>("get_account_balances", {
+					p_user_id: userId,
+					p_admin_payer_id: adminPayerId,
+				})
+			: fetchAccountsWithoutMovements(userId).then((rows) =>
+					rows.map(toNavbarAccountRow),
 				),
-			)
-			.where(and(eq(cards.userId, userId), not(ilike(cards.status, "inativo"))))
-			.groupBy(cards.id, cards.name, cards.logo)
-			.orderBy(asc(cards.name)),
-		db
-			.select({
-				id: financialAccounts.id,
-				name: financialAccounts.name,
-				logo: financialAccounts.logo,
-				initialBalance: financialAccounts.initialBalance,
-				balanceMovements: sql<number>`
-					coalesce(
-						sum(
-							case
-								when ${transactions.note} = ${INITIAL_BALANCE_NOTE} then 0
-								else ${transactions.amount}
-							end
-						),
-						0
-					)
-				`,
-			})
-			.from(financialAccounts)
-			.leftJoin(
-				transactions,
-				and(
-					eq(transactions.accountId, financialAccounts.id),
-					eq(transactions.userId, userId),
-					eq(transactions.isSettled, true),
-					adminPayerId ? eq(transactions.payerId, adminPayerId) : sql`false`,
-				),
-			)
-			.where(
-				and(
-					eq(financialAccounts.userId, userId),
-					not(ilike(financialAccounts.status, "inativa")),
-				),
-			)
-			.groupBy(
-				financialAccounts.id,
-				financialAccounts.name,
-				financialAccounts.logo,
-				financialAccounts.initialBalance,
-			)
-			.orderBy(asc(financialAccounts.name)),
 	]);
 
 	return {
@@ -121,17 +105,22 @@ async function fetchDashboardNavbarDataInternal(
 		notificationsSnapshot,
 		financeLinks: {
 			cards: activeCards.map((card) => ({
-				...card,
+				id: card.card_id,
+				name: card.card_name,
+				logo: card.card_logo,
 				amount: Math.abs(safeToNumber(card.amount)),
 			})),
-			accounts: activeAccounts.map((account) => ({
-				id: account.id,
-				name: account.name,
-				logo: account.logo,
-				amount:
-					safeToNumber(account.initialBalance) +
-					safeToNumber(account.balanceMovements),
-			})),
+			accounts: activeAccounts
+				.filter((account) => !isAccountInactive(account.status))
+				.sort((left, right) => left.nome.localeCompare(right.nome))
+				.map((account) => ({
+					id: account.id,
+					name: account.nome,
+					logo: account.logo,
+					amount:
+						safeToNumber(account.saldo_inicial) +
+						safeToNumber(account.saldo_movimentacoes),
+				})),
 		},
 	};
 }

@@ -1,19 +1,10 @@
-import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
-import { financialAccounts, transactions } from "@/db/schema";
-import {
-	buildDashboardAdminFilters,
-	excludeAutoInvoiceEntries,
-	excludeInitialBalanceWhenConfigured,
-	excludeTransactionsFromExcludedAccounts,
-} from "@/features/dashboard/lib/transaction-filters";
 import type { DashboardCardMetrics } from "@/features/dashboard/overview/dashboard-metrics-queries";
 import type {
 	IncomeExpenseBalanceData,
 	MonthData,
 } from "@/features/dashboard/overview/income-expense-balance-queries";
-import { REFUND_NOTE_PREFIX } from "@/shared/lib/accounts/constants";
-import { db } from "@/shared/lib/db";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { callRpc } from "@/shared/lib/supabase/rpc";
 import { safeToNumber } from "@/shared/utils/number";
 import {
 	addMonthsToPeriod,
@@ -29,7 +20,7 @@ const TRANSACTION_TYPE_INCOME = "Receita";
 const TRANSACTION_TYPE_EXPENSE = "Despesa";
 const TRANSACTION_TYPE_TRANSFER = "Transferência";
 
-type PeriodTotals = {
+export type PeriodTotals = {
 	receitas: number;
 	despesas: number;
 	reembolsos: number;
@@ -37,12 +28,20 @@ type PeriodTotals = {
 	balanco: number;
 };
 
-type PeriodSummaryRow = {
+export type PeriodSummaryRow = {
 	period: string | null;
 	transactionType: string;
 	totalAmount: string | number | null;
 	refundAmount: string | number | null;
 	accountExcludeFromBalance: boolean | null;
+};
+
+type PeriodOverviewRow = {
+	periodo: string | null;
+	tipo_transacao: string | null;
+	total_amount: string | number | null;
+	refund_amount: string | number | null;
+	conta_excluir_do_saldo: boolean | null;
 };
 
 type DashboardPeriodOverview = {
@@ -96,64 +95,9 @@ const emptyOverview = (period: string): DashboardPeriodOverview => {
 	};
 };
 
-export async function fetchDashboardPeriodOverview(
-	userId: string,
-	period: string,
-): Promise<DashboardPeriodOverview> {
-	const adminPayerId = await getAdminPayerId(userId);
-	if (!adminPayerId) {
-		return emptyOverview(period);
-	}
-
-	const previousPeriod = getPreviousPeriod(period);
-	const chartPeriods = generateLast6Months(period);
-	const startPeriod = addMonthsToPeriod(period, -24);
-
-	const refundPattern = `${REFUND_NOTE_PREFIX}%`;
-	const rows = (await db
-		.select({
-			period: transactions.period,
-			transactionType: transactions.transactionType,
-			totalAmount:
-				sql<number>`coalesce(sum(case when ${transactions.note} ilike ${refundPattern} then 0 else ${transactions.amount} end), 0)`.as(
-					"total",
-				),
-			refundAmount:
-				sql<number>`coalesce(sum(case when ${transactions.note} ilike ${refundPattern} then ${transactions.amount} else 0 end), 0)`.as(
-					"refund",
-				),
-			accountExcludeFromBalance: financialAccounts.excludeFromBalance,
-		})
-		.from(transactions)
-		.leftJoin(
-			financialAccounts,
-			eq(transactions.accountId, financialAccounts.id),
-		)
-		.where(
-			and(
-				...buildDashboardAdminFilters({ userId, adminPayerId }),
-				gte(transactions.period, startPeriod),
-				lte(transactions.period, period),
-				inArray(transactions.transactionType, [
-					TRANSACTION_TYPE_INCOME,
-					TRANSACTION_TYPE_EXPENSE,
-					TRANSACTION_TYPE_TRANSFER,
-				]),
-				excludeAutoInvoiceEntries(),
-				excludeInitialBalanceWhenConfigured(),
-				excludeTransactionsFromExcludedAccounts(),
-			),
-		)
-		.groupBy(
-			transactions.period,
-			transactions.transactionType,
-			financialAccounts.excludeFromBalance,
-		)
-		.orderBy(
-			asc(transactions.period),
-			asc(transactions.transactionType),
-		)) as PeriodSummaryRow[];
-
+export const buildPeriodTotals = (
+	rows: PeriodSummaryRow[],
+): Map<string, PeriodTotals> => {
 	const periodTotals = new Map<string, PeriodTotals>();
 
 	for (const row of rows) {
@@ -178,6 +122,39 @@ export async function fetchDashboardPeriodOverview(
 			totals.transferAdjustment += total;
 		}
 	}
+
+	return periodTotals;
+};
+
+export async function fetchDashboardPeriodOverview(
+	userId: string,
+	period: string,
+): Promise<DashboardPeriodOverview> {
+	const adminPayerId = await getAdminPayerId(userId);
+	if (!adminPayerId) {
+		return emptyOverview(period);
+	}
+
+	const previousPeriod = getPreviousPeriod(period);
+	const chartPeriods = generateLast6Months(period);
+	const startPeriod = addMonthsToPeriod(period, -24);
+
+	const rows = await callRpc<PeriodOverviewRow>("get_period_overview", {
+		p_user_id: userId,
+		p_admin_payer_id: adminPayerId,
+		p_start_period: startPeriod,
+		p_end_period: period,
+	});
+
+	const periodTotals = buildPeriodTotals(
+		rows.map((row) => ({
+			period: row.periodo,
+			transactionType: row.tipo_transacao ?? "",
+			totalAmount: row.total_amount,
+			refundAmount: row.refund_amount,
+			accountExcludeFromBalance: row.conta_excluir_do_saldo,
+		})),
+	);
 
 	ensurePeriodTotals(periodTotals, period);
 	ensurePeriodTotals(periodTotals, previousPeriod);

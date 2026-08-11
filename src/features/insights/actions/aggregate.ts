@@ -1,21 +1,68 @@
 import { getDay } from "date-fns";
 import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { cacheLife, cacheTag } from "next/cache";
-import {
-	budgets,
-	cards,
-	categories,
-	financialAccounts,
-	transactions,
-} from "@/db/schema";
+import { categories, financialAccounts, transactions } from "@/db/schema";
 import { ACCOUNT_AUTO_INVOICE_NOTE_PREFIX } from "@/shared/lib/accounts/constants";
 import { excludeTransactionsFromExcludedAccounts } from "@/shared/lib/accounts/query-filters";
 import { db } from "@/shared/lib/db";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { callRpc, type RpcParams } from "@/shared/lib/supabase/rpc";
 import { safeToNumber } from "@/shared/utils/number";
 import { getPreviousPeriod } from "@/shared/utils/period";
 
 const TRANSFERENCIA = "Transferência";
+
+type PeriodTotalsRow = {
+	period: string;
+	transaction_type: string | null;
+	total_amount: unknown;
+};
+
+type TopExpenseCategoryRow = {
+	category_name: string;
+	total: unknown;
+};
+
+type BudgetRow = {
+	category_name: string;
+	budget_amount: unknown;
+	spent: unknown;
+};
+
+type CardsSummaryRow = {
+	total_limit: unknown;
+	card_count: unknown;
+};
+
+type AccountsSummaryRow = {
+	total_balance: unknown;
+	account_count: unknown;
+};
+
+type AvgTicketRow = {
+	avg_amount: unknown;
+	transaction_count: unknown;
+};
+
+type PaymentMethodRow = {
+	payment_method: string | null;
+	total: unknown;
+};
+
+export function sumByType(
+	rows: Array<{ transactionType: string | null; totalAmount: unknown }>,
+): { income: number; expense: number } {
+	let income = 0;
+	let expense = 0;
+
+	for (const row of rows) {
+		const amount = Math.abs(safeToNumber(row.totalAmount));
+		if (row.transactionType === "Receita") income += amount;
+		else if (row.transactionType === "Despesa") expense += amount;
+	}
+
+	return { income, expense };
+}
 
 async function aggregateMonthDataInternal(userId: string, period: string) {
 	const previousPeriod = getPreviousPeriod(period);
@@ -70,11 +117,14 @@ async function aggregateMonthDataInternal(userId: string, period: string) {
 		return conditions;
 	};
 
+	const rpcForAdmin = <TRow extends Record<string, unknown>>(
+		functionName: string,
+		params: RpcParams,
+	): Promise<TRow[]> =>
+		adminPayerId ? callRpc<TRow>(functionName, params) : Promise.resolve([]);
+
 	const [
-		currentPeriodRows,
-		previousPeriodRows,
-		twoMonthsAgoRows,
-		threeMonthsAgoRows,
+		periodTotalsRows,
 		expensesByCategory,
 		budgetsData,
 		cardsData,
@@ -84,137 +134,30 @@ async function aggregateMonthDataInternal(userId: string, period: string) {
 		paymentMethodsData,
 		last3MonthsTransactions,
 	] = await Promise.all([
-		db
-			.select({
-				transactionType: transactions.transactionType,
-				totalAmount: sql<number>`coalesce(sum(${transactions.amount}), 0)`,
-			})
-			.from(transactions)
-			.leftJoin(
-				financialAccounts,
-				eq(transactions.accountId, financialAccounts.id),
-			)
-			.where(and(...buildAdminTransactionConditions({ period })))
-			.groupBy(transactions.transactionType),
-		db
-			.select({
-				transactionType: transactions.transactionType,
-				totalAmount: sql<number>`coalesce(sum(${transactions.amount}), 0)`,
-			})
-			.from(transactions)
-			.leftJoin(
-				financialAccounts,
-				eq(transactions.accountId, financialAccounts.id),
-			)
-			.where(
-				and(...buildAdminTransactionConditions({ period: previousPeriod })),
-			)
-			.groupBy(transactions.transactionType),
-		db
-			.select({
-				transactionType: transactions.transactionType,
-				totalAmount: sql<number>`coalesce(sum(${transactions.amount}), 0)`,
-			})
-			.from(transactions)
-			.leftJoin(
-				financialAccounts,
-				eq(transactions.accountId, financialAccounts.id),
-			)
-			.where(and(...buildAdminTransactionConditions({ period: twoMonthsAgo })))
-			.groupBy(transactions.transactionType),
-		db
-			.select({
-				transactionType: transactions.transactionType,
-				totalAmount: sql<number>`coalesce(sum(${transactions.amount}), 0)`,
-			})
-			.from(transactions)
-			.leftJoin(
-				financialAccounts,
-				eq(transactions.accountId, financialAccounts.id),
-			)
-			.where(
-				and(...buildAdminTransactionConditions({ period: threeMonthsAgo })),
-			)
-			.groupBy(transactions.transactionType),
-		db
-			.select({
-				categoryName: categories.name,
-				total: sql<number>`coalesce(sum(${transactions.amount}), 0)`,
-			})
-			.from(transactions)
-			.innerJoin(categories, eq(transactions.categoryId, categories.id))
-			.leftJoin(
-				financialAccounts,
-				eq(transactions.accountId, financialAccounts.id),
-			)
-			.where(
-				and(
-					...buildAdminTransactionConditions({
-						period,
-						transactionType: "Despesa",
-					}),
-					eq(categories.type, "despesa"),
-				),
-			)
-			.groupBy(categories.name)
-			.orderBy(sql`sum(${transactions.amount}) ASC`)
-			.limit(5),
-		db
-			.select({
-				categoryName: categories.name,
-				budgetAmount: budgets.amount,
-				spent: sql<number>`coalesce(sum(case when ${excludeTransactionsFromExcludedAccounts()} then ${transactions.amount} else 0 end), 0)`,
-			})
-			.from(budgets)
-			.innerJoin(categories, eq(budgets.categoryId, categories.id))
-			.leftJoin(
-				transactions,
-				and(
-					eq(transactions.categoryId, categories.id),
-					eq(transactions.period, period),
-					eq(transactions.userId, userId),
-					eq(transactions.transactionType, "Despesa"),
-					adminPayerCondition,
-					autoInvoiceExclusion,
-				),
-			)
-			.leftJoin(
-				financialAccounts,
-				eq(transactions.accountId, financialAccounts.id),
-			)
-			.where(and(eq(budgets.userId, userId), eq(budgets.period, period)))
-			.groupBy(categories.name, budgets.amount),
-		db
-			.select({
-				totalLimit: sql<number>`coalesce(sum(${cards.limit}), 0)`,
-				cardCount: sql<number>`count(*)`,
-			})
-			.from(cards)
-			.where(and(eq(cards.userId, userId), eq(cards.status, "ativo"))),
-		db
-			.select({
-				totalBalance: sql<number>`coalesce(sum(${financialAccounts.initialBalance}), 0)`,
-				accountCount: sql<number>`count(*)`,
-			})
-			.from(financialAccounts)
-			.where(
-				and(
-					eq(financialAccounts.userId, userId),
-					eq(financialAccounts.status, "ativa"),
-					eq(financialAccounts.excludeFromBalance, false),
-				),
-			),
-		db
-			.select({
-				avgAmount: sql<number>`coalesce(avg(abs(${transactions.amount})), 0)`,
-				transactionCount: sql<number>`count(*)`,
-			})
-			.from(transactions)
-			.leftJoin(
-				financialAccounts,
-				eq(transactions.accountId, financialAccounts.id),
-			)
-			.where(and(...buildAdminTransactionConditions({ period }))),
+		rpcForAdmin<PeriodTotalsRow>("get_insight_period_totals", {
+			p_user_id: userId,
+			p_admin_payer_id: adminPayerId,
+			p_periods: [threeMonthsAgo, twoMonthsAgo, previousPeriod, period],
+		}),
+		rpcForAdmin<TopExpenseCategoryRow>("get_insight_top_expense_categories", {
+			p_user_id: userId,
+			p_admin_payer_id: adminPayerId,
+			p_period: period,
+		}),
+		rpcForAdmin<BudgetRow>("get_insight_budgets", {
+			p_user_id: userId,
+			p_admin_payer_id: adminPayerId,
+			p_period: period,
+		}),
+		callRpc<CardsSummaryRow>("get_insight_cards", { p_user_id: userId }),
+		callRpc<AccountsSummaryRow>("get_insight_accounts", {
+			p_user_id: userId,
+		}),
+		rpcForAdmin<AvgTicketRow>("get_insight_avg_ticket", {
+			p_user_id: userId,
+			p_admin_payer_id: adminPayerId,
+			p_period: period,
+		}),
 		db
 			.select({
 				purchaseDate: transactions.purchaseDate,
@@ -233,25 +176,11 @@ async function aggregateMonthDataInternal(userId: string, period: string) {
 					}),
 				),
 			),
-		db
-			.select({
-				paymentMethod: transactions.paymentMethod,
-				total: sql<number>`coalesce(sum(abs(${transactions.amount})), 0)`,
-			})
-			.from(transactions)
-			.leftJoin(
-				financialAccounts,
-				eq(transactions.accountId, financialAccounts.id),
-			)
-			.where(
-				and(
-					...buildAdminTransactionConditions({
-						period,
-						transactionType: "Despesa",
-					}),
-				),
-			)
-			.groupBy(transactions.paymentMethod),
+		rpcForAdmin<PaymentMethodRow>("get_insight_payment_methods", {
+			p_user_id: userId,
+			p_admin_payer_id: adminPayerId,
+			p_period: period,
+		}),
 		db
 			.select({
 				name: transactions.name,
@@ -279,29 +208,24 @@ async function aggregateMonthDataInternal(userId: string, period: string) {
 			.orderBy(transactions.name),
 	]);
 
-	const sumByType = (
-		rows: Array<{ transactionType: string | null; totalAmount: unknown }>,
-	) => {
-		let income = 0;
-		let expense = 0;
-
-		for (const row of rows) {
-			const amount = Math.abs(safeToNumber(row.totalAmount));
-			if (row.transactionType === "Receita") income += amount;
-			else if (row.transactionType === "Despesa") expense += amount;
-		}
-
-		return { income, expense };
-	};
+	const totalsForPeriod = (targetPeriod: string) =>
+		sumByType(
+			periodTotalsRows
+				.filter((row) => row.period === targetPeriod)
+				.map((row) => ({
+					transactionType: row.transaction_type,
+					totalAmount: row.total_amount,
+				})),
+		);
 
 	const { income: currentIncome, expense: currentExpense } =
-		sumByType(currentPeriodRows);
+		totalsForPeriod(period);
 	const { income: previousIncome, expense: previousExpense } =
-		sumByType(previousPeriodRows);
+		totalsForPeriod(previousPeriod);
 	const { income: twoMonthsAgoIncome, expense: twoMonthsAgoExpense } =
-		sumByType(twoMonthsAgoRows);
+		totalsForPeriod(twoMonthsAgo);
 	const { income: threeMonthsAgoIncome, expense: threeMonthsAgoExpense } =
-		sumByType(threeMonthsAgoRows);
+		totalsForPeriod(threeMonthsAgo);
 
 	const dayTotals = new Map<number, number>();
 	for (const row of dayOfWeekSpending) {
@@ -441,53 +365,47 @@ async function aggregateMonthDataInternal(userId: string, period: string) {
 			currentIncome > 0.01
 				? ((currentIncome - currentExpense) / currentIncome) * 100
 				: 0,
-		topExpenseCategories: expensesByCategory.map(
-			(cat: { categoryName: string; total: unknown }) => ({
-				category: cat.categoryName,
-				amount: Math.abs(safeToNumber(cat.total)),
-				percentageOfTotal:
-					currentExpense > 0
-						? (Math.abs(safeToNumber(cat.total)) / currentExpense) * 100
-						: 0,
-			}),
-		),
-		budgets: budgetsData.map(
-			(b: { categoryName: string; budgetAmount: unknown; spent: unknown }) => ({
-				category: b.categoryName,
-				budgetAmount: safeToNumber(b.budgetAmount),
-				spent: Math.abs(safeToNumber(b.spent)),
-				usagePercentage:
-					safeToNumber(b.budgetAmount) > 0
-						? (Math.abs(safeToNumber(b.spent)) / safeToNumber(b.budgetAmount)) *
-							100
-						: 0,
-			}),
-		),
+		topExpenseCategories: expensesByCategory.map((cat) => ({
+			category: cat.category_name,
+			amount: Math.abs(safeToNumber(cat.total)),
+			percentageOfTotal:
+				currentExpense > 0
+					? (Math.abs(safeToNumber(cat.total)) / currentExpense) * 100
+					: 0,
+		})),
+		budgets: budgetsData.map((b) => ({
+			category: b.category_name,
+			budgetAmount: safeToNumber(b.budget_amount),
+			spent: Math.abs(safeToNumber(b.spent)),
+			usagePercentage:
+				safeToNumber(b.budget_amount) > 0
+					? (Math.abs(safeToNumber(b.spent)) / safeToNumber(b.budget_amount)) *
+						100
+					: 0,
+		})),
 		creditCards: {
-			totalLimit: safeToNumber(cardsData[0]?.totalLimit ?? 0),
-			cardCount: safeToNumber(cardsData[0]?.cardCount ?? 0),
+			totalLimit: safeToNumber(cardsData[0]?.total_limit ?? 0),
+			cardCount: safeToNumber(cardsData[0]?.card_count ?? 0),
 		},
 		accounts: {
-			totalBalance: safeToNumber(accountsData[0]?.totalBalance ?? 0),
-			accountCount: safeToNumber(accountsData[0]?.accountCount ?? 0),
+			totalBalance: safeToNumber(accountsData[0]?.total_balance ?? 0),
+			accountCount: safeToNumber(accountsData[0]?.account_count ?? 0),
 		},
-		avgTicket: safeToNumber(avgTicketData[0]?.avgAmount ?? 0),
-		transactionCount: safeToNumber(avgTicketData[0]?.transactionCount ?? 0),
+		avgTicket: safeToNumber(avgTicketData[0]?.avg_amount ?? 0),
+		transactionCount: safeToNumber(avgTicketData[0]?.transaction_count ?? 0),
 		dayOfWeekSpending: Array.from(dayTotals.entries()).map(([day, total]) => ({
 			dayOfWeek:
 				["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"][day] ?? "N/A",
 			total,
 		})),
-		paymentMethodsBreakdown: paymentMethodsData.map(
-			(pm: { paymentMethod: string | null; total: unknown }) => ({
-				method: pm.paymentMethod,
-				total: safeToNumber(pm.total),
-				percentage:
-					currentExpense > 0
-						? (safeToNumber(pm.total) / currentExpense) * 100
-						: 0,
-			}),
-		),
+		paymentMethodsBreakdown: paymentMethodsData.map((pm) => ({
+			method: pm.payment_method,
+			total: safeToNumber(pm.total),
+			percentage:
+				currentExpense > 0
+					? (safeToNumber(pm.total) / currentExpense) * 100
+					: 0,
+		})),
 		recurringExpenses: {
 			count: recurringExpenses.length,
 			total: totalRecurring,

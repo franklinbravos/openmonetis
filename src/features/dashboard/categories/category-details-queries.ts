@@ -1,5 +1,5 @@
-import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
-import { categories, financialAccounts, transactions } from "@/db/schema";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { categories, transactions } from "@/db/schema";
 import { mapTransactionsData } from "@/features/transactions/lib/page-helpers";
 import {
 	ACCOUNT_AUTO_INVOICE_NOTE_PREFIX,
@@ -11,6 +11,7 @@ import {
 } from "@/shared/lib/categories/constants";
 import { db } from "@/shared/lib/db";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { callRpcOne } from "@/shared/lib/supabase/rpc";
 import { calculatePercentageChange } from "@/shared/utils/math";
 import { safeToNumber as toNumber } from "@/shared/utils/number";
 import { getPreviousPeriod } from "@/shared/utils/period";
@@ -30,6 +31,10 @@ type CategoryDetailData = {
 	previousTotal: number;
 	percentageChange: number | null;
 	transactions: MappedLancamentos;
+};
+
+type CategoryPreviousTotalRow = {
+	total: string | null;
 };
 
 export async function fetchCategoryDetails(
@@ -105,33 +110,19 @@ export async function fetchCategoryDetails(
 		0,
 	);
 
-	const [previousTotalRow] = adminPayerId
-		? await db
-				.select({
-					total: sql<number>`coalesce(sum(${transactions.amount}), 0)`,
-				})
-				.from(transactions)
-				.leftJoin(
-					financialAccounts,
-					eq(transactions.accountId, financialAccounts.id),
-				)
-				.where(
-					and(
-						eq(transactions.userId, userId),
-						eq(transactions.categoryId, categoryId),
-						eq(transactions.transactionType, transactionType),
-						eq(transactions.payerId, adminPayerId),
-						...(isInvoiceCategory ? [] : [sanitizedNote]),
-						eq(transactions.period, previousPeriod),
-						or(
-							isNull(transactions.note),
-							ne(transactions.note, INITIAL_BALANCE_NOTE),
-							isNull(financialAccounts.excludeInitialBalanceFromIncome),
-							eq(financialAccounts.excludeInitialBalanceFromIncome, false),
-						),
-					),
-				)
-		: [{ total: 0 }];
+	let previousTotalRow: CategoryPreviousTotalRow | null = null;
+	if (adminPayerId) {
+		previousTotalRow = await callRpcOne<CategoryPreviousTotalRow>(
+			"get_category_previous_total",
+			{
+				p_user_id: userId,
+				p_admin_payer_id: adminPayerId,
+				p_category_id: categoryId,
+				p_transaction_type: transactionType,
+				p_period: previousPeriod,
+			},
+		);
+	}
 
 	const previousTotal = Math.abs(toNumber(previousTotalRow?.total ?? 0));
 	const percentageChange = calculatePercentageChange(

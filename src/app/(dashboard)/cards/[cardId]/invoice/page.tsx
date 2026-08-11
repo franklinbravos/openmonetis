@@ -3,13 +3,13 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import type { FinancialAccount } from "@/db/schema";
 import { CardDialog } from "@/features/cards/components/card-dialog";
-import type { Card } from "@/features/cards/components/types";
+import type { Card as CreditCard } from "@/features/cards/components/types";
 import { CardInvoiceContextHeader } from "@/features/invoices/components/card-invoice-context-header";
 import { CardInvoiceNavigationShell } from "@/features/invoices/components/card-invoice-navigation-shell";
 import { InvoiceSummaryCard } from "@/features/invoices/components/invoice-summary-card";
 import {
 	fetchCardData,
-	fetchCardInvoiceMonthStatuses,
+	fetchCardInvoiceMonthSummaries,
 	fetchCardTransactions,
 	fetchInvoiceData,
 } from "@/features/invoices/queries";
@@ -31,8 +31,10 @@ import {
 	fetchTransactionFilterSources,
 } from "@/features/transactions/queries";
 import { fetchImportBatchHistory } from "@/features/transactions/queries/import-batch-history";
+import { StatementPeriodNavigation } from "@/shared/components/month-picker/statement-period-navigation";
 import { PageBreadcrumb } from "@/shared/components/navigation/page-breadcrumb";
 import { Button } from "@/shared/components/ui/button";
+import { Card as UiCard } from "@/shared/components/ui/card";
 import { getUserId } from "@/shared/lib/auth/server";
 import {
 	CARD_IMPORT_PDF_PASSWORD_RULES,
@@ -76,7 +78,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 		estabelecimentos,
 		userPreferences,
 		importHistory,
-		invoiceMonthStatuses,
+		invoiceMonthSummaries,
 	] = await Promise.all([
 		fetchTransactionFilterSources(userId),
 		loadLogoOptions(),
@@ -89,7 +91,12 @@ export default async function Page({ params, searchParams }: PageProps) {
 			invoicePeriod: selectedPeriod,
 			limit: 1,
 		}),
-		fetchCardInvoiceMonthStatuses(userId, cardId, String(card.dueDay)),
+		fetchCardInvoiceMonthSummaries(
+			userId,
+			cardId,
+			String(card.closingDay),
+			String(card.dueDay),
+		),
 	]);
 	const sluggedFilters = buildSluggedFilters(filterSources);
 	const slugMaps = buildSlugMaps(sluggedFilters);
@@ -146,7 +153,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 		? card.importPdfPasswordRule
 		: CARD_IMPORT_PDF_PASSWORD_RULES.none;
 
-	const cardDialogData: Card = {
+	const cardDialogData: CreditCard = {
 		id: card.id,
 		name: card.name,
 		brand: card.brand ?? "",
@@ -180,8 +187,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 			/>
 
 			<CardInvoiceNavigationShell
-				toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID}
-				monthStatuses={invoiceMonthStatuses}
+				monthSummaries={invoiceMonthSummaries}
 				header={
 					<CardInvoiceContextHeader
 						embedded
@@ -236,6 +242,14 @@ export default async function Page({ params, searchParams }: PageProps) {
 					hasImportHistory={importHistory.length > 0}
 				/>
 			</section>
+
+			<UiCard className="sticky top-18 z-10 gap-0 overflow-hidden py-0 backdrop-blur-md supports-backdrop-filter:bg-card/60">
+				<StatementPeriodNavigation
+					embedded
+					hideCarousel
+					toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID}
+				/>
+			</UiCard>
 
 			<section className="flex flex-col gap-4">
 				<LancamentosSection

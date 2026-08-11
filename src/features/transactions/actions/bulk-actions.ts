@@ -158,7 +158,7 @@ export async function deleteTransactionBulkAction(
 				),
 			);
 
-		await cleanupAttachmentsAfterTransactionDelete(linkedAttachments);
+		await cleanupAttachmentsAfterTransactionDelete(linkedAttachments, user.id);
 
 		revalidate(user.id);
 		return { success: true, message: successMessage };
@@ -811,7 +811,7 @@ export async function deleteMultipleTransactionsAction(
 				),
 			);
 
-		await cleanupAttachmentsAfterTransactionDelete(linkedAttachments);
+		await cleanupAttachmentsAfterTransactionDelete(linkedAttachments, user.id);
 
 		const notificationData = existing
 			.filter(

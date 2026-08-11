@@ -1,9 +1,5 @@
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import { categories, financialAccounts, transactions } from "@/db/schema";
-import { ACCOUNT_AUTO_INVOICE_NOTE_PREFIX } from "@/shared/lib/accounts/constants";
-import { excludeTransactionsFromExcludedAccounts } from "@/shared/lib/accounts/query-filters";
-import { db } from "@/shared/lib/db";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { callRpc } from "@/shared/lib/supabase/rpc";
 import type {
 	CategoryReportData,
 	CategoryReportFilters,
@@ -13,71 +9,39 @@ import type {
 import { safeToNumber as toNumber } from "@/shared/utils/number";
 import { calculatePercentageChange, generatePeriodRange } from "./utils";
 
-/**
- * Fetches category report data for multiple periods
- *
- * @param userId - User ID to filter data
- * @param filters - Report filters (startPeriod, endPeriod, categoryIds)
- * @returns Complete category report data
- */
-export async function fetchCategoryReport(
-	userId: string,
-	filters: CategoryReportFilters,
-): Promise<CategoryReportData> {
-	const { startPeriod, endPeriod, categoryIds } = filters;
+type CategoryTotalsRpcRow = {
+	category_id: string;
+	category_name: string;
+	category_icon: string | null;
+	category_type: string;
+	period: string;
+	total: unknown;
+};
 
-	// Generate all periods in the range
-	const periods = generatePeriodRange(startPeriod, endPeriod);
+type CategoryTotalsRow = {
+	categoryId: string;
+	categoryName: string;
+	categoryIcon: string | null;
+	categoryType: string;
+	period: string;
+	total: unknown;
+};
 
-	const adminPayerId = await getAdminPayerId(userId);
-	if (!adminPayerId) {
-		return { categories: [], periods, totals: new Map(), grandTotal: 0 };
-	}
+const mapCategoryTotalsRow = (
+	row: CategoryTotalsRpcRow,
+): CategoryTotalsRow => ({
+	categoryId: row.category_id,
+	categoryName: row.category_name,
+	categoryIcon: row.category_icon,
+	categoryType: row.category_type,
+	period: row.period,
+	total: row.total,
+});
 
-	// Build WHERE conditions
-	const whereConditions = [
-		eq(transactions.userId, userId),
-		eq(transactions.payerId, adminPayerId),
-		inArray(transactions.period, periods),
-		or(eq(categories.type, "despesa"), eq(categories.type, "receita")),
-		or(
-			isNull(transactions.note),
-			sql`${transactions.note} NOT LIKE ${`${ACCOUNT_AUTO_INVOICE_NOTE_PREFIX}%`}`,
-		),
-		excludeTransactionsFromExcludedAccounts(),
-	];
-
-	// Add optional category filter
-	if (categoryIds && categoryIds.length > 0) {
-		whereConditions.push(inArray(categories.id, categoryIds));
-	}
-
-	// Query to get aggregated data by category and period
-	const rows = await db
-		.select({
-			categoryId: categories.id,
-			categoryName: categories.name,
-			categoryIcon: categories.icon,
-			categoryType: categories.type,
-			period: transactions.period,
-			total: sql<number>`coalesce(sum(${transactions.amount}), 0)`,
-		})
-		.from(transactions)
-		.innerJoin(categories, eq(transactions.categoryId, categories.id))
-		.leftJoin(
-			financialAccounts,
-			eq(transactions.accountId, financialAccounts.id),
-		)
-		.where(and(...whereConditions))
-		.groupBy(
-			categories.id,
-			categories.name,
-			categories.icon,
-			categories.type,
-			transactions.period,
-		);
-
-	// Process results into CategoryReportData structure
+export function buildCategoryReportData(
+	rows: CategoryTotalsRow[],
+	periods: string[],
+): CategoryReportData {
 	const categoryMap = new Map<string, CategoryReportItem>();
 	const periodTotalsMap = new Map<string, number>();
 
@@ -201,4 +165,38 @@ export async function fetchCategoryReport(
 		totals: periodTotalsMap,
 		grandTotal,
 	};
+}
+
+/**
+ * Fetches category report data for multiple periods
+ *
+ * @param userId - User ID to filter data
+ * @param filters - Report filters (startPeriod, endPeriod, categoryIds)
+ * @returns Complete category report data
+ */
+export async function fetchCategoryReport(
+	userId: string,
+	filters: CategoryReportFilters,
+): Promise<CategoryReportData> {
+	const { startPeriod, endPeriod, categoryIds } = filters;
+
+	// Generate all periods in the range
+	const periods = generatePeriodRange(startPeriod, endPeriod);
+
+	const adminPayerId = await getAdminPayerId(userId);
+	if (!adminPayerId) {
+		return { categories: [], periods, totals: new Map(), grandTotal: 0 };
+	}
+
+	const rows = (
+		await callRpc<CategoryTotalsRpcRow>("get_category_totals", {
+			p_user_id: userId,
+			p_admin_payer_id: adminPayerId,
+			p_periods: periods,
+			p_category_ids: categoryIds ?? [],
+			p_use_abs: false,
+		})
+	).map(mapCategoryTotalsRow);
+
+	return buildCategoryReportData(rows, periods);
 }

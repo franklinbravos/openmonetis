@@ -1,4 +1,4 @@
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { cards, financialAccounts, inboxItems } from "@/db/schema";
 import type {
 	InboxItem,
@@ -16,6 +16,16 @@ import {
 	fetchTransactionFilterSources,
 } from "@/features/transactions/queries";
 import { db } from "@/shared/lib/db";
+import { callRpc, toRpcNumber } from "@/shared/lib/supabase/rpc";
+
+type InboxCountRow = {
+	total: string | number | null;
+};
+
+type InboxStatusCountRow = {
+	status: string;
+	total: string | number | null;
+};
 
 export async function fetchInboxItemsPage(
 	userId: string,
@@ -39,12 +49,13 @@ export async function fetchInboxItemsPage(
 		sourceApp ? eq(inboxItems.sourceAppName, sourceApp) : undefined,
 	);
 
-	const [countRow] = await db
-		.select({ total: count() })
-		.from(inboxItems)
-		.where(where);
+	const [countRow] = await callRpc<InboxCountRow>("get_inbox_count", {
+		p_user_id: userId,
+		p_status: status,
+		p_source_app_name: sourceApp ?? null,
+	});
 
-	const totalItems = Number(countRow?.total ?? 0);
+	const totalItems = toRpcNumber(countRow?.total);
 	const totalPages = Math.max(Math.ceil(totalItems / pageSize), 1);
 	const currentPage = Math.min(page, totalPages);
 	const offset = (currentPage - 1) * pageSize;
@@ -86,14 +97,9 @@ export async function fetchInboxSourceApps(
 export async function fetchInboxStatusCounts(
 	userId: string,
 ): Promise<InboxStatusCounts> {
-	const rows = await db
-		.select({
-			status: inboxItems.status,
-			total: count(),
-		})
-		.from(inboxItems)
-		.where(eq(inboxItems.userId, userId))
-		.groupBy(inboxItems.status);
+	const rows = await callRpc<InboxStatusCountRow>("get_inbox_status_counts", {
+		p_user_id: userId,
+	});
 
 	const counts: InboxStatusCounts = {
 		pending: 0,
@@ -103,7 +109,7 @@ export async function fetchInboxStatusCounts(
 
 	for (const row of rows) {
 		if (row.status in counts) {
-			counts[row.status as InboxStatus] = Number(row.total ?? 0);
+			counts[row.status as InboxStatus] = toRpcNumber(row.total);
 		}
 	}
 
@@ -136,14 +142,13 @@ export async function fetchAppLogoMap(
 }
 
 export async function fetchPendingInboxCount(userId: string): Promise<number> {
-	const [result] = await db
-		.select({ total: count() })
-		.from(inboxItems)
-		.where(
-			and(eq(inboxItems.userId, userId), eq(inboxItems.status, "pending")),
-		);
+	const [result] = await callRpc<InboxCountRow>("get_inbox_count", {
+		p_user_id: userId,
+		p_status: "pending",
+		p_source_app_name: null,
+	});
 
-	return Number(result?.total ?? 0);
+	return toRpcNumber(result?.total);
 }
 
 /**

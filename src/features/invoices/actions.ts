@@ -1,14 +1,14 @@
 "use server";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
 	cards,
 	categories,
 	financialAccounts,
-	invoices,
 	transactions,
 } from "@/db/schema";
+import { upsertInvoicePaymentStatus } from "@/features/invoices/lib/upsert-invoice-payment";
 import {
 	buildInvoicePaymentNote,
 	INVOICE_ADJUSTMENT_NAME,
@@ -23,7 +23,7 @@ import {
 	PERIOD_FORMAT_REGEX,
 } from "@/shared/lib/invoices";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
-import { upsertInvoicePaymentStatus } from "@/features/invoices/lib/upsert-invoice-payment";
+import { callRpcOne } from "@/shared/lib/supabase/rpc";
 import {
 	formatCurrency,
 	formatDecimalForDbRequired,
@@ -111,21 +111,17 @@ export async function updateInvoicePaymentStatusAction(
 			const invoiceNote = buildInvoicePaymentNote(card.id, data.period);
 
 			if (shouldMarkAsPaid) {
-				const [adminShareRow] = adminPayerId
-					? await tx
-							.select({
-								total: sql<number>`coalesce(sum(${transactions.amount}), 0)`,
-							})
-							.from(transactions)
-							.where(
-								and(
-									eq(transactions.userId, user.id),
-									eq(transactions.cardId, card.id),
-									eq(transactions.period, data.period),
-									eq(transactions.payerId, adminPayerId),
-								),
-							)
-					: [{ total: 0 }];
+				const adminShareRow = adminPayerId
+					? await callRpcOne<{ total: string | number | null }>(
+							"get_invoice_admin_share",
+							{
+								p_user_id: user.id,
+								p_card_id: card.id,
+								p_period: data.period,
+								p_admin_payer_id: adminPayerId,
+							},
+						)
+					: null;
 
 				const adminShare = Number(adminShareRow?.total ?? 0);
 				const adminPayableAmount = Math.abs(Math.min(adminShare, 0));

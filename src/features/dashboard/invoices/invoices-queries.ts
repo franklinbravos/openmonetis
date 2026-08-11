@@ -1,11 +1,5 @@
-import { and, eq, ilike, inArray, isNotNull, sql } from "drizzle-orm";
-import {
-	cards,
-	financialAccounts,
-	invoices,
-	payers,
-	transactions,
-} from "@/db/schema";
+import { and, eq, ilike } from "drizzle-orm";
+import { financialAccounts, transactions } from "@/db/schema";
 import { ACCOUNT_AUTO_INVOICE_NOTE_PREFIX } from "@/shared/lib/accounts/constants";
 import { db } from "@/shared/lib/db";
 import {
@@ -13,11 +7,13 @@ import {
 	INVOICE_STATUS_VALUES,
 	type InvoicePaymentStatus,
 } from "@/shared/lib/invoices";
+import { callRpc } from "@/shared/lib/supabase/rpc";
 import {
 	buildDateOnlyStringFromPeriodDay,
 	compareDateOnly,
 	getBusinessDateString,
 	isDateOnlyPast,
+	parseUtcDateString,
 	toDateOnlyString,
 } from "@/shared/utils/date";
 import { calculatePercentageChange } from "@/shared/utils/math";
@@ -36,8 +32,24 @@ type RawDashboardInvoice = {
 	paymentStatus: string | null;
 	totalAmount: string | number | null;
 	transactionCount: string | number | null;
-	invoiceCreatedAt: Date | null;
+	invoiceCreatedAt: Date | string | null;
 	cardAccountId: string | null;
+};
+
+export type DashboardInvoiceRpcRow = {
+	invoice_id: string | null;
+	card_id: string;
+	card_name: string;
+	card_brand: string | null;
+	card_status: string | null;
+	logo: string | null;
+	due_day: string;
+	period: string | null;
+	payment_status: string | null;
+	invoice_created_at: string | null;
+	card_account_id: string | null;
+	total_amount: string | number | null;
+	transaction_count: string | number | null;
 };
 
 export type InvoicePaymentAccountOption = {
@@ -46,7 +58,7 @@ export type InvoicePaymentAccountOption = {
 	logo: string | null;
 };
 
-type RawInvoiceBreakdownRow = {
+export type RawInvoiceBreakdownRow = {
 	cardId: string | null;
 	period: string | null;
 	payerId: string | null;
@@ -55,7 +67,16 @@ type RawInvoiceBreakdownRow = {
 	amount: number | string | null;
 };
 
-type InvoicePagadorBreakdown = {
+type InvoiceBreakdownRpcRow = {
+	card_id: string | null;
+	period: string | null;
+	payer_id: string | null;
+	pagador_name: string | null;
+	pagador_avatar: string | null;
+	amount: string | number | null;
+};
+
+export type InvoicePagadorBreakdown = {
 	payerId: string | null;
 	pagadorName: string;
 	pagadorAvatar: string | null;
@@ -112,153 +133,40 @@ const compareDateOnlyDescWithNullsLast = (
 	return compareDateOnly(right, left);
 };
 
-export async function fetchDashboardInvoices(
-	userId: string,
+const mapDashboardInvoiceRow = (
+	row: DashboardInvoiceRpcRow,
+): RawDashboardInvoice => ({
+	invoiceId: row.invoice_id,
+	cardId: row.card_id,
+	cardName: row.card_name,
+	cardBrand: row.card_brand,
+	cardStatus: row.card_status,
+	logo: row.logo,
+	dueDay: row.due_day,
+	period: row.period,
+	paymentStatus: row.payment_status,
+	totalAmount: row.total_amount,
+	transactionCount: row.transaction_count,
+	invoiceCreatedAt: row.invoice_created_at,
+	cardAccountId: row.card_account_id,
+});
+
+const mapInvoiceBreakdownRow = (
+	row: InvoiceBreakdownRpcRow,
+): RawInvoiceBreakdownRow => ({
+	cardId: row.card_id,
+	period: row.period,
+	payerId: row.payer_id,
+	pagadorName: row.pagador_name,
+	pagadorAvatar: row.pagador_avatar,
+	amount: row.amount,
+});
+
+export function buildInvoicePagadorBreakdown(
+	rows: RawInvoiceBreakdownRow[],
 	period: string,
-): Promise<DashboardInvoicesSnapshot> {
-	const today = getBusinessDateString();
-	const previousPeriod = getPreviousPeriod(period);
-	const paymentRows = await db
-		.select({
-			note: transactions.note,
-			purchaseDate: transactions.purchaseDate,
-			createdAt: transactions.createdAt,
-		})
-		.from(transactions)
-		.where(
-			and(
-				eq(transactions.userId, userId),
-				ilike(transactions.note, `${ACCOUNT_AUTO_INVOICE_NOTE_PREFIX}%`),
-			),
-		);
-
-	const paymentMap = new Map<string, string>();
-	for (const row of paymentRows) {
-		const note = row.note;
-		if (!note?.startsWith(ACCOUNT_AUTO_INVOICE_NOTE_PREFIX)) {
-			continue;
-		}
-		const parts = note.split(":");
-		if (parts.length < 3) {
-			continue;
-		}
-		const cardIdPart = parts[1];
-		const periodPart = parts[2];
-		if (!cardIdPart || !periodPart) {
-			continue;
-		}
-		const key = `${cardIdPart}:${periodPart}`;
-		const resolvedDate =
-			row.purchaseDate instanceof Date &&
-			!Number.isNaN(row.purchaseDate.valueOf())
-				? row.purchaseDate
-				: row.createdAt;
-		const isoDate = toDateOnlyString(resolvedDate);
-		if (!isoDate) {
-			continue;
-		}
-		const existing = paymentMap.get(key);
-		if (!existing || existing < isoDate) {
-			paymentMap.set(key, isoDate);
-		}
-	}
-
-	const [rows, breakdownRows, accountRows] = (await Promise.all([
-		db
-			.select({
-				invoiceId: invoices.id,
-				cardId: cards.id,
-				cardName: cards.name,
-				logo: cards.logo,
-				dueDay: cards.dueDay,
-				period: invoices.period,
-				paymentStatus: invoices.paymentStatus,
-				invoiceCreatedAt: invoices.createdAt,
-				cardAccountId: cards.accountId,
-				totalAmount: sql<number | null>`
-        COALESCE(SUM(${transactions.amount}), 0)
-      `,
-				transactionCount: sql<number | null>`COUNT(${transactions.id})`,
-			})
-			.from(cards)
-			.leftJoin(
-				invoices,
-				and(
-					eq(invoices.cardId, cards.id),
-					eq(invoices.userId, userId),
-					eq(invoices.period, period),
-				),
-			)
-			.leftJoin(
-				transactions,
-				and(
-					eq(transactions.cardId, cards.id),
-					eq(transactions.userId, userId),
-					eq(transactions.period, period),
-				),
-			)
-			.where(eq(cards.userId, userId))
-			.groupBy(
-				invoices.id,
-				cards.id,
-				cards.name,
-				cards.brand,
-				cards.status,
-				cards.logo,
-				cards.dueDay,
-				cards.accountId,
-				invoices.period,
-				invoices.paymentStatus,
-			),
-		db
-			.select({
-				cardId: transactions.cardId,
-				period: transactions.period,
-				payerId: transactions.payerId,
-				pagadorName: payers.name,
-				pagadorAvatar: payers.avatarUrl,
-				amount: sql<number>`coalesce(sum(${transactions.amount}), 0)`,
-			})
-			.from(transactions)
-			.leftJoin(payers, eq(transactions.payerId, payers.id))
-			.where(
-				and(
-					eq(transactions.userId, userId),
-					inArray(transactions.period, [period, previousPeriod]),
-					isNotNull(transactions.cardId),
-				),
-			)
-			.groupBy(
-				transactions.cardId,
-				transactions.period,
-				transactions.payerId,
-				payers.name,
-				payers.avatarUrl,
-			),
-		db
-			.select({
-				id: financialAccounts.id,
-				name: financialAccounts.name,
-				logo: financialAccounts.logo,
-			})
-			.from(financialAccounts)
-			.where(eq(financialAccounts.userId, userId)),
-	])) as [
-		RawDashboardInvoice[],
-		RawInvoiceBreakdownRow[],
-		{ id: string; name: string; logo: string | null }[],
-	];
-
-	const paymentAccountOptions: InvoicePaymentAccountOption[] = accountRows
-		.map((account) => ({
-			value: account.id,
-			label: account.name,
-			logo: account.logo,
-		}))
-		.sort((a, b) =>
-			a.label.localeCompare(b.label, "pt-BR", { sensitivity: "base" }),
-		);
-
+	previousPeriod: string,
+): Map<string, InvoicePagadorBreakdown[]> {
 	const groupedBreakdown = new Map<
 		string,
 		{
@@ -271,7 +179,7 @@ export async function fetchDashboardInvoices(
 		}
 	>();
 
-	for (const row of breakdownRows) {
+	for (const row of rows) {
 		if (!row.cardId) {
 			continue;
 		}
@@ -331,6 +239,99 @@ export async function fetchDashboardInvoices(
 		breakdownMap.set(key, current);
 	}
 
+	return breakdownMap;
+}
+
+export async function fetchDashboardInvoices(
+	userId: string,
+	period: string,
+): Promise<DashboardInvoicesSnapshot> {
+	const today = getBusinessDateString();
+	const previousPeriod = getPreviousPeriod(period);
+	const paymentRows = await db
+		.select({
+			note: transactions.note,
+			purchaseDate: transactions.purchaseDate,
+			createdAt: transactions.createdAt,
+		})
+		.from(transactions)
+		.where(
+			and(
+				eq(transactions.userId, userId),
+				ilike(transactions.note, `${ACCOUNT_AUTO_INVOICE_NOTE_PREFIX}%`),
+			),
+		);
+
+	const paymentMap = new Map<string, string>();
+	for (const row of paymentRows) {
+		const note = row.note;
+		if (!note?.startsWith(ACCOUNT_AUTO_INVOICE_NOTE_PREFIX)) {
+			continue;
+		}
+		const parts = note.split(":");
+		if (parts.length < 3) {
+			continue;
+		}
+		const cardIdPart = parts[1];
+		const periodPart = parts[2];
+		if (!cardIdPart || !periodPart) {
+			continue;
+		}
+		const key = `${cardIdPart}:${periodPart}`;
+		const resolvedDate =
+			row.purchaseDate instanceof Date &&
+			!Number.isNaN(row.purchaseDate.valueOf())
+				? row.purchaseDate
+				: row.createdAt;
+		const isoDate = toDateOnlyString(resolvedDate);
+		if (!isoDate) {
+			continue;
+		}
+		const existing = paymentMap.get(key);
+		if (!existing || existing < isoDate) {
+			paymentMap.set(key, isoDate);
+		}
+	}
+
+	const [rawInvoiceRows, rawBreakdownRows, accountRows] = await Promise.all([
+		callRpc<DashboardInvoiceRpcRow>("get_dashboard_invoices", {
+			p_user_id: userId,
+			p_period: period,
+		}),
+		callRpc<InvoiceBreakdownRpcRow>("get_invoice_payer_breakdown", {
+			p_user_id: userId,
+			p_period: period,
+			p_previous_period: previousPeriod,
+		}),
+		db
+			.select({
+				id: financialAccounts.id,
+				name: financialAccounts.name,
+				logo: financialAccounts.logo,
+			})
+			.from(financialAccounts)
+			.where(eq(financialAccounts.userId, userId)),
+	]);
+
+	const rows = rawInvoiceRows.map(mapDashboardInvoiceRow);
+	const breakdownRows = rawBreakdownRows.map(mapInvoiceBreakdownRow);
+
+	const paymentAccountOptions: InvoicePaymentAccountOption[] = accountRows
+		.map((account) => ({
+			value: account.id,
+			label: account.name,
+			logo: account.logo,
+		}))
+		.sort((a, b) =>
+			a.label.localeCompare(b.label, "pt-BR", { sensitivity: "base" }),
+		);
+
+	const breakdownMap = buildInvoicePagadorBreakdown(
+		breakdownRows,
+		period,
+		previousPeriod,
+	);
+
 	const invoiceList: DashboardInvoice[] = [];
 
 	for (const row of rows) {
@@ -387,15 +388,30 @@ export async function fetchDashboardInvoices(
 		}
 
 		if (aIsPending && bIsPending) {
-			const aDueDate = buildDateOnlyStringFromPeriodDay(a.period, a.dueDay);
-			const bDueDate = buildDateOnlyStringFromPeriodDay(b.period, b.dueDay);
-			const aIsOverdue = aDueDate ? isDateOnlyPast(aDueDate, today) : false;
-			const bIsOverdue = bDueDate ? isDateOnlyPast(bDueDate, today) : false;
+			const urgencyRank = (invoice: DashboardInvoice) => {
+				const dueDate = buildDateOnlyStringFromPeriodDay(
+					invoice.period,
+					invoice.dueDay,
+				);
+				if (!dueDate) return 4;
+				if (isDateOnlyPast(dueDate, today)) return 3;
+				if (dueDate === today) return 0;
+				const tomorrow = parseUtcDateString(today);
+				if (tomorrow) {
+					tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+					const tomorrowValue = toDateOnlyString(tomorrow);
+					if (tomorrowValue && dueDate === tomorrowValue) return 1;
+				}
+				return 2;
+			};
 
-			if (aIsOverdue !== bIsOverdue) {
-				return aIsOverdue ? -1 : 1;
+			const urgencyDiff = urgencyRank(a) - urgencyRank(b);
+			if (urgencyDiff !== 0) {
+				return urgencyDiff;
 			}
 
+			const aDueDate = buildDateOnlyStringFromPeriodDay(a.period, a.dueDay);
+			const bDueDate = buildDateOnlyStringFromPeriodDay(b.period, b.dueDay);
 			const dueDateDiff = compareDateOnlyAscWithNullsLast(aDueDate, bDueDate);
 			if (dueDateDiff !== 0) {
 				return dueDateDiff;

@@ -1,17 +1,11 @@
-import { and, eq, gte, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
-import {
-	budgets,
-	cards,
-	categories,
-	dashboardNotificationStates,
-	invoices,
-	transactions,
-} from "@/db/schema";
+import { and, eq, gte, inArray, isNotNull } from "drizzle-orm";
+import { dashboardNotificationStates, transactions } from "@/db/schema";
 import { buildInvoiceDetailsHref } from "@/features/dashboard/invoices/invoices-helpers";
 import { db } from "@/shared/lib/db";
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import { isNotificationStatesTableMissing } from "@/shared/lib/notifications/is-table-missing";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { callRpc } from "@/shared/lib/supabase/rpc";
 import type {
 	BudgetNotification,
 	DashboardNotification,
@@ -54,6 +48,88 @@ const buildBudgetNotificationKey = (
 	budgetId: string,
 	period: string,
 ) => (categoryId ? `budget-${categoryId}-${period}` : `budget-${budgetId}`);
+
+type OverdueInvoiceRpcRow = {
+	invoice_id: string | null;
+	card_id: string;
+	card_name: string;
+	card_logo: string | null;
+	due_day: string;
+	period: string | null;
+	total_amount: string | number | null;
+	transaction_count: string | number | null;
+};
+
+type OverdueInvoiceRow = {
+	invoiceId: string | null;
+	cardId: string;
+	cardName: string;
+	cardLogo: string | null;
+	dueDay: string;
+	period: string | null;
+	totalAmount: string | number | null;
+	transactionCount: string | number | null;
+};
+
+type PeriodInvoiceRpcRow = OverdueInvoiceRpcRow & {
+	payment_status: string | null;
+};
+
+type PeriodInvoiceRow = OverdueInvoiceRow & {
+	paymentStatus: string | null;
+};
+
+type BudgetSpentRpcRow = {
+	orcamento_id: string;
+	category_id: string | null;
+	budget_amount: string | number | null;
+	period: string;
+	categoria_name: string;
+	spent_amount: string | number | null;
+};
+
+type BudgetSpentRow = {
+	orcamentoId: string;
+	categoryId: string | null;
+	budgetAmount: string | number | null;
+	period: string;
+	categoriaName: string;
+	spentAmount: string | number | null;
+};
+
+const mapOverdueInvoiceRow = (
+	row: OverdueInvoiceRpcRow,
+): OverdueInvoiceRow => ({
+	invoiceId: row.invoice_id,
+	cardId: row.card_id,
+	cardName: row.card_name,
+	cardLogo: row.card_logo,
+	dueDay: row.due_day,
+	period: row.period,
+	totalAmount: row.total_amount,
+	transactionCount: row.transaction_count,
+});
+
+const mapPeriodInvoiceRow = (row: PeriodInvoiceRpcRow): PeriodInvoiceRow => ({
+	invoiceId: row.invoice_id,
+	cardId: row.card_id,
+	cardName: row.card_name,
+	cardLogo: row.card_logo,
+	dueDay: row.due_day,
+	period: row.period,
+	totalAmount: row.total_amount,
+	transactionCount: row.transaction_count,
+	paymentStatus: row.payment_status,
+});
+
+const mapBudgetSpentRow = (row: BudgetSpentRpcRow): BudgetSpentRow => ({
+	orcamentoId: row.orcamento_id,
+	categoryId: row.category_id,
+	budgetAmount: row.budget_amount,
+	period: row.period,
+	categoriaName: row.categoria_name,
+	spentAmount: row.spent_amount,
+});
 
 function mergeNotificationState<
 	T extends {
@@ -112,110 +188,28 @@ export async function fetchDashboardNotifications(
 		gte(transactions.period, addMonthsToPeriod(currentPeriod, -12)),
 	);
 
-	const budgetJoinConditions = [
-		eq(transactions.categoryId, budgets.categoryId),
-		eq(transactions.userId, budgets.userId),
-		eq(transactions.period, budgets.period),
-		eq(transactions.transactionType, "Despesa"),
-		ne(transactions.condition, "cancelado"),
-	];
-	if (adminPayerId) {
-		budgetJoinConditions.push(eq(transactions.payerId, adminPayerId));
-	}
-
-	// Helper: monta a query de faturas por período (reutilizada para período atual e próximo)
-	const buildPeriodInvoicesQuery = (period: string) =>
-		db
-			.select({
-				invoiceId: invoices.id,
-				cardId: cards.id,
-				cardName: cards.name,
-				cardLogo: cards.logo,
-				dueDay: cards.dueDay,
-				period: sql<string>`COALESCE(${invoices.period}, ${period})`,
-				paymentStatus: invoices.paymentStatus,
-				totalAmount: sql<number | null>`
-				COALESCE(SUM(${transactions.amount}), 0)
-			  `,
-				transactionCount: sql<number | null>`COUNT(${transactions.id})`,
-			})
-			.from(cards)
-			.leftJoin(
-				invoices,
-				and(
-					eq(invoices.cardId, cards.id),
-					eq(invoices.userId, userId),
-					eq(invoices.period, period),
-				),
-			)
-			.leftJoin(
-				transactions,
-				and(
-					eq(transactions.cardId, cards.id),
-					eq(transactions.userId, userId),
-					eq(transactions.period, period),
-				),
-			)
-			.where(eq(cards.userId, userId))
-			.groupBy(
-				invoices.id,
-				cards.id,
-				cards.name,
-				cards.logo,
-				cards.dueDay,
-				invoices.period,
-				invoices.paymentStatus,
-			);
-
 	// --- All 5 queries are independent — run in parallel ---
 	const [
-		overdueInvoices,
-		currentInvoices,
-		nextPeriodInvoices,
+		overdueInvoiceRows,
+		currentInvoiceRows,
+		nextPeriodInvoiceRows,
 		boletosRows,
 		budgetRows,
 	] = await Promise.all([
 		// Faturas atrasadas (períodos anteriores)
-		db
-			.select({
-				invoiceId: invoices.id,
-				cardId: cards.id,
-				cardName: cards.name,
-				cardLogo: cards.logo,
-				dueDay: cards.dueDay,
-				period: invoices.period,
-				totalAmount: sql<
-					number | null
-				>`COALESCE(SUM(${transactions.amount}), 0)`,
-			})
-			.from(invoices)
-			.innerJoin(cards, eq(invoices.cardId, cards.id))
-			.leftJoin(
-				transactions,
-				and(
-					eq(transactions.cardId, invoices.cardId),
-					eq(transactions.period, invoices.period),
-					eq(transactions.userId, invoices.userId),
-				),
-			)
-			.where(
-				and(
-					eq(invoices.userId, userId),
-					eq(invoices.paymentStatus, INVOICE_PAYMENT_STATUS.PENDING),
-					lt(invoices.period, currentPeriod),
-				),
-			)
-			.groupBy(
-				invoices.id,
-				cards.id,
-				cards.name,
-				cards.logo,
-				cards.dueDay,
-				invoices.period,
-			),
+		callRpc<OverdueInvoiceRpcRow>("get_overdue_invoices", {
+			p_user_id: userId,
+			p_current_period: currentPeriod,
+		}),
 		// Faturas do período atual e próximo
-		buildPeriodInvoicesQuery(currentPeriod),
-		buildPeriodInvoicesQuery(nextPeriod),
+		callRpc<PeriodInvoiceRpcRow>("get_period_invoice_totals", {
+			p_user_id: userId,
+			p_period: currentPeriod,
+		}),
+		callRpc<PeriodInvoiceRpcRow>("get_period_invoice_totals", {
+			p_user_id: userId,
+			p_period: nextPeriod,
+		}),
 		// Boletos não pagos
 		db
 			.select({
@@ -228,21 +222,17 @@ export async function fetchDashboardNotifications(
 			.from(transactions)
 			.where(and(...boletosConditions)),
 		// Orçamentos do período atual
-		db
-			.select({
-				orcamentoId: budgets.id,
-				categoryId: budgets.categoryId,
-				budgetAmount: budgets.amount,
-				period: budgets.period,
-				categoriaName: categories.name,
-				spentAmount: sql<number>`COALESCE(SUM(ABS(${transactions.amount})), 0)`,
-			})
-			.from(budgets)
-			.innerJoin(categories, eq(budgets.categoryId, categories.id))
-			.leftJoin(transactions, and(...budgetJoinConditions))
-			.where(and(eq(budgets.userId, userId), eq(budgets.period, currentPeriod)))
-			.groupBy(budgets.id, budgets.amount, categories.name),
+		callRpc<BudgetSpentRpcRow>("get_budget_spent", {
+			p_user_id: userId,
+			p_period: currentPeriod,
+			p_admin_payer_id: adminPayerId,
+		}),
 	]);
+
+	const overdueInvoices = overdueInvoiceRows.map(mapOverdueInvoiceRow);
+	const currentInvoices = currentInvoiceRows.map(mapPeriodInvoiceRow);
+	const nextPeriodInvoices = nextPeriodInvoiceRows.map(mapPeriodInvoiceRow);
+	const budgetRowsMapped = budgetRows.map(mapBudgetSpentRow);
 
 	// =====================
 	// lançar notificações
@@ -467,7 +457,7 @@ export async function fetchDashboardNotifications(
 	// Orçamentos excedidos e críticos
 	const budgetNotifications: BudgetNotification[] = [];
 
-	for (const row of budgetRows) {
+	for (const row of budgetRowsMapped) {
 		const budgetAmount = toNumber(row.budgetAmount);
 		const spentAmount = toNumber(row.spentAmount);
 		if (budgetAmount <= 0) continue;

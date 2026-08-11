@@ -1,11 +1,6 @@
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import { financialAccounts, payers, transactions } from "@/db/schema";
-import { excludeTransactionsFromExcludedAccounts } from "@/features/dashboard/lib/transaction-filters";
-import { ACCOUNT_AUTO_INVOICE_NOTE_PREFIX } from "@/shared/lib/accounts/constants";
-import { db } from "@/shared/lib/db";
 import { PAYER_ROLE_ADMIN } from "@/shared/lib/payers/constants";
+import { callRpc, toRpcNumber } from "@/shared/lib/supabase/rpc";
 import { calculatePercentageChange } from "@/shared/utils/math";
-import { safeToNumber as toNumber } from "@/shared/utils/number";
 import { getPreviousPeriod } from "@/shared/utils/period";
 
 export type DashboardPagador = {
@@ -24,49 +19,26 @@ type DashboardPayersSnapshot = {
 	totalExpenses: number;
 };
 
+type DashboardPayerRow = {
+	id: string;
+	name: string;
+	email: string | null;
+	avatar_url: string | null;
+	role: string | null;
+	period: string;
+	total_expenses: string | number | null;
+};
+
 export async function fetchDashboardPayers(
 	userId: string,
 	period: string,
 ): Promise<DashboardPayersSnapshot> {
 	const previousPeriod = getPreviousPeriod(period);
 
-	const rows = await db
-		.select({
-			id: payers.id,
-			name: payers.name,
-			email: payers.email,
-			avatarUrl: payers.avatarUrl,
-			role: payers.role,
-			period: transactions.period,
-			totalExpenses: sql<number>`COALESCE(SUM(ABS(${transactions.amount})), 0)`,
-		})
-		.from(transactions)
-		.innerJoin(payers, eq(transactions.payerId, payers.id))
-		.leftJoin(
-			financialAccounts,
-			eq(transactions.accountId, financialAccounts.id),
-		)
-		.where(
-			and(
-				eq(transactions.userId, userId),
-				inArray(transactions.period, [period, previousPeriod]),
-				eq(transactions.transactionType, "Despesa"),
-				excludeTransactionsFromExcludedAccounts(),
-				or(
-					isNull(transactions.note),
-					sql`${transactions.note} NOT LIKE ${`${ACCOUNT_AUTO_INVOICE_NOTE_PREFIX}%`}`,
-				),
-			),
-		)
-		.groupBy(
-			payers.id,
-			payers.name,
-			payers.email,
-			payers.avatarUrl,
-			payers.role,
-			transactions.period,
-		)
-		.orderBy(desc(sql`SUM(ABS(${transactions.amount}))`));
+	const rows = await callRpc<DashboardPayerRow>("get_dashboard_payers", {
+		p_user_id: userId,
+		p_periods: [period, previousPeriod],
+	});
 
 	const groupedPagadores = new Map<
 		string,
@@ -86,13 +58,13 @@ export async function fetchDashboardPayers(
 			id: row.id,
 			name: row.name,
 			email: row.email,
-			avatarUrl: row.avatarUrl,
+			avatarUrl: row.avatar_url,
 			isAdmin: row.role === PAYER_ROLE_ADMIN,
 			currentExpenses: 0,
 			previousExpenses: 0,
 		};
 
-		const amount = toNumber(row.totalExpenses);
+		const amount = toRpcNumber(row.total_expenses);
 		if (row.period === period) {
 			entry.currentExpenses = amount;
 		} else {

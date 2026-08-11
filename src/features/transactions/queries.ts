@@ -3,7 +3,6 @@ import {
 	count,
 	desc,
 	eq,
-	gte,
 	isNull,
 	ne,
 	or,
@@ -20,6 +19,7 @@ import {
 } from "@/db/schema";
 import { INITIAL_BALANCE_NOTE } from "@/shared/lib/accounts/constants";
 import { db } from "@/shared/lib/db";
+import { callRpc } from "@/shared/lib/supabase/rpc";
 import { enrichTransactionsWithTransferPeers } from "@/shared/lib/transfers/enrich-transfer-peers";
 
 type BaseTransactionQueryInput = {
@@ -253,25 +253,12 @@ export async function fetchTransactionsPageWithRelations({
 export async function fetchRecentEstablishments(
 	userId: string,
 ): Promise<string[]> {
-	const threeMonthsAgo = new Date();
-	threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+	const rows = await callRpc<{ name: string | null }>(
+		"get_recent_establishments",
+		{ p_user_id: userId },
+	);
 
-	const results = await db
-		.select({ name: transactions.name })
-		.from(transactions)
-		.where(
-			and(
-				eq(transactions.userId, userId),
-				gte(transactions.purchaseDate, threeMonthsAgo),
-				sql`TRIM(${transactions.name}) <> ''`,
-				sql`LOWER(${transactions.name}) NOT LIKE 'pagamento fatura%'`,
-			),
-		)
-		.groupBy(transactions.name)
-		.orderBy(sql`MAX(${transactions.purchaseDate}) DESC`)
-		.limit(100);
-
-	return results
+	return rows
 		.map((row) => row.name)
 		.filter((name): name is string => name !== null);
 }

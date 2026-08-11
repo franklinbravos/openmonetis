@@ -1,8 +1,8 @@
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import { categories, transactions } from "@/db/schema";
-import { ACCOUNT_AUTO_INVOICE_NOTE_PREFIX } from "@/shared/lib/accounts/constants";
+import { eq } from "drizzle-orm";
+import { categories } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { callRpc } from "@/shared/lib/supabase/rpc";
 import { CATEGORY_COLORS } from "@/shared/utils/category-colors";
 import { safeToNumber as toNumber } from "@/shared/utils/number";
 import {
@@ -37,6 +37,15 @@ export type CategoryHistoryData = {
 };
 
 const CHART_COLORS = CATEGORY_COLORS;
+
+type CategoryHistoryRpcRow = {
+	category_id: string;
+	category_name: string;
+	category_icon: string | null;
+	period: string;
+	total_amount: string | number | null;
+};
+
 type MonthlyCategoryRow = {
 	categoryId: string;
 	categoryName: string;
@@ -44,6 +53,16 @@ type MonthlyCategoryRow = {
 	period: string;
 	totalAmount: unknown;
 };
+
+const mapCategoryHistoryRow = (
+	row: CategoryHistoryRpcRow,
+): MonthlyCategoryRow => ({
+	categoryId: row.category_id,
+	categoryName: row.category_name,
+	categoryIcon: row.category_icon,
+	period: row.period,
+	totalAmount: row.total_amount,
+});
 
 type UniqueCategory = {
 	id: string;
@@ -95,38 +114,13 @@ export async function fetchCategoryHistory(
 	}
 
 	// Fetch monthly data for ALL categories with transactions
-	const monthlyDataQuery = (await db
-		.select({
-			categoryId: categories.id,
-			categoryName: categories.name,
-			categoryIcon: categories.icon,
-			period: transactions.period,
-			totalAmount: sql<string>`SUM(ABS(${transactions.amount}))`.as(
-				"total_amount",
-			),
+	const monthlyDataQuery = (
+		await callRpc<CategoryHistoryRpcRow>("get_category_history", {
+			p_user_id: userId,
+			p_admin_payer_id: adminPayerId,
+			p_periods: periods,
 		})
-		.from(transactions)
-		.innerJoin(categories, eq(transactions.categoryId, categories.id))
-		.where(
-			and(
-				eq(transactions.userId, userId),
-				eq(categories.userId, userId),
-				inArray(transactions.period, periods),
-				eq(transactions.payerId, adminPayerId),
-				or(
-					isNull(transactions.note),
-					sql`${
-						transactions.note
-					} NOT LIKE ${`${ACCOUNT_AUTO_INVOICE_NOTE_PREFIX}%`}`,
-				),
-			),
-		)
-		.groupBy(
-			categories.id,
-			categories.name,
-			categories.icon,
-			transactions.period,
-		)) as MonthlyCategoryRow[];
+	).map(mapCategoryHistoryRow);
 
 	if (monthlyDataQuery.length === 0) {
 		return {

@@ -1,15 +1,5 @@
-import {
-	and,
-	eq,
-	ilike,
-	isNotNull,
-	isNull,
-	ne,
-	not,
-	or,
-	sql,
-} from "drizzle-orm";
-import { cards, financialAccounts, invoices, transactions } from "@/db/schema";
+import { and, eq, ilike, not } from "drizzle-orm";
+import { cards, financialAccounts, invoices } from "@/db/schema";
 import {
 	CARD_IMPORT_PDF_PASSWORD_RULES,
 	type CardImportPdfPasswordRule,
@@ -17,11 +7,12 @@ import {
 } from "@/shared/lib/cards/import-pdf-password";
 import { db } from "@/shared/lib/db";
 import {
-	INVOICE_PAYMENT_STATUS,
 	INVOICE_STATUS_VALUES,
 	type InvoicePaymentStatus,
 } from "@/shared/lib/invoices";
 import { loadLogoOptions } from "@/shared/lib/logo/options";
+import { callRpc } from "@/shared/lib/supabase/rpc";
+import { safeToNumber } from "@/shared/utils/number";
 import {
 	formatPeriodMonthShort,
 	getCurrentPeriod,
@@ -54,6 +45,13 @@ type AccountSimple = {
 	name: string;
 	logo: string | null;
 };
+
+type CardUsageRow = {
+	card_id: string | null;
+	total: string | number | null;
+};
+
+type CardInvoiceTotalRow = CardUsageRow;
 
 function formatCurrentInvoiceLabel(period: string) {
 	const { year } = parsePeriod(period);
@@ -111,49 +109,11 @@ async function fetchCardsByStatus(
 			},
 		}),
 		loadLogoOptions(),
-		db
-			.select({
-				cardId: transactions.cardId,
-				total: sql<number>`coalesce(sum(${transactions.amount}), 0)`,
-			})
-			.from(transactions)
-			.leftJoin(
-				invoices,
-				and(
-					eq(invoices.userId, transactions.userId),
-					eq(invoices.cardId, transactions.cardId),
-					eq(invoices.period, transactions.period),
-				),
-			)
-			.where(
-				and(
-					eq(transactions.userId, userId),
-					isNotNull(transactions.cardId),
-					or(
-						isNull(invoices.paymentStatus),
-						ne(invoices.paymentStatus, INVOICE_PAYMENT_STATUS.PAID),
-					),
-					// Recorrente no cartão: só consome limite quando a data da ocorrência já passou
-					or(
-						ne(transactions.condition, "Recorrente"),
-						sql`${transactions.purchaseDate} <= current_date`,
-					),
-				),
-			)
-			.groupBy(transactions.cardId),
-		db
-			.select({
-				cardId: transactions.cardId,
-				total: sql<number>`coalesce(sum(${transactions.amount}), 0)`,
-			})
-			.from(transactions)
-			.where(
-				and(
-					eq(transactions.userId, userId),
-					eq(transactions.period, currentPeriod),
-				),
-			)
-			.groupBy(transactions.cardId),
+		callRpc<CardUsageRow>("get_card_usage", { p_user_id: userId }),
+		callRpc<CardInvoiceTotalRow>("get_card_invoice_totals", {
+			p_user_id: userId,
+			p_period: currentPeriod,
+		}),
 		db
 			.select({
 				cardId: invoices.cardId,
@@ -166,17 +126,15 @@ async function fetchCardsByStatus(
 	]);
 
 	const usageMap = new Map<string, number>();
-	usageRows.forEach((row: { cardId: string | null; total: number | null }) => {
-		if (!row.cardId) return;
-		usageMap.set(row.cardId, Number(row.total ?? 0));
+	usageRows.forEach((row: CardUsageRow) => {
+		if (!row.card_id) return;
+		usageMap.set(row.card_id, safeToNumber(row.total));
 	});
 	const invoiceMap = new Map<string, number>();
-	invoiceRows.forEach(
-		(row: { cardId: string | null; total: number | null }) => {
-			if (!row.cardId) return;
-			invoiceMap.set(row.cardId, Math.abs(Number(row.total ?? 0)));
-		},
-	);
+	invoiceRows.forEach((row: CardInvoiceTotalRow) => {
+		if (!row.card_id) return;
+		invoiceMap.set(row.card_id, Math.abs(safeToNumber(row.total)));
+	});
 	const invoiceStatusMap = new Map<string, InvoicePaymentStatus>();
 	invoiceStatusRows.forEach((row) => {
 		if (!row.cardId) return;

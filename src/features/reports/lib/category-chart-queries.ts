@@ -1,12 +1,40 @@
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import { categories, financialAccounts, transactions } from "@/db/schema";
-import { ACCOUNT_AUTO_INVOICE_NOTE_PREFIX } from "@/shared/lib/accounts/constants";
-import { excludeTransactionsFromExcludedAccounts } from "@/shared/lib/accounts/query-filters";
+import { eq } from "drizzle-orm";
+import { categories } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { callRpc } from "@/shared/lib/supabase/rpc";
 import { safeToNumber as toNumber } from "@/shared/utils/number";
 import { formatPeriodMonthShort } from "@/shared/utils/period";
 import { generatePeriodRange } from "./utils";
+
+type CategoryTotalsRpcRow = {
+	category_id: string;
+	category_name: string;
+	category_icon: string | null;
+	category_type: string;
+	period: string;
+	total: unknown;
+};
+
+type CategoryTotalsRow = {
+	categoryId: string;
+	categoryName: string;
+	categoryIcon: string | null;
+	categoryType: string;
+	period: string;
+	total: unknown;
+};
+
+const mapCategoryTotalsRow = (
+	row: CategoryTotalsRpcRow,
+): CategoryTotalsRow => ({
+	categoryId: row.category_id,
+	categoryName: row.category_name,
+	categoryIcon: row.category_icon,
+	categoryType: row.category_type,
+	period: row.period,
+	total: row.total,
+});
 
 export type CategoryChartData = {
 	months: string[]; // Short month labels (e.g., "JAN", "FEV")
@@ -41,46 +69,14 @@ export async function fetchCategoryChartData(
 		return { months: [], categories: [], chartData: [], allCategories: [] };
 	}
 
-	const whereConditions = [
-		eq(transactions.userId, userId),
-		eq(transactions.payerId, adminPayerId),
-		inArray(transactions.period, periods),
-		or(eq(categories.type, "despesa"), eq(categories.type, "receita")),
-		or(
-			isNull(transactions.note),
-			sql`${transactions.note} NOT LIKE ${`${ACCOUNT_AUTO_INVOICE_NOTE_PREFIX}%`}`,
-		),
-		excludeTransactionsFromExcludedAccounts(),
-	];
-
-	if (categoryIds && categoryIds.length > 0) {
-		whereConditions.push(inArray(categories.id, categoryIds));
-	}
-
-	const [rows, allCategoriesRows] = await Promise.all([
-		db
-			.select({
-				categoryId: categories.id,
-				categoryName: categories.name,
-				categoryIcon: categories.icon,
-				categoryType: categories.type,
-				period: transactions.period,
-				total: sql<number>`coalesce(sum(abs(${transactions.amount})), 0)`,
-			})
-			.from(transactions)
-			.innerJoin(categories, eq(transactions.categoryId, categories.id))
-			.leftJoin(
-				financialAccounts,
-				eq(transactions.accountId, financialAccounts.id),
-			)
-			.where(and(...whereConditions))
-			.groupBy(
-				categories.id,
-				categories.name,
-				categories.icon,
-				categories.type,
-				transactions.period,
-			),
+	const [rawRows, allCategoriesRows] = await Promise.all([
+		callRpc<CategoryTotalsRpcRow>("get_category_totals", {
+			p_user_id: userId,
+			p_admin_payer_id: adminPayerId,
+			p_periods: periods,
+			p_category_ids: categoryIds ?? [],
+			p_use_abs: true,
+		}),
 		db
 			.select({
 				id: categories.id,
@@ -92,6 +88,8 @@ export async function fetchCategoryChartData(
 			.where(eq(categories.userId, userId))
 			.orderBy(categories.type, categories.name),
 	]);
+
+	const rows = rawRows.map(mapCategoryTotalsRow);
 
 	const allCategories = allCategoriesRows.map(
 		(cat: { id: string; name: string; icon: string | null; type: string }) => ({

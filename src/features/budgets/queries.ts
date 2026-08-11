@@ -1,14 +1,8 @@
-import { and, asc, eq, inArray, isNull, or, sql, sum } from "drizzle-orm";
-import {
-	budgets,
-	categories,
-	financialAccounts,
-	transactions,
-} from "@/db/schema";
-import { ACCOUNT_AUTO_INVOICE_NOTE_PREFIX } from "@/shared/lib/accounts/constants";
-import { excludeTransactionsFromExcludedAccounts } from "@/shared/lib/accounts/query-filters";
+import { and, asc, eq } from "drizzle-orm";
+import { budgets, categories } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { callRpc, callRpcOne } from "@/shared/lib/supabase/rpc";
 
 const toNumber = (value: string | number | null | undefined) => {
 	if (typeof value === "number") return value;
@@ -37,6 +31,33 @@ type CategoryOption = {
 	name: string;
 	icon: string | null;
 };
+
+type BudgetSpentRpcRow = {
+	category_id: string;
+	total_amount: string | null;
+};
+
+type BudgetSpentRow = {
+	categoryId: string;
+	totalAmount: string | null;
+};
+
+type BudgetSummaryRpcRow = {
+	total_amount: string | null;
+};
+
+type BudgetSummaryRow = {
+	totalAmount: string | null;
+};
+
+const mapBudgetSpentRow = (row: BudgetSpentRpcRow): BudgetSpentRow => ({
+	categoryId: row.category_id,
+	totalAmount: row.total_amount,
+});
+
+const mapBudgetSummaryRow = (row: BudgetSummaryRpcRow): BudgetSummaryRow => ({
+	totalAmount: row.total_amount,
+});
 
 export async function fetchBudgetsForUser(
 	userId: string,
@@ -75,39 +96,20 @@ export async function fetchBudgetsForUser(
 	let totalsByCategory = new Map<string, number>();
 
 	if (categoryIds.length > 0 && adminPayerId) {
-		const totals = await db
-			.select({
-				categoryId: transactions.categoryId,
-				totalAmount: sum(transactions.amount).as("totalAmount"),
+		const totals = (
+			await callRpc<BudgetSpentRpcRow>("get_budget_spent_by_category", {
+				p_user_id: userId,
+				p_admin_payer_id: adminPayerId,
+				p_period: selectedPeriod,
+				p_category_ids: categoryIds,
 			})
-			.from(transactions)
-			.leftJoin(
-				financialAccounts,
-				eq(transactions.accountId, financialAccounts.id),
-			)
-			.where(
-				and(
-					eq(transactions.userId, userId),
-					eq(transactions.period, selectedPeriod),
-					eq(transactions.transactionType, "Despesa"),
-					eq(transactions.payerId, adminPayerId),
-					inArray(transactions.categoryId, categoryIds),
-					or(
-						isNull(transactions.note),
-						sql`${transactions.note} NOT LIKE ${`${ACCOUNT_AUTO_INVOICE_NOTE_PREFIX}%`}`,
-					),
-					excludeTransactionsFromExcludedAccounts(),
-				),
-			)
-			.groupBy(transactions.categoryId);
+		).map(mapBudgetSpentRow);
 
 		totalsByCategory = new Map(
-			totals.map(
-				(row: { categoryId: string | null; totalAmount: string | null }) => [
-					row.categoryId ?? "",
-					Math.abs(toNumber(row.totalAmount)),
-				],
-			),
+			totals.map((row) => [
+				row.categoryId,
+				Math.abs(toNumber(row.totalAmount)),
+			]),
 		);
 	}
 
@@ -163,32 +165,20 @@ export async function fetchCategoryBudgetSummary(
 
 	if (!adminPayerId || !budget) return null;
 
-	const totals = await db
-		.select({
-			totalAmount: sum(transactions.amount).as("totalAmount"),
-		})
-		.from(transactions)
-		.leftJoin(
-			financialAccounts,
-			eq(transactions.accountId, financialAccounts.id),
-		)
-		.where(
-			and(
-				eq(transactions.userId, userId),
-				eq(transactions.period, period),
-				eq(transactions.transactionType, "Despesa"),
-				eq(transactions.payerId, adminPayerId),
-				eq(transactions.categoryId, categoryId),
-				or(
-					isNull(transactions.note),
-					sql`${transactions.note} NOT LIKE ${`${ACCOUNT_AUTO_INVOICE_NOTE_PREFIX}%`}`,
-				),
-				excludeTransactionsFromExcludedAccounts(),
-			),
-		);
+	const totalsRow = await callRpcOne<BudgetSummaryRpcRow>(
+		"get_category_budget_summary",
+		{
+			p_user_id: userId,
+			p_category_id: categoryId,
+			p_admin_payer_id: adminPayerId,
+			p_period: period,
+		},
+	);
+
+	const summaryRow = totalsRow ? mapBudgetSummaryRow(totalsRow) : null;
 
 	return {
 		amount: toNumber(budget.amount),
-		spent: Math.abs(toNumber(totals[0]?.totalAmount ?? 0)),
+		spent: Math.abs(toNumber(summaryRow?.totalAmount ?? 0)),
 	};
 }

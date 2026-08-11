@@ -1,18 +1,8 @@
-import {
-	and,
-	eq,
-	gte,
-	ilike,
-	inArray,
-	lte,
-	ne,
-	not,
-	or,
-	sum,
-} from "drizzle-orm";
+import { and, eq, gte, ilike, inArray, lte, not } from "drizzle-orm";
 import { cards, categories, invoices, transactions } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { callRpc } from "@/shared/lib/supabase/rpc";
 import { formatDateOnly } from "@/shared/utils/date";
 import { safeToNumber } from "@/shared/utils/number";
 import {
@@ -83,18 +73,18 @@ type CardRow = {
 };
 
 type CardUsageRow = {
-	cardId: string | null;
-	totalAmount: unknown;
+	card_id: string | null;
+	total_amount: unknown;
 };
 
 type MonthlyUsageRow = {
 	period: string;
-	totalAmount: unknown;
+	total_amount: unknown;
 };
 
 type CategoryAmountRow = {
-	categoryId: string | null;
-	totalAmount: unknown;
+	category_id: string | null;
+	total_amount: unknown;
 };
 
 type CategoryInfoRow = {
@@ -151,61 +141,47 @@ export async function fetchCartoesReportData(
 	const cardIds = allCards.map((c) => c.id);
 	const adminPayerId = await getAdminPayerId(userId);
 
-	// Fetch current period usage by card (recorrente só conta quando a data da ocorrência já passou)
-	const currentUsageData = adminPayerId
-		? ((await db
-				.select({
-					cardId: transactions.cardId,
-					totalAmount: sum(transactions.amount).as("total"),
-				})
-				.from(transactions)
-				.where(
-					and(
-						eq(transactions.userId, userId),
-						eq(transactions.period, currentPeriod),
-						eq(transactions.payerId, adminPayerId),
-						eq(transactions.transactionType, DESPESA),
-						inArray(transactions.cardId, cardIds),
-						or(
-							ne(transactions.condition, "Recorrente"),
-							lte(transactions.purchaseDate, new Date()),
-						),
-					),
-				)
-				.groupBy(transactions.cardId)) as CardUsageRow[])
-		: [];
-
-	// Fetch previous period usage by card
-	const previousUsageData = adminPayerId
-		? ((await db
-				.select({
-					cardId: transactions.cardId,
-					totalAmount: sum(transactions.amount).as("total"),
-				})
-				.from(transactions)
-				.where(
-					and(
-						eq(transactions.userId, userId),
-						eq(transactions.period, previousPeriod),
-						eq(transactions.payerId, adminPayerId),
-						eq(transactions.transactionType, DESPESA),
-						inArray(transactions.cardId, cardIds),
-					),
-				)
-				.groupBy(transactions.cardId)) as CardUsageRow[])
-		: [];
+	// Fetch current period usage (recorrente só conta quando a data da ocorrência já passou)
+	// and previous period usage by card
+	const [currentUsageData, previousUsageData]: [
+		CardUsageRow[],
+		CardUsageRow[],
+	] = adminPayerId
+		? await Promise.all([
+				callRpc<CardUsageRow>("get_card_usage_by_period", {
+					p_user_id: userId,
+					p_admin_payer_id: adminPayerId,
+					p_period: currentPeriod,
+					p_card_ids: cardIds,
+					p_apply_recurring_gate: true,
+				}),
+				callRpc<CardUsageRow>("get_card_usage_by_period", {
+					p_user_id: userId,
+					p_admin_payer_id: adminPayerId,
+					p_period: previousPeriod,
+					p_card_ids: cardIds,
+					p_apply_recurring_gate: false,
+				}),
+			])
+		: [[], []];
 
 	const currentUsageMap = new Map<string, number>();
 	for (const row of currentUsageData) {
-		if (row.cardId) {
-			currentUsageMap.set(row.cardId, Math.abs(safeToNumber(row.totalAmount)));
+		if (row.card_id) {
+			currentUsageMap.set(
+				row.card_id,
+				Math.abs(safeToNumber(row.total_amount)),
+			);
 		}
 	}
 
 	const previousUsageMap = new Map<string, number>();
 	for (const row of previousUsageData) {
-		if (row.cardId) {
-			previousUsageMap.set(row.cardId, Math.abs(safeToNumber(row.totalAmount)));
+		if (row.card_id) {
+			previousUsageMap.set(
+				row.card_id,
+				Math.abs(safeToNumber(row.total_amount)),
+			);
 		}
 	}
 
@@ -290,60 +266,37 @@ async function fetchCardDetail(
 
 	const startPeriod = periods[0];
 
-	// Fetch monthly usage
-	const monthlyData = adminPayerId
-		? ((await db
-				.select({
-					period: transactions.period,
-					totalAmount: sum(transactions.amount).as("total"),
-				})
-				.from(transactions)
-				.where(
-					and(
-						eq(transactions.userId, userId),
-						eq(transactions.cardId, cardId),
-						gte(transactions.period, startPeriod),
-						lte(transactions.period, currentPeriod),
-						eq(transactions.payerId, adminPayerId),
-						eq(transactions.transactionType, DESPESA),
-					),
-				)
-				.groupBy(transactions.period)
-				.orderBy(transactions.period)) as MonthlyUsageRow[])
-		: [];
+	const [monthlyData, categoryData]: [MonthlyUsageRow[], CategoryAmountRow[]] =
+		adminPayerId
+			? await Promise.all([
+					callRpc<MonthlyUsageRow>("get_card_monthly_usage", {
+						p_user_id: userId,
+						p_admin_payer_id: adminPayerId,
+						p_card_id: cardId,
+						p_start_period: startPeriod,
+						p_end_period: currentPeriod,
+					}),
+					callRpc<CategoryAmountRow>("get_card_category_breakdown", {
+						p_user_id: userId,
+						p_admin_payer_id: adminPayerId,
+						p_card_id: cardId,
+						p_period: currentPeriod,
+					}),
+				])
+			: [[], []];
 
 	const monthlyUsage = periods.map((period) => {
 		const data = monthlyData.find((d) => d.period === period);
 		return {
 			period,
 			periodLabel: formatCompactPeriodLabel(period),
-			amount: Math.abs(safeToNumber(data?.totalAmount)),
+			amount: Math.abs(safeToNumber(data?.total_amount)),
 		};
 	});
 
-	// Fetch category breakdown for current period
-	const categoryData = adminPayerId
-		? ((await db
-				.select({
-					categoryId: transactions.categoryId,
-					totalAmount: sum(transactions.amount).as("total"),
-				})
-				.from(transactions)
-				.where(
-					and(
-						eq(transactions.userId, userId),
-						eq(transactions.cardId, cardId),
-						eq(transactions.period, currentPeriod),
-						eq(transactions.payerId, adminPayerId),
-						eq(transactions.transactionType, DESPESA),
-					),
-				)
-				.groupBy(transactions.categoryId)) as CategoryAmountRow[])
-		: [];
-
-	// Fetch category names
+	// Fetch category names (select simples, permanece no bridge)
 	const categoryIds = categoryData
-		.map((c) => c.categoryId)
+		.map((c) => c.category_id)
 		.filter((id): id is string => id !== null);
 
 	const categoryNames =
@@ -361,18 +314,18 @@ async function fetchCardDetail(
 	const categoryNameMap = new Map(categoryNames.map((c) => [c.id, c]));
 
 	const totalCategoryAmount = categoryData.reduce(
-		(acc, c) => acc + Math.abs(safeToNumber(c.totalAmount)),
+		(acc, c) => acc + Math.abs(safeToNumber(c.total_amount)),
 		0,
 	);
 
 	const categoryBreakdown = categoryData
 		.map((cat) => {
-			const amount = Math.abs(safeToNumber(cat.totalAmount));
-			const catInfo = cat.categoryId
-				? categoryNameMap.get(cat.categoryId)
+			const amount = Math.abs(safeToNumber(cat.total_amount));
+			const catInfo = cat.category_id
+				? categoryNameMap.get(cat.category_id)
 				: null;
 			return {
-				id: cat.categoryId || "sem-categoria",
+				id: cat.category_id || "sem-categoria",
 				name: catInfo?.name || "Sem categoria",
 				icon: catInfo?.icon || null,
 				amount,

@@ -1,26 +1,30 @@
-import { and, eq, type SQL, sum } from "drizzle-orm";
+import { and, eq, type SQL } from "drizzle-orm";
 import { cards, invoices, transactions } from "@/db/schema";
+import { resolveInvoicePeriodCarouselStatus } from "@/features/invoices/lib/period-carousel-status";
 import { fetchTransactionsWithRelations } from "@/features/transactions/queries";
+import type { PeriodCarouselMonth } from "@/shared/components/month-picker/period-carousel-types";
 import { buildInvoicePaymentNote } from "@/shared/lib/accounts/constants";
 import { db } from "@/shared/lib/db";
 import {
 	INVOICE_PAYMENT_STATUS,
 	type InvoicePaymentStatus,
 } from "@/shared/lib/invoices";
-import { isDateOnlyPast } from "@/shared/utils/date";
-import { buildDueDateInfoFromPeriodDay } from "@/shared/utils/financial-dates";
+import { callRpc, callRpcOne } from "@/shared/lib/supabase/rpc";
+import { safeToNumber as toNumber } from "@/shared/utils/number";
+import {
+	addMonthsToPeriod,
+	buildPeriodRange,
+	comparePeriods,
+	getCurrentPeriod,
+} from "@/shared/utils/period";
 
-export type InvoiceMonthStatus = "paid" | "overdue";
+type InvoiceTotalRow = {
+	total: string | number | null;
+};
 
-const toNumber = (value: string | number | null | undefined) => {
-	if (typeof value === "number") {
-		return value;
-	}
-	if (value === null || value === undefined) {
-		return 0;
-	}
-	const parsed = Number(value);
-	return Number.isNaN(parsed) ? 0 : parsed;
+type InvoiceMonthSummaryRow = {
+	periodo: string | null;
+	total_amount: string | number | null;
 };
 
 export async function fetchCardData(userId: string, cardId: string) {
@@ -67,19 +71,14 @@ export async function fetchInvoiceData(
 				eq(invoices.period, selectedPeriod),
 			),
 		}),
-		db
-			.select({ totalAmount: sum(transactions.amount) })
-			.from(transactions)
-			.where(
-				and(
-					eq(transactions.userId, userId),
-					eq(transactions.cardId, cardId),
-					eq(transactions.period, selectedPeriod),
-				),
-			),
+		callRpcOne<InvoiceTotalRow>("get_invoice_total", {
+			p_user_id: userId,
+			p_card_id: cardId,
+			p_period: selectedPeriod,
+		}),
 	]);
 
-	const totalAmount = toNumber(totalRow[0]?.totalAmount);
+	const totalAmount = toNumber(totalRow?.total);
 	const isInvoiceStatus = (
 		value: string | null | undefined,
 	): value is InvoicePaymentStatus =>
@@ -110,12 +109,13 @@ export async function fetchInvoiceData(
 	return { totalAmount, invoiceStatus, paymentDate };
 }
 
-export async function fetchCardInvoiceMonthStatuses(
+export async function fetchCardInvoiceMonthSummaries(
 	userId: string,
 	cardId: string,
+	closingDay: string,
 	dueDay: string,
-): Promise<Record<string, InvoiceMonthStatus>> {
-	const [invoiceRows, periodRows] = await Promise.all([
+): Promise<PeriodCarouselMonth[]> {
+	const [invoiceRows, amountRows] = await Promise.all([
 		db.query.invoices.findMany({
 			columns: {
 				period: true,
@@ -123,43 +123,55 @@ export async function fetchCardInvoiceMonthStatuses(
 			},
 			where: and(eq(invoices.userId, userId), eq(invoices.cardId, cardId)),
 		}),
-		db
-			.selectDistinct({ period: transactions.period })
-			.from(transactions)
-			.where(
-				and(eq(transactions.userId, userId), eq(transactions.cardId, cardId)),
-			),
+		callRpc<InvoiceMonthSummaryRow>("get_card_invoice_month_summaries", {
+			p_user_id: userId,
+			p_card_id: cardId,
+		}),
 	]);
 
-	const paidPeriods = new Set(
-		invoiceRows
-			.filter((row) => row.paymentStatus === INVOICE_PAYMENT_STATUS.PAID)
-			.map((row) => row.period)
-			.filter((period): period is string => period !== null),
-	);
+	const amountByPeriod = new Map<string, number>();
+	for (const row of amountRows) {
+		if (!row.periodo) continue;
+		amountByPeriod.set(row.periodo, Math.abs(toNumber(row.total_amount)));
+	}
 
-	const relevantPeriods = new Set(
-		[
-			...invoiceRows.map((row) => row.period),
-			...periodRows.map((row) => row.period),
-		].filter((period): period is string => period !== null),
-	);
-
-	const statuses: Record<string, InvoiceMonthStatus> = {};
-
-	for (const period of relevantPeriods) {
-		if (paidPeriods.has(period)) {
-			statuses[period] = "paid";
-			continue;
-		}
-
-		const dueDate = buildDueDateInfoFromPeriodDay(period, dueDay).date;
-		if (dueDate && isDateOnlyPast(dueDate)) {
-			statuses[period] = "overdue";
+	const invoiceByPeriod = new Map<string, InvoicePaymentStatus>();
+	for (const row of invoiceRows) {
+		if (!row.period) continue;
+		if (
+			row.paymentStatus === INVOICE_PAYMENT_STATUS.PAID ||
+			row.paymentStatus === INVOICE_PAYMENT_STATUS.PENDING
+		) {
+			invoiceByPeriod.set(row.period, row.paymentStatus);
 		}
 	}
 
-	return statuses;
+	const knownPeriods = new Set<string>([
+		...amountByPeriod.keys(),
+		...invoiceByPeriod.keys(),
+	]);
+
+	const currentPeriod = getCurrentPeriod();
+	const endPeriod = addMonthsToPeriod(currentPeriod, 2);
+	const startPeriod =
+		knownPeriods.size > 0
+			? Array.from(knownPeriods).sort((left, right) =>
+					comparePeriods(left, right),
+				)[0]
+			: addMonthsToPeriod(currentPeriod, -5);
+
+	const periodRange = buildPeriodRange(startPeriod ?? currentPeriod, endPeriod);
+
+	return periodRange.map((period) => ({
+		period,
+		amount: amountByPeriod.get(period) ?? 0,
+		status: resolveInvoicePeriodCarouselStatus(
+			period,
+			invoiceByPeriod.get(period),
+			closingDay,
+			dueDay,
+		),
+	}));
 }
 
 export async function fetchCardTransactions(filters: SQL[]) {

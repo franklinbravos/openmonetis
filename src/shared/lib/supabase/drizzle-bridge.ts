@@ -11,7 +11,7 @@ import { getSupabaseAdmin } from "@/shared/lib/supabase/admin";
 import type { Database } from "@/shared/lib/supabase/database.types";
 
 /** Incrementar ao alterar a API pública do bridge (invalida cache em db.ts). */
-export const DRIZZLE_BRIDGE_VERSION = 7;
+export const DRIZZLE_BRIDGE_VERSION = 11;
 
 type ColumnFilter = {
 	table?: string;
@@ -66,6 +66,10 @@ const TABLE_BY_JS_NAME: Record<string, Table> = {
 	reconciliationAliases: schema.reconciliationAliases,
 	establishmentLogos: schema.establishmentLogos,
 };
+
+const TABLE_BY_DB_NAME: Record<string, Table> = Object.fromEntries(
+	Object.values(TABLE_BY_JS_NAME).map((table) => [getTableName(table), table]),
+);
 
 /** Nested selects PostgREST por relação Drizzle `with`. */
 const RELATION_SELECTS: Record<string, Record<string, string>> = {
@@ -130,9 +134,22 @@ function isPgTable(value: unknown): value is Table {
 	}
 }
 
+function unwrapSelectionField(value: unknown): unknown {
+	if (
+		value &&
+		typeof value === "object" &&
+		"isSelectionField" in (value as object) &&
+		"sql" in (value as object)
+	) {
+		return (value as { sql: unknown }).sql;
+	}
+	return value;
+}
+
 function getSqlChunks(where: SQL | undefined): unknown[] {
 	if (!where) return [];
-	const chunks = (where as unknown as Record<string, unknown>)[
+	const unwrapped = unwrapSelectionField(where);
+	const chunks = (unwrapped as unknown as Record<string, unknown>)[
 		DRIZZLE_QUERY_KEY
 	];
 	return Array.isArray(chunks) ? chunks : [];
@@ -425,21 +442,71 @@ function buildRowEvalContext(
 	return { mainTable, mainRow, joinRows };
 }
 
+function resolveMappedColumnValue(
+	row: Record<string, unknown>,
+	tableName: string,
+	columnName: string,
+): unknown {
+	if (columnName in row) {
+		return row[columnName];
+	}
+
+	const table = TABLE_BY_DB_NAME[tableName];
+	if (!table) {
+		return undefined;
+	}
+
+	const columns = getTableColumns(table);
+	for (const [jsKey, column] of Object.entries(columns)) {
+		if (column.name === columnName) {
+			if (jsKey in row) {
+				return row[jsKey];
+			}
+			break;
+		}
+	}
+
+	return undefined;
+}
+
 function getFilterColumnValue(
 	ctx: RowEvalContext,
 	filter: ColumnFilter,
 ): unknown {
 	const table = filter.table ?? ctx.mainTable;
 	if (table === ctx.mainTable) {
-		return ctx.mainRow[filter.column];
+		return resolveMappedColumnValue(ctx.mainRow, table, filter.column);
 	}
 
 	const joinData = ctx.joinRows.get(table);
 	if (!joinData) return null;
 	if (Array.isArray(joinData)) {
-		return joinData.map((row) => row[filter.column]);
+		return joinData.map((row) =>
+			resolveMappedColumnValue(row, table, filter.column),
+		);
 	}
-	return joinData[filter.column];
+	return resolveMappedColumnValue(
+		joinData as Record<string, unknown>,
+		table,
+		filter.column,
+	);
+}
+
+function flattenJoinColumnValue(value: unknown): unknown[] {
+	if (!Array.isArray(value)) {
+		return [value];
+	}
+	if (value.length === 0) {
+		return [null];
+	}
+	return value;
+}
+
+function columnValuesMatch(
+	value: unknown,
+	predicate: (scalar: unknown) => boolean,
+): boolean {
+	return flattenJoinColumnValue(value).some(predicate);
 }
 
 function compareFilterValues(
@@ -477,37 +544,57 @@ function evaluateFilter(ctx: RowEvalContext, filter: Filter): boolean {
 		case "or":
 			return filter.filters.some((entry) => evaluateFilter(ctx, entry));
 		case "eq":
-			return getFilterColumnValue(ctx, filter) === filter.value;
+			return columnValuesMatch(
+				getFilterColumnValue(ctx, filter),
+				(value) => value === filter.value,
+			);
 		case "neq":
-			return getFilterColumnValue(ctx, filter) !== filter.value;
+			return columnValuesMatch(
+				getFilterColumnValue(ctx, filter),
+				(value) => value !== filter.value,
+			);
 		case "gt": {
 			const value = getFilterColumnValue(ctx, filter);
-			return compareFilterValues(value, filter.value, "gt");
+			return columnValuesMatch(value, (entry) =>
+				compareFilterValues(entry, filter.value, "gt"),
+			);
 		}
 		case "gte": {
 			const value = getFilterColumnValue(ctx, filter);
-			return compareFilterValues(value, filter.value, "gte");
+			return columnValuesMatch(value, (entry) =>
+				compareFilterValues(entry, filter.value, "gte"),
+			);
 		}
 		case "lt": {
 			const value = getFilterColumnValue(ctx, filter);
-			return compareFilterValues(value, filter.value, "lt");
+			return columnValuesMatch(value, (entry) =>
+				compareFilterValues(entry, filter.value, "lt"),
+			);
 		}
 		case "lte": {
 			const value = getFilterColumnValue(ctx, filter);
-			return compareFilterValues(value, filter.value, "lte");
+			return columnValuesMatch(value, (entry) =>
+				compareFilterValues(entry, filter.value, "lte"),
+			);
 		}
 		case "is":
-			return getFilterColumnValue(ctx, filter) == null;
+			return columnValuesMatch(
+				getFilterColumnValue(ctx, filter),
+				(value) => value == null,
+			);
 		case "in": {
 			const value = getFilterColumnValue(ctx, filter);
-			return filter.values.includes(value);
+			return columnValuesMatch(value, (entry) => filter.values.includes(entry));
 		}
 		case "ilike": {
-			const value = String(getFilterColumnValue(ctx, filter) ?? "");
+			const value = getFilterColumnValue(ctx, filter);
 			const pattern = String(filter.value ?? "");
-			const matches = value
-				.toLowerCase()
-				.includes(pattern.replace(/%/g, "").toLowerCase());
+			const normalizedPattern = pattern.replace(/%/g, "").toLowerCase();
+			const matches = columnValuesMatch(value, (entry) =>
+				String(entry ?? "")
+					.toLowerCase()
+					.includes(normalizedPattern),
+			);
 			return filter.negated ? !matches : matches;
 		}
 		default:
@@ -700,7 +787,9 @@ function computeAggregateValue(
 			(entry) => entry.name === "valor" || entry.name === "amount",
 		) ?? columns.at(-1);
 
-	const amountColumnTable = amountColumn ? columnTable(amountColumn) : undefined;
+	const amountColumnTable = amountColumn
+		? columnTable(amountColumn)
+		: undefined;
 	const rowsToSum =
 		amountColumnTable === ctx.mainTable
 			? [ctx.mainRow]
@@ -719,17 +808,30 @@ function computeAggregateValue(
 		}
 
 		if (text.includes("case when")) {
-			const caseSql = expr as SQL;
-			const caseChunks = getSqlChunks(caseSql);
+			const caseChunks = getSqlChunks(expr as SQL);
 			const whenIndex = caseChunks.findIndex((part) =>
 				chunkText(part).toLowerCase().includes("when"),
 			);
 			if (whenIndex >= 0) {
-				const whenSql = caseChunks[whenIndex + 1] as SQL;
-				const whenFilters = parseWhere(whenSql);
-				if (!whenFilters.every((filter) => evaluateFilter(joinCtx, filter))) {
-					return total;
+				const whenFilters = parseWhere(caseChunks[whenIndex + 1] as SQL);
+				const whenMatches = whenFilters.every((filter) =>
+					evaluateFilter(joinCtx, filter),
+				);
+				const thenIsZero = /\bthen\s+0\b/i.test(text);
+				const elseIsZero = /\belse\s+0\b/i.test(text);
+
+				const amountSourceRow =
+					amountColumnTable === ctx.mainTable ? ctx.mainRow : row;
+				const rawAmount = amountColumn
+					? columnValueFromMappedRow(amountSourceRow, amountColumn)
+					: 0;
+				const amount = Number(rawAmount ?? 0);
+				const signedAmount = text.includes("abs(") ? Math.abs(amount) : amount;
+
+				if (whenMatches) {
+					return total + (thenIsZero ? 0 : signedAmount);
 				}
+				return total + (elseIsZero ? 0 : signedAmount);
 			}
 		}
 
@@ -775,14 +877,22 @@ function resolveGroupedColumnValue(
 	const colTable = columnTable(expr);
 	const mainTableName = getTableName(fromTable);
 	if (!colTable || colTable === mainTableName) {
-		return mainMapped[expr.name] ?? rawMainRow[expr.name];
+		return (
+			columnValueFromMappedRow(mainMapped, expr) ??
+			rawMainRow[expr.name] ??
+			null
+		);
 	}
 
 	const joinIndex = joinIndexes.findIndex(
 		({ meta }) => getTableName(meta.joinTable) === colTable,
 	);
 	if (joinIndex >= 0) {
-		return relatedJoinRows[joinIndex]?.[0]?.[expr.name] ?? null;
+		const joinRow = relatedJoinRows[joinIndex]?.[0];
+		if (joinRow) {
+			return columnValueFromMappedRow(joinRow, expr);
+		}
+		return null;
 	}
 
 	return resolveShapeColumnValue(rawMainRow, expr, fromTable, joins);
@@ -1359,43 +1469,60 @@ function createDeleteBuilder(client: SupabaseClient<Database>, table: Table) {
 	return {
 		where(where: SQL) {
 			let executed = false;
-			let execution: Promise<void> | null = null;
+			let execution: Promise<unknown[]> | null = null;
 
-			const execute = async (): Promise<void> => {
-				if (executed) return execution ?? Promise.resolve();
+			const run = async (withReturning: boolean): Promise<unknown[]> => {
+				// biome-ignore lint/suspicious/noExplicitAny: o builder muda de tipo entre delete() e select()
+				let query: any = client
+					.from(tableName as keyof Database["public"]["Tables"])
+					.delete();
+				if (withReturning) {
+					query = query.select();
+				}
+				query = applyFilters(query, parseWhere(where), tableName);
+				const { data, error } = await query;
+				if (error) {
+					console.error("[bridge] delete falhou", {
+						table: tableName,
+						error: error.message,
+					});
+					throw error;
+				}
+				if (!withReturning) return [];
+				return (data ?? []).map((row: Record<string, unknown>) =>
+					fromDbRow(table, row),
+				);
+			};
+
+			const execute = async (withReturning = false): Promise<unknown[]> => {
+				if (executed) return execution ?? Promise.resolve([]);
 				executed = true;
-				execution = (async () => {
-					let query = client
-						.from(tableName as keyof Database["public"]["Tables"])
-						.delete();
-					query = applyFilters(query, parseWhere(where), tableName);
-					const { error } = await query;
-					if (error) {
-						console.error("[bridge] delete falhou", {
-							table: tableName,
-							error: error.message,
-						});
-						throw error;
-					}
-				})();
+				execution = run(withReturning);
 				return execution;
 			};
 
-			const thenable: {
-				execute: () => Promise<void>;
-				then: <TResult1 = void, TResult2 = never>(
+			const thenable = {
+				returning: (shape?: Record<string, unknown>) =>
+					execute(true).then((rows) =>
+						mapInsertReturningRows(
+							table,
+							shape,
+							rows as Record<string, unknown>[],
+						),
+					),
+				async execute() {
+					await execute(false);
+				},
+				// biome-ignore lint/suspicious/noThenProperty: thenable necessário para `await db.delete(...).where(...)` (API compatível com Drizzle)
+				then<TResult1 = unknown[], TResult2 = never>(
 					onfulfilled?:
-						| ((value: void) => TResult1 | PromiseLike<TResult1>)
+						| ((value: unknown[]) => TResult1 | PromiseLike<TResult1>)
 						| null,
 					onrejected?:
 						| ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
 						| null,
-				) => Promise<TResult1 | TResult2>;
-			} = {
-				execute,
-				// biome-ignore lint/suspicious/noThenProperty: thenable necessário para `await db.delete(...).where(...)` (API compatível com Drizzle)
-				then(onfulfilled, onrejected) {
-					return execute().then(onfulfilled, onrejected);
+				) {
+					return execute(false).then(onfulfilled, onrejected);
 				},
 			};
 
@@ -1414,9 +1541,7 @@ function createUpdateBuilder(client: SupabaseClient<Database>, table: Table) {
 					let executed = false;
 					let execution: Promise<unknown[]> | null = null;
 
-					const run = async (
-						withReturning: boolean,
-					): Promise<unknown[]> => {
+					const run = async (withReturning: boolean): Promise<unknown[]> => {
 						// biome-ignore lint/suspicious/noExplicitAny: o builder muda de tipo entre update() e select()
 						let query: any = client
 							.from(tableName as keyof Database["public"]["Tables"])
@@ -1439,9 +1564,7 @@ function createUpdateBuilder(client: SupabaseClient<Database>, table: Table) {
 						);
 					};
 
-					const execute = async (
-						withReturning = false,
-					): Promise<unknown[]> => {
+					const execute = async (withReturning = false): Promise<unknown[]> => {
 						if (executed) return execution ?? Promise.resolve([]);
 						executed = true;
 						execution = run(withReturning);
@@ -1799,7 +1922,8 @@ class SupabaseSelectBuilder {
 			throw new Error("select().from() é obrigatório");
 		}
 
-		const tableName = getTableName(this.fromTable);
+		const fromTable = this.fromTable;
+		const tableName = getTableName(fromTable);
 		const parsedFilters = parseWhere(this.whereClause);
 		const { api, deferred } = partitionFilters(parsedFilters, tableName);
 
@@ -1818,7 +1942,7 @@ class SupabaseSelectBuilder {
 		}> = [];
 
 		for (const join of this.joins) {
-			const meta = parseJoinMetadata(this.fromTable, join);
+			const meta = parseJoinMetadata(fromTable, join);
 			const joinTableName = getTableName(meta.joinTable);
 			let joinQuery = this.client
 				.from(joinTableName as keyof Database["public"]["Tables"])
@@ -1847,8 +1971,8 @@ class SupabaseSelectBuilder {
 		const grouped = new Map<string, Record<string, unknown>>();
 
 		for (const rawMainRow of mainRows) {
-			const mainMapped = fromDbRow(this.fromTable, rawMainRow);
-			const ctx = buildRowEvalContext(this.fromTable, rawMainRow, this.joins);
+			const mainMapped = fromDbRow(fromTable, rawMainRow);
+			const ctx = buildRowEvalContext(fromTable, rawMainRow, this.joins);
 
 			const relatedJoinRows: Record<string, unknown>[][] = joinIndexes.map(
 				({ meta, rowsByFk }) => {
@@ -1886,7 +2010,7 @@ class SupabaseSelectBuilder {
 							expr,
 							rawMainRow,
 							mainMapped,
-							this.fromTable!,
+							fromTable,
 							this.joins,
 							relatedJoinRows,
 							joinIndexes,
@@ -1903,7 +2027,7 @@ class SupabaseSelectBuilder {
 							expr,
 							rawMainRow,
 							mainMapped,
-							this.fromTable,
+							fromTable,
 							this.joins,
 							relatedJoinRows,
 							joinIndexes,
@@ -1913,7 +2037,8 @@ class SupabaseSelectBuilder {
 				grouped.set(groupKey, base);
 			}
 
-			const entry = grouped.get(groupKey)!;
+			const entry = grouped.get(groupKey);
+			if (!entry) continue;
 			for (const [alias, expr] of Object.entries(this.shape)) {
 				if (isPgColumn(expr)) continue;
 				const aggregate = computeAggregateValue(expr, flatJoinRows, ctx);

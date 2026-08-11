@@ -1,21 +1,43 @@
-import { and, eq, lt, type SQL, sql } from "drizzle-orm";
+import { and, eq, type SQL } from "drizzle-orm";
 import { financialAccounts, transactions } from "@/db/schema";
 import {
 	fetchTransactionsPageWithRelations,
 	fetchTransactionsWithRelations,
 } from "@/features/transactions/queries";
-import {
-	INITIAL_BALANCE_NOTE,
-	REFUND_NOTE_PREFIX,
-} from "@/shared/lib/accounts/constants";
+import type {
+	PeriodCarouselMonth,
+	PeriodCarouselStatus,
+} from "@/shared/components/month-picker/period-carousel-types";
 import { db } from "@/shared/lib/db";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { callRpc, callRpcOne } from "@/shared/lib/supabase/rpc";
+import { safeToNumber } from "@/shared/utils/number";
+import {
+	addMonthsToPeriod,
+	buildPeriodRange,
+	comparePeriods,
+	getCurrentPeriod,
+} from "@/shared/utils/period";
 
 type AccountSummaryData = {
 	openingBalance: number;
 	currentBalance: number;
 	totalIncomes: number;
 	totalExpenses: number;
+};
+
+type StatementSummariesRow = {
+	periodo: string | null;
+	net_amount: string | number | null;
+	incomes: string | number | null;
+	expenses: string | number | null;
+};
+
+type StatementSummaryRow = {
+	net_amount: string | number | null;
+	incomes: string | number | null;
+	expenses: string | number | null;
+	previous_movements: string | number | null;
 };
 
 export async function fetchAccountData(userId: string, accountId: string) {
@@ -38,6 +60,80 @@ export async function fetchAccountData(userId: string, accountId: string) {
 	return account;
 }
 
+export async function fetchAccountStatementMonthSummaries(
+	userId: string,
+	accountId: string,
+): Promise<PeriodCarouselMonth[]> {
+	const account = await fetchAccountData(userId, accountId);
+	if (!account) {
+		return [];
+	}
+
+	const adminPayerId = await getAdminPayerId(userId);
+	if (!adminPayerId) {
+		return [];
+	}
+
+	const periodRows = await callRpc<StatementSummariesRow>(
+		"get_account_statement_summaries",
+		{
+			p_user_id: userId,
+			p_account_id: accountId,
+			p_admin_payer_id: adminPayerId,
+		},
+	);
+
+	const netByPeriod = new Map<string, number>();
+	const incomesByPeriod = new Map<string, number>();
+	const expensesByPeriod = new Map<string, number>();
+	for (const row of periodRows) {
+		if (!row.periodo) continue;
+		netByPeriod.set(row.periodo, safeToNumber(row.net_amount));
+		incomesByPeriod.set(row.periodo, safeToNumber(row.incomes));
+		const expenseNet = safeToNumber(row.expenses);
+		expensesByPeriod.set(row.periodo, Math.max(0, -expenseNet));
+	}
+
+	const currentPeriod = getCurrentPeriod();
+	const endPeriod = addMonthsToPeriod(currentPeriod, 2);
+	const startPeriod =
+		netByPeriod.size > 0
+			? Array.from(netByPeriod.keys()).sort((left, right) =>
+					comparePeriods(left, right),
+				)[0]
+			: addMonthsToPeriod(currentPeriod, -5);
+
+	const periodRange = buildPeriodRange(startPeriod ?? currentPeriod, endPeriod);
+
+	const initialBalance = safeToNumber(account.initialBalance);
+	let runningBalance = initialBalance;
+	const balanceByPeriod = new Map<string, number>();
+
+	for (const period of periodRange) {
+		if (netByPeriod.has(period)) {
+			runningBalance += netByPeriod.get(period) ?? 0;
+		}
+		balanceByPeriod.set(period, runningBalance);
+	}
+
+	return periodRange.map((period) => {
+		let status: PeriodCarouselStatus = "closed";
+		if (comparePeriods(period, currentPeriod) > 0) {
+			status = "future";
+		} else if (comparePeriods(period, currentPeriod) === 0) {
+			status = "open";
+		}
+
+		return {
+			period,
+			amount: balanceByPeriod.get(period) ?? runningBalance,
+			incomes: incomesByPeriod.get(period) ?? 0,
+			expenses: expensesByPeriod.get(period) ?? 0,
+			status,
+		};
+	});
+}
+
 export async function fetchAccountSummary(
 	userId: string,
 	accountId: string,
@@ -50,7 +146,7 @@ export async function fetchAccountSummary(
 
 	const adminPayerId = await getAdminPayerId(userId);
 	if (!adminPayerId) {
-		const initialBalance = Number(account.initialBalance ?? 0);
+		const initialBalance = safeToNumber(account.initialBalance);
 		return {
 			openingBalance: initialBalance,
 			currentBalance: initialBalance,
@@ -59,90 +155,22 @@ export async function fetchAccountSummary(
 		};
 	}
 
-	const [periodSummary] = await db
-		.select({
-			netAmount: sql<number>`
-        coalesce(
-          sum(
-            case
-              when ${transactions.note} = ${INITIAL_BALANCE_NOTE} then 0
-              else ${transactions.amount}
-            end
-          ),
-          0
-        )
-      `,
-			incomes: sql<number>`
-        coalesce(
-          sum(
-            case
-              when ${transactions.note} = ${INITIAL_BALANCE_NOTE} then 0
-              when ${transactions.note} ilike ${`${REFUND_NOTE_PREFIX}%`} then 0
-              when ${transactions.transactionType} = 'Receita' then ${transactions.amount}
-              when ${transactions.transactionType} = 'Transferência' and ${transactions.amount} > 0 then ${transactions.amount}
-              else 0
-            end
-          ),
-          0
-        )
-      `,
-			expenses: sql<number>`
-        coalesce(
-          sum(
-            case
-              when ${transactions.note} = ${INITIAL_BALANCE_NOTE} then 0
-              when ${transactions.note} ilike ${`${REFUND_NOTE_PREFIX}%`} then abs(${transactions.amount})
-              when ${transactions.transactionType} = 'Despesa' then ${transactions.amount}
-              when ${transactions.transactionType} = 'Transferência' and ${transactions.amount} < 0 then ${transactions.amount}
-              else 0
-            end
-          ),
-          0
-        )
-      `,
-		})
-		.from(transactions)
-		.where(
-			and(
-				eq(transactions.userId, userId),
-				eq(transactions.accountId, accountId),
-				eq(transactions.period, selectedPeriod),
-				eq(transactions.isSettled, true),
-				eq(transactions.payerId, adminPayerId),
-			),
-		);
+	const summary = await callRpcOne<StatementSummaryRow>(
+		"get_account_statement_summary",
+		{
+			p_user_id: userId,
+			p_account_id: accountId,
+			p_admin_payer_id: adminPayerId,
+			p_period: selectedPeriod,
+		},
+	);
 
-	const [previousRow] = await db
-		.select({
-			previousMovements: sql<number>`
-        coalesce(
-          sum(
-            case
-              when ${transactions.note} = ${INITIAL_BALANCE_NOTE} then 0
-              else ${transactions.amount}
-            end
-          ),
-          0
-        )
-      `,
-		})
-		.from(transactions)
-		.where(
-			and(
-				eq(transactions.userId, userId),
-				eq(transactions.accountId, accountId),
-				lt(transactions.period, selectedPeriod),
-				eq(transactions.isSettled, true),
-				eq(transactions.payerId, adminPayerId),
-			),
-		);
-
-	const initialBalance = Number(account.initialBalance ?? 0);
-	const previousMovements = Number(previousRow?.previousMovements ?? 0);
+	const initialBalance = safeToNumber(account.initialBalance);
+	const previousMovements = safeToNumber(summary?.previous_movements);
 	const openingBalance = initialBalance + previousMovements;
-	const netAmount = Number(periodSummary?.netAmount ?? 0);
-	const totalIncomes = Number(periodSummary?.incomes ?? 0);
-	const expenseNet = Number(periodSummary?.expenses ?? 0);
+	const netAmount = safeToNumber(summary?.net_amount);
+	const totalIncomes = safeToNumber(summary?.incomes);
+	const expenseNet = safeToNumber(summary?.expenses);
 	const totalExpenses = Math.max(0, -expenseNet);
 	const currentBalance = openingBalance + netAmount;
 
