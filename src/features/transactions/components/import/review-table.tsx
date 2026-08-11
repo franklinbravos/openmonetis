@@ -593,6 +593,11 @@ function resolveReviewExistingPayerId(
 	);
 }
 
+/** Índice na lista é a identidade estável dos handlers; externalId pode repetir (duplicatas/vínculos). */
+function getReviewRowKey(row: ReviewRow, index: number) {
+	return `${index}-${row.externalId ?? row.date}`;
+}
+
 interface ReviewTableProps {
 	rows: ReviewRow[];
 	defaultPayerId: string | null;
@@ -754,7 +759,7 @@ export function ReviewTable({
 
 								return (
 									<TableRow
-										key={row.externalId ?? `${row.date}-${index}`}
+										key={getReviewRowKey(row, index)}
 										className={getDuplicateRowClassName(row)}
 									>
 										<TableCell className="w-10">
@@ -825,7 +830,7 @@ export function ReviewTable({
 
 							return (
 								<TableRow
-									key={row.externalId ?? `${row.date}-${index}`}
+									key={getReviewRowKey(row, index)}
 									className={getDuplicateRowClassName(row)}
 								>
 									<TableCell>
@@ -1033,7 +1038,7 @@ function ReviewMobileList({
 
 			{rows.map((row, index) => (
 				<ReviewMobileCard
-					key={row.externalId ?? `${row.date}-${index}`}
+					key={getReviewRowKey(row, index)}
 					row={row}
 					index={index}
 					defaultPayerId={defaultPayerId}
