@@ -17,9 +17,24 @@ import {
 	transactionAttachments,
 	transactions,
 } from "@/db/schema";
+import {
+	buildPeriodTotals,
+	type PeriodSummaryRow,
+} from "@/features/dashboard/overview/period-overview-queries";
+import type {
+	PeriodCarouselMonth,
+	PeriodCarouselStatus,
+} from "@/shared/components/month-picker/period-carousel-types";
 import { INITIAL_BALANCE_NOTE } from "@/shared/lib/accounts/constants";
 import { db } from "@/shared/lib/db";
+import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc } from "@/shared/lib/supabase/rpc";
+import {
+	addMonthsToPeriod,
+	buildPeriodRange,
+	comparePeriods,
+	getCurrentPeriod,
+} from "@/shared/utils/period";
 import { enrichTransactionsWithTransferPeers } from "@/shared/lib/transfers/enrich-transfer-peers";
 
 type BaseTransactionQueryInput = {
@@ -261,4 +276,79 @@ export async function fetchRecentEstablishments(
 	return rows
 		.map((row) => row.name)
 		.filter((name): name is string => name !== null);
+}
+
+type PeriodOverviewRow = {
+	periodo: string | null;
+	tipo_transacao: string | null;
+	total_amount: string | number | null;
+	refund_amount: string | number | null;
+	conta_excluir_do_saldo: boolean | null;
+};
+
+export async function fetchTransactionsMonthSummaries(
+	userId: string,
+): Promise<PeriodCarouselMonth[]> {
+	const adminPayerId = await getAdminPayerId(userId);
+	if (!adminPayerId) {
+		return [];
+	}
+
+	const currentPeriod = getCurrentPeriod();
+	const endPeriod = addMonthsToPeriod(currentPeriod, 2);
+	const startPeriod = addMonthsToPeriod(currentPeriod, -24);
+
+	const rows = await callRpc<PeriodOverviewRow>("get_period_overview", {
+		p_user_id: userId,
+		p_admin_payer_id: adminPayerId,
+		p_start_period: startPeriod,
+		p_end_period: endPeriod,
+	});
+
+	const periodTotals = buildPeriodTotals(
+		rows.map(
+			(row): PeriodSummaryRow => ({
+				period: row.periodo,
+				transactionType: row.tipo_transacao ?? "",
+				totalAmount: row.total_amount,
+				refundAmount: row.refund_amount,
+				accountExcludeFromBalance: row.conta_excluir_do_saldo,
+			}),
+		),
+	);
+
+	const knownPeriods = Array.from(periodTotals.keys()).sort((left, right) =>
+		comparePeriods(left, right),
+	);
+	const rangeStart =
+		knownPeriods[0] ?? addMonthsToPeriod(currentPeriod, -5);
+	const periodRange = buildPeriodRange(rangeStart, endPeriod);
+
+	return periodRange.map((period) => {
+		const totals = periodTotals.get(period);
+		const incomes = totals?.receitas ?? 0;
+		const grossExpenses = totals?.despesas ?? 0;
+		const refunds = totals?.reembolsos ?? 0;
+		const expenses = Math.max(0, grossExpenses - refunds);
+		const balance =
+			incomes -
+			grossExpenses +
+			refunds +
+			(totals?.transferAdjustment ?? 0);
+
+		let status: PeriodCarouselStatus = "closed";
+		if (comparePeriods(period, currentPeriod) > 0) {
+			status = "future";
+		} else if (comparePeriods(period, currentPeriod) === 0) {
+			status = "open";
+		}
+
+		return {
+			period,
+			amount: balance,
+			incomes,
+			expenses,
+			status,
+		};
+	});
 }

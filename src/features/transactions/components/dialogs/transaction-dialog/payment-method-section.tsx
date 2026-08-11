@@ -19,10 +19,10 @@ import {
 	Select,
 	SelectContent,
 	SelectItem,
-	SelectSeparator,
 	SelectTrigger,
 	SelectValue,
 } from "@/shared/components/ui/select";
+import { SelectCreateAction } from "@/shared/components/ui/select-create-action";
 import {
 	dateToPeriod,
 	displayPeriod,
@@ -97,30 +97,6 @@ function SelectFieldHeader({
 				</Button>
 			) : null}
 		</div>
-	);
-}
-
-function SelectCreateAction({
-	label,
-	onClick,
-}: {
-	label: string;
-	onClick: () => void;
-}) {
-	return (
-		<>
-			<SelectSeparator />
-			<div className="p-1">
-				<button
-					type="button"
-					className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-primary hover:bg-accent"
-					onClick={onClick}
-				>
-					<RiAddFill className="size-4" />
-					{label}
-				</button>
-			</div>
-		</>
 	);
 }
 

@@ -41,6 +41,7 @@ import { cn } from "@/shared/utils/ui";
 import {
 	getMonthToolbarCreateSlotId,
 	monthToolbarCreateGroupClassName,
+	monthToolbarMassAddClassName,
 	TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID,
 } from "../../lib/month-toolbar";
 import { TransactionsExport } from "../transactions-export";
@@ -344,29 +345,22 @@ export function TransactionsTable({
 			<div
 				className={cn(
 					monthToolbarCreateGroupClassName,
-					"[&_.quick-actions-root]:w-auto [&_.quick-actions-root]:flex-none [&_.quick-actions-root]:gap-0 [&_.quick-actions-root]:divide-x [&_.quick-actions-root]:divide-border [&_.quick-actions-root_button]:min-w-[4.25rem] [&_.quick-actions-root_button]:flex-none [&_.quick-actions-root_button]:rounded-none [&_.quick-actions-root_button]:border-0 [&_.quick-actions-root_button]:shadow-none [&_.quick-actions-root_button]:hover:bg-accent/50",
+					"md:[&_.quick-actions-root_button]:h-full md:[&_.quick-actions-root_button]:min-h-0 md:[&_.quick-actions-root_button]:rounded-none md:[&_.quick-actions-root_button]:border-0 md:[&_.quick-actions-root_button]:py-0 md:[&_.quick-actions-root_button]:shadow-none",
 				)}
 			>
-				{createSlot ? (
-					<div className="flex min-w-0 flex-1 items-stretch">{createSlot}</div>
-				) : null}
+				{createSlot}
 				{onMassAdd ? (
-					<Tooltip>
-						<TooltipTrigger asChild>
-							<Button
-								onClick={onMassAdd}
-								variant="ghost"
-								size="sm"
-								className="h-9 shrink-0 rounded-none border-0 px-3 shadow-none hover:bg-accent/50 sm:px-3"
-							>
-								<RiFlashlightFill className="size-4 text-primary" />
-								<span className="sr-only">Adicionar múltiplos lançamentos</span>
-							</Button>
-						</TooltipTrigger>
-						<TooltipContent>
-							<p>Adicionar múltiplos lançamentos</p>
-						</TooltipContent>
-					</Tooltip>
+					<Button
+						onClick={onMassAdd}
+						variant="ghost"
+						size="sm"
+						className={monthToolbarMassAddClassName}
+						aria-label="Adicionar múltiplos lançamentos"
+					>
+						<RiFlashlightFill className="size-5 shrink-0 text-primary md:size-4" />
+						<span className="md:hidden">Múltiplos</span>
+						<span className="hidden md:inline">Múltiplos</span>
+					</Button>
 				) : null}
 			</div>
 		) : null;

@@ -12,6 +12,10 @@ import {
 } from "react";
 import { toast } from "sonner";
 import {
+	CreateAccountInlineDialog,
+	type CreatedAccount,
+} from "@/features/accounts/components/create-account-inline-dialog";
+import {
 	CreateCategoryInlineDialog,
 	type CreatedCategory,
 } from "@/features/categories/components/create-category-inline-dialog";
@@ -266,11 +270,18 @@ export function ImportPage({
 	const [extraCategoryOptions, setExtraCategoryOptions] = useState<
 		SelectOption[]
 	>([]);
+	const [extraAccountOptions, setExtraAccountOptions] = useState<
+		SelectOption[]
+	>([]);
 	const [categoryCreateOpen, setCategoryCreateOpen] = useState(false);
 	const [categoryCreateRowIndex, setCategoryCreateRowIndex] = useState<
 		number | null
 	>(null);
 	const [categoryCreateBulk, setCategoryCreateBulk] = useState(false);
+	const [accountCreateOpen, setAccountCreateOpen] = useState(false);
+	const [accountCreateRowIndex, setAccountCreateRowIndex] = useState<
+		number | null
+	>(null);
 	const [confirmOpen, setConfirmOpen] = useState(false);
 	const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 	const [fileError, setFileError] = useState<string | null>(null);
@@ -747,6 +758,33 @@ export function ImportPage({
 					const isLinkSuggestion =
 						duplicateValidation?.status === "link_suggestion";
 
+					let resolvedCategoryId =
+						transferGuess || isInvoicePayment
+							? isInvoicePayment
+								? pagamentosCategoryId
+								: null
+							: isCategoryCompatible(mappedCategoryId, t.transactionType)
+								? mappedCategoryId
+								: null;
+
+					let resolvedPayerId = mappedPayerId;
+
+					if (isLinkSuggestion && duplicateValidation) {
+						resolvedPayerId =
+							duplicateValidation.existingPayerId ?? resolvedPayerId;
+
+						if (
+							!resolvedCategoryId &&
+							duplicateValidation.existingCategoryId &&
+							isCategoryCompatible(
+								duplicateValidation.existingCategoryId,
+								t.transactionType,
+							)
+						) {
+							resolvedCategoryId = duplicateValidation.existingCategoryId;
+						}
+					}
+
 					return {
 						...t,
 						sourceDescription: t.description,
@@ -754,7 +792,7 @@ export function ImportPage({
 						selected: isDuplicate || isLinkSuggestion ? false : true,
 						duplicateValidation,
 						linked: false,
-						payerId: mappedPayerId,
+						payerId: resolvedPayerId,
 						kind: transferGuess?.kind
 							? transferGuess.kind
 							: isInvoicePayment
@@ -765,14 +803,7 @@ export function ImportPage({
 						transferPeerAccountId: transferGuess?.transferPeerAccountId ?? null,
 						installmentImport: transferGuess ? null : installmentImport,
 						recurrenceImport: null,
-						categoryId:
-							transferGuess || isInvoicePayment
-								? isInvoicePayment
-									? pagamentosCategoryId
-									: null
-								: isCategoryCompatible(mappedCategoryId, t.transactionType)
-									? mappedCategoryId
-									: null,
+						categoryId: resolvedCategoryId,
 					};
 				});
 
@@ -1404,6 +1435,34 @@ export function ImportPage({
 		);
 	};
 
+	const handleRequestCreateTransferPeerAccount = (index: number) => {
+		setAccountCreateRowIndex(index);
+		setAccountCreateOpen(true);
+	};
+
+	const handleTransferPeerAccountCreated = (account: CreatedAccount) => {
+		setExtraAccountOptions((prev) =>
+			prev.some((option) => option.value === account.id)
+				? prev
+				: [
+						...prev,
+						{
+							value: account.id,
+							label: account.name,
+							logo: account.logo,
+							accountType: account.accountType,
+						},
+					],
+		);
+
+		if (accountCreateRowIndex !== null) {
+			handleTransferPeerAccountChange(accountCreateRowIndex, account.id);
+		}
+
+		setAccountCreateOpen(false);
+		setAccountCreateRowIndex(null);
+	};
+
 	const handlePayerChange = (index: number, payerId: string | null) => {
 		setRows((prev) =>
 			prev.map((r, i) => (i === index ? { ...r, payerId } : r)),
@@ -1801,13 +1860,15 @@ export function ImportPage({
 			: (initialAccountId ?? null);
 	}, [accountCardValue, initialAccountId]);
 
-	const transferAccountOptions = useMemo(
-		() =>
-			importAccountId
-				? accountOptions.filter((option) => option.value !== importAccountId)
-				: accountOptions,
-		[accountOptions, importAccountId],
-	);
+	const transferAccountOptions = useMemo(() => {
+		const mergedAccounts = mergeSelectOptions(
+			accountOptions,
+			extraAccountOptions,
+		);
+		return importAccountId
+			? mergedAccounts.filter((option) => option.value !== importAccountId)
+			: mergedAccounts;
+	}, [accountOptions, extraAccountOptions, importAccountId]);
 	const isPaidInvoiceImport = Boolean(
 		statement?.isCreditCard && statement.invoice?.isPaid,
 	);
@@ -2463,6 +2524,9 @@ export function ImportPage({
 								onInvoicePaymentCardChange={handleInvoicePaymentCardChange}
 								onInvoicePaymentPeriodChange={handleInvoicePaymentPeriodChange}
 								onTransferPeerAccountChange={handleTransferPeerAccountChange}
+								onCreateTransferPeerAccount={
+									handleRequestCreateTransferPeerAccount
+								}
 								onDescriptionChange={handleDescriptionChange}
 								onInstallmentToggle={handleInstallmentToggle}
 								onInstallmentDismiss={handleInstallmentDismiss}
@@ -2633,6 +2697,16 @@ export function ImportPage({
 				onCreated={handleCategoryCreated}
 				allCategories={allCategoriesForDialog}
 				defaultType={categoryCreateDefaultType}
+			/>
+			<CreateAccountInlineDialog
+				open={accountCreateOpen}
+				onOpenChange={(open) => {
+					setAccountCreateOpen(open);
+					if (!open) {
+						setAccountCreateRowIndex(null);
+					}
+				}}
+				onCreated={handleTransferPeerAccountCreated}
 			/>
 			{linkDialogIndex !== null && rows[linkDialogIndex] ? (
 				<ImportLinkDialog

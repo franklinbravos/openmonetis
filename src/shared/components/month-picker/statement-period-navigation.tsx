@@ -19,7 +19,8 @@ import {
 	getMonthToolbarEndSlotId,
 	getMonthToolbarExpandSlotId,
 	getMonthToolbarFiltersSlotId,
-	monthToolbarMobileToolsClassName,
+	getMonthToolbarMobileActionsSlotId,
+	monthToolbarMobileActionsClassName,
 	monthToolbarPanelClassName,
 } from "@/features/transactions/lib/month-toolbar";
 import LoadingSpinner from "@/shared/components/month-picker/loading-spinner";
@@ -85,7 +86,8 @@ function amountToChartY(amount: number, min: number, max: number): number {
 	}
 
 	const normalized = (amount - min) / (max - min);
-	return CHART_Y_MIN + normalized * (CHART_Y_MAX - CHART_Y_MIN);
+	// SVG: Y cresce para baixo — valores maiores ficam mais altos (Y menor).
+	return CHART_Y_MAX - normalized * (CHART_Y_MAX - CHART_Y_MIN);
 }
 
 function buildCurveSegment(start: ChartPoint, end: ChartPoint): string {
@@ -238,6 +240,11 @@ function PeriodMonthCarousel({
 										const end = chartPoints[index + 1];
 										if (!end) return null;
 
+										const endMonth = months[index + 1];
+										const isFutureSegment =
+											endMonth?.status === "future" &&
+											endMonth.period !== selectedPeriod;
+
 										return (
 											<path
 												key={`${start.period}-${end.period}`}
@@ -245,11 +252,12 @@ function PeriodMonthCarousel({
 												fill="none"
 												strokeWidth={2}
 												strokeLinecap="round"
-												className={
+												className={cn(
 													isAccountVariant
 														? "stroke-primary"
-														: STATUS_STROKE_CLASS[months[index].status]
-												}
+														: STATUS_STROKE_CLASS[months[index].status],
+													isFutureSegment && "opacity-35",
+												)}
 											/>
 										);
 									})
@@ -268,7 +276,10 @@ function PeriodMonthCarousel({
 								const balanceIsPositive = month.amount >= 0;
 
 								return (
-									<g key={point.period}>
+									<g
+										key={point.period}
+										className={cn(isFuture && !isSelected && "opacity-40")}
+									>
 										<circle
 											cx={point.x}
 											cy={point.y}
@@ -289,9 +300,11 @@ function PeriodMonthCarousel({
 											r={dotRadius}
 											className={cn(
 												isAccountVariant
-													? balanceIsPositive
-														? "fill-emerald-600"
-														: "fill-destructive"
+													? isFuture && !isSelected
+														? "fill-muted-foreground/35"
+														: balanceIsPositive
+															? "fill-emerald-600"
+															: "fill-destructive"
 													: STATUS_DOT_FILL_CLASS[month.status],
 												isFuture && !isAccountVariant && "fill-card",
 											)}
@@ -304,6 +317,7 @@ function PeriodMonthCarousel({
 
 					{months.map((month, index) => {
 						const isSelected = month.period === selectedPeriod;
+						const isFuture = month.status === "future";
 						const monthIncomes = month.incomes ?? 0;
 						const monthExpenses = month.expenses ?? 0;
 						const monthBalance = month.amount;
@@ -322,6 +336,7 @@ function PeriodMonthCarousel({
 									isAccountVariant
 										? "min-w-[6.75rem] sm:min-w-[7.5rem] md:min-w-[8.25rem]"
 										: "min-w-[5.25rem] sm:min-w-[6.25rem] md:min-w-[7rem]",
+									isFuture && !isSelected && "opacity-70",
 								)}
 							>
 								<button
@@ -338,6 +353,9 @@ function PeriodMonthCarousel({
 									className={cn(
 										"relative z-10 flex w-full flex-col items-center gap-0 rounded-lg border px-1 py-2 transition-colors",
 										"border-border/70 hover:border-primary/40 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+										isFuture &&
+											!isSelected &&
+											"border-dashed border-border/45 bg-muted/20 hover:border-primary/25 hover:bg-muted/30",
 										isSelected && "border-primary bg-primary/5 shadow-xs",
 									)}
 									aria-current={isSelected ? "date" : undefined}
@@ -346,7 +364,11 @@ function PeriodMonthCarousel({
 									<span
 										className={cn(
 											"mb-1 text-[0.6875rem] font-medium capitalize sm:text-xs",
-											isSelected ? "text-primary" : "text-muted-foreground",
+											isSelected
+												? "text-primary"
+												: isFuture
+													? "text-muted-foreground/55"
+													: "text-muted-foreground",
 										)}
 									>
 										{formatPeriodMonthShort(month.period)}
@@ -361,27 +383,62 @@ function PeriodMonthCarousel({
 									{isAccountVariant ? (
 										<div className="flex w-full flex-col gap-0.5 px-0.5">
 											<div className="flex items-center justify-between gap-1 text-[0.625rem] leading-tight sm:text-[0.6875rem]">
-												<span className="text-muted-foreground">Ent.</span>
-												<span className="truncate font-medium tabular-nums text-success">
+												<span
+													className={cn(
+														"text-muted-foreground",
+														isFuture && !isSelected && "text-muted-foreground/50",
+													)}
+												>
+													Ent.
+												</span>
+												<span
+													className={cn(
+														"truncate font-medium tabular-nums text-success",
+														isFuture && !isSelected && "text-success/45",
+													)}
+												>
 													{formatCurrency(monthIncomes)}
 												</span>
 											</div>
 											<div className="flex items-center justify-between gap-1 text-[0.625rem] leading-tight sm:text-[0.6875rem]">
-												<span className="text-muted-foreground">Saí.</span>
-												<span className="truncate font-medium tabular-nums text-destructive">
+												<span
+													className={cn(
+														"text-muted-foreground",
+														isFuture && !isSelected && "text-muted-foreground/50",
+													)}
+												>
+													Saí.
+												</span>
+												<span
+													className={cn(
+														"truncate font-medium tabular-nums text-destructive",
+														isFuture && !isSelected && "text-destructive/45",
+													)}
+												>
 													{formatCurrency(monthExpenses)}
 												</span>
 											</div>
 											<div className="flex items-center justify-between gap-1 border-t border-border/50 pt-0.5 text-[0.6875rem] leading-tight sm:text-xs">
-												<span className="text-muted-foreground">Saldo</span>
+												<span
+													className={cn(
+														"text-muted-foreground",
+														isFuture && !isSelected && "text-muted-foreground/50",
+													)}
+												>
+													Saldo
+												</span>
 												<span
 													className={cn(
 														"truncate font-semibold tabular-nums",
 														monthBalance < 0
-															? "text-destructive"
+															? isFuture && !isSelected
+																? "text-destructive/45"
+																: "text-destructive"
 															: isSelected
 																? "text-foreground"
-																: "text-muted-foreground",
+																: isFuture
+																	? "text-muted-foreground/55"
+																	: "text-muted-foreground",
 													)}
 												>
 													{formatCurrency(monthBalance)}
@@ -394,7 +451,9 @@ function PeriodMonthCarousel({
 												"max-w-full truncate text-[0.6875rem] tabular-nums sm:text-xs",
 												isSelected
 													? "font-semibold text-foreground"
-													: "font-medium text-muted-foreground",
+													: isFuture
+														? "font-medium text-muted-foreground/55"
+														: "font-medium text-muted-foreground",
 											)}
 										>
 											{formatCurrency(month.amount)}
@@ -498,33 +557,30 @@ function StatementPeriodToolbarPanel({
 		<div className={monthToolbarPanelClassName}>
 			<div
 				id={getMonthToolbarCreateSlotId(toolbarSlotId)}
-				className="flex w-full min-w-0 empty:hidden"
+				className="flex w-full min-w-0 empty:hidden md:h-full md:w-auto md:shrink-0 md:items-stretch md:self-stretch"
 			/>
 
 			<div
-				className={cn(
-					monthToolbarMobileToolsClassName,
-					"md:hidden empty:hidden",
-				)}
-			>
-				<div
-					id={toolbarSlotId}
-					className="flex items-center gap-0.5 empty:hidden"
-				/>
-				<div
-					id={getMonthToolbarEndSlotId(toolbarSlotId)}
-					className="ml-auto flex shrink-0 items-center gap-0.5 empty:hidden"
-				/>
-			</div>
+				id={getMonthToolbarMobileActionsSlotId(toolbarSlotId)}
+				className={cn(monthToolbarMobileActionsClassName, "empty:hidden")}
+			/>
 
 			<div
 				id={getMonthToolbarFiltersSlotId(toolbarSlotId)}
-				className="hidden min-w-0 empty:hidden md:flex"
+				className="hidden min-w-0 flex-1 empty:hidden md:flex md:h-full md:items-stretch md:self-stretch"
 			/>
 
 			<div
 				id={getMonthToolbarExpandSlotId(toolbarSlotId)}
 				className="empty:hidden md:hidden"
+			/>
+
+			{/* Slots legados para MonthNavigation em outras páginas */}
+			<div id={toolbarSlotId} className="hidden" aria-hidden />
+			<div
+				id={getMonthToolbarEndSlotId(toolbarSlotId)}
+				className="hidden"
+				aria-hidden
 			/>
 		</div>
 	);
@@ -538,6 +594,8 @@ type StatementPeriodNavigationProps = {
 	hideCreateActions?: boolean;
 	showCalendarControls?: boolean;
 	carouselVariant?: PeriodCarouselVariant;
+	title?: string;
+	sticky?: boolean;
 };
 
 export function StatementPeriodNavigation({
@@ -548,6 +606,8 @@ export function StatementPeriodNavigation({
 	hideCreateActions = false,
 	showCalendarControls = false,
 	carouselVariant = "invoice",
+	title,
+	sticky = true,
 }: StatementPeriodNavigationProps) {
 	const { period, buildHref } = useMonthPeriod();
 	const router = useRouter();
@@ -568,7 +628,14 @@ export function StatementPeriodNavigation({
 				<StatementPeriodToolbarPanel toolbarSlotId={toolbarSlotId} />
 			) : null}
 
-			{showCalendarControls && !hideCarousel ? (
+			{title ? (
+				<div className="flex items-center justify-between gap-2">
+					<h2 className="text-sm font-semibold">{title}</h2>
+					{showCalendarControls && !hideCarousel ? (
+						<StatementPeriodCalendarControls />
+					) : null}
+				</div>
+			) : showCalendarControls && !hideCarousel ? (
 				<div className="-mb-0.5 flex items-center justify-end">
 					<StatementPeriodCalendarControls />
 				</div>
@@ -595,7 +662,14 @@ export function StatementPeriodNavigation({
 	}
 
 	return (
-		<div className="sticky top-18 z-10 flex w-full flex-col gap-0 border border-transparent bg-card px-3 py-3 shadow-xs backdrop-blur-md supports-backdrop-filter:bg-card/60 sm:px-4 dark:border-border">
+		<div
+			className={cn(
+				"flex w-full flex-col gap-0 bg-card",
+				sticky
+					? "sticky top-18 z-10 border border-transparent px-3 py-3 shadow-xs backdrop-blur-md supports-backdrop-filter:bg-card/60 sm:px-4 dark:border-border"
+					: "rounded-lg border border-border px-3 py-3 shadow-xs transition-colors duration-200 hover:border-primary/50 sm:px-4",
+			)}
+		>
 			{content}
 		</div>
 	);

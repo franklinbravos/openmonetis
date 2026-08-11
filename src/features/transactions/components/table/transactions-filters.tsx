@@ -37,9 +37,12 @@ import {
 	getMonthToolbarEndSlotId,
 	getMonthToolbarExpandSlotId,
 	getMonthToolbarFiltersSlotId,
+	getMonthToolbarMobileActionsSlotId,
+	monthToolbarDesktopActionClassName,
 	monthToolbarFiltersGroupClassName,
 	monthToolbarIconButtonClassName,
 	monthToolbarIconClassName,
+	monthToolbarMobileCellClassName,
 } from "@/features/transactions/lib/month-toolbar";
 import {
 	parseDateFilterParam,
@@ -462,6 +465,7 @@ export function TransactionsFilters({
 					? `${pathname}?${nextParams.toString()}`
 					: pathname;
 				router.replace(target, { scroll: false });
+				router.refresh();
 			});
 		},
 		[searchParams, pathname, router],
@@ -624,6 +628,8 @@ export function TransactionsFilters({
 		useState<HTMLElement | null>(null);
 	const [monthToolbarFiltersSlot, setMonthToolbarFiltersSlot] =
 		useState<HTMLElement | null>(null);
+	const [monthToolbarMobileActionsSlot, setMonthToolbarMobileActionsSlot] =
+		useState<HTMLElement | null>(null);
 	const searchInputRef = useRef<HTMLInputElement>(null);
 	const useMonthToolbar = Boolean(monthToolbarSlotId);
 	const monthToolbarExpandSlotId = monthToolbarSlotId
@@ -634,6 +640,9 @@ export function TransactionsFilters({
 		: null;
 	const monthToolbarFiltersSlotId = monthToolbarSlotId
 		? getMonthToolbarFiltersSlotId(monthToolbarSlotId)
+		: null;
+	const monthToolbarMobileActionsSlotId = monthToolbarSlotId
+		? getMonthToolbarMobileActionsSlotId(monthToolbarSlotId)
 		: null;
 
 	useEffect(() => {
@@ -675,6 +684,17 @@ export function TransactionsFilters({
 			document.getElementById(monthToolbarFiltersSlotId),
 		);
 	}, [monthToolbarFiltersSlotId]);
+
+	useEffect(() => {
+		if (!monthToolbarMobileActionsSlotId) {
+			setMonthToolbarMobileActionsSlot(null);
+			return;
+		}
+
+		setMonthToolbarMobileActionsSlot(
+			document.getElementById(monthToolbarMobileActionsSlotId),
+		);
+	}, [monthToolbarMobileActionsSlotId]);
 
 	const hasSearchQuery =
 		searchValue.trim().length > 0 || currentSearchParam.trim().length > 0;
@@ -866,7 +886,7 @@ export function TransactionsFilters({
 	const searchField = (
 		<div
 			className={cn(
-				"relative min-w-0 flex-1",
+				"relative min-w-0 flex-1 md:flex md:h-full md:items-stretch",
 				!useMonthToolbar && "md:w-[250px]",
 			)}
 		>
@@ -878,7 +898,7 @@ export function TransactionsFilters({
 				className={cn(
 					"w-full text-sm",
 					useMonthToolbar
-						? "border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 dark:bg-transparent"
+						? "h-8 border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 dark:bg-transparent md:h-full md:min-h-0 md:min-w-[12rem] md:rounded-none md:px-3 md:py-0"
 						: "border bg-white shadow-xs dark:bg-card",
 					searchValue.length > 0 && "pr-8",
 				)}
@@ -902,7 +922,10 @@ export function TransactionsFilters({
 			className={cn(
 				"relative shrink-0 text-sm",
 				useMonthToolbar
-					? "h-8 border-0 bg-transparent shadow-none hover:bg-accent/50"
+					? cn(
+							monthToolbarDesktopActionClassName,
+							"h-8 gap-2 border-0 bg-transparent hover:bg-accent/50 md:text-foreground",
+						)
 					: "border-dashed bg-transparent",
 			)}
 			aria-label={isPending ? "Aplicando filtros" : "Abrir filtros"}
@@ -933,25 +956,20 @@ export function TransactionsFilters({
 								onChange={(event) => setSearchValue(event.target.value)}
 								placeholder="Buscar lançamentos"
 								aria-label="Buscar lançamentos"
-								className={cn(
-									"w-full border bg-white text-sm shadow-xs dark:bg-card",
-									searchValue.length > 0 ? "pr-16" : "pr-9",
-								)}
+								className="w-full border bg-white pr-9 text-sm shadow-xs dark:bg-card"
 							/>
-							{searchValue.length > 0 ? (
-								<button
-									type="button"
-									onClick={() => setSearchValue("")}
-									aria-label="Limpar busca"
-									className="absolute top-1/2 right-9 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-								>
-									<RiCloseLine className="size-4" aria-hidden />
-								</button>
-							) : null}
 							<button
 								type="button"
-								onClick={() => setSearchExpanded(false)}
-								aria-label="Fechar busca"
+								onClick={() => {
+									if (searchValue.length > 0) {
+										setSearchValue("");
+										return;
+									}
+									setSearchExpanded(false);
+								}}
+								aria-label={
+									searchValue.length > 0 ? "Limpar busca" : "Fechar busca"
+								}
 								className="absolute top-1/2 right-2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 							>
 								<RiCloseLine className="size-4" aria-hidden />
@@ -962,8 +980,75 @@ export function TransactionsFilters({
 				)
 			: null;
 
+	const monthToolbarMobileActions =
+		useMonthToolbar && monthToolbarMobileActionsSlot
+			? createPortal(
+					<>
+						<Button
+							type="button"
+							variant="outline"
+							size="icon-sm"
+							className={cn(
+								monthToolbarMobileCellClassName,
+								searchExpanded && "bg-accent text-accent-foreground",
+							)}
+							aria-label="Buscar lançamentos"
+							aria-expanded={searchExpanded}
+							onClick={() => setSearchExpanded((prev) => !prev)}
+						>
+							<RiSearchLine className={monthToolbarIconClassName} aria-hidden />
+							<span>Buscar</span>
+							{hasSearchQuery ? (
+								<span
+									className="absolute top-1.5 right-1.5 size-2 rounded-full bg-primary"
+									aria-hidden
+								/>
+							) : null}
+						</Button>
+
+						{!hideAdvancedFilters ? (
+							<Button
+								type="button"
+								variant="outline"
+								size="icon-sm"
+								className={monthToolbarMobileCellClassName}
+								aria-label={isPending ? "Aplicando filtros" : "Abrir filtros"}
+								onClick={() => setDrawerOpen(true)}
+							>
+								{isPending ? (
+									<Spinner
+										className={monthToolbarIconClassName}
+										role="presentation"
+										aria-hidden
+									/>
+								) : (
+									<RiFilterLine
+										className={monthToolbarIconClassName}
+										aria-hidden
+									/>
+								)}
+								<span>{isPending ? "Aplicando…" : "Filtros"}</span>
+								{hasActiveFilters ? (
+									<span
+										className="absolute top-1.5 right-1.5 size-2 rounded-full bg-primary"
+										aria-hidden
+									/>
+								) : null}
+							</Button>
+						) : null}
+
+						{importButton}
+						{exportButton}
+					</>,
+					monthToolbarMobileActionsSlot,
+				)
+			: null;
+
 	const monthToolbarEnd =
-		useMonthToolbar && monthToolbarEndSlot && (exportButton || importButton)
+		useMonthToolbar &&
+		!monthToolbarMobileActionsSlot &&
+		monthToolbarEndSlot &&
+		(exportButton || importButton)
 			? createPortal(
 					<>
 						{importButton}
@@ -974,7 +1059,7 @@ export function TransactionsFilters({
 			: null;
 
 	const monthToolbar =
-		useMonthToolbar && monthToolbarSlot
+		useMonthToolbar && !monthToolbarMobileActionsSlot && monthToolbarSlot
 			? createPortal(
 					<>
 						<Button
@@ -1413,7 +1498,7 @@ export function TransactionsFilters({
 			{importButton || exportButton ? (
 				<div
 					className={cn(
-						"flex shrink-0 items-center gap-1",
+						"flex shrink-0 items-center gap-1 md:h-full md:items-stretch md:gap-0 md:divide-x md:divide-border",
 						!useMonthToolbar && "hidden md:flex",
 					)}
 				>
@@ -1434,6 +1519,7 @@ export function TransactionsFilters({
 	return (
 		<div aria-busy={isPending} className={cn("flex flex-col gap-2", className)}>
 			{monthSearchExpandBar}
+			{monthToolbarMobileActions}
 			{monthToolbarEnd}
 			{monthToolbar}
 			{renderedDesktopFilters}

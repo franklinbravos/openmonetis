@@ -59,6 +59,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/shared/components/ui/select";
+import { SelectCreateAction } from "@/shared/components/ui/select-create-action";
 import { Switch } from "@/shared/components/ui/switch";
 import {
 	Table,
@@ -466,11 +467,13 @@ function ReviewDuplicateStatus({
 function ReviewLinkSuggestionStatus({
 	row,
 	index,
+	categoryOptions,
 	onLinkDuplicate,
 	onDismissLinkSuggestion,
 }: {
 	row: ReviewRow;
 	index: number;
+	categoryOptions: SelectOption[];
 	onLinkDuplicate: (index: number) => void;
 	onDismissLinkSuggestion: (index: number) => void;
 }) {
@@ -482,6 +485,9 @@ function ReviewLinkSuggestionStatus({
 		validation.matchScore.amount ? "valor" : null,
 		validation.matchScore.description ? "descrição" : null,
 	].filter((field): field is string => field !== null);
+	const existingCategoryLabel = categoryOptions.find(
+		(option) => option.value === validation.existingCategoryId,
+	)?.label;
 
 	return (
 		<div className="min-w-0 space-y-2">
@@ -496,6 +502,20 @@ function ReviewLinkSuggestionStatus({
 					? `${matchedFields.join(" e ")} batem com um lançamento existente.`
 					: "Dois campos batem com um lançamento existente."}
 			</p>
+			{validation.existingCategoryId ? (
+				existingCategoryLabel && !row.categoryId ? (
+					<p className="text-muted-foreground text-xs">
+						Categoria no cadastro:{" "}
+						<span className="font-medium text-foreground">
+							{existingCategoryLabel}
+						</span>
+					</p>
+				) : null
+			) : (
+				<p className="text-muted-foreground text-xs">
+					O lançamento existente não tem categoria no cadastro.
+				</p>
+			)}
 			<div className="flex flex-wrap gap-1.5">
 				<Button
 					type="button"
@@ -597,6 +617,7 @@ interface ReviewTableProps {
 		index: number,
 		accountId: string | null,
 	) => void;
+	onCreateTransferPeerAccount: (index: number) => void;
 	onDescriptionChange: (index: number, description: string) => void;
 	onInstallmentToggle: (index: number, enabled: boolean) => void;
 	onInstallmentDismiss: (index: number) => void;
@@ -633,6 +654,7 @@ export function ReviewTable({
 	onInvoicePaymentCardChange,
 	onInvoicePaymentPeriodChange,
 	onTransferPeerAccountChange,
+	onCreateTransferPeerAccount,
 	onDescriptionChange,
 	onInstallmentToggle,
 	onInstallmentDismiss,
@@ -677,6 +699,7 @@ export function ReviewTable({
 					onInvoicePaymentCardChange={onInvoicePaymentCardChange}
 					onInvoicePaymentPeriodChange={onInvoicePaymentPeriodChange}
 					onTransferPeerAccountChange={onTransferPeerAccountChange}
+					onCreateTransferPeerAccount={onCreateTransferPeerAccount}
 					onDescriptionChange={onDescriptionChange}
 					onInstallmentToggle={onInstallmentToggle}
 					onInstallmentDismiss={onInstallmentDismiss}
@@ -824,6 +847,7 @@ export function ReviewTable({
 												index={index}
 												isCard={isCard}
 												invoicePeriod={invoicePeriod}
+												categoryOptions={categoryOptions}
 												onDescriptionChange={onDescriptionChange}
 												onUndoDuplicate={onUndoDuplicate}
 												onLinkDuplicate={onLinkDuplicate}
@@ -880,6 +904,9 @@ export function ReviewTable({
 												accountOptions={transferAccountOptions}
 												onTransferPeerAccountChange={
 													onTransferPeerAccountChange
+												}
+												onCreateTransferPeerAccount={
+													onCreateTransferPeerAccount
 												}
 												skipPeerTabStops
 											/>
@@ -938,6 +965,7 @@ type ReviewRowHandlers = Pick<
 	| "onInvoicePaymentCardChange"
 	| "onInvoicePaymentPeriodChange"
 	| "onTransferPeerAccountChange"
+	| "onCreateTransferPeerAccount"
 	| "onDescriptionChange"
 	| "onInstallmentToggle"
 	| "onInstallmentDismiss"
@@ -1037,6 +1065,7 @@ function ReviewMobileCard({
 	onInvoicePaymentCardChange,
 	onInvoicePaymentPeriodChange,
 	onTransferPeerAccountChange,
+	onCreateTransferPeerAccount,
 	onDescriptionChange,
 	onInstallmentToggle,
 	onInstallmentDismiss,
@@ -1180,6 +1209,7 @@ function ReviewMobileCard({
 								index={index}
 								isCard={isCard}
 								invoicePeriod={invoicePeriod}
+								categoryOptions={categoryOptions}
 								onDescriptionChange={onDescriptionChange}
 								onUndoDuplicate={onUndoDuplicate}
 								onLinkDuplicate={onLinkDuplicate}
@@ -1226,6 +1256,7 @@ function ReviewMobileCard({
 								index={index}
 								isCard={isCard}
 								invoicePeriod={invoicePeriod}
+								categoryOptions={categoryOptions}
 								onDescriptionChange={onDescriptionChange}
 								onUndoDuplicate={onUndoDuplicate}
 								onLinkDuplicate={onLinkDuplicate}
@@ -1324,6 +1355,7 @@ function ReviewMobileCard({
 							index={index}
 							accountOptions={transferAccountOptions}
 							onTransferPeerAccountChange={onTransferPeerAccountChange}
+							onCreateTransferPeerAccount={onCreateTransferPeerAccount}
 							compact
 							dense={isClassified}
 							skipPeerTabStops
@@ -1617,6 +1649,7 @@ function ReviewDescriptionField({
 	index,
 	isCard,
 	invoicePeriod,
+	categoryOptions,
 	onDescriptionChange,
 	onUndoDuplicate,
 	onLinkDuplicate,
@@ -1630,6 +1663,7 @@ function ReviewDescriptionField({
 	ReviewRowSharedProps,
 	| "row"
 	| "index"
+	| "categoryOptions"
 	| "onDescriptionChange"
 	| "onUndoDuplicate"
 	| "onLinkDuplicate"
@@ -1756,6 +1790,7 @@ function ReviewDescriptionField({
 					<ReviewLinkSuggestionStatus
 						row={row}
 						index={index}
+						categoryOptions={categoryOptions}
 						onLinkDuplicate={onLinkDuplicate}
 						onDismissLinkSuggestion={onDismissLinkSuggestion}
 					/>
@@ -1973,6 +2008,7 @@ function ReviewTransferFields({
 	index,
 	accountOptions,
 	onTransferPeerAccountChange,
+	onCreateTransferPeerAccount,
 	fullWidth = false,
 	compact = false,
 	dense = false,
@@ -1985,6 +2021,7 @@ function ReviewTransferFields({
 		index: number,
 		accountId: string | null,
 	) => void;
+	onCreateTransferPeerAccount: (index: number) => void;
 	fullWidth?: boolean;
 	compact?: boolean;
 	dense?: boolean;
@@ -2039,14 +2076,24 @@ function ReviewTransferFields({
 					</SelectValue>
 				</SelectTrigger>
 				<SelectContent>
-					{accountOptions.map((option) => (
-						<SelectItem key={option.value} value={option.value}>
-							<AccountCardSelectContent
-								label={option.label}
-								logo={option.logo}
-							/>
-						</SelectItem>
-					))}
+					{accountOptions.length === 0 ? (
+						<div className="px-2 py-4 text-center text-sm text-muted-foreground">
+							Nenhuma conta cadastrada
+						</div>
+					) : (
+						accountOptions.map((option) => (
+							<SelectItem key={option.value} value={option.value}>
+								<AccountCardSelectContent
+									label={option.label}
+									logo={option.logo}
+								/>
+							</SelectItem>
+						))
+					)}
+					<SelectCreateAction
+						label="Adicionar conta"
+						onClick={() => onCreateTransferPeerAccount(index)}
+					/>
 				</SelectContent>
 			</Select>
 		</div>

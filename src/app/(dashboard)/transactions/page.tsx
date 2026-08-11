@@ -19,11 +19,13 @@ import {
 import {
 	fetchRecentEstablishments,
 	fetchTransactionFilterSources,
+	fetchTransactionsMonthSummaries,
 	fetchTransactionsPage,
 } from "@/features/transactions/queries";
 import { LogoPrefetchProvider } from "@/shared/components/entity-avatar";
-import MonthNavigation from "@/shared/components/month-picker/month-navigation";
+import { StatementPeriodNavigation } from "@/shared/components/month-picker/statement-period-navigation";
 import PageDescription from "@/shared/components/page-description";
+import { Card } from "@/shared/components/ui/card";
 import { getUserId } from "@/shared/lib/auth/server";
 import { prefetchLogoMappings } from "@/shared/lib/logo/prefetch-server";
 import { parsePeriodParam } from "@/shared/utils/period";
@@ -68,9 +70,10 @@ export default async function Page({ searchParams }: PageProps) {
 			userPreferences?.hideAnticipatedInstallments ?? false,
 	});
 
-	const [transactionsPage, estabelecimentos] = await Promise.all([
+	const [transactionsPage, estabelecimentos, monthSummaries] = await Promise.all([
 		fetchTransactionsPage(filters, pagination),
 		fetchRecentEstablishments(userId),
+		fetchTransactionsMonthSummaries(userId),
 	]);
 	const transactionData = mapTransactionsData(transactionsPage.rows);
 
@@ -101,7 +104,23 @@ export default async function Page({ searchParams }: PageProps) {
 				title="Lançamentos"
 				subtitle="Acompanhe todos os lançamentos financeiros do mês selecionado incluindo receitas, despesas e transações previstas."
 			/>
-			<MonthNavigation toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID} />
+
+			<StatementPeriodNavigation
+				title="Resumo mensal"
+				sticky={false}
+				showCalendarControls
+				carouselVariant="account"
+				months={monthSummaries}
+			/>
+
+			<Card className="gap-0 overflow-hidden py-0">
+				<StatementPeriodNavigation
+					embedded
+					hideCarousel
+					toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID}
+				/>
+			</Card>
+
 			<LogoPrefetchProvider mappings={logoMappings}>
 				<TransactionsPage
 					currentUserId={userId}

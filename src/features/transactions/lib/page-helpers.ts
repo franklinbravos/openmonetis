@@ -5,7 +5,6 @@ import {
 	gte,
 	ilike,
 	inArray,
-	isNotNull,
 	isNull,
 	lte,
 	or,
@@ -545,17 +544,14 @@ export const buildTransactionWhere = ({
 
 	const searchPattern = buildSearchPattern(filters.searchFilter);
 	if (searchPattern) {
+		// Apenas ilike direto em colunas de lancamentos: o bridge Supabase não serializa
+		// ramos and() dentro de or(), o que fazia a busca inteira ser ignorada.
 		where.push(
 			or(
 				ilike(transactions.name, searchPattern),
 				ilike(transactions.note, searchPattern),
 				ilike(transactions.paymentMethod, searchPattern),
 				ilike(transactions.condition, searchPattern),
-				and(
-					isNotNull(financialAccounts.name),
-					ilike(financialAccounts.name, searchPattern),
-				),
-				and(isNotNull(cards.name), ilike(cards.name, searchPattern)),
 			) as SQL,
 		);
 	}

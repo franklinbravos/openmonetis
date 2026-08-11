@@ -5,9 +5,10 @@ import { DashboardQuickActions } from "@/features/dashboard/components/dashboard
 import { DashboardWelcome } from "@/features/dashboard/components/dashboard-welcome";
 import { extractDashboardLogoNames } from "@/features/dashboard/lib/extract-logo-names";
 import { fetchDashboardPageData } from "@/features/dashboard/page-data-queries";
+import { fetchTransactionsMonthSummaries } from "@/features/transactions/queries";
 import { getSingleParam } from "@/features/transactions/lib/page-helpers";
 import { LogoPrefetchProvider } from "@/shared/components/entity-avatar";
-import MonthNavigation from "@/shared/components/month-picker/month-navigation";
+import { StatementPeriodNavigation } from "@/shared/components/month-picker/statement-period-navigation";
 import { getUser } from "@/shared/lib/auth/server";
 import { prefetchLogoMappings } from "@/shared/lib/logo/prefetch-server";
 import { parsePeriodParam } from "@/shared/utils/period";
@@ -25,8 +26,11 @@ export default async function Page({ searchParams }: PageProps) {
 	const periodoParam = getSingleParam(resolvedSearchParams, "periodo");
 	const { period: selectedPeriod } = parsePeriodParam(periodoParam);
 
-	const { dashboardData, preferences, quickActionOptions } =
-		await fetchDashboardPageData(user.id, selectedPeriod);
+	const [{ dashboardData, preferences, quickActionOptions }, monthSummaries] =
+		await Promise.all([
+			fetchDashboardPageData(user.id, selectedPeriod),
+			fetchTransactionsMonthSummaries(user.id),
+		]);
 	const { dashboardWidgets } = preferences;
 	const adminPayerSlug =
 		quickActionOptions.payerOptions.find(
@@ -41,7 +45,13 @@ export default async function Page({ searchParams }: PageProps) {
 	return (
 		<main className="flex flex-col gap-4">
 			<DashboardWelcome name={user.name} />
-			<MonthNavigation />
+			<StatementPeriodNavigation
+				title="Resumo mensal"
+				sticky={false}
+				showCalendarControls
+				carouselVariant="account"
+				months={monthSummaries}
+			/>
 			<DashboardQuickActions
 				period={selectedPeriod}
 				accounts={dashboardData.accountsSnapshot.accounts}

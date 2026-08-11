@@ -31,8 +31,8 @@ export function TransactionQuickActionButton({
 			{...props}
 		>
 			<Icon className={iconClassName} aria-hidden />
-			<span className="sm:hidden">{shortLabel}</span>
-			<span className="hidden sm:inline">{label}</span>
+			<span className="md:hidden">{shortLabel}</span>
+			<span className="hidden md:inline">{label}</span>
 		</Button>
 	);
 }

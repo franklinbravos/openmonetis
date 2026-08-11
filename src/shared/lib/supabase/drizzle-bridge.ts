@@ -164,6 +164,9 @@ function chunkText(part: unknown): string {
 }
 
 function chunkParamValue(part: unknown): unknown {
+	if (typeof part === "string") {
+		return part;
+	}
 	if (
 		typeof part === "object" &&
 		part !== null &&

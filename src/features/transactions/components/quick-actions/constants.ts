@@ -43,4 +43,4 @@ export const TRANSACTION_QUICK_ACTIONS: Record<
 };
 
 export const transactionQuickActionButtonClassName =
-	"flex h-9 min-h-9 w-auto min-w-[4.25rem] flex-none flex-col items-center justify-center gap-0.5 whitespace-normal border bg-card px-2 py-1.5 text-[11px] font-medium leading-tight shadow-xs hover:bg-accent/40 sm:flex-row sm:gap-2 sm:px-4 sm:py-2 sm:text-sm";
+	"flex h-11 min-h-11 w-full flex-col items-center justify-center gap-0.5 whitespace-nowrap rounded-lg border border-border bg-card px-1 py-1.5 text-[10px] font-medium leading-tight text-muted-foreground shadow-xs hover:bg-accent/50 md:h-full md:min-h-0 md:w-auto md:min-w-0 md:flex-none md:flex-row md:gap-2 md:rounded-none md:border-0 md:bg-transparent md:px-3 md:py-0 md:text-sm md:text-foreground md:opacity-100 md:shadow-none md:hover:bg-accent/40";
