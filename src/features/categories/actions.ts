@@ -1,8 +1,18 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { categories } from "@/db/schema";
+import {
+	categories,
+	installmentAnticipations,
+	transactions,
+} from "@/db/schema";
+import { resolveCategoryTypeForTransaction } from "@/features/categories/lib/category-select-options";
+import {
+	type CategoryLinkedTransaction,
+	fetchCategoryLinkedTransactions,
+} from "@/features/categories/queries";
+import { fetchOwnedCategoryIds } from "@/features/transactions/actions/core";
 import {
 	type ActionResult,
 	handleActionError,
@@ -48,6 +58,17 @@ const deleteCategorySchema = z.object({
 	id: uuidSchema("Category"),
 });
 
+const migrateCategoryTransactionsSchema = z.object({
+	fromCategoryId: uuidSchema("Category"),
+	toCategoryId: uuidSchema("Category"),
+	transactionIds: z.array(uuidSchema("Transaction")).optional(),
+});
+
+const updateCategoryTransactionCategorySchema = z.object({
+	transactionId: uuidSchema("Transaction"),
+	categoryId: uuidSchema("Category"),
+});
+
 const reorderCategoriesSchema = z.object({
 	type: z.enum(CATEGORY_TYPES),
 	categories: z
@@ -64,6 +85,12 @@ const reorderCategoriesSchema = z.object({
 type CategoryCreateInput = z.infer<typeof createCategorySchema>;
 type CategoryUpdateInput = z.infer<typeof updateCategorySchema>;
 type CategoryDeleteInput = z.infer<typeof deleteCategorySchema>;
+type MigrateCategoryTransactionsInput = z.infer<
+	typeof migrateCategoryTransactionsSchema
+>;
+type UpdateCategoryTransactionCategoryInput = z.infer<
+	typeof updateCategoryTransactionCategorySchema
+>;
 type ReorderCategoriesInput = z.infer<typeof reorderCategoriesSchema>;
 
 type CreatedCategoryResult = {
@@ -232,6 +259,229 @@ export async function updateCategoryAction(
 	}
 }
 
+async function validateTargetCategoryForTransactions(
+	userId: string,
+	targetCategoryId: string,
+	transactionTypes: string[],
+): Promise<{ success: false; error: string } | null> {
+	const [targetCategory] = await db.query.categories.findMany({
+		columns: { id: true, type: true },
+		where: and(
+			eq(categories.id, targetCategoryId),
+			eq(categories.userId, userId),
+		),
+		limit: 1,
+	});
+
+	if (!targetCategory) {
+		return { success: false, error: "Categoria de destino não encontrada." };
+	}
+
+	const incompatible = transactionTypes.some(
+		(transactionType) =>
+			targetCategory.type !==
+			resolveCategoryTypeForTransaction(transactionType),
+	);
+
+	if (incompatible) {
+		return {
+			success: false,
+			error:
+				"A categoria de destino não é compatível com o tipo de um ou mais lançamentos.",
+		};
+	}
+
+	return null;
+}
+
+export async function fetchCategoryLinkedTransactionsAction(
+	categoryId: string,
+): Promise<ActionResult<CategoryLinkedTransaction[]>> {
+	try {
+		const user = await getUser();
+		const data = deleteCategorySchema.parse({ id: categoryId });
+
+		const category = await db.query.categories.findFirst({
+			columns: { id: true },
+			where: and(eq(categories.id, data.id), eq(categories.userId, user.id)),
+		});
+
+		if (!category) {
+			return { success: false, error: "Categoria não encontrada." };
+		}
+
+		const linkedTransactions = await fetchCategoryLinkedTransactions(
+			user.id,
+			data.id,
+		);
+
+		return {
+			success: true,
+			message: "Lançamentos vinculados carregados.",
+			data: linkedTransactions,
+		};
+	} catch (error) {
+		return handleActionError(error) as ActionResult<
+			CategoryLinkedTransaction[]
+		>;
+	}
+}
+
+export async function migrateCategoryTransactionsAction(
+	input: MigrateCategoryTransactionsInput,
+): Promise<ActionResult<{ updatedCount: number }>> {
+	try {
+		const user = await getUser();
+		const data = migrateCategoryTransactionsSchema.parse(input);
+
+		if (data.fromCategoryId === data.toCategoryId) {
+			return {
+				success: false,
+				error: "Escolha uma categoria diferente da que será removida.",
+			};
+		}
+
+		const ownedCategoryIds = await fetchOwnedCategoryIds(user.id, [
+			data.fromCategoryId,
+			data.toCategoryId,
+		]);
+
+		if (
+			!ownedCategoryIds.has(data.fromCategoryId) ||
+			!ownedCategoryIds.has(data.toCategoryId)
+		) {
+			return { success: false, error: "Categoria não encontrada." };
+		}
+
+		const filters = [
+			eq(transactions.userId, user.id),
+			eq(transactions.categoryId, data.fromCategoryId),
+		];
+
+		if (data.transactionIds && data.transactionIds.length > 0) {
+			const linkedRows = await db.query.transactions.findMany({
+				columns: { id: true, transactionType: true },
+				where: and(...filters, inArray(transactions.id, data.transactionIds)),
+			});
+
+			if (linkedRows.length === 0) {
+				return {
+					success: false,
+					error: "Nenhum lançamento encontrado para migrar.",
+				};
+			}
+
+			const validationError = await validateTargetCategoryForTransactions(
+				user.id,
+				data.toCategoryId,
+				linkedRows.map((row) => row.transactionType),
+			);
+			if (validationError) {
+				return validationError;
+			}
+
+			await db
+				.update(transactions)
+				.set({ categoryId: data.toCategoryId })
+				.where(and(...filters, inArray(transactions.id, data.transactionIds)));
+
+			revalidateForEntity("categories", user.id);
+			revalidateForEntity("transactions", user.id);
+
+			return {
+				success: true,
+				message: `${linkedRows.length} lançamento(s) migrado(s).`,
+				data: { updatedCount: linkedRows.length },
+			};
+		}
+
+		const linkedRows = await db.query.transactions.findMany({
+			columns: { id: true, transactionType: true },
+			where: and(...filters),
+		});
+
+		if (linkedRows.length === 0) {
+			return {
+				success: true,
+				message: "Nenhum lançamento para migrar.",
+				data: { updatedCount: 0 },
+			};
+		}
+
+		const validationError = await validateTargetCategoryForTransactions(
+			user.id,
+			data.toCategoryId,
+			linkedRows.map((row) => row.transactionType),
+		);
+		if (validationError) {
+			return validationError;
+		}
+
+		await db
+			.update(transactions)
+			.set({ categoryId: data.toCategoryId })
+			.where(and(...filters));
+
+		revalidateForEntity("categories", user.id);
+		revalidateForEntity("transactions", user.id);
+
+		return {
+			success: true,
+			message: `${linkedRows.length} lançamento(s) migrado(s).`,
+			data: { updatedCount: linkedRows.length },
+		};
+	} catch (error) {
+		return handleActionError(error) as ActionResult<{ updatedCount: number }>;
+	}
+}
+
+export async function updateCategoryTransactionCategoryAction(
+	input: UpdateCategoryTransactionCategoryInput,
+): Promise<ActionResult> {
+	try {
+		const user = await getUser();
+		const data = updateCategoryTransactionCategorySchema.parse(input);
+
+		const transaction = await db.query.transactions.findFirst({
+			columns: { id: true, transactionType: true, categoryId: true },
+			where: and(
+				eq(transactions.id, data.transactionId),
+				eq(transactions.userId, user.id),
+			),
+		});
+
+		if (!transaction) {
+			return { success: false, error: "Lançamento não encontrado." };
+		}
+
+		const validationError = await validateTargetCategoryForTransactions(
+			user.id,
+			data.categoryId,
+			[transaction.transactionType],
+		);
+		if (validationError) {
+			return validationError;
+		}
+
+		await db
+			.update(transactions)
+			.set({ categoryId: data.categoryId })
+			.where(
+				and(
+					eq(transactions.id, data.transactionId),
+					eq(transactions.userId, user.id),
+				),
+			);
+
+		revalidateForEntity("categories", user.id);
+		revalidateForEntity("transactions", user.id);
+
+		return { success: true, message: "Categoria do lançamento atualizada." };
+	} catch (error) {
+		return handleActionError(error);
+	}
+}
+
 export async function deleteCategoryAction(
 	input: CategoryDeleteInput,
 ): Promise<ActionResult> {
@@ -281,6 +531,26 @@ export async function deleteCategoryAction(
 			};
 		}
 
+		await db
+			.update(transactions)
+			.set({ categoryId: null })
+			.where(
+				and(
+					eq(transactions.userId, user.id),
+					eq(transactions.categoryId, data.id),
+				),
+			);
+
+		await db
+			.update(installmentAnticipations)
+			.set({ categoryId: null })
+			.where(
+				and(
+					eq(installmentAnticipations.userId, user.id),
+					eq(installmentAnticipations.categoryId, data.id),
+				),
+			);
+
 		const [deleted] = await db
 			.delete(categories)
 			.where(and(eq(categories.id, data.id), eq(categories.userId, user.id)))
@@ -294,8 +564,9 @@ export async function deleteCategoryAction(
 		}
 
 		revalidateForEntity("categories", user.id);
+		revalidateForEntity("transactions", user.id);
 
-		return { success: true, message: "Category removida com sucesso." };
+		return { success: true, message: "Categoria removida com sucesso." };
 	} catch (error) {
 		return handleActionError(error);
 	}

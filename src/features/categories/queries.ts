@@ -1,5 +1,5 @@
-import { eq } from "drizzle-orm";
-import { type Category, categories } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
+import { type Category, categories, transactions } from "@/db/schema";
 import type { CategoryType } from "@/shared/lib/categories/constants";
 import { db } from "@/shared/lib/db";
 
@@ -27,4 +27,48 @@ export async function fetchCategoriesForUser(
 		parentId: category.parentId ?? null,
 		sortOrder: category.sortOrder ?? 0,
 	}));
+}
+
+export type CategoryLinkedTransaction = {
+	id: string;
+	name: string;
+	purchaseDate: string;
+	amount: number;
+	transactionType: string;
+	period: string;
+};
+
+export async function fetchCategoryLinkedTransactions(
+	userId: string,
+	categoryId: string,
+): Promise<CategoryLinkedTransaction[]> {
+	const rows = await db.query.transactions.findMany({
+		columns: {
+			id: true,
+			name: true,
+			purchaseDate: true,
+			amount: true,
+			transactionType: true,
+			period: true,
+		},
+		where: and(
+			eq(transactions.userId, userId),
+			eq(transactions.categoryId, categoryId),
+		),
+		limit: 500,
+	});
+
+	return rows
+		.map((row) => ({
+			id: row.id,
+			name: row.name,
+			purchaseDate:
+				row.purchaseDate instanceof Date
+					? row.purchaseDate.toISOString().slice(0, 10)
+					: String(row.purchaseDate).slice(0, 10),
+			amount: Number(row.amount ?? 0),
+			transactionType: row.transactionType,
+			period: row.period,
+		}))
+		.sort((left, right) => right.purchaseDate.localeCompare(left.purchaseDate));
 }

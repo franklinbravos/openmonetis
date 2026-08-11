@@ -8,6 +8,7 @@ import {
 	formatInvoicePaymentDate,
 	formatInvoiceWidgetOverdueLabel,
 	formatInvoiceWidgetPaymentDate,
+	getInvoiceDueUrgency,
 	getInvoiceShareLabel,
 	parseInvoiceDueDate,
 	parseInvoiceWidgetDueDate,
@@ -32,7 +33,6 @@ import {
 } from "@/shared/components/ui/tooltip";
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import { getAvatarSrc } from "@/shared/lib/payers/utils";
-import { isDateOnlyPast } from "@/shared/utils/date";
 import { cn } from "@/shared/utils/ui";
 import { InvoiceLogo } from "./invoice-logo";
 
@@ -45,8 +45,10 @@ export function InvoiceListItem({ invoice, onPay }: InvoiceListItemProps) {
 	const dueInfo = parseInvoiceWidgetDueDate(invoice.period, invoice.dueDay);
 	const absoluteDueInfo = parseInvoiceDueDate(invoice.period, invoice.dueDay);
 	const isPaid = invoice.paymentStatus === INVOICE_PAYMENT_STATUS.PAID;
-	const isOverdue =
-		!isPaid && dueInfo.date !== null && isDateOnlyPast(dueInfo.date);
+	const dueUrgency = getInvoiceDueUrgency(invoice);
+	const isOverdue = dueUrgency === "overdue";
+	const isDueToday = dueUrgency === "dueToday";
+	const isDueTomorrow = dueUrgency === "dueTomorrow";
 	const paymentInfo = formatInvoiceWidgetPaymentDate(invoice.paidAt);
 	const absolutePaymentInfo = formatInvoicePaymentDate(invoice.paidAt);
 	const breakdown = invoice.pagadorBreakdown ?? [];
@@ -62,6 +64,32 @@ export function InvoiceListItem({ invoice, onPay }: InvoiceListItemProps) {
 		paymentInfo?.label && paymentInfo.label !== absolutePaymentInfo?.label
 			? absolutePaymentInfo?.label
 			: null;
+
+	const dueStatusClassName = cn(
+		isOverdue && "font-semibold text-destructive",
+		isDueToday && "font-semibold text-warning",
+		isDueTomorrow && "font-semibold text-amber-600 dark:text-amber-500",
+	);
+
+	const payButtonLabel = isOverdue
+		? {
+				primary: "Atrasado",
+				secondary: "Pagar",
+				blink: "overdue-blink" as const,
+			}
+		: isDueToday
+			? {
+					primary: "Hoje",
+					secondary: "Pagar",
+					blink: "due-soon-blink" as const,
+				}
+			: isDueTomorrow
+				? {
+						primary: "Amanhã",
+						secondary: "Pagar",
+						blink: "due-soon-blink" as const,
+					}
+				: null;
 
 	const titleNode = (
 		<span className={cn(styles.title, "truncate")}>{invoice.cardName}</span>
@@ -90,123 +118,117 @@ export function InvoiceListItem({ invoice, onPay }: InvoiceListItemProps) {
 							{hasBreakdown ? (
 								<HoverCard openDelay={150}>
 									<HoverCardTrigger asChild>{titleNode}</HoverCardTrigger>
-								<HoverCardContent align="start" className="w-80 space-y-3">
-									<p className="text-xs text-muted-foreground">
-										Distribuição por pessoa
-									</p>
-									<ul className="space-y-2">
-										{breakdown.map((share, index) => (
-											<li
-												key={`${invoice.id}-${
-													share.payerId ?? share.pagadorName ?? index
-												}`}
-												className="flex items-center gap-3"
-											>
-												<Avatar className="size-9">
-													<AvatarImage
-														src={getAvatarSrc(share.pagadorAvatar)}
-														alt={`Avatar de ${share.pagadorName}`}
-													/>
-													<AvatarFallback>
-														{buildInvoiceInitials(share.pagadorName)}
-													</AvatarFallback>
-												</Avatar>
-												<div className="min-w-0 flex-1">
-													<p className="truncate text-sm font-medium text-foreground">
-														{share.pagadorName}
-													</p>
-													<p className="text-xs text-muted-foreground">
-														{getInvoiceShareLabel(
-															share.amount,
-															Math.abs(invoice.totalAmount),
-														)}
-													</p>
-												</div>
-												<div className="flex shrink-0 flex-col items-end gap-0.5 text-sm font-medium text-foreground">
-													<MoneyValues
-														className="font-medium"
-														amount={share.amount}
-													/>
-													{share.percentageChange !== null ? (
-														<span className="flex items-center gap-1 text-xs text-muted-foreground">
-															<PercentageChangeIndicator
-																value={share.percentageChange}
-															/>
-															<span>vs. mês ant.</span>
-														</span>
-													) : null}
-												</div>
-											</li>
-										))}
-									</ul>
-								</HoverCardContent>
-							</HoverCard>
-						) : (
-							titleNode
-						)}
-						{hasMultiplePayers ? (
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<span className="inline-flex shrink-0 cursor-help text-muted-foreground">
-										<RiGroupLine className="size-3.5" aria-hidden />
-										<span className="sr-only">Ver distribuição por pessoa</span>
-									</span>
-								</TooltipTrigger>
-								<TooltipContent side="top">
-									Ver distribuição por pessoa
-								</TooltipContent>
-							</Tooltip>
-						) : null}
-					</div>
-
-					<div className={styles.meta}>
-						{!isPaid ? (
-							dueTooltipLabel ? (
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<span
-											className={
-												isOverdue
-													? "cursor-help font-semibold text-destructive"
-													: "cursor-help"
-											}
-										>
-											{overdueLabel ?? dueInfo.label}
-										</span>
-									</TooltipTrigger>
-									<TooltipContent side="top">{dueTooltipLabel}</TooltipContent>
-								</Tooltip>
+									<HoverCardContent align="start" className="w-80 space-y-3">
+										<p className="text-xs text-muted-foreground">
+											Distribuição por pessoa
+										</p>
+										<ul className="space-y-2">
+											{breakdown.map((share, index) => (
+												<li
+													key={`${invoice.id}-${
+														share.payerId ?? share.pagadorName ?? index
+													}`}
+													className="flex items-center gap-3"
+												>
+													<Avatar className="size-9">
+														<AvatarImage
+															src={getAvatarSrc(share.pagadorAvatar)}
+															alt={`Avatar de ${share.pagadorName}`}
+														/>
+														<AvatarFallback>
+															{buildInvoiceInitials(share.pagadorName)}
+														</AvatarFallback>
+													</Avatar>
+													<div className="min-w-0 flex-1">
+														<p className="truncate text-sm font-medium text-foreground">
+															{share.pagadorName}
+														</p>
+														<p className="text-xs text-muted-foreground">
+															{getInvoiceShareLabel(
+																share.amount,
+																Math.abs(invoice.totalAmount),
+															)}
+														</p>
+													</div>
+													<div className="flex shrink-0 flex-col items-end gap-0.5 text-sm font-medium text-foreground">
+														<MoneyValues
+															className="font-medium"
+															amount={share.amount}
+														/>
+														{share.percentageChange !== null ? (
+															<span className="flex items-center gap-1 text-xs text-muted-foreground">
+																<PercentageChangeIndicator
+																	value={share.percentageChange}
+																/>
+																<span>vs. mês ant.</span>
+															</span>
+														) : null}
+													</div>
+												</li>
+											))}
+										</ul>
+									</HoverCardContent>
+								</HoverCard>
 							) : (
-								<span
-									className={
-										isOverdue ? "font-semibold text-destructive" : undefined
-									}
-								>
-									{overdueLabel ?? dueInfo.label}
-								</span>
-							)
-						) : null}
-						{isPaid && paymentInfo ? (
-							paymentTooltipLabel ? (
+								titleNode
+							)}
+							{hasMultiplePayers ? (
 								<Tooltip>
 									<TooltipTrigger asChild>
-										<span className="cursor-help text-success font-semibold">
-											{paymentInfo.label}
+										<span className="inline-flex shrink-0 cursor-help text-muted-foreground">
+											<RiGroupLine className="size-3.5" aria-hidden />
+											<span className="sr-only">
+												Ver distribuição por pessoa
+											</span>
 										</span>
 									</TooltipTrigger>
 									<TooltipContent side="top">
-										{paymentTooltipLabel}
+										Ver distribuição por pessoa
 									</TooltipContent>
 								</Tooltip>
-							) : (
-								<span className="text-success font-semibold">
-									{paymentInfo.label}
-								</span>
-							)
-						) : null}
+							) : null}
+						</div>
+
+						<div className={styles.meta}>
+							{!isPaid ? (
+								dueTooltipLabel ? (
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<span className={cn("cursor-help", dueStatusClassName)}>
+												{overdueLabel ?? dueInfo.label}
+											</span>
+										</TooltipTrigger>
+										<TooltipContent side="top">
+											{dueTooltipLabel}
+										</TooltipContent>
+									</Tooltip>
+								) : (
+									<span className={dueStatusClassName}>
+										{overdueLabel ?? dueInfo.label}
+									</span>
+								)
+							) : null}
+							{isPaid && paymentInfo ? (
+								paymentTooltipLabel ? (
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<span className="cursor-help text-success font-semibold">
+												{paymentInfo.label}
+											</span>
+										</TooltipTrigger>
+										<TooltipContent side="top">
+											{paymentTooltipLabel}
+										</TooltipContent>
+									</Tooltip>
+								) : (
+									<span className="text-success font-semibold">
+										{paymentInfo.label}
+									</span>
+								)
+							) : null}
+						</div>
 					</div>
 				</div>
-			</div>
 
 				<div className={styles.trailing}>
 					<MoneyValues
@@ -216,6 +238,18 @@ export function InvoiceListItem({ invoice, onPay }: InvoiceListItemProps) {
 					{isPaid ? (
 						<span className={`${styles.trailingMeta} text-success`}>
 							<RiCheckboxCircleFill className="size-3.5" /> Pago
+						</span>
+					) : isDueToday ? (
+						<span className={`${styles.trailingMeta} text-warning`}>Hoje</span>
+					) : isDueTomorrow ? (
+						<span
+							className={`${styles.trailingMeta} text-amber-600 dark:text-amber-500`}
+						>
+							Amanhã
+						</span>
+					) : isOverdue ? (
+						<span className={`${styles.trailingMeta} text-destructive`}>
+							Atrasado
 						</span>
 					) : null}
 				</div>
@@ -229,12 +263,26 @@ export function InvoiceListItem({ invoice, onPay }: InvoiceListItemProps) {
 					className={styles.actionButton}
 					onClick={() => onPay(invoice.id)}
 				>
-					{isOverdue ? (
-						<span className="overdue-blink">
-							<span className="overdue-blink-primary text-destructive">
-								Atrasado
+					{payButtonLabel ? (
+						<span className={payButtonLabel.blink}>
+							<span
+								className={cn(
+									payButtonLabel.blink === "overdue-blink"
+										? "overdue-blink-primary text-destructive"
+										: "due-soon-blink-primary text-warning",
+								)}
+							>
+								{payButtonLabel.primary}
 							</span>
-							<span className="overdue-blink-secondary">Pagar</span>
+							<span
+								className={
+									payButtonLabel.blink === "overdue-blink"
+										? "overdue-blink-secondary"
+										: "due-soon-blink-secondary"
+								}
+							>
+								{payButtonLabel.secondary}
+							</span>
 						</span>
 					) : (
 						<span>Pagar</span>

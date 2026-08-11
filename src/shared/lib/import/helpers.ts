@@ -1,3 +1,5 @@
+import { fixUtf8Mojibake } from "@/shared/utils/string";
+
 const PT_MONTHS: Record<string, number> = {
 	janeiro: 1,
 	fevereiro: 2,
@@ -99,4 +101,8 @@ export function makeSyntheticExternalId(parts: string[]): string {
 		.map((p) => p.trim().toLowerCase())
 		.join("|")
 		.replace(/\s+/g, " ");
+}
+
+export function normalizeImportedText(value: string): string {
+	return fixUtf8Mojibake(value).replace(/\s+/g, " ").trim();
 }

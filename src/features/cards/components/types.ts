@@ -1,8 +1,4 @@
-import {
-	CARD_IMPORT_PDF_PASSWORD_RULES,
-	type CardImportPdfPasswordRule,
-	isCardImportPdfPasswordRule,
-} from "@/shared/lib/cards/import-pdf-password";
+import type { CardImportPdfPasswordRule } from "@/shared/lib/cards/import-pdf-password";
 import type { InvoicePaymentStatus } from "@/shared/lib/invoices";
 
 export type Card = {

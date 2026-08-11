@@ -25,12 +25,10 @@ import {
 	headS3Object,
 } from "@/shared/lib/storage/presign";
 
-async function resolveImportBatchFileKey(
-	batch: {
-		attachment?: { fileKey?: string | null } | null;
-		attachmentId?: string | null;
-	},
-): Promise<string | null> {
+async function resolveImportBatchFileKey(batch: {
+	attachment?: { fileKey?: string | null } | null;
+	attachmentId?: string | null;
+}): Promise<string | null> {
 	if (batch.attachment?.fileKey) {
 		return batch.attachment.fileKey;
 	}

@@ -2,10 +2,8 @@
 
 import { RiAddFill } from "@remixicon/react";
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
-import { deleteCategoryAction } from "@/features/categories/actions";
 import { CategoriesSortableTable } from "@/features/categories/components/categories-sortable-table";
-import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
+import { DeleteCategoryDialog } from "@/features/categories/components/delete-category-dialog";
 import { Button } from "@/shared/components/ui/button";
 import {
 	Tabs,
@@ -97,26 +95,6 @@ export function CategoriesPage({ categories }: CategoriesPageProps) {
 		}
 	};
 
-	const handleRemoveConfirm = async () => {
-		if (!categoryToRemove) {
-			return;
-		}
-
-		const result = await deleteCategoryAction({ id: categoryToRemove.id });
-
-		if (result.success) {
-			toast.success(result.message);
-			return;
-		}
-
-		toast.error(result.error);
-		throw new Error(result.error);
-	};
-
-	const removeTitle = categoryToRemove
-		? `Remover categoria "${categoryToRemove.name}"?`
-		: "Remover categoria?";
-
 	return (
 		<>
 			<div className="flex w-full flex-col gap-6">
@@ -186,15 +164,11 @@ export function CategoriesPage({ categories }: CategoriesPageProps) {
 				onOpenChange={handleEditOpenChange}
 			/>
 
-			<ConfirmActionDialog
+			<DeleteCategoryDialog
+				category={categoryToRemove}
+				allCategories={categories}
 				open={removeOpen && !!categoryToRemove}
 				onOpenChange={handleRemoveOpenChange}
-				title={removeTitle}
-				description="Ao remover esta categoria, os lançamentos associados serão desrelacionados."
-				confirmLabel="Remover"
-				pendingLabel="Removendo..."
-				confirmVariant="destructive"
-				onConfirm={handleRemoveConfirm}
 			/>
 		</>
 	);

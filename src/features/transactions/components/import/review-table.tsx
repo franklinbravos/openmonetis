@@ -74,6 +74,7 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/shared/components/ui/tooltip";
+import { normalizeImportedText } from "@/shared/lib/import/helpers";
 import type { ImportedTransaction } from "@/shared/lib/import/types";
 import { formatCurrency } from "@/shared/utils/currency";
 import { formatDate } from "@/shared/utils/date";
@@ -1642,6 +1643,13 @@ function ReviewDescriptionField({
 		"w-full bg-transparent outline-none focus:rounded focus:ring-1 focus:ring-ring",
 		compact ? "text-xs leading-tight" : "text-sm",
 	);
+
+	useEffect(() => {
+		const fixedDescription = normalizeImportedText(row.description);
+		if (fixedDescription !== row.description) {
+			onDescriptionChange(index, fixedDescription);
+		}
+	}, [index, onDescriptionChange, row.description]);
 
 	const canConvert =
 		!compact &&

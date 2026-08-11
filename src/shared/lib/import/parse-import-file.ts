@@ -1,4 +1,5 @@
 import { parseCnab } from "./cnab-parser";
+import { normalizeImportedText } from "./helpers";
 import { parseInterCsv } from "./inter-csv-parser";
 import { parseOfx } from "./ofx-parser";
 import { parsePdf } from "./pdf-parser";
@@ -26,30 +27,49 @@ export async function parseImportFile(
 		case "ofx":
 		case "qfx": {
 			const content = await readAsText(file, "windows-1252");
-			return parseOfx(content, { fileName: file.name });
+			return normalizeImportStatement(
+				parseOfx(content, { fileName: file.name }),
+			);
 		}
 		case "xlsx":
 		case "xls":
-			return parseXls(await readAsArrayBuffer(file));
+			return normalizeImportStatement(
+				await parseXls(await readAsArrayBuffer(file)),
+			);
 		case "csv": {
 			const content = await readAsText(file, "utf-8");
-			return parseInterCsv(content);
+			return normalizeImportStatement(parseInterCsv(content));
 		}
 		case "txt": {
 			const content = await readAsText(file, "utf-8");
-			return parseCnab(content);
+			return normalizeImportStatement(parseCnab(content));
 		}
 		case "pdf":
-			return parsePdf(
-				await readAsArrayBuffer(file),
-				options?.pdfPassword,
-				options?.pdfPasswordCandidates,
+			return normalizeImportStatement(
+				await parsePdf(
+					await readAsArrayBuffer(file),
+					options?.pdfPassword,
+					options?.pdfPasswordCandidates,
+				),
 			);
 		default:
 			throw new Error(
 				"Formato não suportado. Use .ofx, .qfx, .csv, .txt, .pdf, .xlsx ou .xls.",
 			);
 	}
+}
+
+function normalizeImportStatement(statement: ImportStatement): ImportStatement {
+	return {
+		...statement,
+		transactions: statement.transactions.map((transaction) => ({
+			...transaction,
+			description: normalizeImportedText(transaction.description),
+			categoryRaw: transaction.categoryRaw
+				? normalizeImportedText(transaction.categoryRaw)
+				: transaction.categoryRaw,
+		})),
+	};
 }
 
 function readAsText(file: File, encoding: string): Promise<string> {

@@ -1,8 +1,8 @@
+import { establishGoogleAuthSession } from "@/shared/lib/auth/google-auth-session";
 import {
 	getGoogleClientId,
 	getGoogleClientSecret,
 } from "@/shared/lib/auth/google-env";
-import { establishGoogleAuthSession } from "@/shared/lib/auth/google-auth-session";
 import { parseGoogleIdToken } from "@/shared/lib/auth/google-id-token";
 
 export type GoogleOAuthExchangeResult =

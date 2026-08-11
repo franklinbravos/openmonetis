@@ -27,10 +27,7 @@ export async function upsertInvoicePaymentStatus(
 			.update(invoices)
 			.set({ paymentStatus: input.paymentStatus })
 			.where(
-				and(
-					eq(invoices.userId, input.userId),
-					eq(invoices.id, existing.id),
-				),
+				and(eq(invoices.userId, input.userId), eq(invoices.id, existing.id)),
 			);
 		return;
 	}

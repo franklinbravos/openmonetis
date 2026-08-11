@@ -11,8 +11,8 @@ import {
 	mapPdfLoadError,
 } from "@/shared/lib/import/pdf-password";
 import type { ImportStatement } from "@/shared/lib/import/types";
-import { formatBytes } from "@/shared/utils/number";
 import { uuidSchema } from "@/shared/lib/schemas/common";
+import { formatBytes } from "@/shared/utils/number";
 
 const optionsSchema = z.object({
 	pdfPassword: z.string().optional(),
@@ -53,7 +53,11 @@ export async function parseImportPdfAction(
 
 		if (file.size > MAX_FILE_SIZE) {
 			logs.push("Arquivo excede o limite de 50MB.");
-			return { success: false, error: "Arquivo deve ter no máximo 50MB.", logs };
+			return {
+				success: false,
+				error: "Arquivo deve ter no máximo 50MB.",
+				logs,
+			};
 		}
 
 		const candidatesRaw = formData.get("pdfPasswordCandidates");

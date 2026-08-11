@@ -1,6 +1,10 @@
+"use client";
+
 import { RiBillLine } from "@remixicon/react";
+import { groupDashboardInvoicesByUrgency } from "@/features/dashboard/invoices/invoices-helpers";
 import type { DashboardInvoice } from "@/features/dashboard/invoices/invoices-queries";
 import { WidgetEmptyState } from "@/shared/components/widgets/widget-empty-state";
+import { cn } from "@/shared/utils/ui";
 import { InvoiceListItem } from "./invoice-list-item";
 
 type InvoicesListProps = {
@@ -19,11 +23,34 @@ export function InvoicesList({ invoices, onPay }: InvoicesListProps) {
 		);
 	}
 
+	const groups = groupDashboardInvoicesByUrgency(invoices);
+
 	return (
-		<ul className="flex flex-col">
-			{invoices.map((invoice) => (
-				<InvoiceListItem key={invoice.id} invoice={invoice} onPay={onPay} />
+		<div className="flex flex-col gap-1">
+			{groups.map((group, groupIndex) => (
+				<section key={group.id} className={groupIndex > 0 ? "mt-2" : undefined}>
+					<p
+						className={cn(
+							"px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide",
+							group.headerClassName ?? "text-muted-foreground",
+						)}
+					>
+						{group.label}
+						<span className="ml-1 font-medium normal-case tracking-normal text-muted-foreground">
+							({group.invoices.length})
+						</span>
+					</p>
+					<ul className="flex flex-col">
+						{group.invoices.map((invoice) => (
+							<InvoiceListItem
+								key={invoice.id}
+								invoice={invoice}
+								onPay={onPay}
+							/>
+						))}
+					</ul>
+				</section>
 			))}
-		</ul>
+		</div>
 	);
 }

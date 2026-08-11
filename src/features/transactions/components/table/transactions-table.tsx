@@ -12,7 +12,8 @@ import {
 	type VisibilityState,
 } from "@tanstack/react-table";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Fragment, type ReactNode, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import type {
 	TransactionsExportContext,
 	TransactionsPaginationState,
@@ -37,7 +38,11 @@ import {
 } from "@/shared/components/ui/tooltip";
 import { formatDateGroupLabel } from "@/shared/utils/date";
 import { cn } from "@/shared/utils/ui";
-import { TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID } from "../../lib/month-toolbar";
+import {
+	getMonthToolbarCreateSlotId,
+	monthToolbarCreateGroupClassName,
+	TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID,
+} from "../../lib/month-toolbar";
 import { TransactionsExport } from "../transactions-export";
 import { TransactionsImportButton } from "../transactions-import-button";
 import type {
@@ -317,6 +322,62 @@ export function TransactionsTable({
 			<TransactionsImportButton href={importHref} />
 		) : null;
 
+	const monthToolbarCreateSlotId = showFilters
+		? getMonthToolbarCreateSlotId(TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID)
+		: null;
+	const [monthToolbarCreateSlot, setMonthToolbarCreateSlot] =
+		useState<HTMLElement | null>(null);
+
+	useEffect(() => {
+		if (!monthToolbarCreateSlotId) {
+			setMonthToolbarCreateSlot(null);
+			return;
+		}
+
+		setMonthToolbarCreateSlot(
+			document.getElementById(monthToolbarCreateSlotId),
+		);
+	}, [monthToolbarCreateSlotId]);
+
+	const createActions =
+		createSlot || onMassAdd ? (
+			<div
+				className={cn(
+					monthToolbarCreateGroupClassName,
+					"[&_.quick-actions-root]:w-auto [&_.quick-actions-root]:flex-none [&_.quick-actions-root]:gap-0 [&_.quick-actions-root]:divide-x [&_.quick-actions-root]:divide-border [&_.quick-actions-root_button]:min-w-[4.25rem] [&_.quick-actions-root_button]:flex-none [&_.quick-actions-root_button]:rounded-none [&_.quick-actions-root_button]:border-0 [&_.quick-actions-root_button]:shadow-none [&_.quick-actions-root_button]:hover:bg-accent/50",
+				)}
+			>
+				{createSlot ? (
+					<div className="flex min-w-0 flex-1 items-stretch">{createSlot}</div>
+				) : null}
+				{onMassAdd ? (
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<Button
+								onClick={onMassAdd}
+								variant="ghost"
+								size="sm"
+								className="h-9 shrink-0 rounded-none border-0 px-3 shadow-none hover:bg-accent/50 sm:px-3"
+							>
+								<RiFlashlightFill className="size-4 text-primary" />
+								<span className="sr-only">Adicionar múltiplos lançamentos</span>
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent>
+							<p>Adicionar múltiplos lançamentos</p>
+						</TooltipContent>
+					</Tooltip>
+				) : null}
+			</div>
+		) : null;
+
+	const portaledCreateActions =
+		monthToolbarCreateSlot && createActions
+			? createPortal(createActions, monthToolbarCreateSlot)
+			: null;
+	const showCreateInline = createActions && !monthToolbarCreateSlot;
+	const hasPortaledToolbar = Boolean(monthToolbarCreateSlot);
+
 	const handleOpenRowDetails = (item: TransactionItem) => {
 		onViewDetails?.(item);
 	};
@@ -372,39 +433,21 @@ export function TransactionsTable({
 
 	return (
 		<TooltipProvider>
-			{showTopControls ? (
+			{portaledCreateActions}
+			{showFilters && hasPortaledToolbar ? (
+				<TransactionsFilters
+					payerOptions={payerFilterOptions}
+					categoryOptions={categoryFilterOptions}
+					accountCardOptions={accountCardFilterOptions}
+					hideAdvancedFilters={hasOtherUserData}
+					exportButton={exportSlot}
+					importButton={importSlot}
+					monthToolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID}
+				/>
+			) : null}
+			{showTopControls && !hasPortaledToolbar ? (
 				<div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-					{createSlot || onMassAdd ? (
-						<div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-							{createSlot ? (
-								<div className="flex w-full items-stretch gap-2 md:w-auto">
-									{createSlot}
-								</div>
-							) : null}
-							{onMassAdd ? (
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<Button
-											onClick={onMassAdd}
-											variant="outline"
-											size="icon"
-											className="hidden size-9 sm:inline-flex"
-										>
-											<RiFlashlightFill className="size-4" />
-											<span className="sr-only">
-												Adicionar múltiplos lançamentos
-											</span>
-										</Button>
-									</TooltipTrigger>
-									<TooltipContent>
-										<p>Adicionar múltiplos lançamentos</p>
-									</TooltipContent>
-								</Tooltip>
-							) : null}
-						</div>
-					) : (
-						<span className={showFilters ? "hidden sm:block" : ""} />
-					)}
+					{showCreateInline ? createActions : null}
 
 					{showFilters ? (
 						<TransactionsFilters

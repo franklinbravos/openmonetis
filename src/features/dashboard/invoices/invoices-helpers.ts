@@ -5,7 +5,9 @@ import {
 	type InvoicePaymentStatus,
 } from "@/shared/lib/invoices";
 import {
+	compareDateOnly,
 	getBusinessDateString,
+	isDateOnlyPast,
 	parseUtcDateString,
 	toDateOnlyString,
 } from "@/shared/utils/date";
@@ -151,3 +153,102 @@ export const markInvoiceAsPaid = (
 
 export const isInvoicePaid = (status: InvoicePaymentStatus) =>
 	status === INVOICE_PAYMENT_STATUS.PAID;
+
+export type InvoiceDueUrgency =
+	| "paid"
+	| "overdue"
+	| "dueToday"
+	| "dueTomorrow"
+	| "upcoming";
+
+export type InvoiceUrgencyGroup = {
+	id: "dueToday" | "dueTomorrow" | "overdue" | "upcoming" | "paid";
+	label: string;
+	headerClassName?: string;
+	invoices: DashboardInvoice[];
+};
+
+function getTomorrowDateString(
+	referenceDate = getBusinessDateString(),
+): string | null {
+	const today = parseUtcDateString(referenceDate);
+	if (!today) return null;
+	today.setUTCDate(today.getUTCDate() + 1);
+	return toDateOnlyString(today);
+}
+
+export function getInvoiceDueDate(
+	invoice: Pick<DashboardInvoice, "period" | "dueDay">,
+): string | null {
+	return parseInvoiceWidgetDueDate(invoice.period, invoice.dueDay).date;
+}
+
+export function getInvoiceDueUrgency(
+	invoice: DashboardInvoice,
+	referenceDate = getBusinessDateString(),
+): InvoiceDueUrgency {
+	if (isInvoicePaid(invoice.paymentStatus)) {
+		return "paid";
+	}
+
+	const dueDate = getInvoiceDueDate(invoice);
+	if (!dueDate) {
+		return "upcoming";
+	}
+
+	if (isDateOnlyPast(dueDate, referenceDate)) {
+		return "overdue";
+	}
+
+	if (compareDateOnly(dueDate, referenceDate) === 0) {
+		return "dueToday";
+	}
+
+	const tomorrow = getTomorrowDateString(referenceDate);
+	if (tomorrow && dueDate === tomorrow) {
+		return "dueTomorrow";
+	}
+
+	return "upcoming";
+}
+
+const URGENCY_GROUP_ORDER: Array<{
+	id: InvoiceUrgencyGroup["id"];
+	label: string;
+	headerClassName?: string;
+}> = [
+	{ id: "dueToday", label: "Vence hoje", headerClassName: "text-warning" },
+	{
+		id: "dueTomorrow",
+		label: "Vence amanhã",
+		headerClassName: "text-amber-600",
+	},
+	{ id: "overdue", label: "Atrasadas", headerClassName: "text-destructive" },
+	{ id: "upcoming", label: "Próximas" },
+	{ id: "paid", label: "Pagas", headerClassName: "text-muted-foreground" },
+];
+
+export function groupDashboardInvoicesByUrgency(
+	invoices: DashboardInvoice[],
+	referenceDate = getBusinessDateString(),
+): InvoiceUrgencyGroup[] {
+	const buckets: Record<InvoiceDueUrgency, DashboardInvoice[]> = {
+		paid: [],
+		overdue: [],
+		dueToday: [],
+		dueTomorrow: [],
+		upcoming: [],
+	};
+
+	for (const invoice of invoices) {
+		const urgency = getInvoiceDueUrgency(invoice, referenceDate);
+		buckets[urgency].push(invoice);
+	}
+
+	return URGENCY_GROUP_ORDER.map((group) => ({
+		id: group.id,
+		label: group.label,
+		headerClassName: group.headerClassName,
+		invoices: buckets[group.id],
+	})).filter((group) => group.invoices.length > 0);
+}

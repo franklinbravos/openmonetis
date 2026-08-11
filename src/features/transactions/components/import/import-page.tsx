@@ -111,7 +111,9 @@ import {
 	resolveInvoicePeriodFromStatement,
 	resolveUploadInvoicePeriodFromStatement,
 } from "@/features/transactions/lib/import-invoice-period";
+import { guessImportTransfer } from "@/features/transactions/lib/import-transfer-detection";
 import { normalizeDescriptionKey } from "@/features/transactions/lib/import-utils";
+import { parseImportFileClient } from "@/features/transactions/lib/parse-import-file-client";
 import { uploadImportSourceFile } from "@/features/transactions/lib/upload-import-source";
 import {
 	type InvoiceImportContext,
@@ -134,8 +136,10 @@ import {
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import type { CategoryType } from "@/shared/lib/categories/constants";
 import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants";
-import { buildPeriodFromTransactions } from "@/shared/lib/import/helpers";
-import { parseImportFileClient } from "@/features/transactions/lib/parse-import-file-client";
+import {
+	buildPeriodFromTransactions,
+	normalizeImportedText,
+} from "@/shared/lib/import/helpers";
 import { mapPdfLoadError } from "@/shared/lib/import/pdf-password";
 import type { ImportStatement } from "@/shared/lib/import/types";
 import { getTodayDateString } from "@/shared/utils/date";
@@ -165,6 +169,21 @@ const EMPTY_AUTO_PDF_PASSWORD_ATTEMPTS: string[] = [];
 const EMPTY_INITIAL_IMPORT_HISTORY: ImportFileHistoryEntry[] = [];
 
 const normalizeCategoryName = (value: string) => value.trim().toLowerCase();
+
+function withNormalizedDescriptions(
+	statement: ImportStatement,
+): ImportStatement {
+	return {
+		...statement,
+		transactions: statement.transactions.map((transaction) => ({
+			...transaction,
+			description: normalizeImportedText(transaction.description),
+			categoryRaw: transaction.categoryRaw
+				? normalizeImportedText(transaction.categoryRaw)
+				: transaction.categoryRaw,
+		})),
+	};
+}
 
 function mergeSelectOptions(
 	base: SelectOption[],
@@ -423,8 +442,7 @@ export function ImportPage({
 		const registerResult = await registerImportUploadAction({
 			sourceFileName: sourceFile.name,
 			sourceFileSize: sourceFile.size,
-			cardId:
-				decoded?.type === "card" ? decoded.id : (initialCardId ?? null),
+			cardId: decoded?.type === "card" ? decoded.id : (initialCardId ?? null),
 			invoicePeriod:
 				invoicePeriod ??
 				initialInvoicePeriod ??
@@ -555,20 +573,21 @@ export function ImportPage({
 			stmt: ImportStatement,
 			options?: { draftData?: ImportBatchDraftData | null },
 		) => {
-			setStatement(stmt);
+			const normalizedStatement = withNormalizedDescriptions(stmt);
+			setStatement(normalizedStatement);
 
 			const periodFromFile =
-				resolveInvoicePeriodFromMetadata(stmt.invoice) ??
+				resolveInvoicePeriodFromMetadata(normalizedStatement.invoice) ??
 				resolveInvoicePeriodFromStatement(
-					stmt.invoice,
-					stmt.transactions,
+					normalizedStatement.invoice,
+					normalizedStatement.transactions,
 					selectedCardOption,
 				);
 			if (periodFromFile) {
 				setInvoicePeriod(periodFromFile);
 			}
 
-			setPaymentDate(resolveImportPaymentDate(stmt.invoice));
+			setPaymentDate(resolveImportPaymentDate(normalizedStatement.invoice));
 
 			const resolvedCardId =
 				activeInvoiceContext?.cardId ??
@@ -592,12 +611,13 @@ export function ImportPage({
 			})();
 
 			const statementPeriod =
-				stmt.period ?? buildPeriodFromTransactions(stmt.transactions);
+				normalizedStatement.period ??
+				buildPeriodFromTransactions(normalizedStatement.transactions);
 
 			setIsChecking(true);
 
 			try {
-				const fitIds = stmt.transactions
+				const fitIds = normalizedStatement.transactions
 					.map((t) => t.externalId)
 					.filter((id): id is string => id !== null);
 
@@ -616,7 +636,7 @@ export function ImportPage({
 				] = await Promise.all([
 					checkDuplicateFitIds(fitIds).then((ids) => new Set(ids)),
 					fetchImportDescriptionMemory(
-						stmt.transactions.map((t) => t.description),
+						normalizedStatement.transactions.map((t) => t.description),
 					),
 					fetchImportDuplicateSnapshots(fitIds),
 					shouldFetchInvoiceSnapshots
@@ -645,7 +665,7 @@ export function ImportPage({
 						? invoicePeriodSnapshots
 						: accountImportSnapshots;
 
-				const rowInputs = stmt.transactions.map((t) => {
+				const rowInputs = normalizedStatement.transactions.map((t) => {
 					const isInvoicePayment = isInvoicePaymentDescription(t.description);
 					return {
 						...t,
@@ -660,8 +680,16 @@ export function ImportPage({
 					semanticCandidates,
 				);
 
-				const builtRows = stmt.transactions.map((t, index) => {
+				const builtRows = normalizedStatement.transactions.map((t, index) => {
 					const isInvoicePayment = isInvoicePaymentDescription(t.description);
+					const transferGuess = isInvoicePayment
+						? null
+						: guessImportTransfer(
+								t.description,
+								t.transactionType,
+								accountOptions,
+								resolvedAccountId,
+							);
 					const guessedCardId = isInvoicePayment
 						? guessInvoicePaymentCardId(t.description, cardOptions)
 						: null;
@@ -727,19 +755,24 @@ export function ImportPage({
 						duplicateValidation,
 						linked: false,
 						payerId: mappedPayerId,
-						kind: isInvoicePayment
-							? ("invoice_payment" as const)
-							: ("transaction" as const),
+						kind: transferGuess?.kind
+							? transferGuess.kind
+							: isInvoicePayment
+								? ("invoice_payment" as const)
+								: ("transaction" as const),
 						invoicePaymentCardId: guessedCardId,
 						invoicePaymentPeriod: guessedPeriod,
-						transferPeerAccountId: null,
-						installmentImport,
+						transferPeerAccountId: transferGuess?.transferPeerAccountId ?? null,
+						installmentImport: transferGuess ? null : installmentImport,
 						recurrenceImport: null,
-						categoryId: isInvoicePayment
-							? pagamentosCategoryId
-							: isCategoryCompatible(mappedCategoryId, t.transactionType)
-								? mappedCategoryId
-								: null,
+						categoryId:
+							transferGuess || isInvoicePayment
+								? isInvoicePayment
+									? pagamentosCategoryId
+									: null
+								: isCategoryCompatible(mappedCategoryId, t.transactionType)
+									? mappedCategoryId
+									: null,
 					};
 				});
 
@@ -1919,10 +1952,7 @@ export function ImportPage({
 			returnToSourceHref ??
 			buildImportLandingHref({
 				cardId:
-					initialCardId ??
-					linkedCardId ??
-					activeInvoiceContext?.cardId ??
-					null,
+					initialCardId ?? linkedCardId ?? activeInvoiceContext?.cardId ?? null,
 				accountId: initialAccountId,
 				invoicePeriod:
 					invoicePeriod ??

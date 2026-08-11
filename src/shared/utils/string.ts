@@ -51,3 +51,33 @@ export function normalizeIconInput(icon?: string | null): string | null {
 	const trimmed = icon?.trim() ?? "";
 	return trimmed.length > 0 ? trimmed : null;
 }
+
+const UTF8_MOJIBAKE_RE = /\u00c3[\u0080-\u00bf]|\u00c2[\u0080-\u00bf]/;
+
+export function looksLikeUtf8Mojibake(value: string): boolean {
+	return UTF8_MOJIBAKE_RE.test(value);
+}
+
+/**
+ * Corrige texto UTF-8 que foi interpretado como Latin-1 (ex.: "dÃ©bito" → "débito").
+ */
+export function fixUtf8Mojibake(value: string): string {
+	if (!value || !looksLikeUtf8Mojibake(value)) {
+		return value;
+	}
+
+	const bytes = Uint8Array.from(value, (char) => char.charCodeAt(0) & 0xff);
+	const recovered = new TextDecoder("utf-8").decode(bytes);
+	if (!recovered || recovered === value) {
+		return value;
+	}
+
+	const countMarkers = (input: string) =>
+		(input.match(UTF8_MOJIBAKE_RE) ?? []).length;
+
+	if (countMarkers(recovered) < countMarkers(value)) {
+		return recovered;
+	}
+
+	return value;
+}

@@ -75,7 +75,9 @@ export function ModelSelectionCard({
 	const [isEditingApiKey, setIsEditingApiKey] = useState(false);
 
 	useEffect(() => {
-		setIsEditingApiKey(false);
+		if (currentProvider || configuredKeyHint) {
+			setIsEditingApiKey(false);
+		}
 	}, [currentProvider, configuredKeyHint]);
 
 	const hasSavedKeyHint = Boolean(configuredKeyHint);

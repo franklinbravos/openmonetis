@@ -84,7 +84,29 @@ export function AccountCard({
 	].filter((action) => typeof action.onClick === "function");
 
 	return (
-		<Card className={cn("flex w-full flex-col p-6", className)}>
+		<Card
+			className={cn(
+				"flex w-full flex-col p-6",
+				onViewStatement && "cursor-pointer",
+				className,
+			)}
+			onClick={onViewStatement}
+			onKeyDown={
+				onViewStatement
+					? (event) => {
+							if (event.key === "Enter" || event.key === " ") {
+								event.preventDefault();
+								onViewStatement();
+							}
+						}
+					: undefined
+			}
+			role={onViewStatement ? "button" : undefined}
+			tabIndex={onViewStatement ? 0 : undefined}
+			aria-label={
+				onViewStatement ? `Ver extrato da conta ${accountName}` : undefined
+			}
+		>
 			<div className="flex items-start justify-between gap-2">
 				<div className="flex min-w-0 items-center gap-2">
 					<div
@@ -107,6 +129,7 @@ export function AccountCard({
 											type="button"
 											className="shrink-0 text-muted-foreground/70 transition-colors hover:text-foreground"
 											aria-label="Informações da conta"
+											onClick={(event) => event.stopPropagation()}
 										>
 											<RiInformationLine className="size-3.5" />
 										</button>
@@ -152,7 +175,11 @@ export function AccountCard({
 				</div>
 			</CardContent>
 
-			<CardFooter className="flex flex-wrap gap-4 p-0 text-sm">
+			<CardFooter
+				className="flex flex-wrap gap-4 p-0 text-sm"
+				onClick={(event) => event.stopPropagation()}
+				onKeyDown={(event) => event.stopPropagation()}
+			>
 				{actions.map(({ label, icon, onClick, variant }) => (
 					<button
 						key={label}

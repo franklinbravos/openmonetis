@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Alert, AlertDescription } from "@/shared/components/ui/alert";
+import { normalizeOAuthOrigin } from "@/shared/lib/app-url";
 import { getGoogleOAuthConsoleSetup } from "@/shared/lib/auth/google-callback-url";
-import { getAppOrigin, normalizeOAuthOrigin } from "@/shared/lib/app-url";
 
 export function GoogleOAuthSetupHint() {
 	const [hint, setHint] = useState<string | null>(null);
@@ -13,7 +13,6 @@ export function GoogleOAuthSetupHint() {
 
 		const browserOrigin = window.location.origin;
 		const canonicalOrigin = normalizeOAuthOrigin(browserOrigin);
-		const appOrigin = getAppOrigin();
 		const { javascriptOrigin, redirectUri } = getGoogleOAuthConsoleSetup();
 		const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim();
 		const clientSuffix = clientId?.slice(-12);

@@ -1,7 +1,6 @@
 "use client";
 
 import {
-	RiBankLine,
 	RiEditLine,
 	RiEqualizerLine,
 	RiFileExcel2Line,
@@ -16,6 +15,7 @@ import {
 	updateInvoicePaymentStatusAction,
 	updatePaymentDateAction,
 } from "@/features/invoices/actions";
+import { resolveInvoicePaymentTiming } from "@/features/invoices/lib/payment-timing";
 import { AccountCardSelectContent } from "@/features/transactions/components/select-items";
 import StatusDot from "@/shared/components/feedback/status-dot";
 import MoneyValues from "@/shared/components/money-values";
@@ -40,6 +40,12 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/shared/components/ui/select";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "@/shared/components/ui/tooltip";
 import { resolveCardBrandAsset } from "@/shared/lib/cards/brand-assets";
 import {
 	INVOICE_PAYMENT_STATUS,
@@ -48,6 +54,8 @@ import {
 	type InvoicePaymentStatus,
 } from "@/shared/lib/invoices";
 import { formatCurrency } from "@/shared/utils/currency";
+import { formatDateOnly, formatDateOnlyLabel } from "@/shared/utils/date";
+import { formatFinancialDateLabel } from "@/shared/utils/financial-dates";
 import { cn } from "@/shared/utils/ui";
 import { AdjustInvoiceDialog } from "./adjust-invoice-dialog";
 import { EditPaymentDateDialog } from "./edit-payment-date-dialog";
@@ -142,6 +150,10 @@ export function InvoiceSummaryCard({
 	const brandAsset = resolveCardBrandAsset(cardBrand);
 	const isPaid = invoiceStatus === INVOICE_PAYMENT_STATUS.PAID;
 	const importHref = `/transactions/import?cartao=${encodeURIComponent(cardId)}&periodo=${encodeURIComponent(period)}`;
+	const paymentTiming =
+		isPaid && initialPaymentDate
+			? resolveInvoicePaymentTiming(initialPaymentDate, period, dueDay)
+			: null;
 
 	const targetStatus = isPaid
 		? INVOICE_PAYMENT_STATUS.PENDING
@@ -232,7 +244,7 @@ export function InvoiceSummaryCard({
 								}
 							/>
 						</div>
-						<div className="flex items-center gap-2">
+						<div className="flex flex-wrap items-center gap-2">
 							<Badge
 								variant={INVOICE_STATUS_BADGE_VARIANT[invoiceStatus]}
 								className="text-xs"
@@ -244,6 +256,9 @@ export function InvoiceSummaryCard({
 									<StatusDot color={getCardStatusDotColor(cardStatus)} />
 									<span>{cardStatus}</span>
 								</div>
+							) : null}
+							{paymentTiming ? (
+								<InvoicePaymentDateMeta timing={paymentTiming} />
 							) : null}
 						</div>
 					</div>
@@ -389,6 +404,60 @@ function MetaItem({ label, children }: { label: string; children: ReactNode }) {
 				{label}
 			</span>
 			<div className="mt-1">{children}</div>
+		</div>
+	);
+}
+
+function InvoicePaymentDateMeta({
+	timing,
+}: {
+	timing: NonNullable<ReturnType<typeof resolveInvoicePaymentTiming>>;
+}) {
+	const paymentLabel =
+		formatFinancialDateLabel(timing.paymentDate, "Pago em") ??
+		formatDateOnlyLabel(timing.paymentDate);
+
+	if (!paymentLabel) {
+		return null;
+	}
+
+	const lateLabel =
+		timing.lateDays === 1
+			? "1 dia após o vencimento"
+			: `${timing.lateDays} dias após o vencimento`;
+
+	const weekendAdjustmentHint = timing.dueDateAdjustedForWeekend
+		? `O vencimento cai em fim de semana; o prazo considerado foi ${formatDateOnly(
+				timing.effectiveDueDate,
+				{ day: "2-digit", month: "short", year: "numeric" },
+			)}.`
+		: null;
+
+	return (
+		<div className="flex flex-wrap items-center gap-1.5">
+			<span className="text-xs text-muted-foreground">{paymentLabel}</span>
+			{timing.isLate ? (
+				<TooltipProvider delayDuration={200}>
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<Badge
+								variant="destructive"
+								className="cursor-default text-[10px] uppercase tracking-wide"
+							>
+								Em atraso
+							</Badge>
+						</TooltipTrigger>
+						<TooltipContent className="max-w-xs text-xs">
+							<p>{lateLabel}</p>
+							{weekendAdjustmentHint ? (
+								<p className="mt-1 text-muted-foreground">
+									{weekendAdjustmentHint}
+								</p>
+							) : null}
+						</TooltipContent>
+					</Tooltip>
+				</TooltipProvider>
+			) : null}
 		</div>
 	);
 }

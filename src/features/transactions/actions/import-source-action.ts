@@ -10,7 +10,6 @@ import { handleActionError } from "@/shared/lib/actions/helpers";
 import { MAX_FILE_SIZE } from "@/shared/lib/attachments/config";
 import { getUser, getUserId } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
-import { getSupabaseAdmin } from "@/shared/lib/supabase/admin";
 import {
 	isAllowedImportSourceMimeType,
 	resolveImportFileMimeType,
@@ -26,6 +25,7 @@ import {
 	headS3Object,
 	putS3Object,
 } from "@/shared/lib/storage/presign";
+import { getSupabaseAdmin } from "@/shared/lib/supabase/admin";
 
 const UPLOAD_TOKEN_EXPIRY_SECONDS = 10 * 60;
 

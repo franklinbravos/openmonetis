@@ -1,16 +1,18 @@
 import { type NextRequest, NextResponse } from "next/server";
 import {
-	getGoogleOAuthCallbackPath,
 	GOOGLE_OAUTH_REDIRECT_URI_COOKIE,
+	getGoogleOAuthCallbackPath,
 } from "@/shared/lib/auth/google-callback-url";
-import { exchangeGoogleAuthCode } from "@/shared/lib/auth/google-exchange";
 import { isGoogleOAuthConfigured } from "@/shared/lib/auth/google-env";
+import { exchangeGoogleAuthCode } from "@/shared/lib/auth/google-exchange";
 
 function resolveRedirectUri(request: NextRequest): string {
 	const requestUrl = new URL(request.url);
 	const fromRequest = `${requestUrl.origin}${requestUrl.pathname}`;
 
-	const cookieValue = request.cookies.get(GOOGLE_OAUTH_REDIRECT_URI_COOKIE)?.value;
+	const cookieValue = request.cookies.get(
+		GOOGLE_OAUTH_REDIRECT_URI_COOKIE,
+	)?.value;
 	if (cookieValue) {
 		try {
 			return decodeURIComponent(cookieValue);

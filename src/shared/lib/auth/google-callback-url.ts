@@ -1,6 +1,7 @@
 import { getAppOrigin, normalizeOAuthOrigin } from "@/shared/lib/app-url";
 
-export const GOOGLE_OAUTH_REDIRECT_URI_COOKIE = "openmonetis_google_redirect_uri";
+export const GOOGLE_OAUTH_REDIRECT_URI_COOKIE =
+	"openmonetis_google_redirect_uri";
 
 export function getGoogleOAuthCallbackPath(): string {
 	return "/auth/google/callback";

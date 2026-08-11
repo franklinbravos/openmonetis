@@ -185,11 +185,7 @@ export function CategorySearchSelect({
 						? { "data-import-review-category": "" }
 						: {})}
 					onKeyDown={(event) => {
-						if (
-							enableCategoryTabFlow &&
-							!popoverOpen &&
-							event.key === "Tab"
-						) {
+						if (enableCategoryTabFlow && !popoverOpen && event.key === "Tab") {
 							const moved = focusAdjacentImportReviewCategory(
 								event.currentTarget,
 								event.shiftKey ? -1 : 1,

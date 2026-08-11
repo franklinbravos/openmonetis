@@ -367,7 +367,7 @@ function TransactionMobileCard({
 						</div>
 						{showActions ? (
 							<div
-								role="presentation"
+								role="group"
 								className="flex shrink-0 items-center gap-1"
 								onClick={(event) => event.stopPropagation()}
 								onKeyDown={(event) => event.stopPropagation()}

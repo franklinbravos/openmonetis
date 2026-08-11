@@ -68,8 +68,8 @@ async function ensureAuthUser(profile: GoogleProfile): Promise<string> {
 		throw new Error("signup_disabled");
 	}
 
-	const { data: created, error: createError } = await admin.auth.admin.createUser(
-		{
+	const { data: created, error: createError } =
+		await admin.auth.admin.createUser({
 			email,
 			email_confirm: true,
 			user_metadata: {
@@ -81,8 +81,7 @@ async function ensureAuthUser(profile: GoogleProfile): Promise<string> {
 				provider: "google",
 				providers: ["google"],
 			},
-		},
-	);
+		});
 
 	if (createError) {
 		if (!isAlreadyRegisteredError(createError.message)) {

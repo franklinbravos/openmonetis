@@ -75,13 +75,8 @@ export async function generateMetadata({
 	searchParams,
 }: PageProps): Promise<Metadata> {
 	const resolvedSearchParams = searchParams ? await searchParams : undefined;
-	const {
-		initialCardId,
-		initialAccountId,
-		initialInvoicePeriod,
-		initialResumeBatchId,
-		initialResumeNonce,
-	} = resolveImportPrefill(resolvedSearchParams);
+	const { initialCardId, initialAccountId, initialInvoicePeriod } =
+		resolveImportPrefill(resolvedSearchParams);
 
 	if (initialCardId && initialInvoicePeriod) {
 		return {
@@ -173,8 +168,7 @@ export default async function Page({ searchParams }: PageProps) {
 		resumeNonce: initialResumeNonce,
 		cardId: validCardId,
 		accountId: validAccountId,
-		invoicePeriod:
-			validCardId || validAccountId ? initialInvoicePeriod : null,
+		invoicePeriod: validCardId || validAccountId ? initialInvoicePeriod : null,
 	});
 
 	return (

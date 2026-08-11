@@ -2,9 +2,9 @@
 
 import { supabase } from "@/shared/lib/auth/client";
 import {
+	GOOGLE_OAUTH_REDIRECT_URI_COOKIE,
 	getGoogleOAuthCallbackUrl,
 	getGoogleOAuthConsoleSetup,
-	GOOGLE_OAUTH_REDIRECT_URI_COOKIE,
 } from "@/shared/lib/auth/google-callback-url";
 
 const GSI_SCRIPT_URL = "https://accounts.google.com/gsi/client";

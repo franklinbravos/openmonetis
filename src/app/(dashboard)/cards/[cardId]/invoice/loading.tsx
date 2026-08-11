@@ -29,7 +29,7 @@ export default function FaturaLoading() {
 					</div>
 				</div>
 				<div className="px-3 py-2.5 sm:px-4 sm:py-3">
-					<Skeleton className="h-9 w-full rounded-md bg-foreground/10" />
+					<Skeleton className="h-16 w-full rounded-lg bg-foreground/10" />
 				</div>
 			</Card>
 

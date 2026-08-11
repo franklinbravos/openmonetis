@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
+import { getAppOrigin } from "@/shared/lib/app-url";
+import { getGoogleOAuthCallbackPath } from "@/shared/lib/auth/google-callback-url";
 import {
 	getGoogleClientId,
 	isGoogleOAuthConfigured,
 } from "@/shared/lib/auth/google-env";
-import { getGoogleOAuthCallbackPath } from "@/shared/lib/auth/google-callback-url";
-import { getAppOrigin } from "@/shared/lib/app-url";
 
 /**
  * Diagnóstico de OAuth Google (dev/setup).

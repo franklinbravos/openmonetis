@@ -7,6 +7,7 @@ import { AdjustBalanceDialog } from "@/features/accounts/components/adjust-balan
 import type { Account } from "@/features/accounts/components/types";
 import {
 	fetchAccountData,
+	fetchAccountStatementMonthSummaries,
 	fetchAccountSummary,
 	fetchAccountTransactionsPage,
 } from "@/features/accounts/statement-queries";
@@ -29,8 +30,9 @@ import {
 	fetchRecentEstablishments,
 	fetchTransactionFilterSources,
 } from "@/features/transactions/queries";
-import MonthNavigation from "@/shared/components/month-picker/month-navigation";
+import { StatementPeriodNavigation } from "@/shared/components/month-picker/statement-period-navigation";
 import { PageBreadcrumb } from "@/shared/components/navigation/page-breadcrumb";
+import { Card } from "@/shared/components/ui/card";
 import { getUserId } from "@/shared/lib/auth/server";
 import { loadLogoOptions } from "@/shared/lib/logo/options";
 import { getBusinessDateString } from "@/shared/utils/date";
@@ -94,12 +96,14 @@ export default async function Page({ params, searchParams }: PageProps) {
 		accountSummary,
 		estabelecimentos,
 		userPreferences,
+		statementMonthSummaries,
 	] = await Promise.all([
 		fetchTransactionFilterSources(userId),
 		loadLogoOptions(),
 		fetchAccountSummary(userId, accountId, selectedPeriod),
 		fetchRecentEstablishments(userId),
 		fetchUserPreferences(userId),
+		fetchAccountStatementMonthSummaries(userId, accountId),
 	]);
 	const sluggedFilters = buildSluggedFilters(filterSources);
 	const slugMaps = buildSlugMaps(sluggedFilters);
@@ -196,7 +200,20 @@ export default async function Page({ params, searchParams }: PageProps) {
 				}
 			/>
 
-			<MonthNavigation toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID} />
+			<StatementPeriodNavigation
+				hideCreateActions
+				showCalendarControls
+				carouselVariant="account"
+				months={statementMonthSummaries}
+			/>
+
+			<Card className="sticky top-18 z-10 gap-0 overflow-hidden py-0 backdrop-blur-md supports-backdrop-filter:bg-card/60">
+				<StatementPeriodNavigation
+					embedded
+					hideCarousel
+					toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID}
+				/>
+			</Card>
 
 			<section className="flex flex-col gap-4">
 				<LancamentosSection
