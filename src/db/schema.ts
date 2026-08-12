@@ -277,6 +277,10 @@ export const payers = pgTable(
 		uniqueShareCode: uniqueIndex("pagadores_share_code_key").on(
 			table.shareCode,
 		),
+		userIdRoleIdx: index("pagadores_user_id_role_idx").on(
+			table.userId,
+			table.role,
+		),
 	}),
 );
 

@@ -267,6 +267,13 @@
 			"when": 1785977844301,
 			"tag": "0038_worthless_darwin",
 			"breakpoints": true
+		},
+		{
+			"idx": 39,
+			"version": "7",
+			"when": 1786546929341,
+			"tag": "0039_pagadores_user_id_role_idx",
+			"breakpoints": true
 		}
 	]
 }
