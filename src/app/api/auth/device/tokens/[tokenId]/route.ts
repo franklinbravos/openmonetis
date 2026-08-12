@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { connection, NextResponse } from "next/server";
 import { apiTokens } from "@/db/schema";
-import { getUser } from "@/shared/lib/auth/server";
+import { getOptionalUserSession } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
 
 interface RouteParams {
@@ -11,10 +11,15 @@ interface RouteParams {
 export async function DELETE(_request: Request, { params }: RouteParams) {
 	await connection();
 
+	const session = await getOptionalUserSession();
+	if (!session) {
+		return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+	}
+
 	const { tokenId } = await params;
 
 	try {
-		const user = await getUser();
+		const user = session.user;
 
 		const token = await db.query.apiTokens.findFirst({
 			where: and(eq(apiTokens.id, tokenId), eq(apiTokens.userId, user.id)),

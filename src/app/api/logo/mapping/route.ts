@@ -13,7 +13,7 @@ import { buildLogoDevUrl } from "@/shared/lib/logo/server";
 export async function GET(request: Request) {
 	const session = await getOptionalUserSession();
 	if (!session) {
-		return NextResponse.json({ domain: null, logoUrl: null }, { status: 200 });
+		return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 	}
 
 	const { searchParams } = new URL(request.url);

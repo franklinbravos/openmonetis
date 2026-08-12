@@ -1,14 +1,19 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { connection, NextResponse } from "next/server";
 import { apiTokens } from "@/db/schema";
-import { getUser } from "@/shared/lib/auth/server";
+import { getOptionalUserSession } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
 
 export async function GET() {
 	await connection();
 
+	const session = await getOptionalUserSession();
+	if (!session) {
+		return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+	}
+
 	try {
-		const user = await getUser();
+		const user = session.user;
 
 		const activeTokens = await db
 			.select({
