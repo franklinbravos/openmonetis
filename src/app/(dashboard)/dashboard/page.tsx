@@ -5,8 +5,8 @@ import { DashboardQuickActions } from "@/features/dashboard/components/dashboard
 import { DashboardWelcome } from "@/features/dashboard/components/dashboard-welcome";
 import { extractDashboardLogoNames } from "@/features/dashboard/lib/extract-logo-names";
 import { fetchDashboardPageData } from "@/features/dashboard/page-data-queries";
-import { fetchTransactionsMonthSummaries } from "@/features/transactions/queries";
 import { getSingleParam } from "@/features/transactions/lib/page-helpers";
+import { fetchTransactionsMonthSummaries } from "@/features/transactions/queries";
 import { LogoPrefetchProvider } from "@/shared/components/entity-avatar";
 import { StatementPeriodNavigation } from "@/shared/components/month-picker/statement-period-navigation";
 import { getUser } from "@/shared/lib/auth/server";

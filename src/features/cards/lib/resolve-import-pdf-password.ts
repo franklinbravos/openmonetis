@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { cards } from "@/db/schema";
-import { decryptSecret } from "@/shared/lib/ai/secret-encryption";
+import { tryDecryptSecret } from "@/shared/lib/ai/secret-encryption";
 import {
 	buildImportPdfPasswordAttempts,
 	type CardImportPdfPasswordRule,
@@ -29,12 +29,10 @@ export async function resolveCardImportPdfPassword(
 		return null;
 	}
 
-	try {
-		const secret = decryptSecret(card.importPdfPasswordSecret);
-		return deriveImportPdfPassword(card.importPdfPasswordRule, secret);
-	} catch {
-		return null;
-	}
+	const secret = tryDecryptSecret(card.importPdfPasswordSecret);
+	if (!secret) return null;
+
+	return deriveImportPdfPassword(card.importPdfPasswordRule, secret);
 }
 
 export async function resolveCardImportPdfPasswordAttempts(
@@ -57,12 +55,10 @@ export async function resolveCardImportPdfPasswordAttempts(
 		return [];
 	}
 
-	try {
-		const secret = decryptSecret(card.importPdfPasswordSecret);
-		return buildImportPdfPasswordAttempts(card.importPdfPasswordRule, secret);
-	} catch {
-		return [];
-	}
+	const secret = tryDecryptSecret(card.importPdfPasswordSecret);
+	if (!secret) return [];
+
+	return buildImportPdfPasswordAttempts(card.importPdfPasswordRule, secret);
 }
 
 export type CardImportPdfPasswordSettings = {

@@ -8,7 +8,10 @@ type SelectCreateActionProps = {
 	onClick: () => void;
 };
 
-export function SelectCreateAction({ label, onClick }: SelectCreateActionProps) {
+export function SelectCreateAction({
+	label,
+	onClick,
+}: SelectCreateActionProps) {
 	return (
 		<>
 			<SelectSeparator />

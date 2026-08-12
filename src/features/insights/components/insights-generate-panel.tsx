@@ -41,9 +41,14 @@ export function InsightsGeneratePanel({
 		(getProviderFromModelId(selectedModelId) as AIProvider | null) ?? "openai";
 	const selectedModelLabel = getModelLabel(selectedModelId);
 	const providerConfig = providerSettings?.[currentProvider];
-	const hasCredential = providerConfig?.activeSource !== "none";
+	const hasInvalidKey = providerConfig?.hasInvalidDatabaseKey ?? false;
+	const hasCredential =
+		providerConfig?.activeSource !== "none" && !hasInvalidKey;
 	const canAnalyze =
-		!disabled && !isLoadingSavedInsights && Boolean(selectedModelId);
+		!disabled &&
+		!isLoadingSavedInsights &&
+		Boolean(selectedModelId) &&
+		(currentProvider === "ollama" || hasCredential);
 
 	return (
 		<section className="space-y-4">
@@ -74,9 +79,11 @@ export function InsightsGeneratePanel({
 							<strong>{PROVIDERS[currentProvider].name}</strong>
 							{" · "}
 							{selectedModelLabel || DEFAULT_MODEL}
-							{hasCredential
-								? " · chave configurada"
-								: " · sem chave configurada"}
+							{hasInvalidKey
+								? " · chave ilegível — salve novamente em Ajustes"
+								: hasCredential
+									? " · chave configurada"
+									: " · sem chave configurada"}
 						</p>
 					</div>
 				</CardContent>

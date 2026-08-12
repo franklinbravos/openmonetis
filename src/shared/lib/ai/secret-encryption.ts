@@ -34,25 +34,39 @@ export function encryptSecret(plainText: string): string {
 }
 
 export function decryptSecret(payload: string): string {
-	const [initializationVectorBase64, authTagBase64, encryptedBase64] =
-		payload.split(":");
-
-	if (!initializationVectorBase64 || !authTagBase64 || !encryptedBase64) {
-		throw new Error("Formato de segredo inválido.");
+	const decrypted = tryDecryptSecret(payload);
+	if (decrypted == null) {
+		throw new Error("Não foi possível descriptografar o segredo.");
 	}
 
-	const key = getEncryptionKey();
-	const decipher = createDecipheriv(
-		"aes-256-gcm",
-		key,
-		Buffer.from(initializationVectorBase64, "base64"),
-	);
-	decipher.setAuthTag(Buffer.from(authTagBase64, "base64"));
+	return decrypted;
+}
 
-	return Buffer.concat([
-		decipher.update(Buffer.from(encryptedBase64, "base64")),
-		decipher.final(),
-	]).toString("utf8");
+/** Retorna null quando o payload é inválido ou a chave (APP_SECRET) mudou. */
+export function tryDecryptSecret(payload: string): string | null {
+	try {
+		const [initializationVectorBase64, authTagBase64, encryptedBase64] =
+			payload.split(":");
+
+		if (!initializationVectorBase64 || !authTagBase64 || !encryptedBase64) {
+			return null;
+		}
+
+		const key = getEncryptionKey();
+		const decipher = createDecipheriv(
+			"aes-256-gcm",
+			key,
+			Buffer.from(initializationVectorBase64, "base64"),
+		);
+		decipher.setAuthTag(Buffer.from(authTagBase64, "base64"));
+
+		return Buffer.concat([
+			decipher.update(Buffer.from(encryptedBase64, "base64")),
+			decipher.final(),
+		]).toString("utf8");
+	} catch {
+		return null;
+	}
 }
 
 export function maskApiKey(apiKey: string): string {

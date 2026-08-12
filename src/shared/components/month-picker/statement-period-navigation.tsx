@@ -386,7 +386,9 @@ function PeriodMonthCarousel({
 												<span
 													className={cn(
 														"text-muted-foreground",
-														isFuture && !isSelected && "text-muted-foreground/50",
+														isFuture &&
+															!isSelected &&
+															"text-muted-foreground/50",
 													)}
 												>
 													Ent.
@@ -404,7 +406,9 @@ function PeriodMonthCarousel({
 												<span
 													className={cn(
 														"text-muted-foreground",
-														isFuture && !isSelected && "text-muted-foreground/50",
+														isFuture &&
+															!isSelected &&
+															"text-muted-foreground/50",
 													)}
 												>
 													Saí.
@@ -422,7 +426,9 @@ function PeriodMonthCarousel({
 												<span
 													className={cn(
 														"text-muted-foreground",
-														isFuture && !isSelected && "text-muted-foreground/50",
+														isFuture &&
+															!isSelected &&
+															"text-muted-foreground/50",
 													)}
 												>
 													Saldo

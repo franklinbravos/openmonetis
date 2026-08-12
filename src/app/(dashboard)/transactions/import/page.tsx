@@ -13,6 +13,11 @@ import type { InvoiceImportContext } from "@/features/transactions/lib/validate-
 import { fetchTransactionFilterSources } from "@/features/transactions/queries";
 import { fetchImportBatchHistory } from "@/features/transactions/queries/import-batch-history";
 import PageDescription from "@/shared/components/page-description";
+import {
+	fetchUserAiProviderSettings,
+	hasInvalidStoredAiKeys,
+	isAnyAiProviderConfigured,
+} from "@/shared/lib/ai/user-provider-config";
 import { getUserId } from "@/shared/lib/auth/server";
 import { displayPeriod, parsePeriod } from "@/shared/utils/period";
 
@@ -106,18 +111,31 @@ export default async function Page({ searchParams }: PageProps) {
 		initialResumeBatchId,
 		initialResumeNonce,
 	} = resolveImportPrefill(resolvedSearchParams);
-	const filterSources = await fetchTransactionFilterSources(userId);
-	const sluggedFilters = buildSluggedFilters(filterSources);
+	const [optionSets, aiSettings] = await Promise.all([
+		(async () => {
+			const sources = await fetchTransactionFilterSources(userId);
+			const sluggedFilters = buildSluggedFilters(sources);
+			return {
+				sources,
+				options: buildOptionSets({
+					...sluggedFilters,
+					payerRows: sources.payerRows,
+				}),
+			};
+		})(),
+		fetchUserAiProviderSettings(userId),
+	]);
+	const filterSources = optionSets.sources;
 	const {
 		payerOptions,
 		accountOptions,
 		cardOptions,
 		categoryOptions,
 		defaultPayerId,
-	} = buildOptionSets({
-		...sluggedFilters,
-		payerRows: filterSources.payerRows,
-	});
+	} = optionSets.options;
+	const aiStoredKeysInvalid = hasInvalidStoredAiKeys(aiSettings.storedSettings);
+	const aiAnalysisEnabled =
+		isAnyAiProviderConfigured(aiSettings.credentials) && !aiStoredKeysInvalid;
 
 	const validCardId =
 		initialCardId &&
@@ -200,6 +218,8 @@ export default async function Page({ searchParams }: PageProps) {
 				cardOptions={cardOptions}
 				categoryOptions={categoryOptions}
 				defaultPayerId={defaultPayerId}
+				aiAnalysisEnabled={aiAnalysisEnabled}
+				aiStoredKeysInvalid={aiStoredKeysInvalid}
 				initialCardId={validCardId}
 				initialAccountId={validAccountId}
 				initialInvoicePeriod={

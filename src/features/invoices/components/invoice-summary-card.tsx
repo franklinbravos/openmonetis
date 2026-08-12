@@ -258,7 +258,24 @@ export function InvoiceSummaryCard({
 								</div>
 							) : null}
 							{paymentTiming ? (
-								<InvoicePaymentDateMeta timing={paymentTiming} />
+								<div className="flex flex-wrap items-center gap-1">
+									<InvoicePaymentDateMeta timing={paymentTiming} />
+									<EditPaymentDateDialog
+										trigger={
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												className="size-6 text-muted-foreground hover:text-foreground"
+												aria-label="Editar data de pagamento"
+											>
+												<RiEditLine className="size-3.5" />
+											</Button>
+										}
+										currentDate={paymentDate}
+										onDateChange={handleDateChange}
+									/>
+								</div>
 							) : null}
 						</div>
 					</div>
@@ -372,25 +389,6 @@ export function InvoiceSummaryCard({
 							/>
 						)}
 					</div>
-					{isPaid ? (
-						<div className="flex justify-end">
-							<EditPaymentDateDialog
-								trigger={
-									<Button
-										type="button"
-										variant="ghost"
-										size="icon-sm"
-										className="text-muted-foreground hover:text-foreground"
-										aria-label="Editar data de pagamento"
-									>
-										<RiEditLine className="size-4" />
-									</Button>
-								}
-								currentDate={paymentDate}
-								onDateChange={handleDateChange}
-							/>
-						</div>
-					) : null}
 				</div>
 			</CardContent>
 		</Card>

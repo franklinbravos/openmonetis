@@ -29,13 +29,13 @@ import { INITIAL_BALANCE_NOTE } from "@/shared/lib/accounts/constants";
 import { db } from "@/shared/lib/db";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc } from "@/shared/lib/supabase/rpc";
+import { enrichTransactionsWithTransferPeers } from "@/shared/lib/transfers/enrich-transfer-peers";
 import {
 	addMonthsToPeriod,
 	buildPeriodRange,
 	comparePeriods,
 	getCurrentPeriod,
 } from "@/shared/utils/period";
-import { enrichTransactionsWithTransferPeers } from "@/shared/lib/transfers/enrich-transfer-peers";
 
 type BaseTransactionQueryInput = {
 	filters: SQL[];
@@ -320,8 +320,7 @@ export async function fetchTransactionsMonthSummaries(
 	const knownPeriods = Array.from(periodTotals.keys()).sort((left, right) =>
 		comparePeriods(left, right),
 	);
-	const rangeStart =
-		knownPeriods[0] ?? addMonthsToPeriod(currentPeriod, -5);
+	const rangeStart = knownPeriods[0] ?? addMonthsToPeriod(currentPeriod, -5);
 	const periodRange = buildPeriodRange(rangeStart, endPeriod);
 
 	return periodRange.map((period) => {
@@ -331,10 +330,7 @@ export async function fetchTransactionsMonthSummaries(
 		const refunds = totals?.reembolsos ?? 0;
 		const expenses = Math.max(0, grossExpenses - refunds);
 		const balance =
-			incomes -
-			grossExpenses +
-			refunds +
-			(totals?.transferAdjustment ?? 0);
+			incomes - grossExpenses + refunds + (totals?.transferAdjustment ?? 0);
 
 		let status: PeriodCarouselStatus = "closed";
 		if (comparePeriods(period, currentPeriod) > 0) {

@@ -384,12 +384,13 @@ export function TransactionsExport({
 					aria-label="Exportar lançamentos"
 				>
 					<RiDownloadLine
-						className={cn(monthToolbarIconClassName, "md:size-4 md:text-foreground")}
+						className={cn(
+							monthToolbarIconClassName,
+							"md:size-4 md:text-foreground",
+						)}
 						aria-hidden
 					/>
-					<span className="md:hidden">
-						{isExporting ? "..." : "Exportar"}
-					</span>
+					<span className="md:hidden">{isExporting ? "..." : "Exportar"}</span>
 					<span className="hidden md:inline">
 						{isExporting ? "Exportando..." : "Exportar"}
 					</span>

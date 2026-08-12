@@ -17,6 +17,20 @@ export type ImportDuplicateSnapshot = {
 	categoryId: string | null;
 };
 
+export function mergeImportDuplicateSnapshots(
+	...lists: ImportDuplicateSnapshot[][]
+): ImportDuplicateSnapshot[] {
+	const byId = new Map<string, ImportDuplicateSnapshot>();
+
+	for (const list of lists) {
+		for (const snapshot of list) {
+			byId.set(snapshot.id, snapshot);
+		}
+	}
+
+	return [...byId.values()];
+}
+
 export type ImportDuplicateField =
 	| "date"
 	| "amount"
@@ -136,6 +150,64 @@ function installmentsAreCompatible(
 	);
 }
 
+/** Mesma parcela da série (nome base + N/M). */
+function hasMatchingInstallmentParcel(
+	imported: MatchIdentity,
+	existing: MatchIdentity,
+): boolean {
+	return (
+		imported.currentInstallment != null &&
+		imported.installmentCount != null &&
+		existing.currentInstallment != null &&
+		existing.installmentCount != null &&
+		imported.baseName === existing.baseName &&
+		imported.currentInstallment === existing.currentInstallment &&
+		imported.installmentCount === existing.installmentCount
+	);
+}
+
+/**
+ * Duplicata de parcela: nome + N/M + valor.
+ * A data do extrato NÃO entra — bancos como Nubank reescrevem a data a cada
+ * abertura de fatura, então ela não é sinal confiável entre faturas.
+ */
+function isInstallmentParcelDuplicate(
+	row: ImportRowForMatch,
+	existing: ImportDuplicateSnapshot,
+): boolean {
+	const importedIdentity = resolveImportMatchIdentity(row);
+	const existingIdentity = resolveExistingMatchIdentity(existing);
+
+	if (
+		!amountsMatchForImportDuplicate(
+			row.transactionType,
+			row.amount,
+			existing.transactionType,
+			Number(existing.amount),
+		)
+	) {
+		return false;
+	}
+
+	if (hasMatchingInstallmentParcel(importedIdentity, existingIdentity)) {
+		return true;
+	}
+
+	const importedHasParcel =
+		importedIdentity.currentInstallment != null &&
+		importedIdentity.installmentCount != null;
+	const existingHasParcel =
+		existingIdentity.currentInstallment != null &&
+		existingIdentity.installmentCount != null;
+
+	// Cadastro à vista na fatura (sem N/M no banco): mesmo nome + valor.
+	if (importedHasParcel && !existingHasParcel) {
+		return importedIdentity.baseName === existingIdentity.baseName;
+	}
+
+	return false;
+}
+
 function getImportedDescriptionForMatch(row: ImportRowForMatch): string {
 	return resolveImportMatchIdentity(row).baseName;
 }
@@ -211,6 +283,18 @@ export function countImportMatchScore(score: ImportMatchScore): number {
 	return Number(score.date) + Number(score.amount) + Number(score.description);
 }
 
+/** Score efetivo: parcela N/M + valor conta como match completo (sem exigir data). */
+function effectiveImportMatchScore(
+	row: ImportRowForMatch,
+	existing: ImportDuplicateSnapshot,
+	score: ImportMatchScore,
+): number {
+	if (isInstallmentParcelDuplicate(row, existing)) {
+		return 3;
+	}
+	return countImportMatchScore(score);
+}
+
 function linkSuggestionPriority(score: ImportMatchScore): number {
 	if (score.date && score.amount) return 3;
 	if (score.date && score.description) return 2;
@@ -224,7 +308,20 @@ export function findSemanticDuplicateSnapshot(
 ): ImportDuplicateSnapshot | null {
 	for (const existing of candidates) {
 		const score = scoreImportAgainstSnapshot(row, existing);
-		if (countImportMatchScore(score) === 3) {
+		if (effectiveImportMatchScore(row, existing, score) === 3) {
+			return existing;
+		}
+	}
+
+	return null;
+}
+
+export function findInstallmentDuplicateSnapshot(
+	row: ImportRowForMatch,
+	candidates: ImportDuplicateSnapshot[],
+): ImportDuplicateSnapshot | null {
+	for (const existing of candidates) {
+		if (isInstallmentParcelDuplicate(row, existing)) {
 			return existing;
 		}
 	}
@@ -239,10 +336,24 @@ export function buildImportDuplicateValidation(
 ): ImportDuplicateValidation {
 	const matchScore = scoreImportAgainstSnapshot(row, existing);
 	const mismatches: ImportDuplicateMismatch[] = [];
+	const installmentParcelDuplicate = isInstallmentParcelDuplicate(
+		row,
+		existing,
+	);
 
 	const importedDate = row.date;
 	const existingDate = toDateOnlyString(existing.purchaseDate);
-	if (importedDate && existingDate && importedDate !== existingDate) {
+	const importedIdentity = resolveImportMatchIdentity(row);
+	const existingIdentity = resolveExistingMatchIdentity(existing);
+
+	// Data diverge com frequência entre faturas (ex.: Nubank). Em parcela
+	// já identificada por nome+N/M+valor, não reportar como divergência.
+	if (
+		importedDate &&
+		existingDate &&
+		importedDate !== existingDate &&
+		!installmentParcelDuplicate
+	) {
 		mismatches.push({
 			field: "date",
 			label: "Data",
@@ -276,21 +387,16 @@ export function buildImportDuplicateValidation(
 		});
 	}
 
-	if (
-		normalizeDescription(getImportedDescriptionForMatch(row)) !==
-		normalizeDescription(existing.name)
-	) {
+	if (importedIdentity.baseName !== existingIdentity.baseName) {
 		mismatches.push({
 			field: "description",
 			label: "Descrição",
 			imported: getImportedDescriptionForMatch(row).trim(),
-			existing: existing.name.trim(),
+			existing: existingIdentity.baseName,
 		});
 	}
 
 	if (row.installmentImport?.enabled) {
-		const importedIdentity = resolveImportMatchIdentity(row);
-		const existingIdentity = resolveExistingMatchIdentity(existing);
 		const importedInstallment = formatInstallmentLabel(
 			importedIdentity.currentInstallment,
 			importedIdentity.installmentCount,
@@ -317,12 +423,17 @@ export function buildImportDuplicateValidation(
 	let status: ImportDuplicateStatus;
 	if (forcedStatus) {
 		status = forcedStatus;
+	} else if (installmentParcelDuplicate && mismatches.length === 0) {
+		status = "match";
 	} else if (
 		countImportMatchScore(matchScore) === 3 &&
 		mismatches.length === 0
 	) {
 		status = "match";
-	} else if (countImportMatchScore(matchScore) === 3) {
+	} else if (
+		installmentParcelDuplicate ||
+		countImportMatchScore(matchScore) === 3
+	) {
 		status = "mismatch";
 	} else {
 		status = "link_suggestion";
@@ -330,7 +441,9 @@ export function buildImportDuplicateValidation(
 
 	return {
 		status,
-		matchScore,
+		matchScore: installmentParcelDuplicate
+			? { date: true, amount: true, description: true }
+			: matchScore,
 		mismatches,
 		existingTransactionId: existing.id,
 		existingPayerId: existing.payerId,
@@ -354,10 +467,18 @@ export function resolveSemanticImportMatches(
 		candidates.map((candidate) => scoreImportAgainstSnapshot(row, candidate)),
 	);
 
-	const candidateHasPerfectMatchInFile = candidates.map((_, candidateIndex) =>
-		scoreMatrix.some(
-			(rowScores) => countImportMatchScore(rowScores[candidateIndex]) === 3,
+	const effectiveScoreMatrix = rows.map((row, rowIndex) =>
+		candidates.map((candidate, candidateIndex) =>
+			effectiveImportMatchScore(
+				row,
+				candidate,
+				scoreMatrix[rowIndex][candidateIndex],
+			),
 		),
+	);
+
+	const candidateHasPerfectMatchInFile = candidates.map((_, candidateIndex) =>
+		effectiveScoreMatrix.some((rowScores) => rowScores[candidateIndex] === 3),
 	);
 
 	const claimedExistingIds = new Set<string>();
@@ -374,7 +495,7 @@ export function resolveSemanticImportMatches(
 			candidateIndex++
 		) {
 			const score = scoreMatrix[rowIndex][candidateIndex];
-			const total = countImportMatchScore(score);
+			const total = effectiveScoreMatrix[rowIndex][candidateIndex];
 			if (total < 2) continue;
 
 			if (total === 3) {
@@ -406,9 +527,6 @@ export function resolveSemanticImportMatches(
 		if (bestCandidateIndex === null) continue;
 
 		const existing = candidates[bestCandidateIndex];
-		if (claimedExistingIds.has(existing.id)) {
-			continue;
-		}
 
 		const validation = buildImportDuplicateValidation(
 			row,
@@ -416,8 +534,18 @@ export function resolveSemanticImportMatches(
 			bestScore === 2 ? "link_suggestion" : undefined,
 		);
 
+		if (
+			validation.status === "link_suggestion" &&
+			claimedExistingIds.has(existing.id)
+		) {
+			continue;
+		}
+
 		results.set(rowIndex, { existing, validation });
-		claimedExistingIds.add(existing.id);
+
+		if (validation.status === "link_suggestion") {
+			claimedExistingIds.add(existing.id);
+		}
 	}
 
 	return results;

@@ -64,6 +64,11 @@ function ModelOptionRow({
 				)}
 			/>
 			<span className="min-w-0 flex-1 truncate">{formatModelLabel(model)}</span>
+			{model.unavailableInCatalog ? (
+				<Badge variant="outline" className="shrink-0 text-[10px]">
+					Salvo
+				</Badge>
+			) : null}
 			{model.isFreeTier ? <FreeModelBadge /> : null}
 		</>
 	);

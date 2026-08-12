@@ -120,9 +120,9 @@ export default async function Page({ searchParams }: PageProps) {
 										Inteligência artificial
 									</h2>
 									<p className="text-sm text-muted-foreground">
-										Configure chaves de API, URLs e modelos padrão para gerar
-										insights. As chaves salvas aqui têm prioridade sobre o
-										arquivo <code>.env</code>.
+										Configure chaves de API, URLs e modelos padrão usados em
+										Insights, importação e demais recursos de IA. As chaves
+										ficam criptografadas no banco.
 									</p>
 								</div>
 								<Separator />

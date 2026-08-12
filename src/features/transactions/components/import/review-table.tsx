@@ -441,7 +441,9 @@ function ReviewDuplicateStatus({
 
 			{isVerified ? (
 				<p className="text-emerald-700 text-xs dark:text-emerald-400">
-					Os dados do extrato batem com o lançamento existente.
+					{row.aiSuggestion?.duplicate
+						? "Identificado pela IA como lançamento já cadastrado."
+						: "Os dados do extrato batem com o lançamento existente."}
 				</p>
 			) : null}
 
@@ -584,6 +586,12 @@ export type ReviewRow = ImportedTransaction & {
 	linked?: boolean;
 	/** Nome exatamente como veio do extrato/fatura; não muda ao editar na revisão. */
 	sourceDescription: string;
+	aiSuggestion?: {
+		duplicate?: boolean;
+		category?: boolean;
+		note?: string;
+		confidence?: number;
+	} | null;
 };
 
 function resolveReviewExistingPayerId(
@@ -2137,7 +2145,10 @@ function ReviewCategorySelect({
 				dense ? "h-7" : "h-8",
 				"text-xs",
 				compact ? "min-w-0 flex-1" : fullWidth && "w-full",
-				row.categoryId && "border-emerald-500/30 bg-emerald-500/5",
+				row.categoryId &&
+					(row.aiSuggestion?.category
+						? "border-violet-500/35 bg-violet-500/5"
+						: "border-emerald-500/30 bg-emerald-500/5"),
 			)}
 		/>
 	);

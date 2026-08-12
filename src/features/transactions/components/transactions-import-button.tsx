@@ -33,7 +33,10 @@ export function TransactionsImportButton({
 			aria-label="Importar extrato"
 		>
 			<RiFileExcel2Line
-				className={cn(monthToolbarIconClassName, "md:size-4 md:text-foreground")}
+				className={cn(
+					monthToolbarIconClassName,
+					"md:size-4 md:text-foreground",
+				)}
 				aria-hidden
 			/>
 			<span className="md:hidden">Importar</span>

@@ -2,7 +2,11 @@
 
 import { z } from "zod";
 import { listProviderModels } from "@/shared/lib/ai/list-provider-models";
-import { fetchUserAiProviderSettings } from "@/shared/lib/ai/user-provider-config";
+import { AI_STORED_KEY_UNREADABLE_MESSAGE } from "@/shared/lib/ai/provider-messages";
+import {
+	fetchUserAiProviderSettings,
+	hasInvalidStoredAiKeys,
+} from "@/shared/lib/ai/user-provider-config";
 import { getUser } from "@/shared/lib/auth/server";
 import type { ActionResult } from "./types";
 
@@ -30,7 +34,17 @@ export async function fetchProviderModelsAction(
 	try {
 		const user = await getUser();
 		const data = fetchProviderModelsSchema.parse(input);
-		const { credentials } = await fetchUserAiProviderSettings(user.id);
+		const { credentials, storedSettings } = await fetchUserAiProviderSettings(
+			user.id,
+		);
+
+		if (hasInvalidStoredAiKeys(storedSettings)) {
+			return {
+				success: false,
+				error: AI_STORED_KEY_UNREADABLE_MESSAGE,
+			};
+		}
+
 		const storedCredential = credentials[data.provider];
 
 		const result = await listProviderModels({

@@ -3,7 +3,11 @@
 import { generateObject } from "ai";
 import { z } from "zod";
 import { applyProviderCredentialOverride } from "@/shared/lib/ai/list-provider-models";
-import { fetchUserAiProviderSettings } from "@/shared/lib/ai/user-provider-config";
+import { AI_STORED_KEY_UNREADABLE_MESSAGE } from "@/shared/lib/ai/provider-messages";
+import {
+	fetchUserAiProviderSettings,
+	hasInvalidStoredAiKeys,
+} from "@/shared/lib/ai/user-provider-config";
 import { getUser } from "@/shared/lib/auth/server";
 import {
 	type InsightsResponse,
@@ -63,7 +67,17 @@ export async function generateInsightsAction(
 			};
 		}
 
-		const { credentials } = await fetchUserAiProviderSettings(user.id);
+		const { credentials, storedSettings } = await fetchUserAiProviderSettings(
+			user.id,
+		);
+
+		if (hasInvalidStoredAiKeys(storedSettings)) {
+			return {
+				success: false,
+				error: AI_STORED_KEY_UNREADABLE_MESSAGE,
+			};
+		}
+
 		const validatedOverride = credentialOverride
 			? credentialOverrideSchema.parse(credentialOverride)
 			: undefined;

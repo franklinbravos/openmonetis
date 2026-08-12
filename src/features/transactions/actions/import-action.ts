@@ -1,7 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, eq, gte, ilike, inArray, isNotNull, lte, or } from "drizzle-orm";
 import { z } from "zod";
 import {
 	attachments,
@@ -217,6 +217,33 @@ export async function fetchImportDuplicateSnapshots(fitIds: string[]) {
 		);
 }
 
+const mapImportDuplicateSnapshotRows = (
+	rows: Array<{
+		id: string;
+		ofxFitId: string | null;
+		name: string;
+		amount: string;
+		purchaseDate: Date;
+		transactionType: string;
+		currentInstallment: number | null;
+		installmentCount: number | null;
+		payerId: string | null;
+		categoryId: string | null;
+	}>,
+) =>
+	rows.map((row) => ({
+		id: row.id,
+		ofxFitId: row.ofxFitId,
+		name: row.name,
+		amount: row.amount,
+		purchaseDate: row.purchaseDate,
+		transactionType: row.transactionType,
+		currentInstallment: row.currentInstallment,
+		installmentCount: row.installmentCount,
+		payerId: row.payerId,
+		categoryId: row.categoryId,
+	}));
+
 export async function fetchInvoicePeriodDuplicateSnapshots(
 	cardId: string,
 	invoicePeriod: string,
@@ -244,20 +271,38 @@ export async function fetchInvoicePeriodDuplicateSnapshots(
 				eq(transactions.period, invoicePeriod),
 			),
 		)
-		.then((rows) =>
-			rows.map((row) => ({
-				id: row.id,
-				ofxFitId: row.ofxFitId,
-				name: row.name,
-				amount: row.amount,
-				purchaseDate: row.purchaseDate,
-				transactionType: row.transactionType,
-				currentInstallment: row.currentInstallment,
-				installmentCount: row.installmentCount,
-				payerId: row.payerId,
-				categoryId: row.categoryId,
-			})),
-		);
+		.then(mapImportDuplicateSnapshotRows);
+}
+
+/** Parcelas ficam em outros períodos; inclui série parcelada e linhas à vista com "parcela" no nome. */
+export async function fetchCardInstallmentDuplicateSnapshots(cardId: string) {
+	const userId = await getUserId();
+
+	return db
+		.select({
+			id: transactions.id,
+			ofxFitId: transactions.ofxFitId,
+			name: transactions.name,
+			amount: transactions.amount,
+			purchaseDate: transactions.purchaseDate,
+			transactionType: transactions.transactionType,
+			currentInstallment: transactions.currentInstallment,
+			installmentCount: transactions.installmentCount,
+			payerId: transactions.payerId,
+			categoryId: transactions.categoryId,
+		})
+		.from(transactions)
+		.where(
+			and(
+				eq(transactions.userId, userId),
+				eq(transactions.cardId, cardId),
+				or(
+					isNotNull(transactions.installmentCount),
+					ilike(transactions.name, "%parcela%"),
+				),
+			),
+		)
+		.then(mapImportDuplicateSnapshotRows);
 }
 
 export async function fetchAccountImportDuplicateSnapshots(
@@ -1027,80 +1072,80 @@ export async function importTransactionsAction(
 
 	try {
 		inserted = await db.transaction(async (tx) => {
-		const allRecords = [
-			...regularRecords,
-			...transferRecords,
-			...invoicePaymentRecords.map(
-				({ settleCardId, settlePeriod, ...record }) => record,
-			),
-		];
+			const allRecords = [
+				...regularRecords,
+				...transferRecords,
+				...invoicePaymentRecords.map(
+					({ settleCardId, settlePeriod, ...record }) => record,
+				),
+			];
 
-		const fitIdsInBatch = [
-			...new Set(
-				allRecords
-					.map((record) => record.ofxFitId)
-					.filter((fitId): fitId is string => Boolean(fitId)),
-			),
-		];
+			const fitIdsInBatch = [
+				...new Set(
+					allRecords
+						.map((record) => record.ofxFitId)
+						.filter((fitId): fitId is string => Boolean(fitId)),
+				),
+			];
 
-		const existingFitIds = new Set<string>();
-		if (fitIdsInBatch.length > 0) {
-			const duplicateRows = await tx
-				.select({ ofxFitId: transactions.ofxFitId })
-				.from(transactions)
-				.where(
-					and(
-						eq(transactions.userId, userId),
-						inArray(transactions.ofxFitId, fitIdsInBatch),
-					),
-				);
+			const existingFitIds = new Set<string>();
+			if (fitIdsInBatch.length > 0) {
+				const duplicateRows = await tx
+					.select({ ofxFitId: transactions.ofxFitId })
+					.from(transactions)
+					.where(
+						and(
+							eq(transactions.userId, userId),
+							inArray(transactions.ofxFitId, fitIdsInBatch),
+						),
+					);
 
-			for (const row of duplicateRows) {
-				if (row.ofxFitId) {
-					existingFitIds.add(row.ofxFitId);
+				for (const row of duplicateRows) {
+					if (row.ofxFitId) {
+						existingFitIds.add(row.ofxFitId);
+					}
 				}
 			}
-		}
 
-		const seenFitIdsInBatch = new Set<string>();
-		const recordsToInsert = allRecords.filter((record) => {
-			if (!record.ofxFitId) return true;
-			if (existingFitIds.has(record.ofxFitId)) return false;
-			if (seenFitIdsInBatch.has(record.ofxFitId)) return false;
-			seenFitIdsInBatch.add(record.ofxFitId);
-			return true;
-		});
-
-		const insertedRows =
-			recordsToInsert.length > 0
-				? await tx
-						.insert(transactions)
-						.values(recordsToInsert)
-						.returning({ id: transactions.id })
-				: [];
-
-		for (const record of invoicePaymentRecords) {
-			await upsertInvoicePaymentStatus(tx, {
-				userId,
-				cardId: record.settleCardId,
-				period: record.settlePeriod,
-				paymentStatus: INVOICE_PAYMENT_STATUS.PAID,
+			const seenFitIdsInBatch = new Set<string>();
+			const recordsToInsert = allRecords.filter((record) => {
+				if (!record.ofxFitId) return true;
+				if (existingFitIds.has(record.ofxFitId)) return false;
+				if (seenFitIdsInBatch.has(record.ofxFitId)) return false;
+				seenFitIdsInBatch.add(record.ofxFitId);
+				return true;
 			});
 
-			await tx
-				.update(transactions)
-				.set({ isSettled: true })
-				.where(
-					and(
-						eq(transactions.userId, userId),
-						eq(transactions.cardId, record.settleCardId),
-						eq(transactions.period, record.settlePeriod),
-					),
-				);
-		}
+			const insertedRows =
+				recordsToInsert.length > 0
+					? await tx
+							.insert(transactions)
+							.values(recordsToInsert)
+							.returning({ id: transactions.id })
+					: [];
 
-		return insertedRows;
-	});
+			for (const record of invoicePaymentRecords) {
+				await upsertInvoicePaymentStatus(tx, {
+					userId,
+					cardId: record.settleCardId,
+					period: record.settlePeriod,
+					paymentStatus: INVOICE_PAYMENT_STATUS.PAID,
+				});
+
+				await tx
+					.update(transactions)
+					.set({ isSettled: true })
+					.where(
+						and(
+							eq(transactions.userId, userId),
+							eq(transactions.cardId, record.settleCardId),
+							eq(transactions.period, record.settlePeriod),
+						),
+					);
+			}
+
+			return insertedRows;
+		});
 	} catch (error) {
 		console.error("importTransactionsAction", error);
 		if (isPostgresUniqueViolation(error)) {

@@ -25,6 +25,7 @@ export type ResolvedAiCredentials = Record<
 
 export type AiProviderSettingsViewEntry = {
 	hasDatabaseKey: boolean;
+	hasInvalidDatabaseKey: boolean;
 	hasEnvFallback: boolean;
 	activeSource: AiCredentialSource;
 	apiKeyHint: string | null;

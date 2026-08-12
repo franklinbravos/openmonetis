@@ -7,6 +7,7 @@ import type { LanguageModel } from "ai";
 import { createMinimax, minimax } from "vercel-minimax-ai-provider";
 import { getEnvProviderCredential } from "@/shared/lib/ai/env-credentials";
 import { OPENCODE_PLAN_ZEN_URL } from "@/shared/lib/ai/opencode-plans";
+import { getAiProviderNotConfiguredMessage } from "@/shared/lib/ai/provider-messages";
 import type { ResolvedAiCredentials } from "@/shared/lib/ai/types";
 import { resolveAllProviderCredentials } from "@/shared/lib/ai/user-provider-config";
 import { AVAILABLE_MODELS } from "../constants";
@@ -40,8 +41,7 @@ function resolveOpenCodeModel(
 	if (!apiKey) {
 		return {
 			success: false,
-			error:
-				"OpenCode não configurado. Adicione OPENCODE_API_KEY no .env ou em Ajustes → Inteligência artificial.",
+			error: getAiProviderNotConfiguredMessage("opencode"),
 		};
 	}
 
@@ -70,7 +70,7 @@ function resolveOpenCodeModel(
 			apiKey,
 		});
 
-		return { success: true, model: openaiProvider.responses(opencodeModelId) };
+		return { success: true, model: openaiProvider.chat(opencodeModelId) };
 	}
 
 	if (opencodeModelId.startsWith("gemini-")) {
@@ -100,8 +100,7 @@ function resolveOpenAiModel(
 	if (!apiKey) {
 		return {
 			success: false,
-			error:
-				"OpenAI não configurado. Adicione OPENAI_API_KEY no .env ou em Ajustes → Inteligência artificial.",
+			error: getAiProviderNotConfiguredMessage("openai"),
 		};
 	}
 
@@ -120,8 +119,7 @@ function resolveAnthropicModel(
 	if (!apiKey) {
 		return {
 			success: false,
-			error:
-				"Anthropic não configurado. Adicione ANTHROPIC_API_KEY no .env ou em Ajustes → Inteligência artificial.",
+			error: getAiProviderNotConfiguredMessage("anthropic"),
 		};
 	}
 
@@ -140,8 +138,7 @@ function resolveGoogleModel(
 	if (!apiKey) {
 		return {
 			success: false,
-			error:
-				"Google AI não configurado. Adicione GOOGLE_GENERATIVE_AI_API_KEY no .env ou em Ajustes → Inteligência artificial.",
+			error: getAiProviderNotConfiguredMessage("google"),
 		};
 	}
 
@@ -163,8 +160,7 @@ function resolveMinimaxModel(
 	if (!apiKey) {
 		return {
 			success: false,
-			error:
-				"MiniMax não configurado. Adicione MINIMAX_API_KEY no .env ou em Ajustes → Inteligência artificial.",
+			error: getAiProviderNotConfiguredMessage("minimax"),
 		};
 	}
 
@@ -222,8 +218,7 @@ export function resolveInsightsModel(
 		if (!apiKey) {
 			return {
 				success: false,
-				error:
-					"OpenRouter não configurado. Adicione OPENROUTER_API_KEY no .env ou em Ajustes → Inteligência artificial.",
+				error: getAiProviderNotConfiguredMessage("openrouter"),
 			};
 		}
 

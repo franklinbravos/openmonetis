@@ -2,7 +2,6 @@ import {
 	type AIProvider,
 	AVAILABLE_MODELS,
 } from "@/features/insights/constants";
-import { getEnvProviderCredential } from "./env-credentials";
 import {
 	isOpenCodeFreeModelId,
 	isOpenCodeZenBaseUrl,
@@ -14,9 +13,24 @@ export type ListedProviderModel = {
 	id: string;
 	name: string;
 	isFreeTier?: boolean;
+	unavailableInCatalog?: boolean;
+	metadata?: Record<string, unknown>;
 };
 
 const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1";
+
+function extractModelMetadata(
+	model: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+	const metadata: Record<string, unknown> = {};
+
+	for (const [key, value] of Object.entries(model)) {
+		if (key === "id" || value == null) continue;
+		metadata[key] = value;
+	}
+
+	return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
 
 const STATIC_ONLY_PROVIDERS = new Set<AIProvider>(["anthropic", "minimax"]);
 
@@ -232,8 +246,8 @@ async function listOpenCodeModels(
 	}
 
 	const result = await fetchJson<{
-		data?: Array<{ id?: string }>;
-		models?: Array<{ id?: string; name?: string }>;
+		data?: Array<Record<string, unknown>>;
+		models?: Array<Record<string, unknown>>;
 	}>(`${normalizedBaseUrl}/models`, { headers });
 
 	if (!result.success) {
@@ -244,16 +258,22 @@ async function listOpenCodeModels(
 	const models = uniqueModels(
 		rawModels
 			.map((model) => {
-				const modelId = model.id?.trim();
+				const modelId = typeof model.id === "string" ? model.id.trim() : "";
 				if (!modelId) {
 					return null;
 				}
 
+				const displayName =
+					typeof model.name === "string" && model.name.trim()
+						? model.name.trim()
+						: modelId;
+
 				const listedModel: ListedProviderModel = {
 					id: prefixModelId("opencode", modelId),
-					name: modelId,
+					name: displayName,
 					isFreeTier:
 						isOpenCodeZenBaseUrl(baseUrl) && isOpenCodeFreeModelId(modelId),
+					metadata: extractModelMetadata(model),
 				};
 
 				return listedModel;
@@ -314,11 +334,9 @@ export async function listProviderModels(
 	input: ListProviderModelsInput,
 ): Promise<ListProviderModelsResult> {
 	const { provider } = input;
-	const envCredential = getEnvProviderCredential(provider);
-	const apiKey = input.apiKey?.trim() || envCredential.apiKey;
+	const apiKey = input.apiKey?.trim();
 	const baseUrl =
 		input.baseUrl?.trim() ||
-		envCredential.baseUrl ||
 		(provider === "opencode"
 			? OPENCODE_PLAN_ZEN_URL
 			: provider === "ollama"

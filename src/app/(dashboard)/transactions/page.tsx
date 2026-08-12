@@ -70,11 +70,12 @@ export default async function Page({ searchParams }: PageProps) {
 			userPreferences?.hideAnticipatedInstallments ?? false,
 	});
 
-	const [transactionsPage, estabelecimentos, monthSummaries] = await Promise.all([
-		fetchTransactionsPage(filters, pagination),
-		fetchRecentEstablishments(userId),
-		fetchTransactionsMonthSummaries(userId),
-	]);
+	const [transactionsPage, estabelecimentos, monthSummaries] =
+		await Promise.all([
+			fetchTransactionsPage(filters, pagination),
+			fetchRecentEstablishments(userId),
+			fetchTransactionsMonthSummaries(userId),
+		]);
 	const transactionData = mapTransactionsData(transactionsPage.rows);
 
 	const {

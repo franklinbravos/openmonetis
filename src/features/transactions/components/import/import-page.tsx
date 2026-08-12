@@ -34,12 +34,14 @@ import {
 	deleteImportDuplicateTransaction,
 	deleteTransactionByFitId,
 	fetchAccountImportDuplicateSnapshots,
+	fetchCardInstallmentDuplicateSnapshots,
 	fetchImportDuplicateSnapshots,
 	fetchInvoicePeriodDuplicateSnapshots,
 	importTransactionsAction,
 	linkImportToExistingAction,
 	undoImportAction,
 } from "@/features/transactions/actions/import-action";
+import { analyzeImportWithAiAction } from "@/features/transactions/actions/import-ai-analysis-action";
 import {
 	deleteImportBatchAction,
 	fetchImportBatchHistoryAction,
@@ -55,6 +57,10 @@ import {
 	encodeAccountCard,
 	GlobalFields,
 } from "@/features/transactions/components/import/global-fields";
+import {
+	ImportAiAnalysisBanner,
+	type ImportAiAnalysisStatus,
+} from "@/features/transactions/components/import/import-ai-analysis-banner";
 import { ImportConfirmDialog } from "@/features/transactions/components/import/import-confirm-dialog";
 import { ImportFileHistory } from "@/features/transactions/components/import/import-file-history";
 import { ImportInvoicePeriodMismatchDialog } from "@/features/transactions/components/import/import-invoice-period-mismatch-dialog";
@@ -71,6 +77,10 @@ import type {
 	TransactionItem,
 } from "@/features/transactions/components/types";
 import {
+	applyImportAiPatchesToRows,
+	buildImportAiAnalysisPayload,
+} from "@/features/transactions/lib/import-ai-analysis";
+import {
 	applyImportBatchDraftToRows,
 	buildImportBatchDraft,
 	extractImportBatchDraftGlobals,
@@ -85,10 +95,12 @@ import {
 } from "@/features/transactions/lib/import-continue-href";
 import {
 	buildImportDuplicateValidation,
+	findInstallmentDuplicateSnapshot,
 	type ImportDuplicateValidation,
 	isImportLinkSuggestion,
 	isImportRowResolved,
 	isVerifiedImportDuplicate,
+	mergeImportDuplicateSnapshots,
 	resolveSemanticImportMatches,
 } from "@/features/transactions/lib/import-duplicate-match";
 import type { ImportFileHistoryEntry } from "@/features/transactions/lib/import-file-duplicate";
@@ -138,6 +150,7 @@ import {
 	CardTitle,
 } from "@/shared/components/ui/card";
 import { Skeleton } from "@/shared/components/ui/skeleton";
+import { AI_STORED_KEY_UNREADABLE_MESSAGE } from "@/shared/lib/ai/provider-messages";
 import type { CategoryType } from "@/shared/lib/categories/constants";
 import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants";
 import {
@@ -216,6 +229,8 @@ interface ImportPageProps {
 	cardOptions: SelectOption[];
 	categoryOptions: SelectOption[];
 	defaultPayerId: string | null;
+	aiAnalysisEnabled?: boolean;
+	aiStoredKeysInvalid?: boolean;
 	initialCardId?: string | null;
 	initialAccountId?: string | null;
 	initialInvoicePeriod?: string | null;
@@ -234,6 +249,8 @@ export function ImportPage({
 	cardOptions,
 	categoryOptions,
 	defaultPayerId,
+	aiAnalysisEnabled = false,
+	aiStoredKeysInvalid = false,
 	initialCardId = null,
 	initialAccountId = null,
 	initialInvoicePeriod = null,
@@ -249,6 +266,15 @@ export function ImportPage({
 	const [isPending, startTransition] = useTransition();
 	const [isSavingDraft, startSaveDraftTransition] = useTransition();
 	const [isChecking, setIsChecking] = useState(false);
+	const [aiAnalysisStatus, setAiAnalysisStatus] =
+		useState<ImportAiAnalysisStatus>("idle");
+	const [aiAnalysisSummary, setAiAnalysisSummary] = useState<{
+		categoriesSuggested: number;
+		duplicatesFound: number;
+		rowsAnalyzed: number;
+	} | null>(null);
+	const [aiAnalysisError, setAiAnalysisError] = useState<string | null>(null);
+	const aiAnalysisRunIdRef = useRef(0);
 	const [resumingBatchId, setResumingBatchId] = useState<string | null>(null);
 
 	const prefilledAccountCardValue = initialCardId
@@ -431,6 +457,10 @@ export function ImportPage({
 		setCategoryCreateOpen(false);
 		setCategoryCreateRowIndex(null);
 		setCategoryCreateBulk(false);
+		setAiAnalysisStatus("idle");
+		setAiAnalysisSummary(null);
+		setAiAnalysisError(null);
+		aiAnalysisRunIdRef.current += 1;
 	}, [
 		invoiceContext,
 		defaultPayerId,
@@ -538,6 +568,93 @@ export function ImportPage({
 		[categoryGroupById],
 	);
 
+	const triggerImportAiAnalysis = useCallback(
+		async (
+			reviewRows: ReviewRow[],
+			context: {
+				isCreditCard: boolean;
+				cardId: string | null;
+				accountId: string | null;
+				invoicePeriods: string[];
+				statementPeriod: { from: string; to: string } | null;
+				cardName: string | null;
+				accountName: string | null;
+			},
+		) => {
+			if (!aiAnalysisEnabled || reviewRows.length === 0) {
+				setAiAnalysisStatus("skipped");
+				return;
+			}
+
+			const runId = aiAnalysisRunIdRef.current + 1;
+			aiAnalysisRunIdRef.current = runId;
+			setAiAnalysisStatus("running");
+			setAiAnalysisSummary(null);
+			setAiAnalysisError(null);
+
+			const categories = mergedCategoryOptions.map((option) => ({
+				id: option.value,
+				name: option.label,
+				transactionType:
+					option.group === "receita"
+						? ("income" as const)
+						: ("expense" as const),
+			}));
+
+			const categoryCompatibility = mergedCategoryOptions.flatMap((option) =>
+				(["income", "expense"] as const).map((transactionType) => ({
+					categoryId: option.value,
+					transactionType,
+					compatible: isCategoryCompatible(option.value, transactionType),
+				})),
+			);
+
+			try {
+				const result = await analyzeImportWithAiAction(
+					buildImportAiAnalysisPayload({
+						rows: reviewRows,
+						isCreditCard: context.isCreditCard,
+						cardId: context.cardId,
+						invoicePeriods: context.invoicePeriods,
+						accountId: context.accountId,
+						statementPeriod: context.statementPeriod,
+						cardName: context.cardName,
+						accountName: context.accountName,
+						categories,
+						categoryCompatibility,
+					}),
+				);
+
+				if (runId !== aiAnalysisRunIdRef.current) return;
+
+				if (!result.success) {
+					setAiAnalysisError(result.error);
+					setAiAnalysisStatus("error");
+					toast.warning(result.error);
+					return;
+				}
+
+				if (result.skipped) {
+					setAiAnalysisStatus("skipped");
+					return;
+				}
+
+				setRows((previousRows) =>
+					applyImportAiPatchesToRows(previousRows, result.data.patches),
+				);
+				setAiAnalysisSummary(result.data.stats);
+				setAiAnalysisStatus("done");
+			} catch {
+				if (runId !== aiAnalysisRunIdRef.current) return;
+				const message = "Não foi possível concluir a análise com IA.";
+				setAiAnalysisError(message);
+				setAiAnalysisStatus("error");
+				toast.warning(message);
+			}
+		},
+		[aiAnalysisEnabled, isCategoryCompatible, mergedCategoryOptions],
+	);
+
 	const selectedCardOption = useMemo(() => {
 		const decoded = accountCardValue
 			? decodeAccountCard(accountCardValue)
@@ -636,16 +753,27 @@ export function ImportPage({
 					.filter((id): id is string => id !== null);
 
 				const shouldFetchInvoiceSnapshots =
-					stmt.isCreditCard && resolvedCardId && resolvedInvoicePeriod;
+					stmt.isCreditCard && Boolean(resolvedCardId);
 
 				const shouldFetchAccountSnapshots =
 					!stmt.isCreditCard && resolvedAccountId && statementPeriod;
+
+				const invoicePeriodsForSnapshots = [
+					...new Set(
+						[
+							resolvedInvoicePeriod,
+							activeInvoiceContext?.invoicePeriod,
+							initialInvoicePeriod,
+						].filter((period): period is string => Boolean(period)),
+					),
+				];
 
 				const [
 					duplicates,
 					descriptionMemory,
 					duplicateSnapshots,
-					invoicePeriodSnapshots,
+					invoicePeriodSnapshotGroups,
+					cardInstallmentSnapshots,
 					accountImportSnapshots,
 				] = await Promise.all([
 					checkDuplicateFitIds(fitIds).then((ids) => new Set(ids)),
@@ -653,11 +781,15 @@ export function ImportPage({
 						normalizedStatement.transactions.map((t) => t.description),
 					),
 					fetchImportDuplicateSnapshots(fitIds),
-					shouldFetchInvoiceSnapshots
-						? fetchInvoicePeriodDuplicateSnapshots(
-								resolvedCardId,
-								resolvedInvoicePeriod,
+					shouldFetchInvoiceSnapshots && resolvedCardId
+						? Promise.all(
+								invoicePeriodsForSnapshots.map((period) =>
+									fetchInvoicePeriodDuplicateSnapshots(resolvedCardId, period),
+								),
 							)
+						: Promise.resolve([]),
+					shouldFetchInvoiceSnapshots && resolvedCardId
+						? fetchCardInstallmentDuplicateSnapshots(resolvedCardId)
 						: Promise.resolve([]),
 					shouldFetchAccountSnapshots
 						? fetchAccountImportDuplicateSnapshots(
@@ -668,16 +800,22 @@ export function ImportPage({
 						: Promise.resolve([]),
 				]);
 
+				const invoicePeriodSnapshots = mergeImportDuplicateSnapshots(
+					...invoicePeriodSnapshotGroups,
+				);
+
 				const duplicateSnapshotByFitId = new Map(
 					duplicateSnapshots.flatMap((snapshot) =>
 						snapshot.ofxFitId ? [[snapshot.ofxFitId, snapshot] as const] : [],
 					),
 				);
 
-				const semanticCandidates =
-					invoicePeriodSnapshots.length > 0
-						? invoicePeriodSnapshots
-						: accountImportSnapshots;
+				const semanticCandidates = shouldFetchInvoiceSnapshots
+					? mergeImportDuplicateSnapshots(
+							invoicePeriodSnapshots,
+							cardInstallmentSnapshots,
+						)
+					: accountImportSnapshots;
 
 				const rowInputs = normalizedStatement.transactions.map((t) => {
 					const isInvoicePayment = isInvoicePaymentDescription(t.description);
@@ -692,6 +830,16 @@ export function ImportPage({
 				const semanticMatches = resolveSemanticImportMatches(
 					rowInputs,
 					semanticCandidates,
+				);
+
+				const installmentDuplicateByIndex = new Map(
+					rowInputs.flatMap((row, rowIndex) => {
+						const match = findInstallmentDuplicateSnapshot(
+							row,
+							semanticCandidates,
+						);
+						return match ? [[rowIndex, match] as const] : [];
+					}),
 				);
 
 				const builtRows = normalizedStatement.transactions.map((t, index) => {
@@ -748,12 +896,25 @@ export function ImportPage({
 							existingSnapshot,
 						);
 					} else {
-						const semanticMatch = semanticMatches.get(index);
-						if (semanticMatch) {
-							duplicateValidation = semanticMatch.validation;
-							if (semanticMatch.validation.status !== "link_suggestion") {
-								isDuplicate = true;
-								existingSnapshot = semanticMatch.existing;
+						const installmentDuplicate = installmentDuplicateByIndex.get(index);
+						if (installmentDuplicate) {
+							duplicateValidation = buildImportDuplicateValidation(
+								{
+									...t,
+									installmentImport,
+								},
+								installmentDuplicate,
+							);
+							isDuplicate = true;
+							existingSnapshot = installmentDuplicate;
+						} else {
+							const semanticMatch = semanticMatches.get(index);
+							if (semanticMatch) {
+								duplicateValidation = semanticMatch.validation;
+								if (semanticMatch.validation.status !== "link_suggestion") {
+									isDuplicate = true;
+									existingSnapshot = semanticMatch.existing;
+								}
 							}
 						}
 					}
@@ -818,6 +979,18 @@ export function ImportPage({
 
 				setRows(rowsWithDraft);
 
+				void triggerImportAiAnalysis(rowsWithDraft, {
+					isCreditCard: stmt.isCreditCard,
+					cardId: resolvedCardId,
+					accountId: resolvedAccountId,
+					invoicePeriods: invoicePeriodsForSnapshots,
+					statementPeriod: shouldFetchAccountSnapshots ? statementPeriod : null,
+					cardName: selectedCardOption?.label ?? null,
+					accountName:
+						accountOptions.find((option) => option.value === resolvedAccountId)
+							?.label ?? null,
+				});
+
 				if (draftData) {
 					const globals = extractImportBatchDraftGlobals(draftData);
 					if (globals.payerId) setPayerId(globals.payerId);
@@ -847,6 +1020,8 @@ export function ImportPage({
 			cardOptions,
 			pagamentosCategoryId,
 			selectedCardOption,
+			triggerImportAiAnalysis,
+			accountOptions,
 		],
 	);
 
@@ -2510,6 +2685,21 @@ export function ImportPage({
 								onCreateCategory={handleRequestBulkCreateCategory}
 							/>
 
+							<ImportAiAnalysisBanner
+								status={aiAnalysisStatus}
+								errorMessage={aiAnalysisError}
+								summary={aiAnalysisSummary}
+							/>
+
+							{aiStoredKeysInvalid ? (
+								<Alert variant="destructive">
+									<AlertTitle>Chave de IA ilegível</AlertTitle>
+									<AlertDescription className="text-sm">
+										{AI_STORED_KEY_UNREADABLE_MESSAGE}
+									</AlertDescription>
+								</Alert>
+							) : null}
+
 							<ReviewTable
 								rows={rows}
 								defaultPayerId={defaultPayerId}
@@ -2549,11 +2739,10 @@ export function ImportPage({
 							{/* Sticky footer */}
 							<div className="sticky bottom-0 -mx-6 bg-card px-6 pt-3 pb-1">
 								<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-									<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+									<div className="flex flex-row flex-wrap items-center gap-2">
 										<Button
 											type="button"
 											variant="outline"
-											className="w-full sm:w-auto"
 											onClick={() => setCancelConfirmOpen(true)}
 											disabled={isPending || isSavingDraft}
 										>
@@ -2562,7 +2751,6 @@ export function ImportPage({
 										<Button
 											type="button"
 											variant="outline"
-											className="w-full sm:w-auto"
 											onClick={handleSaveDraft}
 											disabled={!canSaveDraft}
 										>

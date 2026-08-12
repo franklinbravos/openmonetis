@@ -1,6 +1,7 @@
 import {
 	RiCheckLine,
 	RiExternalLinkLine,
+	RiRefreshLine,
 	RiSaveLine,
 	RiSparklingLine,
 } from "@remixicon/react";
@@ -17,6 +18,7 @@ import type { ListedProviderModel } from "@/shared/lib/ai/list-provider-models";
 import { cn } from "@/shared/utils/ui";
 import { ModelSearchCombobox } from "./model-search-combobox";
 import { OpenCodePlanCards } from "./opencode-plan-cards";
+import { SelectedModelDetails } from "./selected-model-details";
 
 interface ModelSelectionCardProps {
 	currentProvider: AIProvider;
@@ -33,10 +35,15 @@ interface ModelSelectionCardProps {
 	canAnalyze?: boolean;
 	disabled?: boolean;
 	selectValue: string;
+	selectedModel?: ListedProviderModel | null;
 	onModelSelect: (modelId: string) => void;
+	isSavedInDatabase?: boolean;
+	hasUnsavedChanges?: boolean;
 	onCancel?: () => void;
 	onAnalyze?: () => void;
 	onSave?: () => void;
+	onTest?: () => void;
+	canTest?: boolean;
 	isSaving?: boolean;
 	canSave?: boolean;
 	variant?: "insights" | "settings";
@@ -61,10 +68,15 @@ export function ModelSelectionCard({
 	canAnalyze,
 	disabled,
 	selectValue,
+	selectedModel = null,
 	onModelSelect,
+	isSavedInDatabase = false,
+	hasUnsavedChanges = false,
 	onCancel,
 	onAnalyze,
 	onSave,
+	onTest,
+	canTest = false,
 	isSaving,
 	canSave,
 	variant = "insights",
@@ -140,9 +152,11 @@ export function ModelSelectionCard({
 								placeholder={
 									isEditingApiKey
 										? "Digite nova chave ou deixe em branco para manter"
-										: envVariableName
-											? `Cole sua chave ou configure ${envVariableName} no .env`
-											: "Cole sua chave API"
+										: isSettings
+											? "Cole sua chave API"
+											: envVariableName
+												? `Cole sua chave ou configure ${envVariableName} no .env`
+												: "Cole sua chave API"
 								}
 								disabled={disabled}
 								className={cn(
@@ -207,12 +221,22 @@ export function ModelSelectionCard({
 								}
 								placeholder={
 									canListModels
-										? "Selecione um modelo"
+										? providerModels.length > 0
+											? "Selecione um modelo"
+											: "Carregando modelos..."
 										: "Informe a chave API para listar modelos"
 								}
 								className={cn(credentialValidated && "border-emerald-500/40")}
 							/>
 						)}
+
+						<SelectedModelDetails
+							model={selectedModel}
+							currentProvider={currentProvider}
+							baseUrl={baseUrl}
+							isSavedInDatabase={isSavedInDatabase}
+							hasUnsavedChanges={hasUnsavedChanges}
+						/>
 
 						{modelsError ? (
 							<p className="text-destructive text-xs">{modelsError}</p>
@@ -240,7 +264,16 @@ export function ModelSelectionCard({
 				</div>
 
 				{isSettings ? (
-					<div className="flex justify-end">
+					<div className="flex flex-wrap justify-end gap-2">
+						<Button
+							type="button"
+							variant="outline"
+							onClick={onTest}
+							disabled={disabled || isSaving || isLoadingModels || !canTest}
+						>
+							<RiRefreshLine className="size-4" />
+							{isLoadingModels ? "Testando…" : "Testar"}
+						</Button>
 						<Button
 							type="button"
 							onClick={onSave}
