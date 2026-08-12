@@ -171,7 +171,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 		currentInvoiceLabel: "",
 		currentInvoiceStatus: null,
 		importPdfPasswordRule,
-		hasImportPdfPasswordSecret: Boolean(card.importPdfPasswordSecret),
+		hasImportPdfPasswordSecret: card.hasImportPdfPasswordSecret,
 	};
 
 	const { totalAmount, invoiceStatus, paymentDate } = invoiceData;
@@ -197,7 +197,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 						logo={card.logo}
 						periodLabel={periodLabel}
 						importPdfPasswordRule={importPdfPasswordRule}
-						hasImportPdfPasswordSecret={Boolean(card.importPdfPasswordSecret)}
+						hasImportPdfPasswordSecret={card.hasImportPdfPasswordSecret}
 						actions={
 							<CardDialog
 								mode="update"

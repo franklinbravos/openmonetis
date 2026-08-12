@@ -1,4 +1,4 @@
-import { and, eq, type SQL } from "drizzle-orm";
+import { and, eq, type SQL, sql } from "drizzle-orm";
 import { cards, invoices, transactions } from "@/db/schema";
 import { resolveInvoicePeriodCarouselStatus } from "@/features/invoices/lib/period-carousel-status";
 import { fetchTransactionsWithRelations } from "@/features/transactions/queries";
@@ -28,25 +28,26 @@ type InvoiceMonthSummaryRow = {
 };
 
 export async function fetchCardData(userId: string, cardId: string) {
-	const card = await db.query.cards.findFirst({
-		columns: {
-			id: true,
-			name: true,
-			brand: true,
-			closingDay: true,
-			dueDay: true,
-			logo: true,
-			limit: true,
-			status: true,
-			note: true,
-			accountId: true,
-			importPdfPasswordRule: true,
-			importPdfPasswordSecret: true,
-		},
-		where: and(eq(cards.id, cardId), eq(cards.userId, userId)),
-	});
+	const [card] = await db
+		.select({
+			id: cards.id,
+			name: cards.name,
+			brand: cards.brand,
+			closingDay: cards.closingDay,
+			dueDay: cards.dueDay,
+			logo: cards.logo,
+			limit: cards.limit,
+			status: cards.status,
+			note: cards.note,
+			accountId: cards.accountId,
+			importPdfPasswordRule: cards.importPdfPasswordRule,
+			// Retorna apenas o booleano — o ciphertext nunca sai do servidor.
+			hasImportPdfPasswordSecret: sql<boolean>`${cards.importPdfPasswordSecret} IS NOT NULL`,
+		})
+		.from(cards)
+		.where(and(eq(cards.id, cardId), eq(cards.userId, userId)));
 
-	return card;
+	return card ?? null;
 }
 
 export async function fetchInvoiceData(
