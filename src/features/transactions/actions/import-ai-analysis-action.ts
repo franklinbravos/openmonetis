@@ -44,8 +44,6 @@ import {
 import { getUserId } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
 
-export const maxDuration = 120;
-
 const installmentImportSchema = z
 	.object({
 		enabled: z.boolean(),
