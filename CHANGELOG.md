@@ -5,13 +5,30 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
-## [2.8.0] - 2026-08-01
+## [2.8.0] - 2026-08-12
 
-Esta versão adiciona a criação inline de contas no cadastro de lançamentos, permitindo cadastrar uma conta diretamente do formulário quando não houver nenhuma disponível e já utilizá-la no lançamento em andamento.
+Esta versão fortalece a importação de dados — a entrada inicial do sistema — com análise de IA com progresso em tempo real, filtros de busca e status na revisão, e detecção de duplicatas mais precisa em faturas de cartão. Também endurece a segurança (erros acionáveis em vez de mensagens genéricas, whitelist de domínios de imagem, CSP, validação de ownership e 401 nas APIs) e traz ganhos de performance no caminho mais quente do app.
 
 ### Adicionado
+- Importação: análise com IA dividida em preparação e lotes, exibindo progresso em tempo real (fase, lote atual/total, linhas analisadas, modelo usado e tempo decorrido) no banner de análise.
+- Importação: busca por descrição, data e valor na tabela de revisão, com filtros por status (pendências, sem categoria, sem pessoa, prontos, selecionados, excluídos, duplicatas conferidas/divergentes, vínculos sugeridos, vinculados e sugestões da IA) e contadores por estado.
+- Importação: lançamento anotado manualmente na mesma fatura com parcela divergente (N/M) é reconhecido como duplicata quando nome e valor coincidem.
+- Server Actions: nova classe de erro `ActionError` que preserva mensagens acionáveis ao usuário (ex.: "Crie uma pessoa admin antes de definir um saldo inicial") em vez de genéricas.
 - Lançamentos: quando o seletor de conta está vazio, um botão `Criar conta` abre o cadastro de nova conta sem sair do formulário — a conta criada é adicionada à lista e selecionada automaticamente no lançamento.
 - Lançamentos: ao usar as formas de pagamento `Dinheiro` ou `Pré-Pago | VR/VA`, o cadastro inline pré-seleciona o tipo de conta correspondente.
+
+### Corrigido
+- Segurança: domínios de imagem do otimizador do Next restritos à whitelist (`lh3.googleusercontent.com`, `img.logo.dev`), eliminando SSRF via `/_next/image`.
+- Segurança: CSP reforçada com `object-src 'none'`, `base-uri 'self'` e `form-action 'self'`.
+- Segurança: `saveCategoryMappings` e `saveReconciliationAliasAction` agora validam que categorias/pessoas referenciadas pertencem ao usuário (evita referências cross-tenant).
+- Segurança: rotas de API autenticadas (`/api/auth/device/tokens`, `/api/logo/mapping`) respondem `401` em vez de redirect.
+- Segurança: `fetchCardData` não carrega mais o ciphertext da senha de PDF do cartão — apenas o booleano.
+- Importação: `sendPayerSummaryAction` passa a registrar erros em produção (antes só em desenvolvimento).
+- Mensagens de erro migradas para pt-BR ("Categoria" em vez de "Category").
+
+### Alterado
+- Performance: índice composto `user_id + role` em `pagadores`, acelerando `getAdminPayerId` no caminho mais quente do app.
+- Importação: refatoração da análise com IA para permitir retry e progresso por lote.
 
 ## [2.7.12] - 2026-06-30
 
