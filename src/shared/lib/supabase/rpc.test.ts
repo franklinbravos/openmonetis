@@ -47,6 +47,20 @@ describe("callRpc", () => {
 		);
 	});
 
+	it("converte erro objeto do PostgREST em Error com código", async () => {
+		rpcMock.rpc.mockResolvedValue({
+			data: null,
+			error: {
+				code: "22P02",
+				message: 'invalid input syntax for type uuid: ""',
+			},
+		});
+
+		await expect(callRpc("sum_lancamentos")).rejects.toThrow(
+			'[22P02] invalid input syntax for type uuid: ""',
+		);
+	});
+
 	it("retorna [] quando data é null sem erro", async () => {
 		rpcMock.rpc.mockResolvedValue({ data: null, error: null });
 

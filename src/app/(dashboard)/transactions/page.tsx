@@ -61,7 +61,7 @@ export default async function Page({ searchParams }: PageProps) {
 	const sluggedFilters = buildSluggedFilters(filterSources);
 	const slugMaps = buildSlugMaps(sluggedFilters);
 
-	const filters = buildTransactionWhere({
+	const filters = await buildTransactionWhere({
 		userId,
 		period: selectedPeriod,
 		filters: searchFilters,

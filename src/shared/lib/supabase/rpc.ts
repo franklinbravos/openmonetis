@@ -15,10 +15,23 @@ export async function callRpc<TRow extends Record<string, unknown>>(
 
 	if (error) {
 		console.error(`[rpc] ${functionName} falhou`, error);
-		if (typeof error === "string") {
-			throw new Error(error);
-		}
-		throw error;
+		const message =
+			typeof error === "string"
+				? error
+				: error &&
+						typeof error === "object" &&
+						"message" in error &&
+						typeof (error as { message: unknown }).message === "string"
+					? (error as { message: string }).message
+					: `Falha ao executar ${functionName}`;
+		const code =
+			error &&
+			typeof error === "object" &&
+			"code" in error &&
+			typeof (error as { code: unknown }).code === "string"
+				? (error as { code: string }).code
+				: null;
+		throw new Error(code ? `[${code}] ${message}` : message);
 	}
 
 	return (data as TRow[] | null) ?? [];

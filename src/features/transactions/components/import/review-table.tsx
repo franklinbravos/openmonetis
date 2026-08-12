@@ -567,6 +567,8 @@ const categoryGroupByTransactionType: Record<
 export type ReviewRowKind = "transaction" | "invoice_payment" | "transfer";
 
 export type ReviewRow = ImportedTransaction & {
+	/** Identidade estável para React keys; externalId pode repetir no mesmo extrato. */
+	reviewKey: string;
 	selected: boolean;
 	isDuplicate: boolean;
 	duplicateValidation: ImportDuplicateValidation | null;
@@ -593,9 +595,8 @@ function resolveReviewExistingPayerId(
 	);
 }
 
-/** Índice na lista é a identidade estável dos handlers; externalId pode repetir (duplicatas/vínculos). */
-function getReviewRowKey(row: ReviewRow, index: number) {
-	return `${index}-${row.externalId ?? row.date}`;
+function getReviewRowKey(row: ReviewRow) {
+	return row.reviewKey;
 }
 
 interface ReviewTableProps {
@@ -759,7 +760,7 @@ export function ReviewTable({
 
 								return (
 									<TableRow
-										key={getReviewRowKey(row, index)}
+										key={getReviewRowKey(row)}
 										className={getDuplicateRowClassName(row)}
 									>
 										<TableCell className="w-10">
@@ -830,7 +831,7 @@ export function ReviewTable({
 
 							return (
 								<TableRow
-									key={getReviewRowKey(row, index)}
+									key={getReviewRowKey(row)}
 									className={getDuplicateRowClassName(row)}
 								>
 									<TableCell>
@@ -1038,7 +1039,7 @@ function ReviewMobileList({
 
 			{rows.map((row, index) => (
 				<ReviewMobileCard
-					key={getReviewRowKey(row, index)}
+					key={getReviewRowKey(row)}
 					row={row}
 					index={index}
 					defaultPayerId={defaultPayerId}
@@ -1286,11 +1287,6 @@ function ReviewMobileCard({
 								index={index}
 								onRecurrenceToggle={onRecurrenceToggle}
 								onRecurrenceCountChange={onRecurrenceCountChange}
-							/>
-							<ReviewDuplicateStatus
-								row={row}
-								index={index}
-								onUndoDuplicate={onUndoDuplicate}
 							/>
 						</div>
 					</>

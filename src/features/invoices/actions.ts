@@ -23,7 +23,6 @@ import {
 	PERIOD_FORMAT_REGEX,
 } from "@/shared/lib/invoices";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
-import { callRpcOne } from "@/shared/lib/supabase/rpc";
 import {
 	formatCurrency,
 	formatDecimalForDbRequired,
@@ -35,6 +34,19 @@ import {
 
 const isValidPaymentDate = (value: string) =>
 	!Number.isNaN(parseLocalDateString(value).getTime());
+
+function getActionErrorMessage(error: unknown): string {
+	if (error instanceof Error) return error.message;
+	if (
+		error &&
+		typeof error === "object" &&
+		"message" in error &&
+		typeof (error as { message: unknown }).message === "string"
+	) {
+		return (error as { message: string }).message;
+	}
+	return "Erro inesperado.";
+}
 
 const updateInvoicePaymentStatusSchema = z.object({
 	cardId: z.string({ message: "Cartão inválido." }).uuid("Cartão inválido."),
@@ -111,19 +123,26 @@ export async function updateInvoicePaymentStatusAction(
 			const invoiceNote = buildInvoicePaymentNote(card.id, data.period);
 
 			if (shouldMarkAsPaid) {
-				const adminShareRow = adminPayerId
-					? await callRpcOne<{ total: string | number | null }>(
-							"get_invoice_admin_share",
-							{
-								p_user_id: user.id,
-								p_card_id: card.id,
-								p_period: data.period,
-								p_admin_payer_id: adminPayerId,
-							},
-						)
-					: null;
+				// Soma no mesmo transaction — evita RPC get_invoice_admin_share
+				// (cast p_admin_payer_id::uuid gerava 22P02 em alguns ambientes).
+				const adminShareRows = adminPayerId
+					? await tx
+							.select({ amount: transactions.amount })
+							.from(transactions)
+							.where(
+								and(
+									eq(transactions.userId, user.id),
+									eq(transactions.cardId, card.id),
+									eq(transactions.period, data.period),
+									eq(transactions.payerId, adminPayerId),
+								),
+							)
+					: [];
 
-				const adminShare = Number(adminShareRow?.total ?? 0);
+				const adminShare = adminShareRows.reduce(
+					(total, row) => total + Number(row.amount ?? 0),
+					0,
+				);
 				const adminPayableAmount = Math.abs(Math.min(adminShare, 0));
 				const paymentAccountId = data.paymentAccountId ?? card.accountId;
 
@@ -215,7 +234,7 @@ export async function updateInvoicePaymentStatusAction(
 
 		return {
 			success: false,
-			error: error instanceof Error ? error.message : "Erro inesperado.",
+			error: getActionErrorMessage(error),
 		};
 	}
 }
@@ -286,7 +305,7 @@ export async function updatePaymentDateAction(
 
 		return {
 			success: false,
-			error: error instanceof Error ? error.message : "Erro inesperado.",
+			error: getActionErrorMessage(error),
 		};
 	}
 }
@@ -406,7 +425,7 @@ export async function adjustInvoiceAction(
 
 		return {
 			success: false,
-			error: error instanceof Error ? error.message : "Erro inesperado.",
+			error: getActionErrorMessage(error),
 		};
 	}
 }

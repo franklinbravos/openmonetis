@@ -8,6 +8,7 @@ import {
 	parsePortugueseLongDate,
 	parsePortugueseShortDate,
 	parseSlashDateDMY,
+	uniquifyImportedExternalIds,
 } from "./helpers";
 
 describe("parseBrazilianAmount", () => {
@@ -114,5 +115,25 @@ describe("makeSyntheticExternalId", () => {
 		expect(makeSyntheticExternalId(["Pagamento  ", "Cartão"])).toBe(
 			"pagamento|cartão",
 		);
+	});
+});
+
+describe("uniquifyImportedExternalIds", () => {
+	it("mantém o primeiro id e sufixa as colisões", () => {
+		const result = uniquifyImportedExternalIds([
+			{ externalId: "a|b|1" },
+			{ externalId: "a|b|1" },
+			{ externalId: "c" },
+			{ externalId: "a|b|1" },
+			{ externalId: null },
+		]);
+
+		expect(result.map((row) => row.externalId)).toEqual([
+			"a|b|1",
+			"a|b|1#2",
+			"c",
+			"a|b|1#3",
+			null,
+		]);
 	});
 });

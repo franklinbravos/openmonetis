@@ -155,6 +155,12 @@ type ImportResult =
 	| { success: true; imported: number; skipped: number; importBatchId: string }
 	| { success: false; error: string };
 
+function isPostgresUniqueViolation(error: unknown): boolean {
+	if (!error || typeof error !== "object") return false;
+	const record = error as { code?: string; cause?: { code?: string } };
+	return record.code === "23505" || record.cause?.code === "23505";
+}
+
 // Retorna os externalIds que já existem para o usuário (para marcar duplicatas)
 export async function checkDuplicateFitIds(
 	fitIds: string[],
@@ -1017,7 +1023,10 @@ export async function importTransactionsAction(
 		];
 	});
 
-	const inserted = await db.transaction(async (tx) => {
+	let inserted: { id: string }[] = [];
+
+	try {
+		inserted = await db.transaction(async (tx) => {
 		const allRecords = [
 			...regularRecords,
 			...transferRecords,
@@ -1053,9 +1062,14 @@ export async function importTransactionsAction(
 			}
 		}
 
-		const recordsToInsert = allRecords.filter(
-			(record) => !record.ofxFitId || !existingFitIds.has(record.ofxFitId),
-		);
+		const seenFitIdsInBatch = new Set<string>();
+		const recordsToInsert = allRecords.filter((record) => {
+			if (!record.ofxFitId) return true;
+			if (existingFitIds.has(record.ofxFitId)) return false;
+			if (seenFitIdsInBatch.has(record.ofxFitId)) return false;
+			seenFitIdsInBatch.add(record.ofxFitId);
+			return true;
+		});
 
 		const insertedRows =
 			recordsToInsert.length > 0
@@ -1087,6 +1101,20 @@ export async function importTransactionsAction(
 
 		return insertedRows;
 	});
+	} catch (error) {
+		console.error("importTransactionsAction", error);
+		if (isPostgresUniqueViolation(error)) {
+			return {
+				success: false,
+				error:
+					"Há lançamentos duplicados no arquivo (mesmo identificador do extrato). Revise os itens marcados como duplicata e tente novamente.",
+			};
+		}
+		return {
+			success: false,
+			error: "Não foi possível concluir a importação. Tente novamente.",
+		};
+	}
 
 	await revalidateForEntity("transactions", userId);
 	if (hasInvoicePayments || payInvoice) {
@@ -1097,18 +1125,29 @@ export async function importTransactionsAction(
 	}
 
 	if (payInvoice && cardId && invoicePeriod) {
-		const payResult = await updateInvoicePaymentStatusAction({
-			cardId,
-			period: invoicePeriod,
-			status: INVOICE_PAYMENT_STATUS.PAID,
-			paymentDate,
-			paymentAccountId: paymentAccountId ?? undefined,
-		});
+		try {
+			const payResult = await updateInvoicePaymentStatusAction({
+				cardId,
+				period: invoicePeriod,
+				status: INVOICE_PAYMENT_STATUS.PAID,
+				paymentDate,
+				paymentAccountId: paymentAccountId ?? undefined,
+			});
 
-		if (!payResult.success) {
+			if (!payResult.success) {
+				return {
+					success: false,
+					error:
+						payResult.error ||
+						"Lançamentos importados, mas não foi possível marcar a fatura como paga.",
+				};
+			}
+		} catch (error) {
+			console.error("importTransactionsAction:payInvoice", error);
 			return {
 				success: false,
-				error: payResult.error,
+				error:
+					"Lançamentos importados, mas não foi possível marcar a fatura como paga. Tente pagar a fatura manualmente.",
 			};
 		}
 	}

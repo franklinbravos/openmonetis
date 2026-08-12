@@ -68,7 +68,7 @@ export async function exportTransactionsDataAction(
 		const sluggedFilters = buildSluggedFilters(filterSources);
 		const slugMaps = buildSlugMaps(sluggedFilters);
 
-		const filters = buildTransactionWhere({
+		const filters = await buildTransactionWhere({
 			userId,
 			period: validated.period,
 			filters: validated.filters,

@@ -406,7 +406,7 @@ export function resolveSemanticImportMatches(
 		if (bestCandidateIndex === null) continue;
 
 		const existing = candidates[bestCandidateIndex];
-		if (bestScore === 2 && claimedExistingIds.has(existing.id)) {
+		if (claimedExistingIds.has(existing.id)) {
 			continue;
 		}
 
@@ -417,12 +417,7 @@ export function resolveSemanticImportMatches(
 		);
 
 		results.set(rowIndex, { existing, validation });
-
-		if (bestScore === 3) {
-			claimedExistingIds.add(existing.id);
-		} else {
-			claimedExistingIds.add(existing.id);
-		}
+		claimedExistingIds.add(existing.id);
 	}
 
 	return results;

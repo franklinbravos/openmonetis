@@ -1,9 +1,7 @@
 import type { SQL } from "drizzle-orm";
 import {
-	and,
 	eq,
 	gte,
-	ilike,
 	inArray,
 	isNull,
 	lte,
@@ -11,9 +9,9 @@ import {
 	sql,
 } from "drizzle-orm";
 import {
-	cards,
+	type cards,
 	type categories,
-	financialAccounts,
+	type financialAccounts,
 	type payers,
 	transactionAttachments,
 	transactions,
@@ -45,6 +43,7 @@ import {
 	PAYER_ROLE_ADMIN,
 	PAYER_ROLE_THIRD_PARTY,
 } from "@/shared/lib/payers/constants";
+import { callRpc } from "@/shared/lib/supabase/rpc";
 import { parseLocalDateString, toDateOnlyString } from "@/shared/utils/date";
 import { slugify } from "@/shared/utils/string";
 
@@ -382,10 +381,29 @@ const isValidPaymentMethod = (
 ): value is (typeof PAYMENT_METHODS)[number] =>
 	!!value && (PAYMENT_METHODS as readonly string[]).includes(value ?? "");
 
-const buildSearchPattern = (value: string | null) =>
+export const buildSearchPattern = (value: string | null) =>
 	value ? `%${value.trim().replace(/\s+/g, "%")}%` : null;
 
-export const buildTransactionWhere = ({
+/**
+ * Busca lançamentos por termo via RPC nativa no Supabase.
+ * Retorna os IDs que casam nome/anotação/forma/condição (ILIKE no Postgres),
+ * para combinar com os demais filtros dinâmicos via `inArray`.
+ */
+export async function fetchSearchTransactionIds(
+	userId: string,
+	term: string,
+): Promise<string[]> {
+	const pattern = buildSearchPattern(term);
+	if (!pattern) return [];
+
+	const rows = await callRpc<{ id: string }>("get_search_transaction_ids", {
+		p_user_id: userId,
+		p_term: pattern,
+	});
+	return rows.map((row) => row.id);
+}
+
+export const buildTransactionWhere = async ({
 	userId,
 	period,
 	filters,
@@ -403,7 +421,7 @@ export const buildTransactionWhere = ({
 	accountId?: string;
 	payerId?: string;
 	hideAnticipatedInstallments?: boolean;
-}): SQL[] => {
+}): Promise<SQL[]> => {
 	const where: SQL[] = [eq(transactions.userId, userId)];
 
 	if (filters.dateStartFilter || filters.dateEndFilter) {
@@ -542,18 +560,11 @@ export const buildTransactionWhere = ({
 		);
 	}
 
-	const searchPattern = buildSearchPattern(filters.searchFilter);
-	if (searchPattern) {
-		// Apenas ilike direto em colunas de lancamentos: o bridge Supabase não serializa
-		// ramos and() dentro de or(), o que fazia a busca inteira ser ignorada.
-		where.push(
-			or(
-				ilike(transactions.name, searchPattern),
-				ilike(transactions.note, searchPattern),
-				ilike(transactions.paymentMethod, searchPattern),
-				ilike(transactions.condition, searchPattern),
-			) as SQL,
-		);
+	const searchTerm = filters.searchFilter?.trim();
+	if (searchTerm) {
+		// Busca nativa no Postgres via RPC: evita o emulador de or(ilike) do bridge.
+		const searchIds = await fetchSearchTransactionIds(userId, searchTerm);
+		where.push(inArray(transactions.id, searchIds));
 	}
 
 	return where;

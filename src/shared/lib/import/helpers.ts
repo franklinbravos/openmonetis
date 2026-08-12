@@ -103,6 +103,31 @@ export function makeSyntheticExternalId(parts: string[]): string {
 		.replace(/\s+/g, " ");
 }
 
+/**
+ * Garante externalIds únicos dentro do arquivo.
+ * Extratos (PDF/CSV) geram ID sintético por data+descrição+valor; compras
+ * legítimas iguais no mesmo dia colidem e eram marcadas como "já cadastrado".
+ */
+export function uniquifyImportedExternalIds<
+	T extends { externalId: string | null },
+>(transactions: T[]): T[] {
+	const seen = new Map<string, number>();
+
+	return transactions.map((transaction) => {
+		const externalId = transaction.externalId;
+		if (!externalId) return transaction;
+
+		const count = seen.get(externalId) ?? 0;
+		seen.set(externalId, count + 1);
+		if (count === 0) return transaction;
+
+		return {
+			...transaction,
+			externalId: `${externalId}#${count + 1}`,
+		};
+	});
+}
+
 export function normalizeImportedText(value: string): string {
 	return fixUtf8Mojibake(value).replace(/\s+/g, " ").trim();
 }

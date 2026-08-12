@@ -143,6 +143,7 @@ import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants
 import {
 	buildPeriodFromTransactions,
 	normalizeImportedText,
+	uniquifyImportedExternalIds,
 } from "@/shared/lib/import/helpers";
 import { mapPdfLoadError } from "@/shared/lib/import/pdf-password";
 import type { ImportStatement } from "@/shared/lib/import/types";
@@ -179,13 +180,15 @@ function withNormalizedDescriptions(
 ): ImportStatement {
 	return {
 		...statement,
-		transactions: statement.transactions.map((transaction) => ({
-			...transaction,
-			description: normalizeImportedText(transaction.description),
-			categoryRaw: transaction.categoryRaw
-				? normalizeImportedText(transaction.categoryRaw)
-				: transaction.categoryRaw,
-		})),
+		transactions: uniquifyImportedExternalIds(
+			statement.transactions.map((transaction) => ({
+				...transaction,
+				description: normalizeImportedText(transaction.description),
+				categoryRaw: transaction.categoryRaw
+					? normalizeImportedText(transaction.categoryRaw)
+					: transaction.categoryRaw,
+			})),
+		),
 	};
 }
 
@@ -787,6 +790,7 @@ export function ImportPage({
 
 					return {
 						...t,
+						reviewKey: crypto.randomUUID(),
 						sourceDescription: t.description,
 						isDuplicate,
 						selected: isDuplicate || isLinkSuggestion ? false : true,

@@ -159,7 +159,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 		slugMaps = createEmptySlugMaps();
 	}
 
-	const filters = buildTransactionWhere({
+	const filters = await buildTransactionWhere({
 		userId: dataOwnerId,
 		period: selectedPeriod,
 		filters: searchFilters,
