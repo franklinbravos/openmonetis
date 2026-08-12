@@ -230,6 +230,7 @@ interface ImportPageProps {
 	categoryOptions: SelectOption[];
 	defaultPayerId: string | null;
 	aiAnalysisEnabled?: boolean;
+	aiDefaultModelId?: string | null;
 	aiStoredKeysInvalid?: boolean;
 	initialCardId?: string | null;
 	initialAccountId?: string | null;
@@ -250,6 +251,7 @@ export function ImportPage({
 	categoryOptions,
 	defaultPayerId,
 	aiAnalysisEnabled = false,
+	aiDefaultModelId = null,
 	aiStoredKeysInvalid = false,
 	initialCardId = null,
 	initialAccountId = null,
@@ -612,6 +614,7 @@ export function ImportPage({
 			try {
 				const result = await analyzeImportWithAiAction(
 					buildImportAiAnalysisPayload({
+						modelId: aiDefaultModelId,
 						rows: reviewRows,
 						isCreditCard: context.isCreditCard,
 						cardId: context.cardId,
@@ -652,7 +655,12 @@ export function ImportPage({
 				toast.warning(message);
 			}
 		},
-		[aiAnalysisEnabled, isCategoryCompatible, mergedCategoryOptions],
+		[
+			aiAnalysisEnabled,
+			aiDefaultModelId,
+			isCategoryCompatible,
+			mergedCategoryOptions,
+		],
 	);
 
 	const selectedCardOption = useMemo(() => {

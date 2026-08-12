@@ -310,12 +310,17 @@ export function useAiModelConfiguration({
 	const persistSettings = useCallback(
 		async (options?: { silent?: boolean }) => {
 			const trimmedKey = apiKeyInput.trim();
+			const resolvedBaseUrl =
+				currentProvider === "opencode"
+					? baseUrlInput.trim() || savedBaseUrl
+					: baseUrlInput.trim() || undefined;
+
 			const result = await updateAiProviderSettingsAction({
 				insightsDefaultModelId: selectedModelId,
 				providers: {
 					[currentProvider]: {
 						...(trimmedKey ? { apiKey: trimmedKey } : {}),
-						...(baseUrlInput.trim() ? { baseUrl: baseUrlInput.trim() } : {}),
+						...(resolvedBaseUrl ? { baseUrl: resolvedBaseUrl } : {}),
 						defaultModelId: stripCustomProviderPrefix(
 							selectedModelId,
 							currentProvider,
@@ -326,7 +331,7 @@ export function useAiModelConfiguration({
 
 			if (result.success) {
 				setLastSavedModelId(selectedModelId);
-				setLastSavedBaseUrl(baseUrlInput.trim() || savedBaseUrl);
+				setLastSavedBaseUrl(resolvedBaseUrl ?? "");
 				setApiKeyInput("");
 				if (!options?.silent) {
 					toast.success(result.message ?? "Configurações salvas.");

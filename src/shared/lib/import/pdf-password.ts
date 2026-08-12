@@ -208,7 +208,11 @@ async function loadPdfWithPasswordCandidates(
 			return;
 		}
 
-		updatePassword(candidates[attemptIndex++]!);
+		const nextPassword = candidates[attemptIndex];
+		attemptIndex += 1;
+		if (nextPassword) {
+			updatePassword(nextPassword);
+		}
 	};
 
 	try {

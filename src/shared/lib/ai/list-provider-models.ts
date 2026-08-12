@@ -3,17 +3,31 @@ import {
 	AVAILABLE_MODELS,
 } from "@/features/insights/constants";
 import {
+	enrichListedModelsFromModelsDev,
+	fetchModelsDevCatalog,
+	getModelsDevProviderKeyForOpenCode,
+	toModelContextLimits,
+} from "./models-dev-catalog";
+import {
 	isOpenCodeFreeModelId,
 	isOpenCodeZenBaseUrl,
 	OPENCODE_PLAN_ZEN_URL,
 } from "./opencode-plans";
 import type { ResolvedAiCredentials } from "./types";
 
+export type ModelContextLimits = {
+	contextTokens: number | null;
+	inputTokens: number | null;
+	outputTokens: number | null;
+};
+
 export type ListedProviderModel = {
 	id: string;
 	name: string;
+	description?: string;
 	isFreeTier?: boolean;
 	unavailableInCatalog?: boolean;
+	limits?: ModelContextLimits;
 	metadata?: Record<string, unknown>;
 };
 
@@ -205,7 +219,13 @@ async function listOpenRouterModels(
 	apiKey: string,
 ): Promise<ListProviderModelsResult> {
 	const result = await fetchJson<{
-		data?: Array<{ id?: string; name?: string }>;
+		data?: Array<{
+			id?: string;
+			name?: string;
+			description?: string;
+			context_length?: number;
+			top_provider?: { max_completion_tokens?: number };
+		}>;
 	}>("https://openrouter.ai/api/v1/models", {
 		headers: {
 			Authorization: `Bearer ${apiKey}`,
@@ -224,10 +244,30 @@ async function listOpenRouterModels(
 					return null;
 				}
 
-				return {
+				const limits = toModelContextLimits({
+					context: model.context_length,
+					output: model.top_provider?.max_completion_tokens,
+				});
+
+				const listedModel: ListedProviderModel = {
 					id: prefixModelId("openrouter", modelId),
 					name: model.name?.trim() || modelId,
+					limits,
 				};
+
+				const description = model.description?.trim();
+				if (description) {
+					listedModel.description = description;
+				}
+
+				const metadata = extractModelMetadata(
+					model as unknown as Record<string, unknown>,
+				);
+				if (metadata) {
+					listedModel.metadata = metadata;
+				}
+
+				return listedModel;
 			})
 			.filter((model): model is ListedProviderModel => model !== null),
 	);
@@ -288,7 +328,14 @@ async function listOpenCodeModels(
 		};
 	}
 
-	return { success: true, models: sortModels(models) };
+	const catalog = await fetchModelsDevCatalog();
+	const enriched = enrichListedModelsFromModelsDev(
+		models,
+		catalog,
+		getModelsDevProviderKeyForOpenCode(baseUrl),
+	);
+
+	return { success: true, models: sortModels(enriched) };
 }
 
 async function listOllamaModels(

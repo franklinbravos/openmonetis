@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { type AIProvider, PROVIDERS } from "@/features/insights/constants";
 import { db, schema } from "@/shared/lib/db";
 import { getEnvProviderCredential } from "./env-credentials";
+import { resolveOpenCodePlanBaseUrl } from "./opencode-plans";
 import {
 	encryptSecret,
 	maskApiKey,
@@ -64,9 +65,16 @@ function mergeWithEnvFallback(
 	if (hasStoredProviderSettings(storedEntry)) {
 		const envDefaults = getEnvProviderCredential(provider);
 
+		let baseUrl = databaseCredential.baseUrl;
+		if (provider === "opencode") {
+			baseUrl = baseUrl ? resolveOpenCodePlanBaseUrl(baseUrl) : undefined;
+		} else if (!baseUrl) {
+			baseUrl = envDefaults.baseUrl;
+		}
+
 		return {
 			apiKey: databaseCredential.apiKey,
-			baseUrl: databaseCredential.baseUrl ?? envDefaults.baseUrl,
+			baseUrl,
 			source: databaseCredential.apiKey ? "database" : "none",
 		};
 	}

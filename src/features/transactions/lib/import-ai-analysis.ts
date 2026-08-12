@@ -6,7 +6,8 @@ import {
 	type ImportDuplicateValidation,
 } from "@/features/transactions/lib/import-duplicate-match";
 
-export const IMPORT_AI_BATCH_SIZE = 40;
+export const IMPORT_AI_BATCH_SIZE = 18;
+export const IMPORT_AI_MAX_CANDIDATES_PER_BATCH = 80;
 
 export const IMPORT_AI_DUPLICATE_CONFIDENCE = 0.72;
 export const IMPORT_AI_CATEGORY_CONFIDENCE = 0.62;
@@ -143,7 +144,7 @@ Regras obrigatórias:
 - summary: frase curta em português (máx. 120 caracteres) explicando a decisão principal.
 - confidence: 0 a 1 refletindo certeza geral da linha.
 
-Responda APENAS com JSON válido no schema solicitado.`;
+Responda APENAS com JSON válido no schema solicitado: {"rows":[{"rowIndex":number,"duplicateVerdict":"new"|"duplicate"|"likely_duplicate"|"uncertain","matchedExistingId":string|null,"suggestedCategoryId":string|null,"confidence":number,"summary":string}]}.`;
 
 export function chunkImportAiRows<T>(
 	rows: T[],
@@ -186,6 +187,101 @@ Linhas importadas para analisar neste lote:
 ${JSON.stringify(input.rows, null, 2)}
 
 Analise cada item de "rows" e retorne um objeto por rowIndex.`;
+}
+
+function normalizeCandidateName(value: string): string {
+	return value
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.toLowerCase()
+		.replace(/[^a-z0-9\s]/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+function namesAreSimilar(left: string, right: string): boolean {
+	const normalizedLeft = normalizeCandidateName(left);
+	const normalizedRight = normalizeCandidateName(right);
+	if (!normalizedLeft || !normalizedRight) return false;
+
+	if (
+		normalizedLeft.includes(normalizedRight) ||
+		normalizedRight.includes(normalizedLeft)
+	) {
+		return true;
+	}
+
+	const leftTokens = new Set(normalizedLeft.split(" "));
+	const sharedTokens = normalizedRight
+		.split(" ")
+		.filter((token) => leftTokens.has(token));
+
+	return sharedTokens.length >= 2;
+}
+
+export function filterExistingCandidatesForBatch(
+	batchRows: ImportAiAnalysisRowInput[],
+	allCandidates: ImportAiExistingCandidate[],
+	max = IMPORT_AI_MAX_CANDIDATES_PER_BATCH,
+): ImportAiExistingCandidate[] {
+	if (allCandidates.length <= max) {
+		return allCandidates;
+	}
+
+	const batchAmounts = new Set(
+		batchRows.map((row) => Math.abs(Number(row.amount))),
+	);
+
+	const scored = allCandidates.map((candidate) => {
+		let score = 0;
+
+		if (batchAmounts.has(Math.abs(Number(candidate.amount)))) {
+			score += 3;
+		}
+
+		for (const row of batchRows) {
+			if (namesAreSimilar(row.description, candidate.name)) {
+				score += 2;
+			}
+			if (namesAreSimilar(row.sourceDescription, candidate.name)) {
+				score += 1;
+			}
+		}
+
+		return { candidate, score };
+	});
+
+	scored.sort((left, right) => {
+		if (right.score !== left.score) {
+			return right.score - left.score;
+		}
+
+		return left.candidate.name.localeCompare(right.candidate.name, "pt-BR");
+	});
+
+	const filtered = scored
+		.filter((entry) => entry.score > 0)
+		.slice(0, max)
+		.map((entry) => entry.candidate);
+
+	if (filtered.length > 0) {
+		return filtered;
+	}
+
+	return allCandidates.slice(0, max);
+}
+
+export function parseImportAiBatchResponseText(text: string) {
+	const trimmed = text.trim();
+	const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+	const candidate = fencedMatch?.[1]?.trim() ?? trimmed;
+
+	try {
+		const parsed = JSON.parse(candidate);
+		return ImportAiBatchResponseSchema.safeParse(parsed);
+	} catch {
+		return ImportAiBatchResponseSchema.safeParse(null);
+	}
 }
 
 export function mapExistingSnapshotToAiCandidate(
@@ -325,6 +421,7 @@ export function applyImportAiPatchesToRows(
 }
 
 export function buildImportAiAnalysisPayload(input: {
+	modelId?: string | null;
 	rows: ReviewRow[];
 	isCreditCard: boolean;
 	cardId: string | null;
@@ -340,7 +437,12 @@ export function buildImportAiAnalysisPayload(input: {
 		compatible: boolean;
 	}>;
 }) {
+	const selectedRows = input.rows
+		.map((row, rowIndex) => ({ row, rowIndex }))
+		.filter(({ row }) => row.selected);
+
 	return {
+		modelId: input.modelId?.trim() || undefined,
 		isCreditCard: input.isCreditCard,
 		cardId: input.cardId,
 		invoicePeriods: input.invoicePeriods,
@@ -350,7 +452,7 @@ export function buildImportAiAnalysisPayload(input: {
 		accountName: input.accountName,
 		categories: input.categories,
 		categoryCompatibility: input.categoryCompatibility,
-		rows: input.rows.map((row, rowIndex) => ({
+		rows: selectedRows.map(({ row, rowIndex }) => ({
 			rowIndex,
 			description: row.description,
 			sourceDescription: row.sourceDescription,

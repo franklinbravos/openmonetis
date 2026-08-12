@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { listProviderModels } from "@/shared/lib/ai/list-provider-models";
 import { AI_STORED_KEY_UNREADABLE_MESSAGE } from "@/shared/lib/ai/provider-messages";
+import { resolveRuntimeProviderCredential } from "@/shared/lib/ai/resolve-runtime-ai-credentials";
 import {
 	fetchUserAiProviderSettings,
 	hasInvalidStoredAiKeys,
@@ -34,9 +35,7 @@ export async function fetchProviderModelsAction(
 	try {
 		const user = await getUser();
 		const data = fetchProviderModelsSchema.parse(input);
-		const { credentials, storedSettings } = await fetchUserAiProviderSettings(
-			user.id,
-		);
+		const { storedSettings } = await fetchUserAiProviderSettings(user.id);
 
 		if (hasInvalidStoredAiKeys(storedSettings)) {
 			return {
@@ -45,12 +44,19 @@ export async function fetchProviderModelsAction(
 			};
 		}
 
-		const storedCredential = credentials[data.provider];
+		const storedCredential = resolveRuntimeProviderCredential(
+			data.provider,
+			storedSettings,
+			{
+				apiKey: data.apiKey,
+				baseUrl: data.baseUrl,
+			},
+		);
 
 		const result = await listProviderModels({
 			provider: data.provider,
-			apiKey: data.apiKey?.trim() || storedCredential.apiKey,
-			baseUrl: data.baseUrl?.trim() || storedCredential.baseUrl,
+			apiKey: storedCredential.apiKey,
+			baseUrl: storedCredential.baseUrl,
 		});
 
 		if (!result.success) {

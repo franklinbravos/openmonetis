@@ -219,6 +219,7 @@ export default async function Page({ searchParams }: PageProps) {
 				categoryOptions={categoryOptions}
 				defaultPayerId={defaultPayerId}
 				aiAnalysisEnabled={aiAnalysisEnabled}
+				aiDefaultModelId={aiSettings.insightsDefaultModelId}
 				aiStoredKeysInvalid={aiStoredKeysInvalid}
 				initialCardId={validCardId}
 				initialAccountId={validAccountId}

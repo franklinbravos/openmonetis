@@ -1,6 +1,6 @@
 "use server";
 
-import { generateObject } from "ai";
+import { generateObject, generateText, type LanguageModel } from "ai";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { transactions } from "@/db/schema";
@@ -14,20 +14,28 @@ import {
 	buildImportAiBatchPrompt,
 	buildImportAiRowPatch,
 	chunkImportAiRows,
+	filterExistingCandidatesForBatch,
 	IMPORT_AI_SYSTEM_PROMPT,
 	type ImportAiAnalysisRowInput,
 	ImportAiBatchResponseSchema,
 	type ImportAiRowPatch,
 	type ImportAiRowResult,
 	mapExistingSnapshotToAiCandidate,
+	parseImportAiBatchResponseText,
 } from "@/features/transactions/lib/import-ai-analysis";
 import {
 	type ImportDuplicateSnapshot,
 	mergeImportDuplicateSnapshots,
 } from "@/features/transactions/lib/import-duplicate-match";
 import { formatAiActionError } from "@/shared/lib/ai/format-ai-action-error";
-import { resolveAiModelIdForCredentials } from "@/shared/lib/ai/model-config-helpers";
+import {
+	getModelLabel,
+	getProviderFromModelId,
+	resolveAiModelIdForCredentials,
+} from "@/shared/lib/ai/model-config-helpers";
+import { getOpenCodePlanFromBaseUrl } from "@/shared/lib/ai/opencode-plans";
 import { AI_STORED_KEY_UNREADABLE_MESSAGE } from "@/shared/lib/ai/provider-messages";
+import type { ResolvedAiCredentials } from "@/shared/lib/ai/types";
 import {
 	fetchUserAiProviderSettings,
 	hasInvalidStoredAiKeys,
@@ -35,6 +43,8 @@ import {
 } from "@/shared/lib/ai/user-provider-config";
 import { getUserId } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+
+export const maxDuration = 120;
 
 const installmentImportSchema = z
 	.object({
@@ -213,9 +223,70 @@ function buildCategoryCompatibilityMap(
 	};
 }
 
+function buildImportAiModelLabel(
+	modelId: string,
+	credentials: ResolvedAiCredentials,
+): string {
+	const provider = getProviderFromModelId(modelId);
+	const baseLabel = getModelLabel(modelId);
+
+	if (provider !== "opencode") {
+		return baseLabel;
+	}
+
+	const planLabel =
+		getOpenCodePlanFromBaseUrl(credentials.opencode.baseUrl) === "go"
+			? "OpenCode Go"
+			: "OpenCode Zen";
+
+	return `${baseLabel} (${planLabel})`;
+}
+
+async function generateImportAiBatchResult(input: {
+	model: LanguageModel;
+	promptPayload: Parameters<typeof buildImportAiBatchPrompt>[0];
+}) {
+	const prompt = buildImportAiBatchPrompt(input.promptPayload);
+
+	try {
+		const result = await generateObject({
+			model: input.model,
+			schema: ImportAiBatchResponseSchema,
+			system: IMPORT_AI_SYSTEM_PROMPT,
+			prompt,
+			maxRetries: 1,
+		});
+
+		return ImportAiBatchResponseSchema.parse(result.object);
+	} catch (objectError) {
+		console.warn(
+			`generateObject falhou no lote ${input.promptPayload.batchIndex + 1}/${input.promptPayload.totalBatches}, tentando generateText:`,
+			objectError,
+		);
+
+		const textResult = await generateText({
+			model: input.model,
+			system: `${IMPORT_AI_SYSTEM_PROMPT}
+
+Retorne APENAS um JSON válido, sem markdown, no formato {"rows":[...]}.`,
+			prompt,
+			maxRetries: 1,
+		});
+
+		const parsed = parseImportAiBatchResponseText(textResult.text);
+		if (!parsed.success) {
+			throw objectError;
+		}
+
+		return parsed.data;
+	}
+}
+
 export async function analyzeImportWithAiAction(
 	rawInput: AnalyzeImportWithAiInput,
 ): Promise<AnalyzeImportWithAiResult> {
+	let modelLabel: string | null = null;
+
 	try {
 		const input = analyzeImportInputSchema.parse(rawInput);
 		const userId = await getUserId();
@@ -243,9 +314,16 @@ export async function analyzeImportWithAiAction(
 			insightsDefaultModelId,
 			storedSettings,
 		});
+		modelLabel = buildImportAiModelLabel(modelId, credentials);
+
 		const resolvedModel = resolveInsightsModel(modelId, credentials);
 		if (!resolvedModel.success) {
-			return { success: false, error: resolvedModel.error };
+			return {
+				success: false,
+				error: formatAiActionError(resolvedModel.error, "import", {
+					modelLabel,
+				}),
+			};
 		}
 
 		const existingSnapshots = await fetchExistingCandidatesForAi({
@@ -268,12 +346,27 @@ export async function analyzeImportWithAiAction(
 		const rowBatches = chunkImportAiRows(input.rows);
 		const aiResults: ImportAiRowResult[] = [];
 
+		console.info("Iniciando análise de importação com IA", {
+			modelId,
+			modelLabel,
+			rowCount: input.rows.length,
+			batchCount: rowBatches.length,
+			candidateCount: existingCandidates.length,
+			opencodePlan:
+				getProviderFromModelId(modelId) === "opencode"
+					? getOpenCodePlanFromBaseUrl(credentials.opencode.baseUrl)
+					: null,
+		});
+
 		for (const [batchIndex, batchRows] of rowBatches.entries()) {
-			const result = await generateObject({
+			const batchCandidates = filterExistingCandidatesForBatch(
+				batchRows as ImportAiAnalysisRowInput[],
+				existingCandidates,
+			);
+
+			const validated = await generateImportAiBatchResult({
 				model: resolvedModel.model,
-				schema: ImportAiBatchResponseSchema,
-				system: IMPORT_AI_SYSTEM_PROMPT,
-				prompt: buildImportAiBatchPrompt({
+				promptPayload: {
 					context: {
 						isCreditCard: input.isCreditCard,
 						invoicePeriod: input.invoicePeriods[0] ?? null,
@@ -281,14 +374,13 @@ export async function analyzeImportWithAiAction(
 						accountName: input.accountName,
 					},
 					categories: input.categories,
-					existingCandidates,
+					existingCandidates: batchCandidates,
 					rows: batchRows as ImportAiAnalysisRowInput[],
 					batchIndex,
 					totalBatches: rowBatches.length,
-				}),
+				},
 			});
 
-			const validated = ImportAiBatchResponseSchema.parse(result.object);
 			aiResults.push(...validated.rows);
 		}
 
@@ -297,7 +389,9 @@ export async function analyzeImportWithAiAction(
 		);
 
 		const patches = aiResults.flatMap((analysis) => {
-			const row = input.rows[analysis.rowIndex];
+			const row = input.rows.find(
+				(item) => item.rowIndex === analysis.rowIndex,
+			);
 			if (!row) return [];
 
 			const patch = buildImportAiRowPatch(
@@ -338,7 +432,7 @@ export async function analyzeImportWithAiAction(
 		console.error("Erro na análise de importação com IA:", error);
 		return {
 			success: false,
-			error: formatAiActionError(error, "import"),
+			error: formatAiActionError(error, "import", { modelLabel }),
 		};
 	}
 }

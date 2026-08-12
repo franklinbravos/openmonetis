@@ -1,12 +1,29 @@
-import { APICallError, NoObjectGeneratedError } from "ai";
+import {
+	APICallError,
+	InvalidResponseDataError,
+	JSONParseError,
+	NoObjectGeneratedError,
+	NoSuchModelError,
+	RetryError,
+	TypeValidationError,
+	UnsupportedFunctionalityError,
+} from "ai";
 import { z } from "zod";
 
 const GENERIC_AI_ERROR =
 	"Não foi possível concluir a operação com IA. Tente novamente.";
 
-export function formatAiActionError(
+function unwrapAiError(error: unknown): unknown {
+	if (RetryError.isInstance(error) && error.lastError != null) {
+		return unwrapAiError(error.lastError);
+	}
+
+	return error;
+}
+
+function formatAiActionErrorCore(
 	error: unknown,
-	context: "import" | "insights" = "import",
+	context: "import" | "insights",
 ): string {
 	if (error instanceof z.ZodError) {
 		return context === "import"
@@ -16,6 +33,22 @@ export function formatAiActionError(
 
 	if (NoObjectGeneratedError.isInstance(error)) {
 		return "O modelo não conseguiu gerar a resposta estruturada. Escolha outro modelo em Ajustes → Inteligência artificial.";
+	}
+
+	if (
+		TypeValidationError.isInstance(error) ||
+		JSONParseError.isInstance(error) ||
+		InvalidResponseDataError.isInstance(error)
+	) {
+		return "A IA retornou um formato inesperado. Tente outro modelo em Ajustes → Inteligência artificial.";
+	}
+
+	if (UnsupportedFunctionalityError.isInstance(error)) {
+		return "O modelo selecionado não suporta saída estruturada para esta análise. Escolha outro modelo em Ajustes → Inteligência artificial.";
+	}
+
+	if (NoSuchModelError.isInstance(error)) {
+		return "Modelo não encontrado no provedor configurado. Selecione outro modelo em Ajustes → Inteligência artificial.";
 	}
 
 	if (APICallError.isInstance(error)) {
@@ -48,4 +81,19 @@ export function formatAiActionError(
 	return context === "import"
 		? "Não foi possível concluir a análise com IA."
 		: GENERIC_AI_ERROR;
+}
+
+export function formatAiActionError(
+	error: unknown,
+	context: "import" | "insights" = "import",
+	options?: { modelLabel?: string | null },
+): string {
+	const message = formatAiActionErrorCore(unwrapAiError(error), context);
+	const modelLabel = options?.modelLabel?.trim();
+
+	if (!modelLabel) {
+		return message;
+	}
+
+	return `${message} (Modelo: ${modelLabel})`;
 }

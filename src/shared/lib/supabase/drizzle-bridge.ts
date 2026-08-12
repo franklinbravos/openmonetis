@@ -987,19 +987,22 @@ function serializeFilterValue(value: unknown): unknown {
 	return value instanceof Date ? value.toISOString() : value;
 }
 
+// biome-ignore lint/complexity/noBannedTypes: métodos variados do builder PostgREST.
+type FilterBuilderMethod = Function;
+
 function applyFilters<
 	T extends {
-		eq: Function;
-		neq: Function;
-		gt: Function;
-		gte: Function;
-		lt: Function;
-		lte: Function;
-		is: Function;
-		in: Function;
-		or: Function;
-		ilike: Function;
-		not: Function;
+		eq: FilterBuilderMethod;
+		neq: FilterBuilderMethod;
+		gt: FilterBuilderMethod;
+		gte: FilterBuilderMethod;
+		lt: FilterBuilderMethod;
+		lte: FilterBuilderMethod;
+		is: FilterBuilderMethod;
+		in: FilterBuilderMethod;
+		or: FilterBuilderMethod;
+		ilike: FilterBuilderMethod;
+		not: FilterBuilderMethod;
 	},
 >(query: T, filters: Filter[], mainTable?: string): T {
 	for (const filter of filters) {

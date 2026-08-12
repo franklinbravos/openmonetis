@@ -6,7 +6,7 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { LanguageModel } from "ai";
 import { createMinimax, minimax } from "vercel-minimax-ai-provider";
 import { getEnvProviderCredential } from "@/shared/lib/ai/env-credentials";
-import { OPENCODE_PLAN_ZEN_URL } from "@/shared/lib/ai/opencode-plans";
+import { resolveOpenCodePlanBaseUrl } from "@/shared/lib/ai/opencode-plans";
 import { getAiProviderNotConfiguredMessage } from "@/shared/lib/ai/provider-messages";
 import type { ResolvedAiCredentials } from "@/shared/lib/ai/types";
 import { resolveAllProviderCredentials } from "@/shared/lib/ai/user-provider-config";
@@ -52,7 +52,7 @@ function resolveOpenCodeModel(
 		};
 	}
 
-	const baseURL = opencodeCredential.baseUrl ?? OPENCODE_PLAN_ZEN_URL;
+	const baseURL = resolveOpenCodePlanBaseUrl(opencodeCredential.baseUrl);
 	const zenRoot = getOpenCodeZenRoot(baseURL);
 
 	if (opencodeModelId.startsWith("claude-")) {
