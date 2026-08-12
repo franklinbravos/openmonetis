@@ -393,6 +393,75 @@ export function buildImportAiRowPatch(
 	return patch;
 }
 
+function buildCategoryCompatibilityChecker(
+	entries: Array<{
+		categoryId: string;
+		transactionType: "income" | "expense";
+		compatible: boolean;
+	}>,
+) {
+	return (categoryId: string | null, transactionType: "income" | "expense") => {
+		if (!categoryId) return true;
+		const entry = entries.find(
+			(item) =>
+				item.categoryId === categoryId &&
+				item.transactionType === transactionType,
+		);
+		return entry?.compatible ?? false;
+	};
+}
+
+export function buildImportAiPatchesFromResults(input: {
+	rows: ImportAiAnalysisRowInput[];
+	categoryCompatibility: Array<{
+		categoryId: string;
+		transactionType: "income" | "expense";
+		compatible: boolean;
+	}>;
+	aiResults: ImportAiRowResult[];
+	existingSnapshots: (ImportDuplicateSnapshot & { period?: string | null })[];
+}): ImportAiRowPatch[] {
+	const existingById = new Map(
+		input.existingSnapshots.map((snapshot) => [snapshot.id, snapshot] as const),
+	);
+	const isCategoryCompatible = buildCategoryCompatibilityChecker(
+		input.categoryCompatibility,
+	);
+
+	return input.aiResults.flatMap((analysis) => {
+		const row = input.rows.find((item) => item.rowIndex === analysis.rowIndex);
+		if (!row) return [];
+
+		const patch = buildImportAiRowPatch(
+			{
+				...row,
+				installmentImport: row.installmentImport?.enabled
+					? row.installmentImport
+					: null,
+			},
+			analysis,
+			existingById,
+			{ isCategoryCompatible },
+		);
+
+		return patch ? [patch] : [];
+	});
+}
+
+export function buildImportAiAnalysisStats(
+	patches: ImportAiRowPatch[],
+	rowsAnalyzed: number,
+) {
+	return {
+		rowsAnalyzed,
+		categoriesSuggested: patches.filter((patch) => patch.aiSuggestion.category)
+			.length,
+		duplicatesFound: patches.filter(
+			(patch) => patch.aiSuggestion.duplicate && patch.isDuplicate,
+		).length,
+	};
+}
+
 export function applyImportAiPatchesToRows(
 	rows: ReviewRow[],
 	patches: ImportAiRowPatch[],

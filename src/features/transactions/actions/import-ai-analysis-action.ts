@@ -11,13 +11,15 @@ import {
 	fetchInvoicePeriodDuplicateSnapshots,
 } from "@/features/transactions/actions/import-action";
 import {
+	buildImportAiAnalysisStats,
 	buildImportAiBatchPrompt,
-	buildImportAiRowPatch,
+	buildImportAiPatchesFromResults,
 	chunkImportAiRows,
 	filterExistingCandidatesForBatch,
 	IMPORT_AI_SYSTEM_PROMPT,
 	type ImportAiAnalysisRowInput,
 	ImportAiBatchResponseSchema,
+	type ImportAiExistingCandidate,
 	type ImportAiRowPatch,
 	type ImportAiRowResult,
 	mapExistingSnapshotToAiCandidate,
@@ -142,6 +144,62 @@ export type AnalyzeImportWithAiResult =
 			errorLog: string;
 	  };
 
+export type PrepareImportAiAnalysisResult =
+	| {
+			success: true;
+			skipped: false;
+			data: {
+				modelId: string;
+				modelLabel: string;
+				batchCount: number;
+				rowCount: number;
+				candidateCount: number;
+				existingCandidates: ImportAiExistingCandidate[];
+				existingSnapshots: (ImportDuplicateSnapshot & {
+					period?: string | null;
+				})[];
+			};
+	  }
+	| {
+			success: true;
+			skipped: true;
+			reason: "no_provider" | "no_rows";
+	  }
+	| {
+			success: false;
+			error: string;
+			errorLog: string;
+	  };
+
+export type AnalyzeImportAiBatchResult =
+	| {
+			success: true;
+			data: {
+				rows: ImportAiRowResult[];
+			};
+	  }
+	| {
+			success: false;
+			error: string;
+			errorLog: string;
+	  };
+
+const analyzeImportAiBatchInputSchema = analyzeImportInputSchema.extend({
+	batchIndex: z.number().int().min(0),
+	totalBatches: z.number().int().min(1),
+	existingCandidates: z.array(
+		z.object({
+			id: z.string().uuid(),
+			name: z.string(),
+			amount: z.number(),
+			date: z.string().nullable(),
+			period: z.string().nullable(),
+			installment: z.string().nullable(),
+			categoryId: z.string().uuid().nullable(),
+		}),
+	),
+});
+
 export async function fetchExistingCandidatesForAi(input: {
 	userId: string;
 	isCreditCard: boolean;
@@ -211,17 +269,83 @@ function compactExistingCandidates(
 	return candidates.slice(0, max);
 }
 
-function buildCategoryCompatibilityMap(
-	entries: AnalyzeImportWithAiInput["categoryCompatibility"],
+async function resolveImportAiExecutionContext(
+	input: AnalyzeImportWithAiInput,
+	options?: { fetchCandidates?: boolean },
 ) {
-	return (categoryId: string | null, transactionType: "income" | "expense") => {
-		if (!categoryId) return true;
-		const entry = entries.find(
-			(item) =>
-				item.categoryId === categoryId &&
-				item.transactionType === transactionType,
-		);
-		return entry?.compatible ?? false;
+	const userId = await getUserId();
+	const { credentials, insightsDefaultModelId, storedSettings } =
+		await fetchUserAiProviderSettings(userId);
+
+	if (hasInvalidStoredAiKeys(storedSettings)) {
+		return {
+			success: false as const,
+			result: buildImportAiFailureResult(
+				new Error(AI_STORED_KEY_UNREADABLE_MESSAGE),
+				{ modelLabel: null },
+			),
+		};
+	}
+
+	if (!isAnyAiProviderConfigured(credentials)) {
+		return {
+			success: false as const,
+			result: {
+				success: true as const,
+				skipped: true as const,
+				reason: "no_provider" as const,
+			},
+		};
+	}
+
+	const modelId = resolveAiModelIdForCredentials(credentials, {
+		explicitModelId: input.modelId,
+		insightsDefaultModelId,
+		storedSettings,
+	});
+	const modelLabel = buildImportAiModelLabel(modelId, credentials);
+
+	const resolvedModel = resolveInsightsModel(modelId, credentials);
+	if (!resolvedModel.success) {
+		return {
+			success: false as const,
+			result: buildImportAiFailureResult(new Error(resolvedModel.error), {
+				modelId,
+				modelLabel,
+				credentials,
+				rowCount: input.rows.length,
+			}),
+		};
+	}
+
+	const existingSnapshots = options?.fetchCandidates
+		? await fetchExistingCandidatesForAi({
+				userId,
+				isCreditCard: input.isCreditCard,
+				cardId: input.cardId,
+				invoicePeriods: input.invoicePeriods,
+				accountId: input.accountId,
+				statementPeriod: input.statementPeriod,
+			})
+		: [];
+
+	const existingCandidates = options?.fetchCandidates
+		? compactExistingCandidates(
+				existingSnapshots.map(mapExistingSnapshotToAiCandidate),
+			)
+		: [];
+
+	return {
+		success: true as const,
+		context: {
+			userId,
+			credentials,
+			modelId,
+			modelLabel,
+			resolvedModel,
+			existingSnapshots,
+			existingCandidates,
+		},
 	};
 }
 
@@ -334,165 +458,197 @@ Retorne APENAS um JSON válido, sem markdown, no formato {"rows":[...]}.`,
 	}
 }
 
-export async function analyzeImportWithAiAction(
+export async function prepareImportAiAnalysisAction(
 	rawInput: AnalyzeImportWithAiInput,
-): Promise<AnalyzeImportWithAiResult> {
-	let modelLabel: string | null = null;
-
+): Promise<PrepareImportAiAnalysisResult> {
 	try {
 		const input = analyzeImportInputSchema.parse(rawInput);
-		const userId = await getUserId();
 
 		if (input.rows.length === 0) {
 			return { success: true, skipped: true, reason: "no_rows" };
 		}
 
-		const { credentials, insightsDefaultModelId, storedSettings } =
-			await fetchUserAiProviderSettings(userId);
+		const resolved = await resolveImportAiExecutionContext(input, {
+			fetchCandidates: true,
+		});
+		if (!resolved.success) {
+			return resolved.result;
+		}
 
-		if (hasInvalidStoredAiKeys(storedSettings)) {
+		const { modelId, modelLabel, existingCandidates, existingSnapshots } =
+			resolved.context;
+		const batchCount = chunkImportAiRows(input.rows).length;
+
+		console.info("Preparando análise de importação com IA", {
+			modelId,
+			modelLabel,
+			rowCount: input.rows.length,
+			batchCount,
+			candidateCount: existingCandidates.length,
+		});
+
+		return {
+			success: true,
+			skipped: false,
+			data: {
+				modelId,
+				modelLabel,
+				batchCount,
+				rowCount: input.rows.length,
+				candidateCount: existingCandidates.length,
+				existingCandidates,
+				existingSnapshots,
+			},
+		};
+	} catch (error) {
+		console.error("Erro ao preparar análise de importação com IA:", error);
+		return buildImportAiFailureResult(error, { modelLabel: null });
+	}
+}
+
+export async function analyzeImportAiBatchAction(
+	rawInput: z.infer<typeof analyzeImportAiBatchInputSchema>,
+): Promise<AnalyzeImportAiBatchResult> {
+	let modelLabel: string | null = null;
+
+	try {
+		const input = analyzeImportAiBatchInputSchema.parse(rawInput);
+		const resolved = await resolveImportAiExecutionContext(input, {
+			fetchCandidates: false,
+		});
+		if (!resolved.success) {
+			if ("skipped" in resolved.result) {
+				return buildImportAiFailureResult(
+					new Error("Provedor de IA não configurado."),
+					{ modelLabel },
+				);
+			}
+
+			return resolved.result;
+		}
+
+		const {
+			modelId,
+			modelLabel: resolvedModelLabel,
+			resolvedModel,
+		} = resolved.context;
+		modelLabel = resolvedModelLabel;
+
+		if (input.modelId && input.modelId !== modelId) {
 			return buildImportAiFailureResult(
-				new Error(AI_STORED_KEY_UNREADABLE_MESSAGE),
-				{ modelLabel },
+				new Error("Modelo de IA alterado durante a análise. Tente novamente."),
+				{
+					modelId,
+					modelLabel,
+					rowCount: input.rows.length,
+					batchCount: input.totalBatches,
+					batchIndex: input.batchIndex + 1,
+				},
 			);
 		}
 
-		if (!isAnyAiProviderConfigured(credentials)) {
-			return { success: true, skipped: true, reason: "no_provider" };
-		}
-
-		const modelId = resolveAiModelIdForCredentials(credentials, {
-			explicitModelId: input.modelId,
-			insightsDefaultModelId,
-			storedSettings,
-		});
-		modelLabel = buildImportAiModelLabel(modelId, credentials);
-
-		const resolvedModel = resolveInsightsModel(modelId, credentials);
-		if (!resolvedModel.success) {
-			return buildImportAiFailureResult(new Error(resolvedModel.error), {
-				modelId,
-				modelLabel,
-				credentials,
-				rowCount: input.rows.length,
-			});
-		}
-
-		const existingSnapshots = await fetchExistingCandidatesForAi({
-			userId,
-			isCreditCard: input.isCreditCard,
-			cardId: input.cardId,
-			invoicePeriods: input.invoicePeriods,
-			accountId: input.accountId,
-			statementPeriod: input.statementPeriod,
-		});
-
-		const existingById = new Map(
-			existingSnapshots.map((snapshot) => [snapshot.id, snapshot] as const),
+		const batchCandidates = filterExistingCandidatesForBatch(
+			input.rows as ImportAiAnalysisRowInput[],
+			input.existingCandidates,
 		);
 
-		const existingCandidates = compactExistingCandidates(
-			existingSnapshots.map(mapExistingSnapshotToAiCandidate),
-		);
+		const validated = await generateImportAiBatchResult({
+			model: resolvedModel.model,
+			promptPayload: {
+				context: {
+					isCreditCard: input.isCreditCard,
+					invoicePeriod: input.invoicePeriods[0] ?? null,
+					cardName: input.cardName,
+					accountName: input.accountName,
+				},
+				categories: input.categories,
+				existingCandidates: batchCandidates,
+				rows: input.rows as ImportAiAnalysisRowInput[],
+				batchIndex: input.batchIndex,
+				totalBatches: input.totalBatches,
+			},
+		});
+
+		return {
+			success: true,
+			data: {
+				rows: validated.rows,
+			},
+		};
+	} catch (error) {
+		console.error("Erro no lote da análise de importação com IA:", error);
+		return buildImportAiFailureResult(error, {
+			modelLabel,
+			batchIndex:
+				typeof rawInput === "object" &&
+				rawInput &&
+				"batchIndex" in rawInput &&
+				typeof rawInput.batchIndex === "number"
+					? rawInput.batchIndex + 1
+					: undefined,
+			batchCount:
+				typeof rawInput === "object" &&
+				rawInput &&
+				"totalBatches" in rawInput &&
+				typeof rawInput.totalBatches === "number"
+					? rawInput.totalBatches
+					: undefined,
+		});
+	}
+}
+
+export async function analyzeImportWithAiAction(
+	rawInput: AnalyzeImportWithAiInput,
+): Promise<AnalyzeImportWithAiResult> {
+	try {
+		const input = analyzeImportInputSchema.parse(rawInput);
+		const prepared = await prepareImportAiAnalysisAction(input);
+
+		if (!prepared.success) {
+			return prepared;
+		}
+
+		if (prepared.skipped) {
+			return prepared;
+		}
 
 		const rowBatches = chunkImportAiRows(input.rows);
 		const aiResults: ImportAiRowResult[] = [];
 
-		console.info("Iniciando análise de importação com IA", {
-			modelId,
-			modelLabel,
-			rowCount: input.rows.length,
-			batchCount: rowBatches.length,
-			candidateCount: existingCandidates.length,
-			opencodePlan:
-				getProviderFromModelId(modelId) === "opencode"
-					? getOpenCodePlanFromBaseUrl(credentials.opencode.baseUrl)
-					: null,
-		});
-
 		for (const [batchIndex, batchRows] of rowBatches.entries()) {
-			const batchCandidates = filterExistingCandidatesForBatch(
-				batchRows as ImportAiAnalysisRowInput[],
-				existingCandidates,
-			);
+			const batchResult = await analyzeImportAiBatchAction({
+				...input,
+				rows: batchRows,
+				batchIndex,
+				totalBatches: rowBatches.length,
+				existingCandidates: prepared.data.existingCandidates,
+			});
 
-			try {
-				const validated = await generateImportAiBatchResult({
-					model: resolvedModel.model,
-					promptPayload: {
-						context: {
-							isCreditCard: input.isCreditCard,
-							invoicePeriod: input.invoicePeriods[0] ?? null,
-							cardName: input.cardName,
-							accountName: input.accountName,
-						},
-						categories: input.categories,
-						existingCandidates: batchCandidates,
-						rows: batchRows as ImportAiAnalysisRowInput[],
-						batchIndex,
-						totalBatches: rowBatches.length,
-					},
-				});
-
-				aiResults.push(...validated.rows);
-			} catch (batchError) {
-				return buildImportAiFailureResult(batchError, {
-					modelId,
-					modelLabel,
-					credentials,
-					rowCount: input.rows.length,
-					batchCount: rowBatches.length,
-					batchIndex: batchIndex + 1,
-				});
+			if (!batchResult.success) {
+				return batchResult;
 			}
+
+			aiResults.push(...batchResult.data.rows);
 		}
 
-		const isCategoryCompatible = buildCategoryCompatibilityMap(
-			input.categoryCompatibility,
-		);
-
-		const patches = aiResults.flatMap((analysis) => {
-			const row = input.rows.find(
-				(item) => item.rowIndex === analysis.rowIndex,
-			);
-			if (!row) return [];
-
-			const patch = buildImportAiRowPatch(
-				{
-					...row,
-					installmentImport: row.installmentImport?.enabled
-						? row.installmentImport
-						: null,
-				},
-				analysis,
-				existingById,
-				{ isCategoryCompatible },
-			);
-
-			return patch ? [patch] : [];
+		const patches = buildImportAiPatchesFromResults({
+			rows: input.rows as ImportAiAnalysisRowInput[],
+			categoryCompatibility: input.categoryCompatibility,
+			aiResults,
+			existingSnapshots: prepared.data.existingSnapshots,
 		});
-
-		const stats = {
-			rowsAnalyzed: aiResults.length,
-			categoriesSuggested: patches.filter(
-				(patch) => patch.aiSuggestion.category,
-			).length,
-			duplicatesFound: patches.filter(
-				(patch) => patch.aiSuggestion.duplicate && patch.isDuplicate,
-			).length,
-		};
 
 		return {
 			success: true,
 			skipped: false,
 			data: {
 				patches,
-				stats,
-				modelId,
+				stats: buildImportAiAnalysisStats(patches, aiResults.length),
+				modelId: prepared.data.modelId,
 			},
 		};
 	} catch (error) {
 		console.error("Erro na análise de importação com IA:", error);
-		return buildImportAiFailureResult(error, { modelLabel });
+		return buildImportAiFailureResult(error, { modelLabel: null });
 	}
 }
