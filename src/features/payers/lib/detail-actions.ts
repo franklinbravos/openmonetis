@@ -596,10 +596,9 @@ export async function sendPayerSummaryAction(
 
 		return { success: true, message: "Resumo enviado com sucesso." };
 	} catch (error) {
-		// Log estruturado em desenvolvimento
-		if (process.env.NODE_ENV === "development") {
-			console.error("[sendPayerSummaryAction]", error);
-		}
+		// Log estruturado sempre — em produção também precisamos do rastro de
+		// falhas de envio de e-mail (Resend/DB) para diagnóstico.
+		console.error("[sendPayerSummaryAction]", error);
 
 		// Tratar erros de validação separadamente
 		if (error instanceof z.ZodError) {
