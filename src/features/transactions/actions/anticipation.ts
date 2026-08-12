@@ -48,7 +48,7 @@ const createAnticipationSchema = z.object({
 		.optional()
 		.default(0),
 	payerId: uuidSchema("Payer").optional(),
-	categoryId: uuidSchema("Category").optional(),
+	categoryId: uuidSchema("Categoria").optional(),
 	note: z.string().trim().optional(),
 });
 

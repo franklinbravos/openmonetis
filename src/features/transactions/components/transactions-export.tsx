@@ -132,7 +132,7 @@ export function TransactionsExport({
 				"Condição",
 				"Pagamento",
 				"Valor",
-				"Category",
+				"Categoria",
 				"Conta/Cartão",
 				"Pessoa",
 			];
@@ -192,7 +192,7 @@ export function TransactionsExport({
 				"Condição",
 				"Pagamento",
 				"Valor",
-				"Category",
+				"Categoria",
 				"Conta/Cartão",
 				"Pessoa",
 			];

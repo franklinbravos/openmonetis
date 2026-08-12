@@ -72,7 +72,7 @@ const importRowSchema = z
 		amount: z.number().positive(),
 		description: z.string().min(1, "Descrição obrigatória."),
 		transactionType: z.enum(["income", "expense"]),
-		categoryId: uuidSchema("Category").nullable().optional(),
+		categoryId: uuidSchema("Categoria").nullable().optional(),
 		payerId: uuidSchema("Payer").nullable().optional(),
 		kind: z
 			.enum(["transaction", "invoice_payment", "transfer"])

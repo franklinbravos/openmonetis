@@ -52,21 +52,21 @@ const categoryBaseSchema = z.object({
 
 const createCategorySchema = categoryBaseSchema;
 const updateCategorySchema = categoryBaseSchema.extend({
-	id: uuidSchema("Category"),
+	id: uuidSchema("Categoria"),
 });
 const deleteCategorySchema = z.object({
-	id: uuidSchema("Category"),
+	id: uuidSchema("Categoria"),
 });
 
 const migrateCategoryTransactionsSchema = z.object({
-	fromCategoryId: uuidSchema("Category"),
-	toCategoryId: uuidSchema("Category"),
+	fromCategoryId: uuidSchema("Categoria"),
+	toCategoryId: uuidSchema("Categoria"),
 	transactionIds: z.array(uuidSchema("Transaction")).optional(),
 });
 
 const updateCategoryTransactionCategorySchema = z.object({
 	transactionId: uuidSchema("Transaction"),
-	categoryId: uuidSchema("Category"),
+	categoryId: uuidSchema("Categoria"),
 });
 
 const reorderCategoriesSchema = z.object({
@@ -74,7 +74,7 @@ const reorderCategoriesSchema = z.object({
 	categories: z
 		.array(
 			z.object({
-				id: uuidSchema("Category"),
+				id: uuidSchema("Categoria"),
 				parentId: parentIdSchema,
 				sortOrder: z.number().int().min(0),
 			}),
@@ -174,7 +174,7 @@ export async function createCategoryAction(
 
 		return {
 			success: true,
-			message: "Category criada com sucesso.",
+			message: "Categoria criada com sucesso.",
 			data: {
 				id: created.id,
 				name: created.name,
@@ -204,7 +204,7 @@ export async function updateCategoryAction(
 		if (!categoria) {
 			return {
 				success: false,
-				error: "Category não encontrada.",
+				error: "Categoria não encontrada.",
 			};
 		}
 
@@ -247,7 +247,7 @@ export async function updateCategoryAction(
 		if (!updated) {
 			return {
 				success: false,
-				error: "Category não encontrada.",
+				error: "Categoria não encontrada.",
 			};
 		}
 
@@ -498,7 +498,7 @@ export async function deleteCategoryAction(
 		if (!categoria) {
 			return {
 				success: false,
-				error: "Category não encontrada.",
+				error: "Categoria não encontrada.",
 			};
 		}
 
@@ -559,7 +559,7 @@ export async function deleteCategoryAction(
 		if (!deleted) {
 			return {
 				success: false,
-				error: "Category não encontrada.",
+				error: "Categoria não encontrada.",
 			};
 		}
 

@@ -49,7 +49,7 @@ export function buildReadOnlyOptionSets(
 		if (item.categoryId && !categoriaOptionsMap.has(item.categoryId)) {
 			categoriaOptionsMap.set(item.categoryId, {
 				value: item.categoryId,
-				label: normalizeOptionLabel(item.categoriaName, "Category"),
+				label: normalizeOptionLabel(item.categoriaName, "Categoria"),
 				group: item.categoriaType,
 				slug: item.categoryId,
 				icon: item.categoriaIcon,

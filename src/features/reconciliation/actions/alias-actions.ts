@@ -53,7 +53,7 @@ export async function fetchReconciliationAliases(
 const saveAliasSchema = z.object({
 	statementDescription: z.string().min(1),
 	targetName: z.string().min(1),
-	targetCategoryId: uuidSchema("Category").nullable().optional(),
+	targetCategoryId: uuidSchema("Categoria").nullable().optional(),
 	source: z
 		.enum([
 			RECONCILIATION_ALIAS_SOURCES.MANUAL,

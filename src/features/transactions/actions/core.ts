@@ -316,7 +316,7 @@ const baseFields = z.object({
 	secondarySplitAmount: z.coerce.number().min(0).optional(),
 	accountId: uuidSchema("FinancialAccount").nullable().optional(),
 	cardId: uuidSchema("Cartão").nullable().optional(),
-	categoryId: uuidSchema("Category").nullable().optional(),
+	categoryId: uuidSchema("Categoria").nullable().optional(),
 	note: noteSchema,
 	installmentCount: z.coerce
 		.number()
@@ -888,7 +888,7 @@ export const updateBulkSchema = z.object({
 		.string({ message: "Informe o estabelecimento." })
 		.trim()
 		.min(1, "Informe o estabelecimento."),
-	categoryId: uuidSchema("Category").nullable().optional(),
+	categoryId: uuidSchema("Categoria").nullable().optional(),
 	note: noteSchema,
 	payerId: uuidSchema("Payer").nullable().optional(),
 	accountId: uuidSchema("FinancialAccount").nullable().optional(),
@@ -932,7 +932,7 @@ const massAddTransactionSchema = z.object({
 	amount: z.coerce
 		.number({ message: "Informe o valor da transação." })
 		.min(0, "Informe um valor maior ou igual a zero."),
-	categoryId: uuidSchema("Category").nullable().optional(),
+	categoryId: uuidSchema("Categoria").nullable().optional(),
 	payerId: uuidSchema("Payer").nullable().optional(),
 });
 
