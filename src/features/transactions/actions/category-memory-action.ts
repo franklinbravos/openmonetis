@@ -1,7 +1,12 @@
 "use server";
 
 import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
-import { importCategoryMappings, transactions } from "@/db/schema";
+import {
+	categories,
+	importCategoryMappings,
+	payers,
+	transactions,
+} from "@/db/schema";
 import {
 	isTruncatedDescriptionMatch,
 	MIN_DESCRIPTION_PREFIX_MATCH_LENGTH,
@@ -291,10 +296,55 @@ export async function saveCategoryMappings(
 
 	if (toUpsert.length === 0) return;
 
+	// Valida ownership de todas as referências antes de gravar — IDs de
+	// categorias/pessoas de outro usuário jamais devem entrar na memória.
+	const referencedCategoryIds = new Set(toUpsert.map((row) => row.categoryId));
+	const referencedPayerIds = new Set(
+		toUpsert
+			.map((row) => row.payerId)
+			.filter((id): id is string => Boolean(id)),
+	);
+
+	const [ownedCategories, ownedPayers] = await Promise.all([
+		referencedCategoryIds.size > 0
+			? db
+					.select({ id: categories.id })
+					.from(categories)
+					.where(
+						and(
+							inArray(categories.id, [...referencedCategoryIds]),
+							eq(categories.userId, userId),
+						),
+					)
+			: Promise.resolve([]),
+		referencedPayerIds.size > 0
+			? db
+					.select({ id: payers.id })
+					.from(payers)
+					.where(
+						and(
+							inArray(payers.id, [...referencedPayerIds]),
+							eq(payers.userId, userId),
+						),
+					)
+			: Promise.resolve([]),
+	]);
+
+	const ownedCategoryIds = new Set(ownedCategories.map((row) => row.id));
+	const ownedPayerIds = new Set(ownedPayers.map((row) => row.id));
+
+	const validRows = toUpsert.filter(
+		(row) =>
+			ownedCategoryIds.has(row.categoryId) &&
+			(row.payerId === null || ownedPayerIds.has(row.payerId)),
+	);
+
+	if (validRows.length === 0) return;
+
 	// Mesma descrição pode aparecer mais de uma vez no lote; o Postgres
 	// não aceita duas linhas com a mesma PK no mesmo INSERT ... ON CONFLICT.
 	const dedupedByKey = new Map(
-		toUpsert.map((row) => [row.descriptionKey, row] as const),
+		validRows.map((row) => [row.descriptionKey, row] as const),
 	);
 
 	await db

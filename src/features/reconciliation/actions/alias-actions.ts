@@ -2,7 +2,7 @@
 
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import { reconciliationAliases } from "@/db/schema";
+import { categories, reconciliationAliases } from "@/db/schema";
 import { RECONCILIATION_ALIAS_SOURCES } from "@/features/reconciliation/lib/constants";
 import { normalizeStatementKey } from "@/features/reconciliation/lib/normalize-statement-key";
 import { handleActionError } from "@/shared/lib/actions/helpers";
@@ -73,6 +73,20 @@ export async function saveReconciliationAliasAction(
 
 		if (!statementKey) {
 			return { success: false, error: "Descrição do extrato inválida." };
+		}
+
+		if (data.targetCategoryId) {
+			const category = await db.query.categories.findFirst({
+				columns: { id: true },
+				where: and(
+					eq(categories.id, data.targetCategoryId),
+					eq(categories.userId, userId),
+				),
+			});
+
+			if (!category) {
+				return { success: false, error: "Categoria não encontrada." };
+			}
 		}
 
 		await db
