@@ -149,6 +149,37 @@ describe("findInstallmentDuplicateSnapshot", () => {
 			findInstallmentDuplicateSnapshot(row, [existingInstallment])?.id,
 		).toBe("existing-4");
 	});
+
+	it("reconhece lançamento manual na mesma fatura com parcela divergente", () => {
+		const row = {
+			date: "2026-12-05",
+			amount: 260,
+			description: "Fabio C Thomaziello - Parcela 4/10",
+			transactionType: "expense" as const,
+			installmentImport: {
+				enabled: true as const,
+				name: "Fabio C Thomaziello",
+				currentInstallment: 4,
+				installmentCount: 10,
+			},
+		};
+
+		expect(
+			findInstallmentDuplicateSnapshot(
+				row,
+				[
+					{
+						...existingInstallment,
+						id: "existing-manual",
+						currentInstallment: 1,
+						installmentCount: 10,
+						period: "2026-12",
+					},
+				],
+				{ invoicePeriods: ["2026-12"] },
+			)?.id,
+		).toBe("existing-manual");
+	});
 });
 
 describe("resolveSemanticImportMatches — parcelamento", () => {

@@ -230,6 +230,7 @@ const mapImportDuplicateSnapshotRows = (
 		installmentCount: number | null;
 		payerId: string | null;
 		categoryId: string | null;
+		period?: string | null;
 	}>,
 ): ImportDuplicateSnapshot[] =>
 	rows.map((row) => ({
@@ -243,6 +244,7 @@ const mapImportDuplicateSnapshotRows = (
 		installmentCount: row.installmentCount,
 		payerId: row.payerId,
 		categoryId: row.categoryId,
+		period: row.period ?? null,
 	}));
 
 export async function fetchInvoicePeriodDuplicateSnapshots(
@@ -263,6 +265,7 @@ export async function fetchInvoicePeriodDuplicateSnapshots(
 			installmentCount: transactions.installmentCount,
 			payerId: transactions.payerId,
 			categoryId: transactions.categoryId,
+			period: transactions.period,
 		})
 		.from(transactions)
 		.where(
@@ -291,6 +294,7 @@ export async function fetchCardInstallmentDuplicateSnapshots(cardId: string) {
 			installmentCount: transactions.installmentCount,
 			payerId: transactions.payerId,
 			categoryId: transactions.categoryId,
+			period: transactions.period,
 		})
 		.from(transactions)
 		.where(

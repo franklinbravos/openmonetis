@@ -15,6 +15,11 @@ export type ImportDuplicateSnapshot = {
 	installmentCount: number | null;
 	payerId: string | null;
 	categoryId: string | null;
+	period?: string | null;
+};
+
+export type ImportDuplicateMatchOptions = {
+	invoicePeriods?: string[];
 };
 
 export function mergeImportDuplicateSnapshots(
@@ -171,9 +176,21 @@ function hasMatchingInstallmentParcel(
  * A data do extrato NÃO entra — bancos como Nubank reescrevem a data a cada
  * abertura de fatura, então ela não é sinal confiável entre faturas.
  */
+function isSameInvoicePeriodCandidate(
+	existing: ImportDuplicateSnapshot,
+	options?: ImportDuplicateMatchOptions,
+): boolean {
+	if (!existing.period || !options?.invoicePeriods?.length) {
+		return false;
+	}
+
+	return options.invoicePeriods.includes(existing.period);
+}
+
 function isInstallmentParcelDuplicate(
 	row: ImportRowForMatch,
 	existing: ImportDuplicateSnapshot,
+	options?: ImportDuplicateMatchOptions,
 ): boolean {
 	const importedIdentity = resolveImportMatchIdentity(row);
 	const existingIdentity = resolveExistingMatchIdentity(existing);
@@ -203,6 +220,16 @@ function isInstallmentParcelDuplicate(
 	// Cadastro à vista na fatura (sem N/M no banco): mesmo nome + valor.
 	if (importedHasParcel && !existingHasParcel) {
 		return importedIdentity.baseName === existingIdentity.baseName;
+	}
+
+	// Lançamento anotado manualmente na fatura importada: aceita nome + valor
+	// na mesma fatura mesmo quando o N/M do cadastro diverge do extrato.
+	if (
+		importedHasParcel &&
+		importedIdentity.baseName === existingIdentity.baseName &&
+		isSameInvoicePeriodCandidate(existing, options)
+	) {
+		return true;
 	}
 
 	return false;
@@ -288,8 +315,9 @@ function effectiveImportMatchScore(
 	row: ImportRowForMatch,
 	existing: ImportDuplicateSnapshot,
 	score: ImportMatchScore,
+	options?: ImportDuplicateMatchOptions,
 ): number {
-	if (isInstallmentParcelDuplicate(row, existing)) {
+	if (isInstallmentParcelDuplicate(row, existing, options)) {
 		return 3;
 	}
 	return countImportMatchScore(score);
@@ -305,10 +333,11 @@ function linkSuggestionPriority(score: ImportMatchScore): number {
 export function findSemanticDuplicateSnapshot(
 	row: ImportRowForMatch,
 	candidates: ImportDuplicateSnapshot[],
+	options?: ImportDuplicateMatchOptions,
 ): ImportDuplicateSnapshot | null {
 	for (const existing of candidates) {
 		const score = scoreImportAgainstSnapshot(row, existing);
-		if (effectiveImportMatchScore(row, existing, score) === 3) {
+		if (effectiveImportMatchScore(row, existing, score, options) === 3) {
 			return existing;
 		}
 	}
@@ -319,9 +348,10 @@ export function findSemanticDuplicateSnapshot(
 export function findInstallmentDuplicateSnapshot(
 	row: ImportRowForMatch,
 	candidates: ImportDuplicateSnapshot[],
+	options?: ImportDuplicateMatchOptions,
 ): ImportDuplicateSnapshot | null {
 	for (const existing of candidates) {
-		if (isInstallmentParcelDuplicate(row, existing)) {
+		if (isInstallmentParcelDuplicate(row, existing, options)) {
 			return existing;
 		}
 	}
@@ -333,12 +363,14 @@ export function buildImportDuplicateValidation(
 	row: ImportRowForMatch,
 	existing: ImportDuplicateSnapshot,
 	forcedStatus?: ImportDuplicateStatus,
+	options?: ImportDuplicateMatchOptions,
 ): ImportDuplicateValidation {
 	const matchScore = scoreImportAgainstSnapshot(row, existing);
 	const mismatches: ImportDuplicateMismatch[] = [];
 	const installmentParcelDuplicate = isInstallmentParcelDuplicate(
 		row,
 		existing,
+		options,
 	);
 
 	const importedDate = row.date;
@@ -456,9 +488,83 @@ export type ResolvedImportSemanticMatch = {
 	validation: ImportDuplicateValidation;
 };
 
+export function resolveImportDuplicateMatches(
+	rows: Array<
+		ImportRowForMatch & {
+			externalId?: string | null;
+		}
+	>,
+	input: {
+		candidates: ImportDuplicateSnapshot[];
+		fitIdDuplicateIds: Set<string>;
+		duplicateSnapshotByFitId: Map<string, ImportDuplicateSnapshot>;
+		options?: ImportDuplicateMatchOptions;
+	},
+): Array<{
+	isDuplicate: boolean;
+	duplicateValidation: ImportDuplicateValidation | null;
+}> {
+	const semanticMatches = resolveSemanticImportMatches(
+		rows,
+		input.candidates,
+		input.options,
+	);
+	const installmentDuplicateByIndex = new Map(
+		rows.flatMap((row, rowIndex) => {
+			const match = findInstallmentDuplicateSnapshot(
+				row,
+				input.candidates,
+				input.options,
+			);
+			return match ? [[rowIndex, match] as const] : [];
+		}),
+	);
+
+	return rows.map((row, index) => {
+		let isDuplicate = row.externalId
+			? input.fitIdDuplicateIds.has(row.externalId)
+			: false;
+		const existingSnapshot: ImportDuplicateSnapshot | undefined = row.externalId
+			? input.duplicateSnapshotByFitId.get(row.externalId)
+			: undefined;
+		let duplicateValidation: ImportDuplicateValidation | null = null;
+
+		if (isDuplicate && existingSnapshot) {
+			duplicateValidation = buildImportDuplicateValidation(
+				row,
+				existingSnapshot,
+				undefined,
+				input.options,
+			);
+		} else {
+			const installmentDuplicate = installmentDuplicateByIndex.get(index);
+			if (installmentDuplicate) {
+				duplicateValidation = buildImportDuplicateValidation(
+					row,
+					installmentDuplicate,
+					undefined,
+					input.options,
+				);
+				isDuplicate = true;
+			} else {
+				const semanticMatch = semanticMatches.get(index);
+				if (semanticMatch) {
+					duplicateValidation = semanticMatch.validation;
+					if (semanticMatch.validation.status !== "link_suggestion") {
+						isDuplicate = true;
+					}
+				}
+			}
+		}
+
+		return { isDuplicate, duplicateValidation };
+	});
+}
+
 export function resolveSemanticImportMatches(
 	rows: ImportRowForMatch[],
 	candidates: ImportDuplicateSnapshot[],
+	options?: ImportDuplicateMatchOptions,
 ): Map<number, ResolvedImportSemanticMatch> {
 	const results = new Map<number, ResolvedImportSemanticMatch>();
 	if (rows.length === 0 || candidates.length === 0) return results;
@@ -473,6 +579,7 @@ export function resolveSemanticImportMatches(
 				row,
 				candidate,
 				scoreMatrix[rowIndex][candidateIndex],
+				options,
 			),
 		),
 	);
@@ -532,6 +639,7 @@ export function resolveSemanticImportMatches(
 			row,
 			existing,
 			bestScore === 2 ? "link_suggestion" : undefined,
+			options,
 		);
 
 		if (
