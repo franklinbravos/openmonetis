@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { cards, financialAccounts } from "@/db/schema";
 import {
+	ActionError,
 	type ActionResult,
 	handleActionError,
 	revalidateForEntity,
@@ -91,7 +92,7 @@ async function assertAccountOwnership(userId: string, accountId: string) {
 	});
 
 	if (!account) {
-		throw new Error("Conta vinculada não encontrada.");
+		throw new ActionError("Conta vinculada não encontrada.");
 	}
 }
 
@@ -113,7 +114,7 @@ function resolveImportPdfPasswordPersistence(
 	);
 
 	if (!validation.success) {
-		throw new Error(validation.error);
+		throw new ActionError(validation.error);
 	}
 
 	if (input.importPdfPasswordRule === CARD_IMPORT_PDF_PASSWORD_RULES.none) {
@@ -180,7 +181,7 @@ export async function createCardAction(
 			});
 
 		if (!created) {
-			throw new Error("Não foi possível criar o cartão.");
+			throw new ActionError("Não foi possível criar o cartão.");
 		}
 
 		revalidateForEntity("cards", user.id);

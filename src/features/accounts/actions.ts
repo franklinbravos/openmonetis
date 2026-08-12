@@ -12,6 +12,7 @@ import {
 	INITIAL_BALANCE_TRANSACTION_TYPE,
 } from "@/shared/lib/accounts/constants";
 import {
+	ActionError,
 	type ActionResult,
 	handleActionError,
 	revalidateForEntity,
@@ -122,7 +123,7 @@ export async function createAccountAction(
 			: null;
 
 		if (hasInitialBalance && !adminPayerId) {
-			throw new Error(
+			throw new ActionError(
 				"Pessoa com papel administrador não encontrada. Crie uma pessoa admin antes de definir um saldo inicial.",
 			);
 		}
@@ -144,7 +145,7 @@ export async function createAccountAction(
 				.returning({ id: financialAccounts.id, name: financialAccounts.name });
 
 			if (!created) {
-				throw new Error("Não foi possível criar a conta.");
+				throw new ActionError("Não foi possível criar a conta.");
 			}
 
 			if (!hasInitialBalance) {
@@ -162,8 +163,8 @@ export async function createAccountAction(
 			]);
 
 			if (!category) {
-				throw new Error(
-					'Category "Saldo inicial" não encontrada. Crie-a antes de definir um saldo inicial.',
+				throw new ActionError(
+					'Categoria "Saldo inicial" não encontrada. Crie-a antes de definir um saldo inicial.',
 				);
 			}
 
@@ -341,7 +342,7 @@ export async function transferBetweenAccountsAction(
 		const adminPayerId = await getAdminPayerId(user.id);
 
 		if (!adminPayerId) {
-			throw new Error(
+			throw new ActionError(
 				"Pessoa administrador não encontrada. Por favor, crie uma pessoa admin.",
 			);
 		}
@@ -366,11 +367,11 @@ export async function transferBetweenAccountsAction(
 			]);
 
 			if (!fromAccount) {
-				throw new Error("Conta de origem não encontrada.");
+				throw new ActionError("Conta de origem não encontrada.");
 			}
 
 			if (!toAccount) {
-				throw new Error("Conta de destino não encontrada.");
+				throw new ActionError("Conta de destino não encontrada.");
 			}
 
 			// Get the transfer category and admin payer in parallel
@@ -385,8 +386,8 @@ export async function transferBetweenAccountsAction(
 			]);
 
 			if (!transferCategory) {
-				throw new Error(
-					`Category "${TRANSFER_CATEGORY_NAME}" não encontrada. Por favor, crie esta categoria antes de fazer transferências.`,
+				throw new ActionError(
+					`Categoria "${TRANSFER_CATEGORY_NAME}" não encontrada. Por favor, crie esta categoria antes de fazer transferências.`,
 				);
 			}
 
@@ -468,14 +469,14 @@ export async function addAccountYieldAction(
 		const adminPayerId = await getAdminPayerId(user.id);
 
 		if (!adminPayerId) {
-			throw new Error(
+			throw new ActionError(
 				"Pessoa com papel administrador não encontrada. Crie uma pessoa admin antes de adicionar rendimentos.",
 			);
 		}
 
 		const purchaseDate = parseLocalDateString(data.date);
 		if (Number.isNaN(purchaseDate.getTime())) {
-			throw new Error("Data inválida.");
+			throw new ActionError("Data inválida.");
 		}
 
 		await db.transaction(async (tx: typeof db) => {
@@ -488,7 +489,7 @@ export async function addAccountYieldAction(
 			});
 
 			if (!account) {
-				throw new Error("Conta não encontrada.");
+				throw new ActionError("Conta não encontrada.");
 			}
 
 			const existingCategory = await tx.query.categories.findFirst({
@@ -515,7 +516,7 @@ export async function addAccountYieldAction(
 				)[0];
 
 			if (!category) {
-				throw new Error(
+				throw new ActionError(
 					"Não foi possível preparar a categoria de rendimentos.",
 				);
 			}
@@ -556,7 +557,7 @@ export async function adjustAccountBalanceAction(
 		const adminPayerId = await getAdminPayerId(user.id);
 
 		if (!adminPayerId) {
-			throw new Error(
+			throw new ActionError(
 				"Pessoa com papel administrador não encontrada. Crie uma pessoa admin antes de ajustar o saldo.",
 			);
 		}
@@ -573,7 +574,7 @@ export async function adjustAccountBalanceAction(
 			});
 
 			if (!account) {
-				throw new Error("Conta não encontrada.");
+				throw new ActionError("Conta não encontrada.");
 			}
 
 			const existing = await tx.query.transactions.findFirst({

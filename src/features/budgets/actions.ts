@@ -8,6 +8,7 @@ import {
 	fetchCategoryBudgetSummary,
 } from "@/features/budgets/queries";
 import {
+	ActionError,
 	handleActionError,
 	revalidateForEntity,
 } from "@/shared/lib/actions/helpers";
@@ -22,7 +23,7 @@ import {
 import { getPreviousPeriod } from "@/shared/utils/period";
 
 const budgetBaseSchema = z.object({
-	categoryId: uuidSchema("Category"),
+	categoryId: uuidSchema("Categoria"),
 	period: periodSchema,
 	amount: z
 		.string({ message: "Informe o valor limite." })
@@ -88,11 +89,11 @@ const ensureCategory = async (userId: string, categoryId: string) => {
 	});
 
 	if (!category) {
-		throw new Error("Category não encontrada.");
+		throw new ActionError("Categoria não encontrada.");
 	}
 
 	if (category.type !== "despesa") {
-		throw new Error("Selecione uma categoria de despesa.");
+		throw new ActionError("Selecione uma categoria de despesa.");
 	}
 };
 
@@ -209,7 +210,7 @@ export async function deleteBudgetAction(
 }
 
 const getCategoryBudgetSummarySchema = z.object({
-	categoryId: uuidSchema("Category"),
+	categoryId: uuidSchema("Categoria"),
 	period: periodSchema,
 });
 

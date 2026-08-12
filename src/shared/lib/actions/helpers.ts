@@ -1,7 +1,9 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
+import { ActionError } from "@/shared/lib/actions/action-error";
 
 export type { ActionResult } from "@/shared/lib/types/actions";
+export { ActionError };
 
 import type { ActionResult } from "@/shared/lib/types/actions";
 import { errorResult } from "@/shared/lib/types/actions";
@@ -14,6 +16,11 @@ import { errorResult } from "@/shared/lib/types/actions";
 export function handleActionError(error: unknown): ActionResult {
 	if (error instanceof z.ZodError) {
 		return errorResult(error.issues[0]?.message ?? "Dados inválidos.");
+	}
+
+	// Erros de negócio carregam mensagens acionáveis que podem ir ao usuário.
+	if (error instanceof ActionError) {
+		return errorResult(error.message);
 	}
 
 	console.error("[ActionError]", error);
