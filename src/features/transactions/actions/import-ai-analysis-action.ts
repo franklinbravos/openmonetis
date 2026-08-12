@@ -27,7 +27,10 @@ import {
 	type ImportDuplicateSnapshot,
 	mergeImportDuplicateSnapshots,
 } from "@/features/transactions/lib/import-duplicate-match";
-import { formatAiActionError } from "@/shared/lib/ai/format-ai-action-error";
+import {
+	formatAiActionError,
+	serializeAiActionErrorLog,
+} from "@/shared/lib/ai/format-ai-action-error";
 import {
 	getModelLabel,
 	getProviderFromModelId,
@@ -136,6 +139,7 @@ export type AnalyzeImportWithAiResult =
 	| {
 			success: false;
 			error: string;
+			errorLog: string;
 	  };
 
 export async function fetchExistingCandidatesForAi(input: {
@@ -240,6 +244,56 @@ function buildImportAiModelLabel(
 	return `${baseLabel} (${planLabel})`;
 }
 
+function buildImportAiErrorContext(input: {
+	modelId?: string | null;
+	modelLabel?: string | null;
+	credentials?: ResolvedAiCredentials;
+	rowCount?: number;
+	batchCount?: number;
+	batchIndex?: number;
+}) {
+	const provider = input.modelId ? getProviderFromModelId(input.modelId) : null;
+
+	return {
+		modelId: input.modelId ?? null,
+		modelLabel: input.modelLabel ?? null,
+		provider,
+		opencodePlan:
+			provider === "opencode" && input.credentials
+				? getOpenCodePlanFromBaseUrl(input.credentials.opencode.baseUrl)
+				: null,
+		opencodeBaseUrl:
+			provider === "opencode" && input.credentials
+				? (input.credentials.opencode.baseUrl ?? null)
+				: null,
+		rowCount: input.rowCount ?? null,
+		batchCount: input.batchCount ?? null,
+		batchIndex: input.batchIndex ?? null,
+	};
+}
+
+function buildImportAiFailureResult(
+	error: unknown,
+	options: {
+		modelId?: string | null;
+		modelLabel?: string | null;
+		credentials?: ResolvedAiCredentials;
+		rowCount?: number;
+		batchCount?: number;
+		batchIndex?: number;
+	},
+) {
+	const context = buildImportAiErrorContext(options);
+
+	return {
+		success: false as const,
+		error: formatAiActionError(error, "import", {
+			modelLabel: options.modelLabel,
+		}),
+		errorLog: serializeAiActionErrorLog(error, context),
+	};
+}
+
 async function generateImportAiBatchResult(input: {
 	model: LanguageModel;
 	promptPayload: Parameters<typeof buildImportAiBatchPrompt>[0];
@@ -297,10 +351,10 @@ export async function analyzeImportWithAiAction(
 			await fetchUserAiProviderSettings(userId);
 
 		if (hasInvalidStoredAiKeys(storedSettings)) {
-			return {
-				success: false,
-				error: AI_STORED_KEY_UNREADABLE_MESSAGE,
-			};
+			return buildImportAiFailureResult(
+				new Error(AI_STORED_KEY_UNREADABLE_MESSAGE),
+				{ modelLabel },
+			);
 		}
 
 		if (!isAnyAiProviderConfigured(credentials)) {
@@ -316,12 +370,12 @@ export async function analyzeImportWithAiAction(
 
 		const resolvedModel = resolveInsightsModel(modelId, credentials);
 		if (!resolvedModel.success) {
-			return {
-				success: false,
-				error: formatAiActionError(resolvedModel.error, "import", {
-					modelLabel,
-				}),
-			};
+			return buildImportAiFailureResult(new Error(resolvedModel.error), {
+				modelId,
+				modelLabel,
+				credentials,
+				rowCount: input.rows.length,
+			});
 		}
 
 		const existingSnapshots = await fetchExistingCandidatesForAi({
@@ -362,24 +416,35 @@ export async function analyzeImportWithAiAction(
 				existingCandidates,
 			);
 
-			const validated = await generateImportAiBatchResult({
-				model: resolvedModel.model,
-				promptPayload: {
-					context: {
-						isCreditCard: input.isCreditCard,
-						invoicePeriod: input.invoicePeriods[0] ?? null,
-						cardName: input.cardName,
-						accountName: input.accountName,
+			try {
+				const validated = await generateImportAiBatchResult({
+					model: resolvedModel.model,
+					promptPayload: {
+						context: {
+							isCreditCard: input.isCreditCard,
+							invoicePeriod: input.invoicePeriods[0] ?? null,
+							cardName: input.cardName,
+							accountName: input.accountName,
+						},
+						categories: input.categories,
+						existingCandidates: batchCandidates,
+						rows: batchRows as ImportAiAnalysisRowInput[],
+						batchIndex,
+						totalBatches: rowBatches.length,
 					},
-					categories: input.categories,
-					existingCandidates: batchCandidates,
-					rows: batchRows as ImportAiAnalysisRowInput[],
-					batchIndex,
-					totalBatches: rowBatches.length,
-				},
-			});
+				});
 
-			aiResults.push(...validated.rows);
+				aiResults.push(...validated.rows);
+			} catch (batchError) {
+				return buildImportAiFailureResult(batchError, {
+					modelId,
+					modelLabel,
+					credentials,
+					rowCount: input.rows.length,
+					batchCount: rowBatches.length,
+					batchIndex: batchIndex + 1,
+				});
+			}
 		}
 
 		const isCategoryCompatible = buildCategoryCompatibilityMap(
@@ -428,9 +493,6 @@ export async function analyzeImportWithAiAction(
 		};
 	} catch (error) {
 		console.error("Erro na análise de importação com IA:", error);
-		return {
-			success: false,
-			error: formatAiActionError(error, "import", { modelLabel }),
-		};
+		return buildImportAiFailureResult(error, { modelLabel });
 	}
 }

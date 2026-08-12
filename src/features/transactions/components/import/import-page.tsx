@@ -96,6 +96,7 @@ import {
 import {
 	buildImportDuplicateValidation,
 	findInstallmentDuplicateSnapshot,
+	type ImportDuplicateSnapshot,
 	type ImportDuplicateValidation,
 	isImportLinkSuggestion,
 	isImportRowResolved,
@@ -276,6 +277,9 @@ export function ImportPage({
 		rowsAnalyzed: number;
 	} | null>(null);
 	const [aiAnalysisError, setAiAnalysisError] = useState<string | null>(null);
+	const [aiAnalysisErrorLog, setAiAnalysisErrorLog] = useState<string | null>(
+		null,
+	);
 	const aiAnalysisRunIdRef = useRef(0);
 	const [resumingBatchId, setResumingBatchId] = useState<string | null>(null);
 
@@ -593,6 +597,7 @@ export function ImportPage({
 			setAiAnalysisStatus("running");
 			setAiAnalysisSummary(null);
 			setAiAnalysisError(null);
+			setAiAnalysisErrorLog(null);
 
 			const categories = mergedCategoryOptions.map((option) => ({
 				id: option.value,
@@ -632,6 +637,7 @@ export function ImportPage({
 
 				if (!result.success) {
 					setAiAnalysisError(result.error);
+					setAiAnalysisErrorLog(result.errorLog);
 					setAiAnalysisStatus("error");
 					toast.warning(result.error);
 					return;
@@ -647,10 +653,15 @@ export function ImportPage({
 				);
 				setAiAnalysisSummary(result.data.stats);
 				setAiAnalysisStatus("done");
-			} catch {
+			} catch (error) {
 				if (runId !== aiAnalysisRunIdRef.current) return;
 				const message = "Não foi possível concluir a análise com IA.";
 				setAiAnalysisError(message);
+				setAiAnalysisErrorLog(
+					error instanceof Error
+						? `${error.name}: ${error.message}`
+						: String(error),
+				);
 				setAiAnalysisStatus("error");
 				toast.warning(message);
 			}
@@ -689,6 +700,69 @@ export function ImportPage({
 			isCard: decoded.type === "card",
 		};
 	}, [accountCardValue, accountOptions, cardOptions]);
+
+	const handleRetryImportAiAnalysis = useCallback(() => {
+		if (!statement || rows.length === 0) {
+			toast.error("Nenhum lançamento disponível para reprocessar com IA.");
+			return;
+		}
+
+		const resolvedCardId =
+			activeInvoiceContext?.cardId ??
+			selectedCardOption?.value ??
+			initialCardId ??
+			linkedCardId ??
+			null;
+
+		const resolvedAccountId = (() => {
+			const decoded = accountCardValue
+				? decodeAccountCard(accountCardValue)
+				: null;
+			if (decoded?.type === "account") return decoded.id;
+			return initialAccountId ?? null;
+		})();
+
+		const statementPeriod =
+			statement.period ?? buildPeriodFromTransactions(statement.transactions);
+
+		const shouldFetchAccountSnapshots =
+			!statement.isCreditCard && resolvedAccountId && statementPeriod;
+
+		const invoicePeriodsForSnapshots = [
+			...new Set(
+				[
+					invoicePeriod,
+					activeInvoiceContext?.invoicePeriod,
+					initialInvoicePeriod,
+				].filter((period): period is string => Boolean(period)),
+			),
+		];
+
+		void triggerImportAiAnalysis(rows, {
+			isCreditCard: statement.isCreditCard,
+			cardId: resolvedCardId,
+			accountId: resolvedAccountId,
+			invoicePeriods: invoicePeriodsForSnapshots,
+			statementPeriod: shouldFetchAccountSnapshots ? statementPeriod : null,
+			cardName: selectedCardOption?.label ?? null,
+			accountName:
+				accountOptions.find((option) => option.value === resolvedAccountId)
+					?.label ?? null,
+		});
+	}, [
+		accountCardValue,
+		accountOptions,
+		activeInvoiceContext,
+		initialAccountId,
+		initialInvoicePeriod,
+		invoicePeriod,
+		linkedCardId,
+		initialCardId,
+		rows,
+		selectedCardOption,
+		statement,
+		triggerImportAiAnalysis,
+	]);
 
 	const applyStatementInvoicePeriod = useCallback(
 		(stmt: ImportStatement) => {
@@ -890,9 +964,10 @@ export function ImportPage({
 					const installmentImport = rowInputs[index].installmentImport;
 
 					let isDuplicate = t.externalId ? duplicates.has(t.externalId) : false;
-					let existingSnapshot = t.externalId
-						? duplicateSnapshotByFitId.get(t.externalId)
-						: undefined;
+					let existingSnapshot: ImportDuplicateSnapshot | undefined =
+						t.externalId
+							? duplicateSnapshotByFitId.get(t.externalId)
+							: undefined;
 					let duplicateValidation: ImportDuplicateValidation | null = null;
 
 					if (isDuplicate && existingSnapshot) {
@@ -2696,7 +2771,14 @@ export function ImportPage({
 							<ImportAiAnalysisBanner
 								status={aiAnalysisStatus}
 								errorMessage={aiAnalysisError}
+								errorLog={aiAnalysisErrorLog}
 								summary={aiAnalysisSummary}
+								onRetry={
+									aiAnalysisEnabled && rows.length > 0
+										? handleRetryImportAiAnalysis
+										: undefined
+								}
+								isRetrying={aiAnalysisStatus === "running"}
 							/>
 
 							{aiStoredKeysInvalid ? (

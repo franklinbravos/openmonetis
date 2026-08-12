@@ -83,13 +83,177 @@ function formatAiActionErrorCore(
 		: GENERIC_AI_ERROR;
 }
 
+const SECRET_PATTERNS = [
+	/Bearer\s+[A-Za-z0-9._-]+/gi,
+	/sk-[A-Za-z0-9._-]+/g,
+	/x-api-key:\s*\S+/gi,
+	/"api[_-]?key"\s*:\s*"[^"]+"/gi,
+];
+
+function redactSecrets(value: string): string {
+	return SECRET_PATTERNS.reduce(
+		(text, pattern) => text.replace(pattern, "[REDACTADO]"),
+		value,
+	);
+}
+
+function truncate(value: string, max = 2000): string {
+	if (value.length <= max) return value;
+	return `${value.slice(0, max)}… [truncado]`;
+}
+
+function serializeErrorChain(error: unknown, depth = 0): string[] {
+	const indent = "  ".repeat(depth);
+
+	if (RetryError.isInstance(error)) {
+		const lines = [
+			`${indent}[RetryError] ${error.message} (motivo: ${error.reason})`,
+		];
+		for (const nestedError of error.errors) {
+			lines.push(...serializeErrorChain(nestedError, depth + 1));
+		}
+		return lines;
+	}
+
+	if (APICallError.isInstance(error)) {
+		const lines = [
+			`${indent}[APICallError] HTTP ${error.statusCode ?? "?"} — ${error.message}`,
+		];
+
+		if (error.url) {
+			lines.push(`${indent}url: ${error.url}`);
+		}
+
+		if (error.responseBody != null) {
+			const body =
+				typeof error.responseBody === "string"
+					? error.responseBody
+					: JSON.stringify(error.responseBody, null, 2);
+			lines.push(`${indent}response: ${truncate(body)}`);
+		}
+
+		if (error.isRetryable != null) {
+			lines.push(`${indent}retryable: ${String(error.isRetryable)}`);
+		}
+
+		return lines;
+	}
+
+	if (NoObjectGeneratedError.isInstance(error)) {
+		const lines = [`${indent}[NoObjectGeneratedError] ${error.message}`];
+
+		if (error.finishReason) {
+			lines.push(`${indent}finishReason: ${error.finishReason}`);
+		}
+
+		if (error.text) {
+			lines.push(`${indent}text: ${truncate(error.text, 1500)}`);
+		}
+
+		if (error.cause) {
+			lines.push(...serializeErrorChain(error.cause, depth + 1));
+		}
+
+		return lines;
+	}
+
+	if (TypeValidationError.isInstance(error)) {
+		return [
+			`${indent}[TypeValidationError] ${error.message}`,
+			`${indent}value: ${truncate(JSON.stringify(error.value ?? null, null, 2), 1500)}`,
+		];
+	}
+
+	if (JSONParseError.isInstance(error)) {
+		return [
+			`${indent}[JSONParseError] ${error.message}`,
+			...(error.text ? [`${indent}text: ${truncate(error.text, 1500)}`] : []),
+		];
+	}
+
+	if (InvalidResponseDataError.isInstance(error)) {
+		return [`${indent}[InvalidResponseDataError] ${error.message}`];
+	}
+
+	if (UnsupportedFunctionalityError.isInstance(error)) {
+		return [
+			`${indent}[UnsupportedFunctionalityError] ${error.message}`,
+			...(error.functionality
+				? [`${indent}functionality: ${error.functionality}`]
+				: []),
+		];
+	}
+
+	if (NoSuchModelError.isInstance(error)) {
+		return [
+			`${indent}[NoSuchModelError] ${error.message}`,
+			...(error.modelId ? [`${indent}modelId: ${error.modelId}`] : []),
+		];
+	}
+
+	if (error instanceof z.ZodError) {
+		return [
+			`${indent}[ZodError] validação falhou`,
+			...error.issues.map(
+				(issue) =>
+					`${indent}- ${issue.path.join(".") || "(raiz)"}: ${issue.message}`,
+			),
+		];
+	}
+
+	if (error instanceof Error) {
+		const lines = [`${indent}[${error.name}] ${error.message}`];
+		if (error.cause) {
+			lines.push(...serializeErrorChain(error.cause, depth + 1));
+		}
+		return lines;
+	}
+
+	return [`${indent}${String(error)}`];
+}
+
+export function serializeAiActionErrorLog(
+	error: unknown,
+	context?: Record<string, string | number | boolean | null | undefined>,
+): string {
+	const sections: string[] = [`timestamp: ${new Date().toISOString()}`];
+
+	if (context) {
+		sections.push("", "Contexto:");
+		for (const [key, value] of Object.entries(context)) {
+			if (value == null) continue;
+			sections.push(`  ${key}: ${value}`);
+		}
+	}
+
+	sections.push("", "Detalhes:");
+	sections.push(...serializeErrorChain(error));
+
+	return redactSecrets(sections.join("\n"));
+}
+
 export function formatAiActionError(
 	error: unknown,
 	context: "import" | "insights" = "import",
 	options?: { modelLabel?: string | null },
 ): string {
-	const message = formatAiActionErrorCore(unwrapAiError(error), context);
+	const unwrapped = unwrapAiError(error);
+	const message = formatAiActionErrorCore(unwrapped, context);
 	const modelLabel = options?.modelLabel?.trim();
+
+	if (message === "Não foi possível concluir a análise com IA.") {
+		console.error("[formatAiActionError] erro não categorizado", {
+			context,
+			errorName: unwrapped?.constructor?.name,
+			errorMessage:
+				unwrapped instanceof Error ? unwrapped.message : String(unwrapped),
+			causeName: (unwrapped as { cause?: unknown })?.cause?.constructor?.name,
+			causeMessage:
+				unwrapped instanceof Error && unwrapped.cause instanceof Error
+					? unwrapped.cause.message
+					: undefined,
+		});
+	}
 
 	if (!modelLabel) {
 		return message;
