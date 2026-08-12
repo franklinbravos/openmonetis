@@ -24,10 +24,12 @@ const nextConfig: NextConfig = {
 			process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? "",
 	},
 	images: {
+		// Whitelist de domínios de imagem usados pelo app (avatares Google e
+		// logos de estabelecimento). Nunca usar hostname "**": expõe o otimizador
+		// de imagens do Next a SSRF (fetch server-side de qualquer URL).
 		remotePatterns: [
 			new URL("https://lh3.googleusercontent.com/**"),
-			{ protocol: "https", hostname: "**" },
-			{ protocol: "http", hostname: "**" },
+			{ protocol: "https", hostname: "img.logo.dev" },
 		],
 	},
 	devIndicators: {

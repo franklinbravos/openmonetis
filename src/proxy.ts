@@ -84,6 +84,10 @@ function buildCsp(): string {
 
 	return [
 		"default-src 'self'",
+		// 'unsafe-inline' é necessário para os scripts inline que o Next.js injeta
+		// para hidratação do App Router. Para removê-lo, seria preciso adotar
+		// nonce (header x-nonce + geração por request). 'unsafe-eval' só em dev
+		// (Turbopack/HMR).
 		`script-src 'self' 'unsafe-inline' https://accounts.google.com${isDev ? " 'unsafe-eval'" : ""}${umamiOrigin ? ` ${umamiOrigin}` : ""}`,
 		"style-src 'self' 'unsafe-inline'",
 		`img-src 'self' ${imgExtras} data: blob:`,
@@ -91,6 +95,9 @@ function buildCsp(): string {
 		`connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com ${connectExtras}`,
 		"worker-src 'self' blob:",
 		`frame-src 'self' https://accounts.google.com${storageOrigin ? ` ${storageOrigin}` : ""}`,
+		"object-src 'none'",
+		"base-uri 'self'",
+		"form-action 'self'",
 		"frame-ancestors 'none'",
 	].join("; ");
 }
