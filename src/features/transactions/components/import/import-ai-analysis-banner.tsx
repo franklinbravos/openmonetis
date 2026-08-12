@@ -1,6 +1,10 @@
+"use client";
+
 import { RiRefreshLine, RiSparkling2Line } from "@remixicon/react";
+import { useEffect, useState } from "react";
 import { Alert, AlertDescription } from "@/shared/components/ui/alert";
 import { Button } from "@/shared/components/ui/button";
+import { Progress } from "@/shared/components/ui/progress";
 import { Spinner } from "@/shared/components/ui/spinner";
 
 export type ImportAiAnalysisStatus =
@@ -10,8 +14,21 @@ export type ImportAiAnalysisStatus =
 	| "skipped"
 	| "error";
 
+export type ImportAiAnalysisProgress = {
+	phase: "preparing" | "analyzing" | "applying";
+	message: string;
+	currentBatch?: number;
+	totalBatches?: number;
+	modelLabel?: string | null;
+	rowsAnalyzed?: number;
+	rowCount?: number;
+	candidateCount?: number;
+	startedAt?: number;
+};
+
 type ImportAiAnalysisBannerProps = {
 	status: ImportAiAnalysisStatus;
+	progress?: ImportAiAnalysisProgress | null;
 	errorMessage?: string | null;
 	errorLog?: string | null;
 	summary?: {
@@ -23,26 +40,91 @@ type ImportAiAnalysisBannerProps = {
 	isRetrying?: boolean;
 };
 
+function formatElapsedSeconds(startedAt?: number): string | null {
+	if (!startedAt) return null;
+	const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+	if (elapsed < 60) return `${elapsed}s`;
+	const minutes = Math.floor(elapsed / 60);
+	const seconds = elapsed % 60;
+	return `${minutes}m ${seconds}s`;
+}
+
 export function ImportAiAnalysisBanner({
 	status,
+	progress,
 	errorMessage,
 	errorLog,
 	summary,
 	onRetry,
 	isRetrying = false,
 }: ImportAiAnalysisBannerProps) {
+	const [elapsedLabel, setElapsedLabel] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (status !== "running" || !progress?.startedAt) {
+			setElapsedLabel(null);
+			return;
+		}
+
+		const updateElapsed = () => {
+			setElapsedLabel(formatElapsedSeconds(progress.startedAt));
+		};
+
+		updateElapsed();
+		const timer = window.setInterval(updateElapsed, 1000);
+		return () => {
+			window.clearInterval(timer);
+		};
+	}, [progress?.startedAt, status]);
+
 	if (status === "idle" || status === "skipped") return null;
 
 	if (status === "running") {
+		const batchProgress =
+			progress?.currentBatch && progress.totalBatches
+				? Math.round((progress.currentBatch / progress.totalBatches) * 100)
+				: progress?.phase === "preparing"
+					? 8
+					: progress?.phase === "applying"
+						? 96
+						: 12;
+
 		return (
 			<Alert className="border-primary/20 bg-primary/5">
 				<Spinner className="size-4" />
-				<AlertDescription className="flex items-center gap-2 text-sm">
-					<RiSparkling2Line className="size-4 shrink-0 text-primary" />
-					<span>
-						IA analisando duplicatas e categorias… isso roda em segundo plano
-						enquanto você revisa.
-					</span>
+				<AlertDescription className="flex flex-col gap-3 text-sm">
+					<div className="flex items-start gap-2">
+						<RiSparkling2Line className="mt-0.5 size-4 shrink-0 text-primary" />
+						<div className="space-y-1">
+							<p className="font-medium text-foreground">
+								{progress?.message ?? "IA analisando duplicatas e categorias…"}
+							</p>
+							<p className="text-muted-foreground text-xs leading-relaxed">
+								{progress?.modelLabel
+									? `Modelo: ${progress.modelLabel}`
+									: "Validando modelo configurado em Ajustes"}
+								{progress?.rowCount != null
+									? ` · ${progress.rowsAnalyzed ?? 0}/${progress.rowCount} linha(s)`
+									: null}
+								{progress?.candidateCount != null
+									? ` · ${progress.candidateCount} candidato(s) a duplicata`
+									: null}
+								{elapsedLabel ? ` · ${elapsedLabel}` : null}
+							</p>
+						</div>
+					</div>
+					<div className="space-y-1.5 pl-6">
+						<Progress value={batchProgress} className="h-1.5" />
+						<p className="text-[11px] text-muted-foreground">
+							{progress?.phase === "preparing"
+								? "Etapa 1 de 3: preparando contexto e candidatos"
+								: progress?.phase === "applying"
+									? "Etapa 3 de 3: aplicando sugestões na revisão"
+									: progress?.currentBatch && progress.totalBatches
+										? `Etapa 2 de 3: lote ${progress.currentBatch} de ${progress.totalBatches}`
+										: "Etapa 2 de 3: consultando o modelo"}
+						</p>
+					</div>
 				</AlertDescription>
 			</Alert>
 		);
