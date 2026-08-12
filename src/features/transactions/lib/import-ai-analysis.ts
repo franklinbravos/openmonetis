@@ -5,6 +5,7 @@ import {
 	type ImportDuplicateSnapshot,
 	type ImportDuplicateValidation,
 } from "@/features/transactions/lib/import-duplicate-match";
+import { toDateOnlyString } from "@/shared/utils/date";
 
 export const IMPORT_AI_BATCH_SIZE = 18;
 export const IMPORT_AI_MAX_CANDIDATES_PER_BATCH = 80;
@@ -296,9 +297,7 @@ export function mapExistingSnapshotToAiCandidate(
 		id: snapshot.id,
 		name: snapshot.name,
 		amount: Math.abs(Number(snapshot.amount)),
-		date: snapshot.purchaseDate
-			? snapshot.purchaseDate.toISOString().slice(0, 10)
-			: null,
+		date: toDateOnlyString(snapshot.purchaseDate),
 		period: snapshot.period ?? null,
 		installment,
 		categoryId: snapshot.categoryId,

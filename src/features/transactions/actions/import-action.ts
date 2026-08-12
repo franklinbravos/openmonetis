@@ -22,6 +22,7 @@ import {
 	validateContaOwnership,
 } from "@/features/transactions/actions/core";
 import { IMPORT_BATCH_STATUS } from "@/features/transactions/lib/import-batch-status";
+import type { ImportDuplicateSnapshot } from "@/features/transactions/lib/import-duplicate-match";
 import { getInstallmentBasePeriod } from "@/features/transactions/lib/import-installments";
 import { buildInvoicePaymentNote } from "@/shared/lib/accounts/constants";
 import { revalidateForEntity } from "@/shared/lib/actions/helpers";
@@ -223,14 +224,14 @@ const mapImportDuplicateSnapshotRows = (
 		ofxFitId: string | null;
 		name: string;
 		amount: string;
-		purchaseDate: Date;
+		purchaseDate: Date | string;
 		transactionType: string;
 		currentInstallment: number | null;
 		installmentCount: number | null;
 		payerId: string | null;
 		categoryId: string | null;
 	}>,
-) =>
+): ImportDuplicateSnapshot[] =>
 	rows.map((row) => ({
 		id: row.id,
 		ofxFitId: row.ofxFitId,

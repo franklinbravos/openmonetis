@@ -9,7 +9,7 @@ export type ImportDuplicateSnapshot = {
 	ofxFitId: string | null;
 	name: string;
 	amount: string;
-	purchaseDate: Date;
+	purchaseDate: Date | string;
 	transactionType: string;
 	currentInstallment: number | null;
 	installmentCount: number | null;
