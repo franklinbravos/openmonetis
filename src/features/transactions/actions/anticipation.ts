@@ -23,6 +23,10 @@ import type {
 	CreateAnticipationInput,
 	EligibleInstallment,
 } from "@/shared/lib/installments/anticipation-types";
+import {
+	assertFinancialEditAccess,
+	assertFinancialReadAccess,
+} from "@/shared/lib/payers/financial-access";
 import { uuidSchema } from "@/shared/lib/schemas/common";
 import type { ActionResult } from "@/shared/lib/types/actions";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
@@ -68,6 +72,7 @@ export async function getEligibleInstallmentsAction(
 ): Promise<ActionResult<EligibleInstallment[]>> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialReadAccess(user.id);
 
 		// Validar seriesId
 		const validatedSeriesId = uuidSchema("Série").parse(seriesId);
@@ -79,7 +84,7 @@ export async function getEligibleInstallmentsAction(
 		const rows = await db.query.transactions.findMany({
 			where: and(
 				eq(transactions.seriesId, validatedSeriesId),
-				eq(transactions.userId, user.id),
+				eq(transactions.userId, dataOwnerUserId),
 				eq(transactions.condition, "Parcelado"),
 				// Apenas parcelas não pagas e não antecipadas
 				or(eq(transactions.isSettled, false), isNull(transactions.isSettled)),
@@ -137,6 +142,7 @@ export async function createInstallmentAnticipationAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = createAnticipationSchema.parse(input);
 
 		if (data.payerId || data.categoryId) {
@@ -146,7 +152,10 @@ export async function createInstallmentAnticipationAction(
 							.select({ id: payers.id })
 							.from(payers)
 							.where(
-								and(eq(payers.id, data.payerId), eq(payers.userId, user.id)),
+								and(
+									eq(payers.id, data.payerId),
+									eq(payers.userId, dataOwnerUserId),
+								),
 							)
 							.limit(1)
 					: Promise.resolve([]),
@@ -157,7 +166,7 @@ export async function createInstallmentAnticipationAction(
 							.where(
 								and(
 									eq(categories.id, data.categoryId),
-									eq(categories.userId, user.id),
+									eq(categories.userId, dataOwnerUserId),
 								),
 							)
 							.limit(1)
@@ -183,7 +192,7 @@ export async function createInstallmentAnticipationAction(
 		const installments = await db.query.transactions.findMany({
 			where: and(
 				inArray(transactions.id, data.installmentIds),
-				eq(transactions.userId, user.id),
+				eq(transactions.userId, dataOwnerUserId),
 				eq(transactions.seriesId, data.seriesId),
 				or(eq(transactions.isSettled, false), isNull(transactions.isSettled)),
 				eq(transactions.isAnticipated, false),
@@ -283,7 +292,7 @@ export async function createInstallmentAnticipationAction(
 								payerId: inst.payerId,
 							})),
 						),
-					userId: user.id,
+					userId: dataOwnerUserId,
 					installmentCount: null,
 					currentInstallment: null,
 					recurrenceCount: null,
@@ -311,7 +320,7 @@ export async function createInstallmentAnticipationAction(
 					payerId: data.payerId ?? firstInstallment.payerId,
 					categoryId: data.categoryId ?? firstInstallment.categoryId,
 					note: data.note || null,
-					userId: user.id,
+					userId: dataOwnerUserId,
 				})
 				.returning()) as Array<typeof installmentAnticipations.$inferSelect>;
 
@@ -326,7 +335,7 @@ export async function createInstallmentAnticipationAction(
 				.where(
 					and(
 						inArray(transactions.id, data.installmentIds),
-						eq(transactions.userId, user.id),
+						eq(transactions.userId, dataOwnerUserId),
 					),
 				);
 		});
@@ -355,6 +364,7 @@ export async function cancelInstallmentAnticipationAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = cancelAnticipationSchema.parse(input);
 
 		await db.transaction(async (tx: typeof db) => {
@@ -386,7 +396,7 @@ export async function cancelInstallmentAnticipationAction(
 				.where(
 					and(
 						eq(installmentAnticipations.id, data.anticipationId),
-						eq(installmentAnticipations.userId, user.id),
+						eq(installmentAnticipations.userId, dataOwnerUserId),
 					),
 				)
 				.limit(1);
@@ -423,7 +433,7 @@ export async function cancelInstallmentAnticipationAction(
 							transactions.id,
 							anticipation.anticipatedInstallmentIds as string[],
 						),
-						eq(transactions.userId, user.id),
+						eq(transactions.userId, dataOwnerUserId),
 					),
 				);
 
@@ -433,7 +443,7 @@ export async function cancelInstallmentAnticipationAction(
 				.where(
 					and(
 						eq(transactions.id, anticipation.transactionId),
-						eq(transactions.userId, user.id),
+						eq(transactions.userId, dataOwnerUserId),
 					),
 				);
 
@@ -443,7 +453,7 @@ export async function cancelInstallmentAnticipationAction(
 				.where(
 					and(
 						eq(installmentAnticipations.id, data.anticipationId),
-						eq(installmentAnticipations.userId, user.id),
+						eq(installmentAnticipations.userId, dataOwnerUserId),
 					),
 				);
 		});

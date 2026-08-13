@@ -5,6 +5,7 @@ import {
 	INITIAL_BALANCE_NOTE,
 } from "@/shared/lib/accounts/constants";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import {
 	buildDateOnlyStringFromPeriodDay,
@@ -69,7 +70,10 @@ export type InstallmentAnalysisData = {
 export async function fetchInstallmentAnalysis(
 	userId: string,
 ): Promise<InstallmentAnalysisData> {
-	const adminPayerId = await getAdminPayerId(userId);
+	const [adminPayerId, dataOwnerUserId] = await Promise.all([
+		getAdminPayerId(userId),
+		getFinancialDataOwnerId(userId),
+	]);
 
 	if (!adminPayerId) {
 		return { installmentGroups: [], totalPendingInstallments: 0 };
@@ -99,11 +103,11 @@ export async function fetchInstallmentAnalysis(
 		.from(transactions)
 		.leftJoin(
 			cards,
-			and(eq(transactions.cardId, cards.id), eq(cards.userId, userId)),
+			and(eq(transactions.cardId, cards.id), eq(cards.userId, dataOwnerUserId)),
 		)
 		.where(
 			and(
-				eq(transactions.userId, userId),
+				eq(transactions.userId, dataOwnerUserId),
 				eq(transactions.payerId, adminPayerId),
 				eq(transactions.transactionType, "Despesa"),
 				eq(transactions.condition, "Parcelado"),

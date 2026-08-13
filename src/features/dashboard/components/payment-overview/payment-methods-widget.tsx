@@ -11,7 +11,6 @@ import {
 type PaymentMethodsWidgetProps = {
 	data: PaymentMethodsData;
 	period: string;
-	adminPayerSlug: string | null;
 };
 
 const resolvePaymentMethodIcon = (paymentMethod: string) =>
@@ -22,7 +21,6 @@ const resolvePaymentMethodIcon = (paymentMethod: string) =>
 export function PaymentMethodsWidget({
 	data,
 	period,
-	adminPayerSlug,
 }: PaymentMethodsWidgetProps) {
 	const items: PaymentBreakdownListItemData[] = data.methods.map((method) => {
 		const params = new URLSearchParams({
@@ -30,7 +28,6 @@ export function PaymentMethodsWidget({
 			payment: slugify(method.paymentMethod),
 			periodo: formatPeriodForUrl(period),
 		});
-		if (adminPayerSlug) params.set("payer", adminPayerSlug);
 		return {
 			id: method.paymentMethod,
 			title: method.paymentMethod,

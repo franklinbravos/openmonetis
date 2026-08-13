@@ -21,6 +21,7 @@ import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
 import { PERIOD_FORMAT_REGEX } from "@/shared/lib/invoices";
 import { loadLogoOptions } from "@/shared/lib/logo/options";
+import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { noteSchema, uuidSchema } from "@/shared/lib/schemas/common";
 import {
@@ -112,6 +113,7 @@ export async function createAccountAction(
 ): Promise<ActionResult<AccountCreateResultData>> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = createAccountSchema.parse(input);
 
 		const logoFile = normalizeFilePath(data.logo);
@@ -140,7 +142,7 @@ export async function createAccountAction(
 					initialBalance: formatDecimalForDbRequired(data.initialBalance),
 					excludeFromBalance: data.excludeFromBalance,
 					excludeInitialBalanceFromIncome: data.excludeInitialBalanceFromIncome,
-					userId: user.id,
+					userId: dataOwnerUserId,
 				})
 				.returning({ id: financialAccounts.id, name: financialAccounts.name });
 
@@ -156,7 +158,7 @@ export async function createAccountAction(
 				tx.query.categories.findFirst({
 					columns: { id: true },
 					where: and(
-						eq(categories.userId, user.id),
+						eq(categories.userId, dataOwnerUserId),
 						eq(categories.name, INITIAL_BALANCE_CATEGORY_NAME),
 					),
 				}),
@@ -180,7 +182,7 @@ export async function createAccountAction(
 				transactionType: INITIAL_BALANCE_TRANSACTION_TYPE,
 				period,
 				isSettled: true,
-				userId: user.id,
+				userId: dataOwnerUserId,
 				accountId: created.id,
 				categoryId: category.id,
 				payerId: adminPayerId,
@@ -222,6 +224,7 @@ export async function updateAccountAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = updateAccountSchema.parse(input);
 
 		const logoFile = normalizeFilePath(data.logo);
@@ -241,7 +244,7 @@ export async function updateAccountAction(
 			.where(
 				and(
 					eq(financialAccounts.id, data.id),
-					eq(financialAccounts.userId, user.id),
+					eq(financialAccounts.userId, dataOwnerUserId),
 				),
 			)
 			.returning();
@@ -269,6 +272,7 @@ export async function deleteAccountAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = deleteAccountSchema.parse(input);
 
 		const [deleted] = await db
@@ -276,7 +280,7 @@ export async function deleteAccountAction(
 			.where(
 				and(
 					eq(financialAccounts.id, data.id),
-					eq(financialAccounts.userId, user.id),
+					eq(financialAccounts.userId, dataOwnerUserId),
 				),
 			)
 			.returning({ id: financialAccounts.id });
@@ -327,6 +331,7 @@ export async function transferBetweenAccountsAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = transferSchema.parse(input);
 
 		// Validate that accounts are different
@@ -354,14 +359,14 @@ export async function transferBetweenAccountsAction(
 					columns: { id: true, name: true },
 					where: and(
 						eq(financialAccounts.id, data.fromAccountId),
-						eq(financialAccounts.userId, user.id),
+						eq(financialAccounts.userId, dataOwnerUserId),
 					),
 				}),
 				tx.query.financialAccounts.findFirst({
 					columns: { id: true, name: true },
 					where: and(
 						eq(financialAccounts.id, data.toAccountId),
-						eq(financialAccounts.userId, user.id),
+						eq(financialAccounts.userId, dataOwnerUserId),
 					),
 				}),
 			]);
@@ -379,7 +384,7 @@ export async function transferBetweenAccountsAction(
 				tx.query.categories.findFirst({
 					columns: { id: true },
 					where: and(
-						eq(categories.userId, user.id),
+						eq(categories.userId, dataOwnerUserId),
 						eq(categories.name, TRANSFER_CATEGORY_NAME),
 					),
 				}),
@@ -401,7 +406,7 @@ export async function transferBetweenAccountsAction(
 				transactionType: "Transferência" as const,
 				period: data.period,
 				isSettled: true,
-				userId: user.id,
+				userId: dataOwnerUserId,
 				categoryId: transferCategory.id,
 				payerId: adminPayerId,
 				transferId,
@@ -465,6 +470,7 @@ export async function addAccountYieldAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = addAccountYieldSchema.parse(input);
 		const adminPayerId = await getAdminPayerId(user.id);
 
@@ -484,7 +490,7 @@ export async function addAccountYieldAction(
 				columns: { id: true },
 				where: and(
 					eq(financialAccounts.id, data.accountId),
-					eq(financialAccounts.userId, user.id),
+					eq(financialAccounts.userId, dataOwnerUserId),
 				),
 			});
 
@@ -495,7 +501,7 @@ export async function addAccountYieldAction(
 			const existingCategory = await tx.query.categories.findFirst({
 				columns: { id: true },
 				where: and(
-					eq(categories.userId, user.id),
+					eq(categories.userId, dataOwnerUserId),
 					eq(categories.type, "receita"),
 					eq(categories.name, ACCOUNT_YIELD_CATEGORY_NAME),
 				),
@@ -510,7 +516,7 @@ export async function addAccountYieldAction(
 							name: ACCOUNT_YIELD_CATEGORY_NAME,
 							type: "receita",
 							icon: ACCOUNT_YIELD_CATEGORY_ICON,
-							userId: user.id,
+							userId: dataOwnerUserId,
 						})
 						.returning({ id: categories.id })
 				)[0];
@@ -531,7 +537,7 @@ export async function addAccountYieldAction(
 				transactionType: "Receita" as const,
 				period: derivePeriodFromDate(data.date),
 				isSettled: true,
-				userId: user.id,
+				userId: dataOwnerUserId,
 				accountId: data.accountId,
 				cardId: null,
 				categoryId: category.id,
@@ -553,6 +559,7 @@ export async function adjustAccountBalanceAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = adjustAccountBalanceSchema.parse(input);
 		const adminPayerId = await getAdminPayerId(user.id);
 
@@ -569,7 +576,7 @@ export async function adjustAccountBalanceAction(
 				columns: { id: true },
 				where: and(
 					eq(financialAccounts.id, data.accountId),
-					eq(financialAccounts.userId, user.id),
+					eq(financialAccounts.userId, dataOwnerUserId),
 				),
 			});
 
@@ -580,7 +587,7 @@ export async function adjustAccountBalanceAction(
 			const existing = await tx.query.transactions.findFirst({
 				columns: { id: true, amount: true },
 				where: and(
-					eq(transactions.userId, user.id),
+					eq(transactions.userId, dataOwnerUserId),
 					eq(transactions.accountId, data.accountId),
 					eq(transactions.period, data.period),
 					eq(transactions.name, ACCOUNT_BALANCE_ADJUSTMENT_NAME),
@@ -608,7 +615,7 @@ export async function adjustAccountBalanceAction(
 			const category = await tx.query.categories.findFirst({
 				columns: { id: true },
 				where: and(
-					eq(categories.userId, user.id),
+					eq(categories.userId, dataOwnerUserId),
 					eq(categories.name, categoryName),
 				),
 			});
@@ -628,7 +635,7 @@ export async function adjustAccountBalanceAction(
 					: ("Receita" as const),
 				period: data.period,
 				isSettled: true,
-				userId: user.id,
+				userId: dataOwnerUserId,
 				accountId: data.accountId,
 				cardId: null,
 				categoryId: category?.id ?? null,

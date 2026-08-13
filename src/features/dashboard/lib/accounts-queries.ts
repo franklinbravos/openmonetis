@@ -3,6 +3,7 @@ import {
 	type AccountWithoutMovements,
 	fetchAccountsWithoutMovements,
 } from "@/shared/lib/accounts/queries";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import { safeToNumber as toNumber } from "@/shared/utils/number";
@@ -71,16 +72,19 @@ const toDashboardAccountWithoutMovements = (
 export async function fetchDashboardAccounts(
 	userId: string,
 ): Promise<DashboardAccountsSnapshot> {
-	const adminPayerId = await getAdminPayerId(userId);
+	const [adminPayerId, dataOwnerUserId] = await Promise.all([
+		getAdminPayerId(userId),
+		getFinancialDataOwnerId(userId),
+	]);
 
 	const accounts = adminPayerId
 		? (
 				await callRpc<AccountBalancesRow>("get_account_balances", {
-					p_user_id: userId,
+					p_user_id: dataOwnerUserId,
 					p_admin_payer_id: adminPayerId,
 				})
 			).map(toDashboardAccount)
-		: (await fetchAccountsWithoutMovements(userId)).map(
+		: (await fetchAccountsWithoutMovements(dataOwnerUserId)).map(
 				toDashboardAccountWithoutMovements,
 			);
 

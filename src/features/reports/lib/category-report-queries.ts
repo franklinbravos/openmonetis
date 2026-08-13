@@ -1,3 +1,4 @@
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import type {
@@ -188,9 +189,10 @@ export async function fetchCategoryReport(
 		return { categories: [], periods, totals: new Map(), grandTotal: 0 };
 	}
 
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const rows = (
 		await callRpc<CategoryTotalsRpcRow>("get_category_totals", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_admin_payer_id: adminPayerId,
 			p_periods: periods,
 			p_category_ids: categoryIds ?? [],

@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { budgets, categories } from "@/db/schema";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc, callRpcOne } from "@/shared/lib/supabase/rpc";
 
@@ -66,12 +67,15 @@ export async function fetchBudgetsForUser(
 	budgets: BudgetData[];
 	categoriesOptions: CategoryOption[];
 }> {
-	const adminPayerId = await getAdminPayerId(userId);
+	const [adminPayerId, dataOwnerUserId] = await Promise.all([
+		getAdminPayerId(userId),
+		getFinancialDataOwnerId(userId),
+	]);
 
 	const [budgetRows, categoryRows] = await Promise.all([
 		db.query.budgets.findMany({
 			where: and(
-				eq(budgets.userId, userId),
+				eq(budgets.userId, dataOwnerUserId),
 				eq(budgets.period, selectedPeriod),
 			),
 			with: {
@@ -84,7 +88,10 @@ export async function fetchBudgetsForUser(
 				name: true,
 				icon: true,
 			},
-			where: and(eq(categories.userId, userId), eq(categories.type, "despesa")),
+			where: and(
+				eq(categories.userId, dataOwnerUserId),
+				eq(categories.type, "despesa"),
+			),
 			orderBy: asc(categories.name),
 		}),
 	]);
@@ -98,7 +105,7 @@ export async function fetchBudgetsForUser(
 	if (categoryIds.length > 0 && adminPayerId) {
 		const totals = (
 			await callRpc<BudgetSpentRpcRow>("get_budget_spent_by_category", {
-				p_user_id: userId,
+				p_user_id: dataOwnerUserId,
 				p_admin_payer_id: adminPayerId,
 				p_period: selectedPeriod,
 				p_category_ids: categoryIds,
@@ -151,24 +158,25 @@ export async function fetchCategoryBudgetSummary(
 	categoryId: string,
 	period: string,
 ): Promise<CategoryBudgetSummary | null> {
-	const [adminPayerId, budget] = await Promise.all([
+	const [adminPayerId, dataOwnerUserId] = await Promise.all([
 		getAdminPayerId(userId),
-		db.query.budgets.findFirst({
-			columns: { amount: true },
-			where: and(
-				eq(budgets.userId, userId),
-				eq(budgets.categoryId, categoryId),
-				eq(budgets.period, period),
-			),
-		}),
+		getFinancialDataOwnerId(userId),
 	]);
+	const budget = await db.query.budgets.findFirst({
+		columns: { amount: true },
+		where: and(
+			eq(budgets.userId, dataOwnerUserId),
+			eq(budgets.categoryId, categoryId),
+			eq(budgets.period, period),
+		),
+	});
 
 	if (!adminPayerId || !budget) return null;
 
 	const totalsRow = await callRpcOne<BudgetSummaryRpcRow>(
 		"get_category_budget_summary",
 		{
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_category_id: categoryId,
 			p_admin_payer_id: adminPayerId,
 			p_period: period,

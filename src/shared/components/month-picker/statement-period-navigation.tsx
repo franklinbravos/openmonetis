@@ -41,7 +41,7 @@ import {
 import { formatCurrency } from "@/shared/utils/currency";
 import {
 	dateToPeriod,
-	formatPeriodMonthShort,
+	formatShortPeriodLabel,
 	periodToDate,
 } from "@/shared/utils/period";
 import { cn } from "@/shared/utils/ui";
@@ -321,9 +321,10 @@ function PeriodMonthCarousel({
 						const monthIncomes = month.incomes ?? 0;
 						const monthExpenses = month.expenses ?? 0;
 						const monthBalance = month.amount;
+						const periodLabel = formatShortPeriodLabel(month.period);
 						const ariaLabel = isAccountVariant
-							? `${formatPeriodMonthShort(month.period)}: entradas ${formatCurrency(monthIncomes)}, saídas ${formatCurrency(monthExpenses)}, saldo ${formatCurrency(monthBalance)}`
-							: `${formatPeriodMonthShort(month.period)}: ${formatCurrency(month.amount)}`;
+							? `${periodLabel}: entradas ${formatCurrency(monthIncomes)}, saídas ${formatCurrency(monthExpenses)}, saldo ${formatCurrency(monthBalance)}`
+							: `${periodLabel}: ${formatCurrency(month.amount)}`;
 
 						return (
 							<div
@@ -334,8 +335,8 @@ function PeriodMonthCarousel({
 								className={cn(
 									"relative flex flex-col items-center px-0.5",
 									isAccountVariant
-										? "min-w-[6.75rem] sm:min-w-[7.5rem] md:min-w-[8.25rem]"
-										: "min-w-[5.25rem] sm:min-w-[6.25rem] md:min-w-[7rem]",
+										? "min-w-[7.25rem] sm:min-w-[8rem] md:min-w-[8.75rem]"
+										: "min-w-[5.75rem] sm:min-w-[6.75rem] md:min-w-[7.5rem]",
 									isFuture && !isSelected && "opacity-70",
 								)}
 							>
@@ -371,7 +372,7 @@ function PeriodMonthCarousel({
 													: "text-muted-foreground",
 										)}
 									>
-										{formatPeriodMonthShort(month.period)}
+										{periodLabel}
 									</span>
 
 									<div

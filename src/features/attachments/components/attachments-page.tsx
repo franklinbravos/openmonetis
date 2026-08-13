@@ -94,7 +94,7 @@ export function AttachmentsPage({
 }: AttachmentsPageProps) {
 	const router = useRouter();
 	const [filter, setFilter] = useState<FilterType>("all");
-	const [payerFilter, setPayerFilter] = useState(adminPayerId);
+	const [payerFilter, setPayerFilter] = useState<string>(ALL_PAYERS);
 	const [selectedIndex, setSelectedIndex] = useState(-1);
 	const [transactionDetails, setTransactionDetails] =
 		useState<TransactionItem | null>(null);

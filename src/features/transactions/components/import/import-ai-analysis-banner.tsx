@@ -15,7 +15,12 @@ export type ImportAiAnalysisStatus =
 	| "error";
 
 export type ImportAiAnalysisProgress = {
-	phase: "preparing" | "analyzing" | "applying";
+	phase:
+		| "preparing"
+		| "categorizing"
+		| "checking_duplicates"
+		| "analyzing"
+		| "applying";
 	message: string;
 	currentBatch?: number;
 	totalBatches?: number;
@@ -23,6 +28,8 @@ export type ImportAiAnalysisProgress = {
 	rowsAnalyzed?: number;
 	rowCount?: number;
 	candidateCount?: number;
+	categoriesApplied?: number;
+	skippedByAlgorithm?: number;
 	startedAt?: number;
 };
 
@@ -35,6 +42,7 @@ type ImportAiAnalysisBannerProps = {
 		categoriesSuggested: number;
 		duplicatesFound: number;
 		rowsAnalyzed: number;
+		skippedByAlgorithm?: number;
 	} | null;
 	onRetry?: () => void;
 	isRetrying?: boolean;
@@ -103,10 +111,18 @@ export function ImportAiAnalysisBanner({
 								{progress?.modelLabel
 									? `Modelo: ${progress.modelLabel}`
 									: "Validando modelo configurado em Ajustes"}
+								{progress?.categoriesApplied != null &&
+								progress.categoriesApplied > 0
+									? ` · ${progress.categoriesApplied} categoria(s) já aplicada(s)`
+									: null}
 								{progress?.rowCount != null
 									? ` · ${progress.rowsAnalyzed ?? 0}/${progress.rowCount} linha(s)`
 									: null}
-								{progress?.candidateCount != null
+								{progress?.skippedByAlgorithm
+									? ` · ${progress.skippedByAlgorithm} já resolvida(s) pelo algoritmo`
+									: null}
+								{progress?.candidateCount != null &&
+								progress.phase === "checking_duplicates"
 									? ` · ${progress.candidateCount} candidato(s) a duplicata`
 									: null}
 								{elapsedLabel ? ` · ${elapsedLabel}` : null}
@@ -117,12 +133,20 @@ export function ImportAiAnalysisBanner({
 						<Progress value={batchProgress} className="h-1.5" />
 						<p className="text-[11px] text-muted-foreground">
 							{progress?.phase === "preparing"
-								? "Etapa 1 de 3: preparando contexto e candidatos"
-								: progress?.phase === "applying"
-									? "Etapa 3 de 3: aplicando sugestões na revisão"
-									: progress?.currentBatch && progress.totalBatches
-										? `Etapa 2 de 3: lote ${progress.currentBatch} de ${progress.totalBatches}`
-										: "Etapa 2 de 3: consultando o modelo"}
+								? "Preparando contexto e modelo"
+								: progress?.phase === "categorizing"
+									? progress.currentBatch && progress.totalBatches
+										? `Categorizando · lote ${progress.currentBatch} de ${progress.totalBatches}`
+										: "Categorizando lançamentos"
+									: progress?.phase === "checking_duplicates"
+										? progress.currentBatch && progress.totalBatches
+											? `Duplicatas ambíguas · lote ${progress.currentBatch} de ${progress.totalBatches}`
+											: "Verificando duplicatas ambíguas"
+										: progress?.phase === "applying"
+											? "Aplicando sugestões na revisão"
+											: progress?.currentBatch && progress?.totalBatches
+												? `Lote ${progress.currentBatch} de ${progress.totalBatches}`
+												: "Consultando o modelo"}
 						</p>
 					</div>
 				</AlertDescription>
@@ -192,6 +216,9 @@ export function ImportAiAnalysisBanner({
 							: "categorias inalteradas"}
 						{" · "}
 						{summary.rowsAnalyzed} linha(s) analisada(s)
+						{summary.skippedByAlgorithm
+							? ` · ${summary.skippedByAlgorithm} já resolvida(s) pelo algoritmo`
+							: null}
 					</span>
 				</div>
 				{onRetry ? (

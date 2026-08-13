@@ -6,8 +6,10 @@ import { categories, reconciliationAliases } from "@/db/schema";
 import { RECONCILIATION_ALIAS_SOURCES } from "@/features/reconciliation/lib/constants";
 import { normalizeStatementKey } from "@/features/reconciliation/lib/normalize-statement-key";
 import { handleActionError } from "@/shared/lib/actions/helpers";
-import { getUserId } from "@/shared/lib/auth/server";
+import { getUser, getUserId } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { uuidSchema } from "@/shared/lib/schemas/common";
 import type { ActionResult } from "@/shared/lib/types/actions";
 
@@ -16,7 +18,8 @@ export async function fetchReconciliationAliases(
 ): Promise<
 	Record<string, { targetName: string; targetCategoryId: string | null }>
 > {
-	const userId = await getUserId();
+	const viewerUserId = await getUserId();
+	const dataOwnerUserId = await getFinancialDataOwnerId(viewerUserId);
 	const keys = [
 		...new Set(descriptions.map(normalizeStatementKey).filter(Boolean)),
 	];
@@ -34,7 +37,7 @@ export async function fetchReconciliationAliases(
 		.from(reconciliationAliases)
 		.where(
 			and(
-				eq(reconciliationAliases.userId, userId),
+				eq(reconciliationAliases.userId, dataOwnerUserId),
 				inArray(reconciliationAliases.statementKey, keys),
 			),
 		);
@@ -67,7 +70,8 @@ export async function saveReconciliationAliasAction(
 	input: z.infer<typeof saveAliasSchema>,
 ): Promise<ActionResult> {
 	try {
-		const userId = await getUserId();
+		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = saveAliasSchema.parse(input);
 		const statementKey = normalizeStatementKey(data.statementDescription);
 
@@ -80,7 +84,7 @@ export async function saveReconciliationAliasAction(
 				columns: { id: true },
 				where: and(
 					eq(categories.id, data.targetCategoryId),
-					eq(categories.userId, userId),
+					eq(categories.userId, dataOwnerUserId),
 				),
 			});
 
@@ -92,7 +96,7 @@ export async function saveReconciliationAliasAction(
 		await db
 			.insert(reconciliationAliases)
 			.values({
-				userId,
+				userId: dataOwnerUserId,
 				statementKey,
 				targetName: data.targetName.trim(),
 				targetCategoryId: data.targetCategoryId ?? null,

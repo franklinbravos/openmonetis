@@ -83,14 +83,19 @@ import type {
 import {
 	applyImportAiPatchesToRows,
 	buildImportAiAnalysisPayload,
-	buildImportAiAnalysisStats,
+	buildImportAiBatchJobs,
 	buildImportAiPatchesFromResults,
-	chunkImportAiRows,
+	buildImportAiRowEditSnapshots,
+	IMPORT_AI_PARALLEL_BATCH_LIMIT,
+	type ImportAiBatchJob,
 	type ImportAiRowResult,
+	mergeImportAiAnalysisStats,
+	partitionImportAiRows,
 } from "@/features/transactions/lib/import-ai-analysis";
 import {
 	applyImportBatchDraftToRows,
 	buildImportBatchDraft,
+	buildImportReviewRowKey,
 	extractImportBatchDraftGlobals,
 	type ImportBatchDraftData,
 } from "@/features/transactions/lib/import-batch-draft";
@@ -285,6 +290,7 @@ export function ImportPage({
 		categoriesSuggested: number;
 		duplicatesFound: number;
 		rowsAnalyzed: number;
+		skippedByAlgorithm?: number;
 	} | null>(null);
 	const [aiAnalysisError, setAiAnalysisError] = useState<string | null>(null);
 	const [aiAnalysisErrorLog, setAiAnalysisErrorLog] = useState<string | null>(
@@ -665,6 +671,16 @@ export function ImportPage({
 				categoryCompatibility,
 			});
 
+			const partitioned = partitionImportAiRows(payload.rows);
+			const batchJobs = buildImportAiBatchJobs(partitioned);
+			const rowEditSnapshots = buildImportAiRowEditSnapshots(reviewRows);
+
+			if (batchJobs.length === 0) {
+				setAiAnalysisStatus("skipped");
+				setAiAnalysisProgress(null);
+				return;
+			}
+
 			try {
 				if (runId !== aiAnalysisRunIdRef.current) return;
 
@@ -672,7 +688,9 @@ export function ImportPage({
 					phase: "preparing",
 					message: "Carregando modelo, credenciais e candidatos a duplicata…",
 					startedAt,
-					rowCount: payload.rows.length,
+					rowCount:
+						partitioned.categoryRows.length + partitioned.duplicateRows.length,
+					skippedByAlgorithm: partitioned.skippedCount,
 				});
 
 				const prepared = await prepareImportAiAnalysisAction(payload);
@@ -694,77 +712,150 @@ export function ImportPage({
 					return;
 				}
 
-				const rowBatches = chunkImportAiRows(payload.rows);
-				const aiResults: ImportAiRowResult[] = [];
+				let cumulativeStats = {
+					categoriesSuggested: 0,
+					duplicatesFound: 0,
+					rowsAnalyzed: 0,
+				};
 
-				for (const [batchIndex, batchRows] of rowBatches.entries()) {
-					if (runId !== aiAnalysisRunIdRef.current) return;
+				const applyBatchResults = (aiResults: ImportAiRowResult[]) => {
+					const patches = buildImportAiPatchesFromResults({
+						rows: payload.rows,
+						categoryCompatibility: payload.categoryCompatibility,
+						aiResults,
+						existingSnapshots: prepared.data.existingSnapshots,
+					});
+
+					setRows((previousRows) =>
+						applyImportAiPatchesToRows(previousRows, patches, {
+							rowEditSnapshots,
+						}),
+					);
+
+					cumulativeStats = mergeImportAiAnalysisStats(
+						cumulativeStats,
+						patches,
+						aiResults.length,
+					);
+					setAiAnalysisSummary({
+						...cumulativeStats,
+						skippedByAlgorithm: prepared.data.skippedRowCount,
+					});
+				};
+
+				const processBatchJob = async (job: ImportAiBatchJob) => {
+					if (runId !== aiAnalysisRunIdRef.current) {
+						return null;
+					}
 
 					setAiAnalysisProgress({
-						phase: "analyzing",
-						message: `Analisando lote ${batchIndex + 1} de ${rowBatches.length} com ${prepared.data.modelLabel}…`,
-						currentBatch: batchIndex + 1,
-						totalBatches: rowBatches.length,
+						phase:
+							job.analysisMode === "category"
+								? "categorizing"
+								: "checking_duplicates",
+						message:
+							job.analysisMode === "category"
+								? `Sugerindo categorias · lote ${job.phaseBatchIndex + 1} de ${job.phaseTotalBatches}`
+								: `Verificando duplicatas ambíguas · lote ${job.phaseBatchIndex + 1} de ${job.phaseTotalBatches}`,
+						currentBatch: job.globalBatchIndex + 1,
+						totalBatches: job.globalTotalBatches,
 						modelLabel: prepared.data.modelLabel,
-						rowsAnalyzed: aiResults.length,
-						rowCount: prepared.data.rowCount,
+						rowsAnalyzed: cumulativeStats.rowsAnalyzed,
+						rowCount:
+							partitioned.categoryRows.length +
+							partitioned.duplicateRows.length,
 						candidateCount: prepared.data.candidateCount,
+						categoriesApplied: cumulativeStats.categoriesSuggested,
 						startedAt,
+						skippedByAlgorithm: prepared.data.skippedRowCount,
 					});
 
 					const batchResult = await analyzeImportAiBatchAction({
 						...payload,
-						rows: batchRows,
-						batchIndex,
-						totalBatches: rowBatches.length,
+						rows: job.rows,
+						analysisMode: job.analysisMode,
+						batchIndex: job.phaseBatchIndex,
+						totalBatches: job.phaseTotalBatches,
+						preparedModelId: prepared.data.modelId,
 						existingCandidates: prepared.data.existingCandidates,
 					});
 
-					if (runId !== aiAnalysisRunIdRef.current) return;
-
-					if (!batchResult.success) {
-						setAiAnalysisError(batchResult.error);
-						setAiAnalysisErrorLog(batchResult.errorLog);
-						setAiAnalysisStatus("error");
-						setAiAnalysisProgress(null);
-						toast.warning(batchResult.error);
-						return;
+					if (runId !== aiAnalysisRunIdRef.current) {
+						return null;
 					}
 
-					aiResults.push(...batchResult.data.rows);
+					if (!batchResult.success) {
+						throw batchResult;
+					}
+
+					return batchResult.data.rows;
+				};
+
+				const categoryJobs = batchJobs.filter(
+					(job) => job.analysisMode === "category",
+				);
+				const duplicateJobs = batchJobs.filter(
+					(job) => job.analysisMode === "duplicate",
+				);
+
+				for (
+					let index = 0;
+					index < categoryJobs.length;
+					index += IMPORT_AI_PARALLEL_BATCH_LIMIT
+				) {
+					const slice = categoryJobs.slice(
+						index,
+						index + IMPORT_AI_PARALLEL_BATCH_LIMIT,
+					);
+					const results = await Promise.all(slice.map(processBatchJob));
+					for (const batchRows of results) {
+						if (!batchRows || batchRows.length === 0) continue;
+						applyBatchResults(batchRows);
+					}
+				}
+
+				for (
+					let index = 0;
+					index < duplicateJobs.length;
+					index += IMPORT_AI_PARALLEL_BATCH_LIMIT
+				) {
+					const slice = duplicateJobs.slice(
+						index,
+						index + IMPORT_AI_PARALLEL_BATCH_LIMIT,
+					);
+					const results = await Promise.all(slice.map(processBatchJob));
+					for (const batchRows of results) {
+						if (!batchRows || batchRows.length === 0) continue;
+						applyBatchResults(batchRows);
+					}
 				}
 
 				if (runId !== aiAnalysisRunIdRef.current) return;
 
-				setAiAnalysisProgress({
-					phase: "applying",
-					message: "Aplicando sugestões de duplicatas e categorias…",
-					modelLabel: prepared.data.modelLabel,
-					rowsAnalyzed: aiResults.length,
-					rowCount: prepared.data.rowCount,
-					candidateCount: prepared.data.candidateCount,
-					totalBatches: rowBatches.length,
-					currentBatch: rowBatches.length,
-					startedAt,
-				});
-
-				const patches = buildImportAiPatchesFromResults({
-					rows: payload.rows,
-					categoryCompatibility: payload.categoryCompatibility,
-					aiResults,
-					existingSnapshots: prepared.data.existingSnapshots,
-				});
-
-				setRows((previousRows) =>
-					applyImportAiPatchesToRows(previousRows, patches),
-				);
-				setAiAnalysisSummary(
-					buildImportAiAnalysisStats(patches, aiResults.length),
-				);
 				setAiAnalysisStatus("done");
 				setAiAnalysisProgress(null);
 			} catch (error) {
 				if (runId !== aiAnalysisRunIdRef.current) return;
+
+				if (
+					typeof error === "object" &&
+					error &&
+					"success" in error &&
+					error.success === false &&
+					"error" in error
+				) {
+					const batchError = error as {
+						error: string;
+						errorLog?: string;
+					};
+					setAiAnalysisError(batchError.error);
+					setAiAnalysisErrorLog(batchError.errorLog ?? null);
+					setAiAnalysisStatus("error");
+					setAiAnalysisProgress(null);
+					toast.warning(batchError.error);
+					return;
+				}
+
 				const message = "Não foi possível concluir a análise com IA.";
 				setAiAnalysisError(message);
 				setAiAnalysisErrorLog(
@@ -1033,15 +1124,33 @@ export function ImportPage({
 					};
 				});
 
+				const draftData = options?.draftData ?? null;
+				const draftByKey = draftData
+					? new Map(draftData.rows.map((row) => [row.key, row]))
+					: null;
+
 				const duplicateStates = resolveImportDuplicateMatches(
-					rowInputs.map((row) => ({
-						date: row.date,
-						amount: row.amount,
-						description: row.description,
-						transactionType: row.transactionType,
-						installmentImport: row.installmentImport,
-						externalId: row.externalId,
-					})),
+					rowInputs.map((row) => {
+						const draftRow = draftByKey?.get(
+							buildImportReviewRowKey({
+								externalId: row.externalId,
+								date: row.date,
+								amount: row.amount,
+								description: row.description,
+							}),
+						);
+
+						return {
+							date: row.date,
+							amount: row.amount,
+							description: row.description,
+							transactionType: row.transactionType,
+							installmentImport: row.installmentImport,
+							externalId: row.externalId,
+							linked: draftRow?.linked,
+							linkedTransactionId: draftRow?.linkedTransactionId,
+						};
+					}),
 					{
 						candidates: semanticCandidates,
 						fitIdDuplicateIds: duplicates,
@@ -1135,6 +1244,7 @@ export function ImportPage({
 						selected: isDuplicate || isLinkSuggestion ? false : true,
 						duplicateValidation,
 						linked: false,
+						linkedTransactionId: null,
 						payerId: resolvedPayerId,
 						kind: transferGuess?.kind
 							? transferGuess.kind
@@ -1150,7 +1260,6 @@ export function ImportPage({
 					};
 				});
 
-				const draftData = options?.draftData ?? null;
 				const rowsWithDraft = draftData
 					? applyImportBatchDraftToRows(builtRows, draftData)
 					: builtRows;
@@ -1309,6 +1418,8 @@ export function ImportPage({
 					transactionType: row.transactionType,
 					installmentImport: row.installmentImport,
 					externalId: row.externalId,
+					linked: row.linked,
+					linkedTransactionId: row.linkedTransactionId,
 				})),
 				{
 					candidates: semanticCandidates,
@@ -1322,7 +1433,9 @@ export function ImportPage({
 
 			setRows((previousRows) =>
 				previousRows.map((row, index) => {
-					if (row.linked || row.reimported) return row;
+					if (row.linked || row.reimported || row.linkedTransactionId) {
+						return row;
+					}
 
 					const duplicateState = duplicateStates[index];
 					if (!duplicateState) return row;
@@ -2204,6 +2317,7 @@ export function ImportPage({
 							? {
 									...currentRow,
 									linked: true,
+									linkedTransactionId: validation.existingTransactionId,
 									selected: false,
 									payerId: resolvedPayerId,
 									duplicateValidation: null,

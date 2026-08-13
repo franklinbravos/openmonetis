@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { categories } from "@/db/schema";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import { CATEGORY_COLORS } from "@/shared/utils/category-colors";
@@ -100,7 +101,8 @@ export async function fetchCategoryHistory(
 	);
 
 	// Fetch all categories for the selector
-	const allCategories = await fetchAllCategories(userId);
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+	const allCategories = await fetchAllCategories(dataOwnerUserId);
 
 	const adminPayerId = await getAdminPayerId(userId);
 
@@ -116,7 +118,7 @@ export async function fetchCategoryHistory(
 	// Fetch monthly data for ALL categories with transactions
 	const monthlyDataQuery = (
 		await callRpc<CategoryHistoryRpcRow>("get_category_history", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_admin_payer_id: adminPayerId,
 			p_periods: periods,
 		})

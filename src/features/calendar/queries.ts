@@ -1,4 +1,4 @@
-import { and, eq, gte, lte, ne, or, sql } from "drizzle-orm";
+import { and, eq, gte, lte, ne, or } from "drizzle-orm";
 import { cards, transactions } from "@/db/schema";
 import {
 	buildOptionSets,
@@ -10,7 +10,7 @@ import {
 	fetchTransactionFilterSources,
 } from "@/features/transactions/queries";
 import { db } from "@/shared/lib/db";
-import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import type { CalendarData, CalendarEvent } from "@/shared/lib/types/calendar";
 import { formatDateKey } from "@/shared/utils/calendar";
 import { parsePeriod } from "@/shared/utils/period";
@@ -46,13 +46,12 @@ export const fetchCalendarData = async ({
 	const rangeEnd = new Date(Date.UTC(year, monthIndex + 1, 0));
 	const rangeStartKey = formatDateKey(rangeStart);
 	const rangeEndKey = formatDateKey(rangeEnd);
-	const adminPayerId = await getAdminPayerId(userId);
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 
 	const [transactionRows, cardRows, filterSources] = await Promise.all([
 		db.query.transactions.findMany({
 			where: and(
-				eq(transactions.userId, userId),
-				adminPayerId ? eq(transactions.payerId, adminPayerId) : sql`false`,
+				eq(transactions.userId, dataOwnerUserId),
 				ne(transactions.transactionType, TRANSACTION_TYPE_TRANSFERENCIA),
 				or(
 					// Lançamentos cuja data de compra esteja no período do calendário
@@ -81,7 +80,7 @@ export const fetchCalendarData = async ({
 			},
 		}),
 		db.query.cards.findMany({
-			where: eq(cards.userId, userId),
+			where: eq(cards.userId, dataOwnerUserId),
 		}),
 		fetchTransactionFilterSources(userId),
 	]);

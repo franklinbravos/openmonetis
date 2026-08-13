@@ -23,6 +23,8 @@ import {
 import { revalidateForEntity } from "@/shared/lib/actions/helpers";
 import { db } from "@/shared/lib/db";
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
+import { fetchPayersWithAccess } from "@/shared/lib/payers/access";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { noteSchema, uuidSchema } from "@/shared/lib/schemas/common";
 import { callRpcOne } from "@/shared/lib/supabase/rpc";
 import { addMonthsToDate, parseLocalDateString } from "@/shared/utils/date";
@@ -45,12 +47,12 @@ export async function fetchOwnedPayerIds(
 		return new Set();
 	}
 
-	const rows = await db
-		.select({ id: payers.id })
-		.from(payers)
-		.where(and(eq(payers.userId, userId), inArray(payers.id, ids)));
+	const payersWithAccess = await fetchPayersWithAccess(userId);
+	const editablePayerIds = new Set(
+		payersWithAccess.filter((payer) => payer.canEdit).map((payer) => payer.id),
+	);
 
-	return new Set(rows.map((row) => row.id));
+	return new Set(ids.filter((id) => editablePayerIds.has(id)));
 }
 
 export async function fetchOwnedCategoryIds(
@@ -62,10 +64,14 @@ export async function fetchOwnedCategoryIds(
 		return new Set();
 	}
 
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+
 	const rows = await db
 		.select({ id: categories.id })
 		.from(categories)
-		.where(and(eq(categories.userId, userId), inArray(categories.id, ids)));
+		.where(
+			and(eq(categories.userId, dataOwnerUserId), inArray(categories.id, ids)),
+		);
 
 	return new Set(rows.map((row) => row.id));
 }
@@ -76,10 +82,12 @@ export async function validateContaOwnership(
 ): Promise<boolean> {
 	if (!accountId) return true;
 
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+
 	const conta = await db.query.financialAccounts.findFirst({
 		where: and(
 			eq(financialAccounts.id, accountId),
-			eq(financialAccounts.userId, userId),
+			eq(financialAccounts.userId, dataOwnerUserId),
 		),
 	});
 
@@ -95,12 +103,14 @@ export async function fetchOwnedAccountIds(
 		return new Set();
 	}
 
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+
 	const rows = await db
 		.select({ id: financialAccounts.id })
 		.from(financialAccounts)
 		.where(
 			and(
-				eq(financialAccounts.userId, userId),
+				eq(financialAccounts.userId, dataOwnerUserId),
 				inArray(financialAccounts.id, ids),
 			),
 		);
@@ -114,8 +124,10 @@ export async function validateCartaoOwnership(
 ): Promise<boolean> {
 	if (!cardId) return true;
 
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+
 	const cartao = await db.query.cards.findFirst({
-		where: and(eq(cards.id, cardId), eq(cards.userId, userId)),
+		where: and(eq(cards.id, cardId), eq(cards.userId, dataOwnerUserId)),
 	});
 
 	return !!cartao;
@@ -130,12 +142,20 @@ export async function fetchOwnedCardIds(
 		return new Set();
 	}
 
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+
 	const rows = await db
 		.select({ id: cards.id })
 		.from(cards)
-		.where(and(eq(cards.userId, userId), inArray(cards.id, ids)));
+		.where(and(eq(cards.userId, dataOwnerUserId), inArray(cards.id, ids)));
 
 	return new Set(rows.map((row) => row.id));
+}
+
+export async function resolveTransactionOwnerUserId(
+	userId: string,
+): Promise<string> {
+	return getFinancialDataOwnerId(userId);
 }
 
 export async function validateAllOwnership(

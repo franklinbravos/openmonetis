@@ -31,6 +31,7 @@ import { resolveTransferAccountsPreview } from "@/shared/lib/transfers/utils";
 import { formatDate, formatDateGroupLabel } from "@/shared/utils/date";
 import { getConditionIcon, getPaymentMethodIcon } from "@/shared/utils/icons";
 import { cn } from "@/shared/utils/ui";
+import { getPayerDisplayName } from "../../lib/formatting-helpers";
 import type { TransactionItem } from "../types";
 import { TransactionActionsMenu } from "./transaction-actions-menu";
 import { TransactionSettlementButton } from "./transaction-settlement-button";
@@ -194,8 +195,7 @@ function TransactionMobileCard({
 	const isReceita = item.transactionType === "Receita";
 	const isTransfer = item.transactionType === "Transferência";
 	const isIncomingTransfer = isTransfer && Number(item.amount) > 0;
-	const payerLabel = item.pagadorName?.trim() || "Sem pessoa";
-	const payerDisplayName = payerLabel.split(/\s+/)[0] ?? payerLabel;
+	const payerDisplayName = getPayerDisplayName(item.pagadorName);
 	const paymentMethodLabel =
 		item.paymentMethod === "Transferência bancária"
 			? "Transf. bancária"

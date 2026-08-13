@@ -116,16 +116,23 @@ resolve_migration_db_url() {
 
 run_migrations() {
 	local db_url=""
+	local migration_count=""
+
 	db_url="$(resolve_migration_db_url)"
 
 	if [[ -n "$db_url" ]]; then
 		log "Aplicando migrations via connection string do .env..."
-		(cd "$PROJECT_DIR" && pnpm exec supabase db push --db-url "$db_url" --yes)
+		migration_count="$(find "$PROJECT_DIR/supabase/migrations" -maxdepth 1 -name '*.sql' 2>/dev/null | wc -l | tr -d ' ')"
+		if (cd "$PROJECT_DIR" && pnpm exec supabase db push --db-url "$db_url" --yes); then
+			log "Migrations Supabase OK (${migration_count} arquivos em supabase/migrations/)."
+		fi
 		return
 	fi
 
 	log "Aplicando migrations via Supabase CLI (projeto linkado)..."
 	if (cd "$PROJECT_DIR" && pnpm exec supabase db push --yes); then
+		migration_count="$(find "$PROJECT_DIR/supabase/migrations" -maxdepth 1 -name '*.sql' 2>/dev/null | wc -l | tr -d ' ')"
+		log "Migrations Supabase OK (${migration_count} arquivos em supabase/migrations/)."
 		return
 	fi
 

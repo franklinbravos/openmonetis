@@ -10,6 +10,7 @@ import {
 import { getUserId } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
 import { toNameKey } from "@/shared/lib/logo";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 
 /**
  * Salva ou atualiza o domínio Logo.dev preferido para um estabelecimento.
@@ -20,11 +21,12 @@ export async function saveEstablishmentLogoAction(
 ): Promise<ActionResult> {
 	try {
 		const userId = await getUserId();
+		const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 		const nameKey = toNameKey(name);
 
 		await db
 			.insert(establishmentLogos)
-			.values({ userId, nameKey, domain })
+			.values({ userId: dataOwnerUserId, nameKey, domain })
 			.onConflictDoUpdate({
 				target: [establishmentLogos.userId, establishmentLogos.nameKey],
 				set: { domain, updatedAt: new Date() },
@@ -45,13 +47,14 @@ export async function removeEstablishmentLogoAction(
 ): Promise<ActionResult> {
 	try {
 		const userId = await getUserId();
+		const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 		const nameKey = toNameKey(name);
 
 		await db
 			.delete(establishmentLogos)
 			.where(
 				and(
-					eq(establishmentLogos.userId, userId),
+					eq(establishmentLogos.userId, dataOwnerUserId),
 					eq(establishmentLogos.nameKey, nameKey),
 				),
 			);

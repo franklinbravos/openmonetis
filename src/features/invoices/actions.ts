@@ -22,6 +22,10 @@ import {
 	type InvoicePaymentStatus,
 	PERIOD_FORMAT_REGEX,
 } from "@/shared/lib/invoices";
+import {
+	assertFinancialEditAccess,
+	FinancialAccessError,
+} from "@/shared/lib/payers/financial-access";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import {
 	formatCurrency,
@@ -87,13 +91,17 @@ export async function updateInvoicePaymentStatusAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = updateInvoicePaymentStatusSchema.parse(input);
 		const adminPayerId = await getAdminPayerId(user.id);
 
 		await db.transaction(async (tx: typeof db) => {
 			const card = await tx.query.cards.findFirst({
 				columns: { id: true, accountId: true, name: true },
-				where: and(eq(cards.id, data.cardId), eq(cards.userId, user.id)),
+				where: and(
+					eq(cards.id, data.cardId),
+					eq(cards.userId, dataOwnerUserId),
+				),
 			});
 
 			if (!card) {
@@ -101,7 +109,7 @@ export async function updateInvoicePaymentStatusAction(
 			}
 
 			await upsertInvoicePaymentStatus(tx, {
-				userId: user.id,
+				userId: dataOwnerUserId,
 				cardId: data.cardId,
 				period: data.period,
 				paymentStatus: data.status,
@@ -114,7 +122,7 @@ export async function updateInvoicePaymentStatusAction(
 				.set({ isSettled: shouldMarkAsPaid })
 				.where(
 					and(
-						eq(transactions.userId, user.id),
+						eq(transactions.userId, dataOwnerUserId),
 						eq(transactions.cardId, card.id),
 						eq(transactions.period, data.period),
 					),
@@ -131,7 +139,7 @@ export async function updateInvoicePaymentStatusAction(
 							.from(transactions)
 							.where(
 								and(
-									eq(transactions.userId, user.id),
+									eq(transactions.userId, dataOwnerUserId),
 									eq(transactions.cardId, card.id),
 									eq(transactions.period, data.period),
 									eq(transactions.payerId, adminPayerId),
@@ -155,7 +163,7 @@ export async function updateInvoicePaymentStatusAction(
 						columns: { id: true },
 						where: and(
 							eq(financialAccounts.id, paymentAccountId),
-							eq(financialAccounts.userId, user.id),
+							eq(financialAccounts.userId, dataOwnerUserId),
 						),
 					});
 
@@ -166,7 +174,7 @@ export async function updateInvoicePaymentStatusAction(
 					const paymentCategory = await tx.query.categories.findFirst({
 						columns: { id: true },
 						where: and(
-							eq(categories.userId, user.id),
+							eq(categories.userId, dataOwnerUserId),
 							eq(categories.name, "Pagamentos"),
 						),
 					});
@@ -186,7 +194,7 @@ export async function updateInvoicePaymentStatusAction(
 						transactionType: "Despesa" as const,
 						period: data.period,
 						isSettled: true,
-						userId: user.id,
+						userId: dataOwnerUserId,
 						accountId: paymentAccountId,
 						categoryId: paymentCategory?.id ?? null,
 						payerId: adminPayerId,
@@ -195,7 +203,7 @@ export async function updateInvoicePaymentStatusAction(
 					const existingPayment = await tx.query.transactions.findFirst({
 						columns: { id: true },
 						where: and(
-							eq(transactions.userId, user.id),
+							eq(transactions.userId, dataOwnerUserId),
 							eq(transactions.note, invoiceNote),
 						),
 					});
@@ -214,7 +222,7 @@ export async function updateInvoicePaymentStatusAction(
 					.delete(transactions)
 					.where(
 						and(
-							eq(transactions.userId, user.id),
+							eq(transactions.userId, dataOwnerUserId),
 							eq(transactions.note, invoiceNote),
 						),
 					);
@@ -225,6 +233,10 @@ export async function updateInvoicePaymentStatusAction(
 
 		return { success: true, message: successMessageByStatus[data.status] };
 	} catch (error) {
+		if (error instanceof FinancialAccessError) {
+			return { success: false, error: error.message };
+		}
+
 		if (error instanceof z.ZodError) {
 			return {
 				success: false,
@@ -258,12 +270,16 @@ export async function updatePaymentDateAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = updatePaymentDateSchema.parse(input);
 
 		await db.transaction(async (tx: typeof db) => {
 			const card = await tx.query.cards.findFirst({
 				columns: { id: true },
-				where: and(eq(cards.id, data.cardId), eq(cards.userId, user.id)),
+				where: and(
+					eq(cards.id, data.cardId),
+					eq(cards.userId, dataOwnerUserId),
+				),
 			});
 
 			if (!card) {
@@ -275,7 +291,7 @@ export async function updatePaymentDateAction(
 			const existingPayment = await tx.query.transactions.findFirst({
 				columns: { id: true },
 				where: and(
-					eq(transactions.userId, user.id),
+					eq(transactions.userId, dataOwnerUserId),
 					eq(transactions.note, invoiceNote),
 				),
 			});
@@ -296,6 +312,10 @@ export async function updatePaymentDateAction(
 
 		return { success: true, message: "Data de pagamento atualizada." };
 	} catch (error) {
+		if (error instanceof FinancialAccessError) {
+			return { success: false, error: error.message };
+		}
+
 		if (error instanceof z.ZodError) {
 			return {
 				success: false,
@@ -328,6 +348,7 @@ export async function adjustInvoiceAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = adjustInvoiceSchema.parse(input);
 		const adminPayerId = await getAdminPayerId(user.id);
 
@@ -336,7 +357,10 @@ export async function adjustInvoiceAction(
 		await db.transaction(async (tx: typeof db) => {
 			const card = await tx.query.cards.findFirst({
 				columns: { id: true },
-				where: and(eq(cards.id, data.cardId), eq(cards.userId, user.id)),
+				where: and(
+					eq(cards.id, data.cardId),
+					eq(cards.userId, dataOwnerUserId),
+				),
 			});
 
 			if (!card) {
@@ -346,7 +370,7 @@ export async function adjustInvoiceAction(
 			const existing = await tx.query.transactions.findFirst({
 				columns: { id: true, amount: true },
 				where: and(
-					eq(transactions.userId, user.id),
+					eq(transactions.userId, dataOwnerUserId),
 					eq(transactions.cardId, data.cardId),
 					eq(transactions.period, data.period),
 					eq(transactions.name, INVOICE_ADJUSTMENT_NAME),
@@ -375,7 +399,7 @@ export async function adjustInvoiceAction(
 			const category = await tx.query.categories.findFirst({
 				columns: { id: true },
 				where: and(
-					eq(categories.userId, user.id),
+					eq(categories.userId, dataOwnerUserId),
 					eq(categories.name, categoryName),
 				),
 			});
@@ -395,7 +419,7 @@ export async function adjustInvoiceAction(
 					? ("Despesa" as const)
 					: ("Receita" as const),
 				period: data.period,
-				userId: user.id,
+				userId: dataOwnerUserId,
 				cardId: data.cardId,
 				accountId: null,
 				categoryId: category?.id ?? null,
@@ -416,6 +440,10 @@ export async function adjustInvoiceAction(
 
 		return { success: true, message };
 	} catch (error) {
+		if (error instanceof FinancialAccessError) {
+			return { success: false, error: error.message };
+		}
+
 		if (error instanceof z.ZodError) {
 			return {
 				success: false,

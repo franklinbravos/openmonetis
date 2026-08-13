@@ -274,10 +274,6 @@ export function DashboardGridEditable({
 										{widget.component({
 											data,
 											period,
-											adminPayerSlug:
-												quickActionOptions.payerOptions.find(
-													(p) => p.value === quickActionOptions.defaultPayerId,
-												)?.slug ?? null,
 											widgetPreferences: {
 												order: widgetOrder,
 												hidden: hiddenWidgets,

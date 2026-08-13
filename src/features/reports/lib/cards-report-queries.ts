@@ -1,6 +1,7 @@
 import { and, eq, gte, ilike, inArray, lte, not } from "drizzle-orm";
 import { cards, categories, invoices, transactions } from "@/db/schema";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import { formatDateOnly } from "@/shared/utils/date";
@@ -111,6 +112,7 @@ export async function fetchCartoesReportData(
 	currentPeriod: string,
 	selectedCartaoId?: string | null,
 ): Promise<CartoesReportData> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const previousPeriod = getPreviousPeriod(currentPeriod);
 
 	// Fetch all active cards (not inactive)
@@ -125,7 +127,10 @@ export async function fetchCartoesReportData(
 		})
 		.from(cards)
 		.where(
-			and(eq(cards.userId, userId), not(ilike(cards.status, "inativo"))),
+			and(
+				eq(cards.userId, dataOwnerUserId),
+				not(ilike(cards.status, "inativo")),
+			),
 		)) as CardRow[];
 
 	if (allCards.length === 0) {
@@ -149,14 +154,14 @@ export async function fetchCartoesReportData(
 	] = adminPayerId
 		? await Promise.all([
 				callRpc<CardUsageRow>("get_card_usage_by_period", {
-					p_user_id: userId,
+					p_user_id: dataOwnerUserId,
 					p_admin_payer_id: adminPayerId,
 					p_period: currentPeriod,
 					p_card_ids: cardIds,
 					p_apply_recurring_gate: true,
 				}),
 				callRpc<CardUsageRow>("get_card_usage_by_period", {
-					p_user_id: userId,
+					p_user_id: dataOwnerUserId,
 					p_admin_payer_id: adminPayerId,
 					p_period: previousPeriod,
 					p_card_ids: cardIds,
@@ -236,7 +241,7 @@ export async function fetchCartoesReportData(
 		const cardSummary = cardSummaries.find((c) => c.id === targetCardId);
 		if (cardSummary) {
 			selectedCard = await fetchCardDetail(
-				userId,
+				dataOwnerUserId,
 				targetCardId,
 				cardSummary,
 				currentPeriod,
@@ -255,7 +260,7 @@ export async function fetchCartoesReportData(
 }
 
 async function fetchCardDetail(
-	userId: string,
+	dataOwnerUserId: string,
 	cardId: string,
 	cardSummary: CardSummary,
 	currentPeriod: string,
@@ -270,14 +275,14 @@ async function fetchCardDetail(
 		adminPayerId
 			? await Promise.all([
 					callRpc<MonthlyUsageRow>("get_card_monthly_usage", {
-						p_user_id: userId,
+						p_user_id: dataOwnerUserId,
 						p_admin_payer_id: adminPayerId,
 						p_card_id: cardId,
 						p_start_period: startPeriod,
 						p_end_period: currentPeriod,
 					}),
 					callRpc<CategoryAmountRow>("get_card_category_breakdown", {
-						p_user_id: userId,
+						p_user_id: dataOwnerUserId,
 						p_admin_payer_id: adminPayerId,
 						p_card_id: cardId,
 						p_period: currentPeriod,
@@ -349,7 +354,7 @@ async function fetchCardDetail(
 				.from(transactions)
 				.where(
 					and(
-						eq(transactions.userId, userId),
+						eq(transactions.userId, dataOwnerUserId),
 						eq(transactions.cardId, cardId),
 						eq(transactions.period, currentPeriod),
 						eq(transactions.payerId, adminPayerId),
@@ -387,7 +392,7 @@ async function fetchCardDetail(
 		.from(invoices)
 		.where(
 			and(
-				eq(invoices.userId, userId),
+				eq(invoices.userId, dataOwnerUserId),
 				eq(invoices.cardId, cardId),
 				gte(invoices.period, startPeriod),
 				lte(invoices.period, currentPeriod),

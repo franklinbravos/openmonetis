@@ -24,6 +24,7 @@ import {
 	isRefundNote,
 } from "@/shared/lib/accounts/constants";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { TRANSFER_CATEGORY_NAME } from "@/shared/lib/transfers/constants";
 import {
@@ -553,7 +554,10 @@ export async function fetchDashboardCurrentPeriodOverview(
 	userId: string,
 	period: string,
 ): Promise<DashboardCurrentPeriodOverview> {
-	const adminPayerId = await getAdminPayerId(userId);
+	const [adminPayerId, dataOwnerUserId] = await Promise.all([
+		getAdminPayerId(userId),
+		getFinancialDataOwnerId(userId),
+	]);
 	if (!adminPayerId) {
 		return emptyOverview();
 	}
@@ -594,7 +598,7 @@ export async function fetchDashboardCurrentPeriodOverview(
 		.leftJoin(categories, eq(transactions.categoryId, categories.id))
 		.where(
 			and(
-				eq(transactions.userId, userId),
+				eq(transactions.userId, dataOwnerUserId),
 				eq(transactions.period, period),
 				eq(transactions.payerId, adminPayerId),
 				excludeTransactionsFromExcludedAccounts(),

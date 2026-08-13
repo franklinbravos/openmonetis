@@ -5,7 +5,7 @@ import { SupabaseAuthListener } from "@/shared/components/providers/supabase-aut
 import { ThemeProvider } from "@/shared/components/providers/theme-provider";
 import { Toaster } from "@/shared/components/ui/sonner";
 import "./globals.css";
-import { bricolage } from "@/public/fonts/font_index";
+import { inter, signatureFont } from "@/public/fonts/font_index";
 
 export const metadata: Metadata = {
 	title: {
@@ -25,7 +25,7 @@ export default function RootLayout({
 		<html
 			data-scroll-behavior="smooth"
 			lang="pt-BR"
-			className={`${bricolage.className}`}
+			className={`${inter.className} ${signatureFont.variable}`}
 			suppressHydrationWarning
 		>
 			<head>

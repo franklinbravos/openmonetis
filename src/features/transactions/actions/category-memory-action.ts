@@ -14,6 +14,8 @@ import {
 } from "@/features/transactions/lib/import-utils";
 import { getUserId } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 
 export type ImportDescriptionMemory = {
 	categoryId: string | null;
@@ -215,14 +217,15 @@ export async function fetchImportDescriptionMemory(
 	descriptions: string[],
 ): Promise<Record<string, ImportDescriptionMemory>> {
 	const userId = await getUserId();
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const keys = [
 		...new Set(descriptions.map(normalizeDescriptionKey).filter(Boolean)),
 	];
 	if (keys.length === 0) return {};
 
 	const [savedMemory, transactionMemory] = await Promise.all([
-		fetchSavedDescriptionMemory(userId, keys),
-		fetchTransactionDescriptionMemory(userId, keys),
+		fetchSavedDescriptionMemory(dataOwnerUserId, keys),
+		fetchTransactionDescriptionMemory(dataOwnerUserId, keys),
 	]);
 
 	const exactMemory = mergeDescriptionMemory(
@@ -237,8 +240,11 @@ export async function fetchImportDescriptionMemory(
 	}
 
 	const [savedPrefixMemory, transactionPrefixMemory] = await Promise.all([
-		fetchSavedPrefixDescriptionMemory(userId, keysMissingCategory),
-		fetchTransactionPrefixDescriptionMemory(userId, keysMissingCategory),
+		fetchSavedPrefixDescriptionMemory(dataOwnerUserId, keysMissingCategory),
+		fetchTransactionPrefixDescriptionMemory(
+			dataOwnerUserId,
+			keysMissingCategory,
+		),
 	]);
 
 	return mergeDescriptionMemory(
@@ -271,6 +277,7 @@ export async function saveCategoryMappings(
 	}[],
 ): Promise<void> {
 	const userId = await getUserId();
+	const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
 
 	const toUpsert = rows
 		.filter((row) => row.categoryId !== null)
@@ -285,7 +292,7 @@ export async function saveCategoryMappings(
 			if (sourceKey.length > 0) keys.add(sourceKey);
 
 			return [...keys].map((descriptionKey) => ({
-				userId,
+				userId: dataOwnerUserId,
 				descriptionKey,
 				categoryId: row.categoryId as string,
 				payerId: row.payerId ?? null,
@@ -313,7 +320,7 @@ export async function saveCategoryMappings(
 					.where(
 						and(
 							inArray(categories.id, [...referencedCategoryIds]),
-							eq(categories.userId, userId),
+							eq(categories.userId, dataOwnerUserId),
 						),
 					)
 			: Promise.resolve([]),
@@ -324,7 +331,7 @@ export async function saveCategoryMappings(
 					.where(
 						and(
 							inArray(payers.id, [...referencedPayerIds]),
-							eq(payers.userId, userId),
+							eq(payers.userId, dataOwnerUserId),
 						),
 					)
 			: Promise.resolve([]),

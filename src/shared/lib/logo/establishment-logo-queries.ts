@@ -2,6 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { establishmentLogos } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import { toNameKey } from "@/shared/lib/logo";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 
 /**
  * Busca o domínio salvo para um único estabelecimento.
@@ -10,10 +11,11 @@ export async function fetchEstablishmentLogoDomain(
 	userId: string,
 	name: string,
 ): Promise<string | null> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const nameKey = toNameKey(name);
 	const row = await db.query.establishmentLogos.findFirst({
 		where: and(
-			eq(establishmentLogos.userId, userId),
+			eq(establishmentLogos.userId, dataOwnerUserId),
 			eq(establishmentLogos.nameKey, nameKey),
 		),
 		columns: { domain: true },
@@ -29,12 +31,13 @@ export async function fetchEstablishmentLogoMap(
 	userId: string,
 	names: string[],
 ): Promise<Map<string, string>> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const nameKeys = [...new Set(names.map(toNameKey))];
 	if (nameKeys.length === 0) return new Map();
 
 	const rows = await db.query.establishmentLogos.findMany({
 		where: and(
-			eq(establishmentLogos.userId, userId),
+			eq(establishmentLogos.userId, dataOwnerUserId),
 			inArray(establishmentLogos.nameKey, nameKeys),
 		),
 		columns: { nameKey: true, domain: true },

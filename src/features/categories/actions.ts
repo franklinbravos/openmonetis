@@ -19,12 +19,14 @@ import {
 	revalidateForEntity,
 } from "@/shared/lib/actions/helpers";
 import { getUser } from "@/shared/lib/auth/server";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { CATEGORY_TYPES } from "@/shared/lib/categories/constants";
 import {
 	getCategoryDescendantIds,
 	isValidCategoryParent,
 } from "@/shared/lib/categories/tree";
 import { db } from "@/shared/lib/db";
+import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import { uuidSchema } from "@/shared/lib/schemas/common";
 import { normalizeIconInput } from "@/shared/utils/string";
 
@@ -133,8 +135,10 @@ export async function createCategoryAction(
 ): Promise<ActionResult<CreatedCategoryResult>> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = createCategorySchema.parse(input);
-		const userCategories = await fetchUserCategoriesForValidation(user.id);
+		const userCategories =
+			await fetchUserCategoriesForValidation(dataOwnerUserId);
 		const parentValidation = validateCategoryParent(
 			null,
 			data.parentId ?? null,
@@ -153,7 +157,7 @@ export async function createCategoryAction(
 				type: data.type,
 				icon: data.icon,
 				parentId: data.parentId ?? null,
-				userId: user.id,
+				userId: dataOwnerUserId,
 			})
 			.returning({
 				id: categories.id,
@@ -193,12 +197,16 @@ export async function updateCategoryAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = updateCategorySchema.parse(input);
 
 		// Buscar categoria antes de atualizar para verificar restrições
 		const categoria = await db.query.categories.findFirst({
 			columns: { id: true, name: true },
-			where: and(eq(categories.id, data.id), eq(categories.userId, user.id)),
+			where: and(
+				eq(categories.id, data.id),
+				eq(categories.userId, dataOwnerUserId),
+			),
 		});
 
 		if (!categoria) {
@@ -221,7 +229,8 @@ export async function updateCategoryAction(
 			};
 		}
 
-		const userCategories = await fetchUserCategoriesForValidation(user.id);
+		const userCategories =
+			await fetchUserCategoriesForValidation(dataOwnerUserId);
 		const parentValidation = validateCategoryParent(
 			data.id,
 			data.parentId ?? null,
@@ -241,7 +250,9 @@ export async function updateCategoryAction(
 				icon: data.icon,
 				parentId: data.parentId ?? null,
 			})
-			.where(and(eq(categories.id, data.id), eq(categories.userId, user.id)))
+			.where(
+				and(eq(categories.id, data.id), eq(categories.userId, dataOwnerUserId)),
+			)
 			.returning();
 
 		if (!updated) {
@@ -299,11 +310,15 @@ export async function fetchCategoryLinkedTransactionsAction(
 ): Promise<ActionResult<CategoryLinkedTransaction[]>> {
 	try {
 		const user = await getUser();
+		const dataOwnerUserId = await getFinancialDataOwnerId(user.id);
 		const data = deleteCategorySchema.parse({ id: categoryId });
 
 		const category = await db.query.categories.findFirst({
 			columns: { id: true },
-			where: and(eq(categories.id, data.id), eq(categories.userId, user.id)),
+			where: and(
+				eq(categories.id, data.id),
+				eq(categories.userId, dataOwnerUserId),
+			),
 		});
 
 		if (!category) {
@@ -311,7 +326,7 @@ export async function fetchCategoryLinkedTransactionsAction(
 		}
 
 		const linkedTransactions = await fetchCategoryLinkedTransactions(
-			user.id,
+			dataOwnerUserId,
 			data.id,
 		);
 
@@ -332,6 +347,7 @@ export async function migrateCategoryTransactionsAction(
 ): Promise<ActionResult<{ updatedCount: number }>> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = migrateCategoryTransactionsSchema.parse(input);
 
 		if (data.fromCategoryId === data.toCategoryId) {
@@ -354,7 +370,7 @@ export async function migrateCategoryTransactionsAction(
 		}
 
 		const filters = [
-			eq(transactions.userId, user.id),
+			eq(transactions.userId, dataOwnerUserId),
 			eq(transactions.categoryId, data.fromCategoryId),
 		];
 
@@ -372,7 +388,7 @@ export async function migrateCategoryTransactionsAction(
 			}
 
 			const validationError = await validateTargetCategoryForTransactions(
-				user.id,
+				dataOwnerUserId,
 				data.toCategoryId,
 				linkedRows.map((row) => row.transactionType),
 			);
@@ -409,7 +425,7 @@ export async function migrateCategoryTransactionsAction(
 		}
 
 		const validationError = await validateTargetCategoryForTransactions(
-			user.id,
+			dataOwnerUserId,
 			data.toCategoryId,
 			linkedRows.map((row) => row.transactionType),
 		);
@@ -440,13 +456,14 @@ export async function updateCategoryTransactionCategoryAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = updateCategoryTransactionCategorySchema.parse(input);
 
 		const transaction = await db.query.transactions.findFirst({
 			columns: { id: true, transactionType: true, categoryId: true },
 			where: and(
 				eq(transactions.id, data.transactionId),
-				eq(transactions.userId, user.id),
+				eq(transactions.userId, dataOwnerUserId),
 			),
 		});
 
@@ -455,7 +472,7 @@ export async function updateCategoryTransactionCategoryAction(
 		}
 
 		const validationError = await validateTargetCategoryForTransactions(
-			user.id,
+			dataOwnerUserId,
 			data.categoryId,
 			[transaction.transactionType],
 		);
@@ -469,7 +486,7 @@ export async function updateCategoryTransactionCategoryAction(
 			.where(
 				and(
 					eq(transactions.id, data.transactionId),
-					eq(transactions.userId, user.id),
+					eq(transactions.userId, dataOwnerUserId),
 				),
 			);
 
@@ -487,12 +504,16 @@ export async function deleteCategoryAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = deleteCategorySchema.parse(input);
 
 		// Buscar categoria antes de deletar para verificar restrições
 		const categoria = await db.query.categories.findFirst({
 			columns: { id: true, name: true },
-			where: and(eq(categories.id, data.id), eq(categories.userId, user.id)),
+			where: and(
+				eq(categories.id, data.id),
+				eq(categories.userId, dataOwnerUserId),
+			),
 		});
 
 		if (!categoria) {
@@ -518,7 +539,7 @@ export async function deleteCategoryAction(
 		const childCategory = await db.query.categories.findFirst({
 			columns: { id: true },
 			where: and(
-				eq(categories.userId, user.id),
+				eq(categories.userId, dataOwnerUserId),
 				eq(categories.parentId, data.id),
 			),
 		});
@@ -536,7 +557,7 @@ export async function deleteCategoryAction(
 			.set({ categoryId: null })
 			.where(
 				and(
-					eq(transactions.userId, user.id),
+					eq(transactions.userId, dataOwnerUserId),
 					eq(transactions.categoryId, data.id),
 				),
 			);
@@ -546,14 +567,16 @@ export async function deleteCategoryAction(
 			.set({ categoryId: null })
 			.where(
 				and(
-					eq(installmentAnticipations.userId, user.id),
+					eq(installmentAnticipations.userId, dataOwnerUserId),
 					eq(installmentAnticipations.categoryId, data.id),
 				),
 			);
 
 		const [deleted] = await db
 			.delete(categories)
-			.where(and(eq(categories.id, data.id), eq(categories.userId, user.id)))
+			.where(
+				and(eq(categories.id, data.id), eq(categories.userId, dataOwnerUserId)),
+			)
 			.returning({ id: categories.id });
 
 		if (!deleted) {
@@ -577,9 +600,11 @@ export async function reorderCategoriesAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = reorderCategoriesSchema.parse(input);
 		const categoryIds = data.categories.map((category) => category.id);
-		const userCategories = await fetchUserCategoriesForValidation(user.id);
+		const userCategories =
+			await fetchUserCategoriesForValidation(dataOwnerUserId);
 		const categoriesById = new Map(
 			userCategories.map((category) => [category.id, category]),
 		);
@@ -644,7 +669,7 @@ export async function reorderCategoriesAction(
 					.where(
 						and(
 							eq(categories.id, category.id),
-							eq(categories.userId, user.id),
+							eq(categories.userId, dataOwnerUserId),
 							eq(categories.type, data.type),
 						),
 					);

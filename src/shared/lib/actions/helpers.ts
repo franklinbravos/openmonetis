@@ -1,6 +1,7 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 import { ActionError } from "@/shared/lib/actions/action-error";
+import { FinancialAccessError } from "@/shared/lib/payers/financial-access";
 
 export type { ActionResult } from "@/shared/lib/types/actions";
 export { ActionError };
@@ -20,6 +21,10 @@ export function handleActionError(error: unknown): ActionResult {
 
 	// Erros de negócio carregam mensagens acionáveis que podem ir ao usuário.
 	if (error instanceof ActionError) {
+		return errorResult(error.message);
+	}
+
+	if (error instanceof FinancialAccessError) {
 		return errorResult(error.message);
 	}
 

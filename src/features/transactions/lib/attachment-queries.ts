@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { attachments, transactionAttachments, transactions } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import { getPayerAccess } from "@/shared/lib/payers/access";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { createPresignedGetUrl } from "@/shared/lib/storage/presign";
 
 export type TransactionAttachmentListItem = {
@@ -17,6 +18,8 @@ export async function fetchTransactionAttachments(
 	userId: string,
 	transactionId: string,
 ): Promise<TransactionAttachmentListItem[]> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+
 	const [transaction] = await db
 		.select({
 			id: transactions.id,
@@ -30,7 +33,7 @@ export async function fetchTransactionAttachments(
 		return [];
 	}
 
-	if (transaction.userId !== userId) {
+	if (transaction.userId !== dataOwnerUserId) {
 		if (!transaction.payerId) return [];
 		const access = await getPayerAccess(userId, transaction.payerId);
 		if (!access) return [];

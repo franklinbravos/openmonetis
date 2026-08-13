@@ -12,11 +12,16 @@ import {
 } from "@/features/transactions/actions/import-action";
 import {
 	buildImportAiAnalysisStats,
-	buildImportAiBatchPrompt,
+	buildImportAiBatchJobs,
+	buildImportAiCategoryBatchPrompt,
+	buildImportAiDuplicateBatchPrompt,
 	buildImportAiPatchesFromResults,
 	chunkImportAiRows,
+	chunkImportAiRowsAdaptive,
 	filterExistingCandidatesForBatch,
-	IMPORT_AI_SYSTEM_PROMPT,
+	IMPORT_AI_CATEGORY_SYSTEM_PROMPT,
+	IMPORT_AI_DUPLICATE_SYSTEM_PROMPT,
+	type ImportAiAnalysisMode,
 	type ImportAiAnalysisRowInput,
 	ImportAiBatchResponseSchema,
 	type ImportAiExistingCandidate,
@@ -24,6 +29,7 @@ import {
 	type ImportAiRowResult,
 	mapExistingSnapshotToAiCandidate,
 	parseImportAiBatchResponseText,
+	partitionImportAiRows,
 } from "@/features/transactions/lib/import-ai-analysis";
 import {
 	type ImportDuplicateSnapshot,
@@ -158,6 +164,12 @@ export type PrepareImportAiAnalysisResult =
 				existingSnapshots: (ImportDuplicateSnapshot & {
 					period?: string | null;
 				})[];
+				categoryRowCount: number;
+				duplicateRowCount: number;
+				skippedRowCount: number;
+				categoryBatchCount: number;
+				duplicateBatchCount: number;
+				totalBatchCount: number;
 			};
 	  }
 	| {
@@ -185,8 +197,10 @@ export type AnalyzeImportAiBatchResult =
 	  };
 
 const analyzeImportAiBatchInputSchema = analyzeImportInputSchema.extend({
+	analysisMode: z.enum(["category", "duplicate"]),
 	batchIndex: z.number().int().min(0),
 	totalBatches: z.number().int().min(1),
+	preparedModelId: z.string().trim().min(1),
 	existingCandidates: z.array(
 		z.object({
 			id: z.string().uuid(),
@@ -271,7 +285,10 @@ function compactExistingCandidates(
 
 async function resolveImportAiExecutionContext(
 	input: AnalyzeImportWithAiInput,
-	options?: { fetchCandidates?: boolean },
+	options?: {
+		fetchCandidates?: boolean;
+		preparedModelId?: string;
+	},
 ) {
 	const userId = await getUserId();
 	const { credentials, insightsDefaultModelId, storedSettings } =
@@ -298,11 +315,13 @@ async function resolveImportAiExecutionContext(
 		};
 	}
 
-	const modelId = resolveAiModelIdForCredentials(credentials, {
-		explicitModelId: input.modelId,
-		insightsDefaultModelId,
-		storedSettings,
-	});
+	const modelId =
+		options?.preparedModelId ??
+		resolveAiModelIdForCredentials(credentials, {
+			explicitModelId: input.modelId,
+			insightsDefaultModelId,
+			storedSettings,
+		});
 	const modelLabel = buildImportAiModelLabel(modelId, credentials);
 
 	const resolvedModel = resolveInsightsModel(modelId, credentials);
@@ -420,15 +439,33 @@ function buildImportAiFailureResult(
 
 async function generateImportAiBatchResult(input: {
 	model: LanguageModel;
-	promptPayload: Parameters<typeof buildImportAiBatchPrompt>[0];
+	analysisMode: ImportAiAnalysisMode;
+	promptPayload:
+		| Parameters<typeof buildImportAiCategoryBatchPrompt>[0]
+		| Parameters<typeof buildImportAiDuplicateBatchPrompt>[0];
 }) {
-	const prompt = buildImportAiBatchPrompt(input.promptPayload);
+	const systemPrompt =
+		input.analysisMode === "category"
+			? IMPORT_AI_CATEGORY_SYSTEM_PROMPT
+			: IMPORT_AI_DUPLICATE_SYSTEM_PROMPT;
+	const prompt =
+		input.analysisMode === "category"
+			? buildImportAiCategoryBatchPrompt(
+					input.promptPayload as Parameters<
+						typeof buildImportAiCategoryBatchPrompt
+					>[0],
+				)
+			: buildImportAiDuplicateBatchPrompt(
+					input.promptPayload as Parameters<
+						typeof buildImportAiDuplicateBatchPrompt
+					>[0],
+				);
 
 	try {
 		const result = await generateObject({
 			model: input.model,
 			schema: ImportAiBatchResponseSchema,
-			system: IMPORT_AI_SYSTEM_PROMPT,
+			system: systemPrompt,
 			prompt,
 			maxRetries: 1,
 		});
@@ -436,13 +473,13 @@ async function generateImportAiBatchResult(input: {
 		return ImportAiBatchResponseSchema.parse(result.object);
 	} catch (objectError) {
 		console.warn(
-			`generateObject falhou no lote ${input.promptPayload.batchIndex + 1}/${input.promptPayload.totalBatches}, tentando generateText:`,
+			`generateObject falhou no lote ${input.promptPayload.batchIndex + 1}/${input.promptPayload.totalBatches} (${input.analysisMode}), tentando generateText:`,
 			objectError,
 		);
 
 		const textResult = await generateText({
 			model: input.model,
-			system: `${IMPORT_AI_SYSTEM_PROMPT}
+			system: `${systemPrompt}
 
 Retorne APENAS um JSON válido, sem markdown, no formato {"rows":[...]}.`,
 			prompt,
@@ -477,13 +514,23 @@ export async function prepareImportAiAnalysisAction(
 
 		const { modelId, modelLabel, existingCandidates, existingSnapshots } =
 			resolved.context;
-		const batchCount = chunkImportAiRows(input.rows).length;
+		const partitioned = partitionImportAiRows(
+			input.rows as ImportAiAnalysisRowInput[],
+		);
+		const categoryBatches = chunkImportAiRowsAdaptive(partitioned.categoryRows);
+		const duplicateBatches = chunkImportAiRows(partitioned.duplicateRows);
+		const totalBatchCount = categoryBatches.length + duplicateBatches.length;
 
 		console.info("Preparando análise de importação com IA", {
 			modelId,
 			modelLabel,
 			rowCount: input.rows.length,
-			batchCount,
+			categoryRowCount: partitioned.categoryRows.length,
+			duplicateRowCount: partitioned.duplicateRows.length,
+			skippedRowCount: partitioned.skippedCount,
+			categoryBatchCount: categoryBatches.length,
+			duplicateBatchCount: duplicateBatches.length,
+			totalBatchCount,
 			candidateCount: existingCandidates.length,
 		});
 
@@ -493,11 +540,17 @@ export async function prepareImportAiAnalysisAction(
 			data: {
 				modelId,
 				modelLabel,
-				batchCount,
+				batchCount: totalBatchCount,
 				rowCount: input.rows.length,
 				candidateCount: existingCandidates.length,
 				existingCandidates,
 				existingSnapshots,
+				categoryRowCount: partitioned.categoryRows.length,
+				duplicateRowCount: partitioned.duplicateRows.length,
+				skippedRowCount: partitioned.skippedCount,
+				categoryBatchCount: categoryBatches.length,
+				duplicateBatchCount: duplicateBatches.length,
+				totalBatchCount,
 			},
 		};
 	} catch (error) {
@@ -515,6 +568,7 @@ export async function analyzeImportAiBatchAction(
 		const input = analyzeImportAiBatchInputSchema.parse(rawInput);
 		const resolved = await resolveImportAiExecutionContext(input, {
 			fetchCandidates: false,
+			preparedModelId: input.preparedModelId,
 		});
 		if (!resolved.success) {
 			if ("skipped" in resolved.result) {
@@ -534,7 +588,7 @@ export async function analyzeImportAiBatchAction(
 		} = resolved.context;
 		modelLabel = resolvedModelLabel;
 
-		if (input.modelId && input.modelId !== modelId) {
+		if (input.preparedModelId !== modelId) {
 			return buildImportAiFailureResult(
 				new Error("Modelo de IA alterado durante a análise. Tente novamente."),
 				{
@@ -547,27 +601,40 @@ export async function analyzeImportAiBatchAction(
 			);
 		}
 
-		const batchCandidates = filterExistingCandidatesForBatch(
-			input.rows as ImportAiAnalysisRowInput[],
-			input.existingCandidates,
-		);
+		const promptContext = {
+			isCreditCard: input.isCreditCard,
+			invoicePeriod: input.invoicePeriods[0] ?? null,
+			cardName: input.cardName,
+			accountName: input.accountName,
+		};
 
-		const validated = await generateImportAiBatchResult({
-			model: resolvedModel.model,
-			promptPayload: {
-				context: {
-					isCreditCard: input.isCreditCard,
-					invoicePeriod: input.invoicePeriods[0] ?? null,
-					cardName: input.cardName,
-					accountName: input.accountName,
-				},
-				categories: input.categories,
-				existingCandidates: batchCandidates,
-				rows: input.rows as ImportAiAnalysisRowInput[],
-				batchIndex: input.batchIndex,
-				totalBatches: input.totalBatches,
-			},
-		});
+		const validated =
+			input.analysisMode === "category"
+				? await generateImportAiBatchResult({
+						model: resolvedModel.model,
+						analysisMode: "category",
+						promptPayload: {
+							context: promptContext,
+							categories: input.categories,
+							rows: input.rows as ImportAiAnalysisRowInput[],
+							batchIndex: input.batchIndex,
+							totalBatches: input.totalBatches,
+						},
+					})
+				: await generateImportAiBatchResult({
+						model: resolvedModel.model,
+						analysisMode: "duplicate",
+						promptPayload: {
+							context: promptContext,
+							existingCandidates: filterExistingCandidatesForBatch(
+								input.rows as ImportAiAnalysisRowInput[],
+								input.existingCandidates,
+							),
+							rows: input.rows as ImportAiAnalysisRowInput[],
+							batchIndex: input.batchIndex,
+							totalBatches: input.totalBatches,
+						},
+					});
 
 		return {
 			success: true,
@@ -612,15 +679,20 @@ export async function analyzeImportWithAiAction(
 			return prepared;
 		}
 
-		const rowBatches = chunkImportAiRows(input.rows);
+		const partitioned = partitionImportAiRows(
+			input.rows as ImportAiAnalysisRowInput[],
+		);
+		const batchJobs = buildImportAiBatchJobs(partitioned);
 		const aiResults: ImportAiRowResult[] = [];
 
-		for (const [batchIndex, batchRows] of rowBatches.entries()) {
+		for (const job of batchJobs) {
 			const batchResult = await analyzeImportAiBatchAction({
 				...input,
-				rows: batchRows,
-				batchIndex,
-				totalBatches: rowBatches.length,
+				rows: job.rows,
+				analysisMode: job.analysisMode,
+				batchIndex: job.phaseBatchIndex,
+				totalBatches: job.phaseTotalBatches,
+				preparedModelId: prepared.data.modelId,
 				existingCandidates: prepared.data.existingCandidates,
 			});
 

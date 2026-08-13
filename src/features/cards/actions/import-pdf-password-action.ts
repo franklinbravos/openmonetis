@@ -16,6 +16,7 @@ import {
 	validateCardImportPdfPasswordInput,
 } from "@/shared/lib/cards/import-pdf-password";
 import { db } from "@/shared/lib/db";
+import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import { uuidSchema } from "@/shared/lib/schemas/common";
 
 const saveImportPdfPasswordSchema = z.object({
@@ -86,6 +87,7 @@ export async function updateCardImportPdfPasswordSettingsAction(
 ): Promise<{ success: boolean; message?: string; error?: string }> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = updateImportPdfPasswordSettingsSchema.parse(input);
 
 		if (!isCardImportPdfPasswordRule(data.rule)) {
@@ -96,7 +98,7 @@ export async function updateCardImportPdfPasswordSettingsAction(
 			columns: {
 				importPdfPasswordSecret: true,
 			},
-			where: and(eq(cards.id, data.cardId), eq(cards.userId, user.id)),
+			where: and(eq(cards.id, data.cardId), eq(cards.userId, dataOwnerUserId)),
 		});
 
 		if (!existingCard) {
@@ -115,7 +117,7 @@ export async function updateCardImportPdfPasswordSettingsAction(
 				importPdfPasswordRule: importPdfPassword.importPdfPasswordRule,
 				importPdfPasswordSecret: importPdfPassword.importPdfPasswordSecret,
 			})
-			.where(and(eq(cards.id, data.cardId), eq(cards.userId, user.id)));
+			.where(and(eq(cards.id, data.cardId), eq(cards.userId, dataOwnerUserId)));
 
 		revalidateForEntity("cards", user.id);
 
@@ -127,10 +129,6 @@ export async function updateCardImportPdfPasswordSettingsAction(
 					: "Configurações de importação salvas.",
 		};
 	} catch (error) {
-		if (error instanceof Error && error.message) {
-			return { success: false, error: error.message };
-		}
-
 		const result = handleActionError(error);
 		if (!result.success) return { success: false, error: result.error };
 		return { success: false, error: "Erro inesperado." };
@@ -142,6 +140,7 @@ export async function saveCardImportPdfPasswordAction(
 ): Promise<{ success: boolean; message?: string; error?: string }> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = saveImportPdfPasswordSchema.parse(input);
 
 		const validation = validateCardImportPdfPasswordInput(
@@ -159,7 +158,7 @@ export async function saveCardImportPdfPasswordAction(
 				importPdfPasswordRule: data.rule,
 				importPdfPasswordSecret: encryptSecret(data.secret),
 			})
-			.where(and(eq(cards.id, data.cardId), eq(cards.userId, user.id)))
+			.where(and(eq(cards.id, data.cardId), eq(cards.userId, dataOwnerUserId)))
 			.returning({ id: cards.id });
 
 		if (!updated) {

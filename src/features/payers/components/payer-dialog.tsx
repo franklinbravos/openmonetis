@@ -99,7 +99,7 @@ const buildInitialValues = ({
 
 	return {
 		name: payer?.name ?? "",
-		email: payer?.email ?? "",
+		email: payer?.loginEmail ?? payer?.email ?? "",
 		status: (payer?.status as PayerStatus) ?? PAYER_STATUS_OPTIONS[0],
 		avatarUrl: payer?.avatarUrl ?? defaultAvatar,
 		note: payer?.note ?? "",
@@ -189,11 +189,18 @@ export function PayerDialog({
 		}
 
 		const emailValue = formState.email.trim();
+		if (!emailValue) {
+			const message = "Informe o e-mail de login familiar.";
+			setErrorMessage(message);
+			toast.error(message);
+			return;
+		}
+
 		const payload: PayerCreatePayload = {
 			name: formState.name.trim(),
 			status: formState.status,
 			avatarUrl: formState.avatarUrl,
-			email: emailValue || null,
+			email: emailValue,
 			note: formState.note.trim() || null,
 			isAutoSend: formState.isAutoSend,
 		};
@@ -253,7 +260,7 @@ export function PayerDialog({
 								</div>
 
 								<div className="flex flex-col gap-2 w-full">
-									<Label htmlFor="payer-email">E-mail</Label>
+									<Label htmlFor="payer-email">E-mail de login familiar</Label>
 									<Input
 										id="payer-email"
 										type="email"
@@ -261,8 +268,12 @@ export function PayerDialog({
 										onChange={(event) =>
 											updateField("email", event.target.value)
 										}
-										placeholder="Ex.: felipe@email.com"
+										placeholder="Ex.: gi.gergollete@gmail.com"
+										required
 									/>
+									<p className="text-xs text-muted-foreground">
+										E-mail usado no cadastro (/signup) para acessar a família.
+									</p>
 								</div>
 							</div>
 

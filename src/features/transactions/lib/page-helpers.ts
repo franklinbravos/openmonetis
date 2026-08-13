@@ -35,6 +35,7 @@ import {
 	PAYER_ROLE_ADMIN,
 	PAYER_ROLE_THIRD_PARTY,
 } from "@/shared/lib/payers/constants";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import { parseLocalDateString, toDateOnlyString } from "@/shared/utils/date";
 import { slugify } from "@/shared/utils/string";
@@ -388,8 +389,9 @@ export async function fetchSearchTransactionIds(
 	const pattern = buildSearchPattern(term);
 	if (!pattern) return [];
 
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const rows = await callRpc<{ id: string }>("get_search_transaction_ids", {
-		p_user_id: userId,
+		p_user_id: dataOwnerUserId,
 		p_term: pattern,
 	});
 	return rows.map((row) => row.id);
@@ -414,7 +416,8 @@ export const buildTransactionWhere = async ({
 	payerId?: string;
 	hideAnticipatedInstallments?: boolean;
 }): Promise<SQL[]> => {
-	const where: SQL[] = [eq(transactions.userId, userId)];
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+	const where: SQL[] = [eq(transactions.userId, dataOwnerUserId)];
 
 	if (filters.dateStartFilter || filters.dateEndFilter) {
 		if (filters.dateStartFilter) {

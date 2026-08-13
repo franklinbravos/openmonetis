@@ -71,6 +71,33 @@ export function PayerInfoCard({ payer }: PayerInfoCardProps) {
 				) : null}
 				{showSensitiveDetails ? (
 					<InfoItem
+						label="E-mail de login familiar"
+						value={
+							payer.loginEmail ? (
+								<span className="text-muted-foreground">
+									{payer.loginEmail}
+								</span>
+							) : (
+								"Não cadastrado"
+							)
+						}
+					/>
+				) : null}
+				{showSensitiveDetails && payer.role !== PAYER_ROLE_ADMIN ? (
+					<InfoItem
+						label="Acesso familiar"
+						value={
+							<Badge
+								variant={payer.familyAccessActive ? "success" : "outline"}
+								className="text-xs"
+							>
+								{payer.familyAccessActive ? "Acesso ativo" : "Conta pendente"}
+							</Badge>
+						}
+					/>
+				) : null}
+				{showSensitiveDetails ? (
+					<InfoItem
 						label="Último envio"
 						value={formatDateTime(payer.lastMailAt) ?? "Nunca enviado"}
 					/>

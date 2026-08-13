@@ -27,7 +27,9 @@ export default async function DashboardLayout({
 				<PrivacyProvider>
 					<AppNavbar
 						user={{ ...session.user, image: session.user.image ?? null }}
-						payerAvatarUrl={navbarData.payerAvatarUrl}
+						viewerAvatarUrl={navbarData.viewerAvatarUrl}
+						profilePayer={navbarData.profilePayer}
+						avatarOptions={navbarData.avatarOptions}
 						inboxPendingCount={navbarData.inboxPendingCount}
 						notificationsSnapshot={navbarData.notificationsSnapshot}
 						financeLinks={navbarData.financeLinks}

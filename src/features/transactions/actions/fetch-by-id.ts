@@ -5,16 +5,18 @@ import { transactions } from "@/db/schema";
 import { mapTransactionsData } from "@/features/transactions/lib/page-helpers";
 import { fetchTransactionsWithRelations } from "@/features/transactions/queries";
 import { getUser } from "@/shared/lib/auth/server";
+import { assertFinancialReadAccess } from "@/shared/lib/payers/financial-access";
 import type { TransactionItem } from "../components/types";
 
 export async function fetchTransactionByIdAction(
 	transactionId: string,
 ): Promise<TransactionItem | null> {
 	const user = await getUser();
+	const { dataOwnerUserId } = await assertFinancialReadAccess(user.id);
 	const rows = await fetchTransactionsWithRelations({
 		filters: [
 			eq(transactions.id, transactionId),
-			eq(transactions.userId, user.id),
+			eq(transactions.userId, dataOwnerUserId),
 		],
 		excludeInitialBalanceFromIncome: false,
 	});

@@ -1,18 +1,13 @@
 "use client";
 
 import { RiAddFill } from "@remixicon/react";
-import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import {
-	deletePayerAction,
-	joinPayerByShareCodeAction,
-} from "@/features/payers/actions";
+import { deletePayerAction } from "@/features/payers/actions";
 import { PayerCard } from "@/features/payers/components/payer-card";
 import { PayerDialog } from "@/features/payers/components/payer-dialog";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
 import { Button } from "@/shared/components/ui/button";
-import { Input } from "@/shared/components/ui/input";
 import { PAYER_ROLE_ADMIN } from "@/shared/lib/payers/constants";
 import type { Payer } from "./types";
 
@@ -22,13 +17,10 @@ interface PayersPageProps {
 }
 
 export function PayersPage({ payers, avatarOptions }: PayersPageProps) {
-	const router = useRouter();
 	const [editOpen, setEditOpen] = useState(false);
 	const [selectedPayer, setSelectedPayer] = useState<Payer | null>(null);
 	const [removeOpen, setRemoveOpen] = useState(false);
 	const [payerToRemove, setPayerToRemove] = useState<Payer | null>(null);
-	const [shareCodeInput, setShareCodeInput] = useState("");
-	const [joinPending, startJoin] = useTransition();
 
 	const orderedPayers = useMemo(
 		() =>
@@ -94,32 +86,9 @@ export function PayersPage({ payers, avatarOptions }: PayersPageProps) {
 		? `Remover pessoa "${payerToRemove.name}"?`
 		: "Remover pessoa?";
 
-	const handleJoinByCode = (event: React.FormEvent<HTMLFormElement>) => {
-		event.preventDefault();
-		if (!shareCodeInput.trim()) {
-			toast.error("Informe um código válido.");
-			return;
-		}
-
-		startJoin(async () => {
-			const result = await joinPayerByShareCodeAction({
-				code: shareCodeInput.trim(),
-			});
-
-			if (!result.success) {
-				toast.error(result.error);
-				return;
-			}
-
-			toast.success(result.message);
-			setShareCodeInput("");
-			router.refresh();
-		});
-	};
-
 	return (
 		<>
-			<div className="flex flex-col gap-6 w-full">
+			<div className="flex w-full flex-col gap-6">
 				<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 					<PayerDialog
 						mode="create"
@@ -131,21 +100,6 @@ export function PayersPage({ payers, avatarOptions }: PayersPageProps) {
 							</Button>
 						}
 					/>
-					<form
-						onSubmit={handleJoinByCode}
-						className="flex w-full flex-row items-center justify-center gap-2 sm:w-auto"
-					>
-						<Input
-							placeholder="Código de Compartilhamento"
-							value={shareCodeInput}
-							onChange={(event) => setShareCodeInput(event.target.value)}
-							disabled={joinPending}
-							className="w-full sm:w-56 border-dashed"
-						/>
-						<Button type="submit" disabled={joinPending}>
-							{joinPending ? "Adicionando..." : "Adicionar por código"}
-						</Button>
-					</form>
 				</div>
 
 				{orderedPayers.length === 0 ? (

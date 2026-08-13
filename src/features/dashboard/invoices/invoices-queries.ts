@@ -7,6 +7,7 @@ import {
 	INVOICE_STATUS_VALUES,
 	type InvoicePaymentStatus,
 } from "@/shared/lib/invoices";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import {
 	buildDateOnlyStringFromPeriodDay,
@@ -248,6 +249,7 @@ export async function fetchDashboardInvoices(
 ): Promise<DashboardInvoicesSnapshot> {
 	const today = getBusinessDateString();
 	const previousPeriod = getPreviousPeriod(period);
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const paymentRows = await db
 		.select({
 			note: transactions.note,
@@ -257,7 +259,7 @@ export async function fetchDashboardInvoices(
 		.from(transactions)
 		.where(
 			and(
-				eq(transactions.userId, userId),
+				eq(transactions.userId, dataOwnerUserId),
 				ilike(transactions.note, `${ACCOUNT_AUTO_INVOICE_NOTE_PREFIX}%`),
 			),
 		);
@@ -295,11 +297,11 @@ export async function fetchDashboardInvoices(
 
 	const [rawInvoiceRows, rawBreakdownRows, accountRows] = await Promise.all([
 		callRpc<DashboardInvoiceRpcRow>("get_dashboard_invoices", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_period: period,
 		}),
 		callRpc<InvoiceBreakdownRpcRow>("get_invoice_payer_breakdown", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_period: period,
 			p_previous_period: previousPeriod,
 		}),
@@ -310,7 +312,7 @@ export async function fetchDashboardInvoices(
 				logo: financialAccounts.logo,
 			})
 			.from(financialAccounts)
-			.where(eq(financialAccounts.userId, userId)),
+			.where(eq(financialAccounts.userId, dataOwnerUserId)),
 	]);
 
 	const rows = rawInvoiceRows.map(mapDashboardInvoiceRow);

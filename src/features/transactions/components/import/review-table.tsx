@@ -132,7 +132,7 @@ function isReviewRowClassified(row: ReviewRow): boolean {
 
 function getReviewRowClassifiedClassName(row: ReviewRow): string {
 	if (!isReviewRowClassified(row)) return "";
-	return "border-emerald-500/40 bg-emerald-500/8";
+	return "border-emerald-500/40 bg-emerald-500/8 hover:bg-emerald-500/10";
 }
 
 function ReviewVerifiedDuplicateDescription({
@@ -594,6 +594,7 @@ export type ReviewRow = ImportedTransaction & {
 	recurrenceImport: ReviewRecurrenceImport | null;
 	reimported?: boolean;
 	linked?: boolean;
+	linkedTransactionId?: string | null;
 	/** Nome exatamente como veio do extrato/fatura; não muda ao editar na revisão. */
 	sourceDescription: string;
 	aiSuggestion?: {
@@ -907,7 +908,10 @@ export function ReviewTable({
 									return (
 										<TableRow
 											key={getReviewRowKey(row)}
-											className={getDuplicateRowClassName(row)}
+											className={cn(
+												getDuplicateRowClassName(row),
+												getReviewRowClassifiedClassName(row),
+											)}
 										>
 											<TableCell>
 												<Checkbox

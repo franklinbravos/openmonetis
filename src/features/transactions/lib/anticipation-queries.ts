@@ -6,6 +6,7 @@ import {
 	transactions,
 } from "@/db/schema";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { uuidSchema } from "@/shared/lib/schemas/common";
 
 type InstallmentAnticipationListItem = {
@@ -33,6 +34,7 @@ export async function fetchInstallmentAnticipations(
 	seriesId: string,
 ): Promise<InstallmentAnticipationListItem[]> {
 	const validatedSeriesId = uuidSchema("Série").parse(seriesId);
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 
 	const anticipations = await db
 		.select({
@@ -54,27 +56,27 @@ export async function fetchInstallmentAnticipations(
 			transactions,
 			and(
 				eq(installmentAnticipations.transactionId, transactions.id),
-				eq(transactions.userId, userId),
+				eq(transactions.userId, dataOwnerUserId),
 			),
 		)
 		.leftJoin(
 			payers,
 			and(
 				eq(installmentAnticipations.payerId, payers.id),
-				eq(payers.userId, userId),
+				eq(payers.userId, dataOwnerUserId),
 			),
 		)
 		.leftJoin(
 			categories,
 			and(
 				eq(installmentAnticipations.categoryId, categories.id),
-				eq(categories.userId, userId),
+				eq(categories.userId, dataOwnerUserId),
 			),
 		)
 		.where(
 			and(
 				eq(installmentAnticipations.seriesId, validatedSeriesId),
-				eq(installmentAnticipations.userId, userId),
+				eq(installmentAnticipations.userId, dataOwnerUserId),
 			),
 		)
 		.orderBy(desc(installmentAnticipations.createdAt));

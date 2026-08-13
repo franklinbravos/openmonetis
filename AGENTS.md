@@ -11,7 +11,7 @@
 
 ## Critical Rules
 
-1. **Sempre filtrar por `userId`** em queries.
+1. **Ambiente familiar (1 instância = 1 família):** em dados financeiros, filtrar e gravar com `getFinancialDataOwnerId(viewerUserId)` de `src/shared/lib/payers/financial-context.ts`. Mutações exigem `assertFinancialEditAccess(viewerUserId)`. Manter `viewerUserId` apenas em prefs, inbox, tokens API e notificações lidas.
 2. **Usar `getAdminPayerId(userId)`** de `src/shared/lib/payers/get-admin-id.ts` ao inves de JOIN com `payers` para descobrir o admin.
 3. **Periods** usam formato `YYYY-MM` (ex: `"2025-11"`). Utils em `src/shared/utils/period/`.
 4. **Moeda**: R$ com 2 decimais. DB: `numeric(12, 2)`. Utils em `src/shared/utils/currency.ts`.

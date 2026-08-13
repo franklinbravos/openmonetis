@@ -22,6 +22,7 @@ import {
 	fetchPayerShares,
 	fetchPayerTransactions,
 } from "@/features/payers/lib/detail-queries";
+import { buildPayerLoginLinks } from "@/features/payers/lib/payer-family-access";
 import { fetchUserPreferences } from "@/features/settings/queries";
 import { TransactionsPage as LancamentosSection } from "@/features/transactions/components/page/transactions-page";
 import { TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID } from "@/features/transactions/lib/month-toolbar";
@@ -281,10 +282,22 @@ export default async function Page({ params, searchParams }: PageProps) {
 			)
 		: optionSets.payerFilterOptions;
 
+	const loginLinks = await buildPayerLoginLinks(userId, [
+		{
+			id: pagador.id,
+			role: pagador.role,
+			email: pagador.email,
+			userId: pagador.userId,
+		},
+	]);
+	const login = loginLinks.get(pagador.id);
+
 	const payerData = {
 		id: pagador.id,
 		name: pagador.name,
 		email: pagador.email ?? null,
+		loginEmail: login?.loginEmail ?? pagador.email ?? null,
+		familyAccessActive: login?.familyAccessActive ?? false,
 		avatarUrl: pagador.avatarUrl ?? null,
 		status: pagador.status,
 		note: pagador.note ?? null,
@@ -340,13 +353,8 @@ export default async function Page({ params, searchParams }: PageProps) {
 
 					<TabsContent value="profile" className="space-y-4">
 						<PayerInfoCard payer={payerData} />
-						{canManageShares && payerData.shareCode ? (
-							<PayerSharingCard
-								payerId={pagador.id}
-								shareCode={payerData.shareCode}
-								payerEmail={payerData.email}
-								shares={payerSharesData}
-							/>
+						{canManageShares ? (
+							<PayerSharingCard payerId={pagador.id} shares={payerSharesData} />
 						) : null}
 						{!canEdit && currentUserShare ? (
 							<PayerLeaveShareCard

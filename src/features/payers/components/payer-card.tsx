@@ -53,12 +53,14 @@ export function PayerCard({ payer, onEdit, onRemove }: PayerCardProps) {
 					) : null}
 				</div>
 
-				{/* Email */}
-				{payer.email ? (
-					<p className="mt-1 text-xs text-muted-foreground">{payer.email}</p>
+				{/* Login familiar */}
+				{payer.loginEmail ? (
+					<p className="mt-1 text-xs text-muted-foreground">
+						Login: {payer.loginEmail}
+					</p>
 				) : (
 					<p className="mt-1 text-xs text-muted-foreground">
-						Sem email cadastrado
+						Sem e-mail de login cadastrado
 					</p>
 				)}
 
@@ -70,6 +72,15 @@ export function PayerCard({ payer, onEdit, onRemove }: PayerCardProps) {
 					>
 						{payer.status}
 					</Badge>
+
+					{!isAdmin ? (
+						<Badge
+							variant={payer.familyAccessActive ? "success" : "outline"}
+							className="text-xs"
+						>
+							{payer.familyAccessActive ? "Acesso ativo" : "Conta pendente"}
+						</Badge>
+					) : null}
 
 					{isReadOnly ? (
 						<Badge variant="outline" className="text-xs text-primary">

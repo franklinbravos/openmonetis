@@ -17,7 +17,6 @@ type PaymentOverviewWidgetViewProps = {
 	paymentMethodsData: PaymentMethodsData;
 	onTabChange: (value: string) => void;
 	period: string;
-	adminPayerSlug: string | null;
 };
 
 export function PaymentOverviewWidgetView({
@@ -26,7 +25,6 @@ export function PaymentOverviewWidgetView({
 	paymentMethodsData,
 	onTabChange,
 	period,
-	adminPayerSlug,
 }: PaymentOverviewWidgetViewProps) {
 	return (
 		<Tabs value={activeTab} onValueChange={onTabChange} className="w-full">
@@ -51,16 +49,11 @@ export function PaymentOverviewWidgetView({
 				<PaymentConditionsWidget
 					data={paymentConditionsData}
 					period={period}
-					adminPayerSlug={adminPayerSlug}
 				/>
 			</TabsContent>
 
 			<TabsContent value="methods" className="mt-2">
-				<PaymentMethodsWidget
-					data={paymentMethodsData}
-					period={period}
-					adminPayerSlug={adminPayerSlug}
-				/>
+				<PaymentMethodsWidget data={paymentMethodsData} period={period} />
 			</TabsContent>
 		</Tabs>
 	);

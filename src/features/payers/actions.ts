@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { payerShares, payers, user } from "@/db/schema";
+import { syncFamilyAccessForLoginEmail } from "@/features/payers/lib/payer-family-access";
 import {
 	handleActionError,
 	revalidateForEntity,
@@ -21,7 +22,6 @@ import { generateShareCode } from "@/shared/lib/payers/share-code";
 import { normalizeAvatarPath } from "@/shared/lib/payers/utils";
 import { noteSchema, uuidSchema } from "@/shared/lib/schemas/common";
 import type { ActionResult } from "@/shared/lib/types/actions";
-import { normalizeOptionalString } from "@/shared/utils/string";
 
 const statusEnum = z
 	.enum([...PAYER_STATUS_OPTIONS] as [string, ...string[]])
@@ -39,11 +39,9 @@ const baseSchema = z.object({
 		.trim()
 		.min(1, "Informe o nome da pessoa."),
 	email: z
-		.string()
+		.string({ message: "Informe o e-mail de login familiar." })
 		.trim()
-		.email("Informe um e-mail válido.")
-		.nullish()
-		.transform((value) => normalizeOptionalString(value)),
+		.email("Informe um e-mail de login válido."),
 	status: statusEnum,
 	note: noteSchema,
 	avatarUrl: z.string().trim().optional(),
@@ -93,7 +91,7 @@ export async function createPayerAction(
 
 		await db.insert(payers).values({
 			name: data.name,
-			email: data.email,
+			email: data.email.toLowerCase(),
 			status: data.status,
 			note: data.note,
 			avatarUrl: normalizeAvatarPath(data.avatarUrl) ?? DEFAULT_PAYER_AVATAR,
@@ -103,9 +101,22 @@ export async function createPayerAction(
 			userId: user.id,
 		});
 
+		const accessSync = await syncFamilyAccessForLoginEmail(user.id, data.email);
 		revalidate(user.id);
+		if (!accessSync.userFound) {
+			return {
+				success: true,
+				message:
+					"Pessoa criada. Quando a conta for criada em /signup com este e-mail, o acesso familiar será vinculado automaticamente ao salvar novamente.",
+			};
+		}
 
-		return { success: true, message: "Pessoa criada com sucesso." };
+		return {
+			success: true,
+			message: accessSync.linked
+				? "Pessoa criada e acesso familiar vinculado."
+				: "Pessoa criada com sucesso.",
+		};
 	} catch (error) {
 		return handleActionError(error);
 	}
@@ -128,11 +139,13 @@ export async function updatePayerAction(
 
 		const existing = access.pagador;
 
+		const normalizedEmail = data.email.toLowerCase();
+
 		await db
 			.update(payers)
 			.set({
 				name: data.name,
-				email: data.email,
+				email: normalizedEmail,
 				status: data.status,
 				note: data.note,
 				avatarUrl:
@@ -152,9 +165,23 @@ export async function updatePayerAction(
 			revalidatePath("/", "layout");
 		}
 
+		let message = "Pessoa atualizada com sucesso.";
+		if (existing.role !== PAYER_ROLE_ADMIN) {
+			const accessSync = await syncFamilyAccessForLoginEmail(
+				currentUser.id,
+				normalizedEmail,
+			);
+			if (!accessSync.userFound) {
+				message =
+					"Pessoa atualizada. Quando a conta for criada em /signup com este e-mail, o acesso familiar será vinculado automaticamente ao salvar novamente.";
+			} else if (accessSync.linked) {
+				message = "Pessoa atualizada e acesso familiar vinculado.";
+			}
+		}
+
 		revalidate(currentUser.id);
 
-		return { success: true, message: "Pessoa atualizada com sucesso." };
+		return { success: true, message };
 	} catch (error) {
 		return handleActionError(error);
 	}

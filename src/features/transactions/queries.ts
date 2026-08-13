@@ -27,6 +27,7 @@ import type {
 } from "@/shared/components/month-picker/period-carousel-types";
 import { INITIAL_BALANCE_NOTE } from "@/shared/lib/accounts/constants";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import { enrichTransactionsWithTransferPeers } from "@/shared/lib/transfers/enrich-transfer-peers";
@@ -150,21 +151,26 @@ async function selectTransactionsWithRelations({
 }
 
 export async function fetchTransactionFilterSources(userId: string) {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+
 	const [payerRows, accountRows, cardRows, categoryRows] = await Promise.all([
 		db.query.payers.findMany({
-			where: eq(payers.userId, userId),
+			where: eq(payers.userId, dataOwnerUserId),
 		}),
 		db.query.financialAccounts.findMany({
 			where: and(
-				eq(financialAccounts.userId, userId),
+				eq(financialAccounts.userId, dataOwnerUserId),
 				eq(financialAccounts.status, "Ativa"),
 			),
 		}),
 		db.query.cards.findMany({
-			where: and(eq(cards.userId, userId), eq(cards.status, "Ativo")),
+			where: and(
+				eq(cards.userId, dataOwnerUserId),
+				eq(cards.status, "Ativo"),
+			),
 		}),
 		db.query.categories.findMany({
-			where: eq(categories.userId, userId),
+			where: eq(categories.userId, dataOwnerUserId),
 		}),
 	]);
 
@@ -268,9 +274,10 @@ export async function fetchTransactionsPageWithRelations({
 export async function fetchRecentEstablishments(
 	userId: string,
 ): Promise<string[]> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const rows = await callRpc<{ name: string | null }>(
 		"get_recent_establishments",
-		{ p_user_id: userId },
+		{ p_user_id: dataOwnerUserId },
 	);
 
 	return rows
@@ -289,7 +296,10 @@ type PeriodOverviewRow = {
 export async function fetchTransactionsMonthSummaries(
 	userId: string,
 ): Promise<PeriodCarouselMonth[]> {
-	const adminPayerId = await getAdminPayerId(userId);
+	const [adminPayerId, dataOwnerUserId] = await Promise.all([
+		getAdminPayerId(userId),
+		getFinancialDataOwnerId(userId),
+	]);
 	if (!adminPayerId) {
 		return [];
 	}
@@ -299,7 +309,7 @@ export async function fetchTransactionsMonthSummaries(
 	const startPeriod = addMonthsToPeriod(currentPeriod, -24);
 
 	const rows = await callRpc<PeriodOverviewRow>("get_period_overview", {
-		p_user_id: userId,
+		p_user_id: dataOwnerUserId,
 		p_admin_payer_id: adminPayerId,
 		p_start_period: startPeriod,
 		p_end_period: endPeriod,

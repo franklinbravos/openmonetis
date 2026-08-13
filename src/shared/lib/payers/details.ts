@@ -3,6 +3,7 @@ import { financialAccounts, transactions } from "@/db/schema";
 import { ACCOUNT_AUTO_INVOICE_NOTE_PREFIX } from "@/shared/lib/accounts/constants";
 import { excludeTransactionsFromExcludedAccounts } from "@/shared/lib/accounts/query-filters";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { callRpc, callRpcOne, toRpcNumber } from "@/shared/lib/supabase/rpc";
 import { toDateOnlyString } from "@/shared/utils/date";
 import {
@@ -85,10 +86,11 @@ export async function fetchPayerMonthlyBreakdown({
 	payerId,
 	period,
 }: BaseFilters): Promise<PayerMonthlyBreakdown> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const rows = await callRpc<PayerMonthlyBreakdownRow>(
 		"get_payer_monthly_breakdown",
 		{
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_payer_id: payerId,
 			p_period: period,
 		},
@@ -137,13 +139,14 @@ export async function fetchPayerHistory({
 	period,
 	months = 6,
 }: BaseFilters & { months?: number }): Promise<PayerHistoryPoint[]> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const startPeriod = addMonthsToPeriod(period, -(Math.max(months, 1) - 1));
 	const windowPeriods = buildPeriodRange(startPeriod, period);
 	const start = windowPeriods[0];
 	const end = windowPeriods[windowPeriods.length - 1];
 
 	const rows = await callRpc<PayerHistoryRow>("get_payer_history", {
-		p_user_id: userId,
+		p_user_id: dataOwnerUserId,
 		p_payer_id: payerId,
 		p_start_period: start,
 		p_end_period: end,
@@ -191,8 +194,9 @@ export async function fetchPayerCardUsage({
 	payerId,
 	period,
 }: BaseFilters): Promise<PayerCardUsageItem[]> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const rows = await callRpc<PayerCardUsageRow>("get_payer_card_usage", {
-		p_user_id: userId,
+		p_user_id: dataOwnerUserId,
 		p_payer_id: payerId,
 		p_period: period,
 	});
@@ -255,8 +259,9 @@ export async function fetchPayerBoletoStats({
 	payerId,
 	period,
 }: BaseFilters): Promise<PayerBoletoStats> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const rows = await callRpc<PayerBoletoStatsRow>("get_payer_boleto_stats", {
-		p_user_id: userId,
+		p_user_id: dataOwnerUserId,
 		p_payer_id: payerId,
 		p_period: period,
 	});
@@ -269,6 +274,7 @@ export async function fetchPayerBoletoItems({
 	payerId,
 	period,
 }: BaseFilters): Promise<PayerBoletoItem[]> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const rows = await db
 		.select({
 			id: transactions.id,
@@ -286,7 +292,7 @@ export async function fetchPayerBoletoItems({
 		)
 		.where(
 			and(
-				eq(transactions.userId, userId),
+				eq(transactions.userId, dataOwnerUserId),
 				eq(transactions.payerId, payerId),
 				eq(transactions.period, period),
 				eq(transactions.paymentMethod, PAYMENT_METHOD_BOLETO),
@@ -325,10 +331,11 @@ export async function fetchPayerPaymentStatus({
 	payerId,
 	period,
 }: BaseFilters): Promise<PayerPaymentStatusData> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const row = await callRpcOne<PayerPaymentStatusRow>(
 		"get_payer_payment_status",
 		{
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_payer_id: payerId,
 			p_period: period,
 		},

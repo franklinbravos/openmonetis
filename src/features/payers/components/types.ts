@@ -15,6 +15,9 @@ export type Payer = {
 	sharedByEmail?: string | null;
 	shareId?: string | null;
 	shareCode?: string | null;
+	loginEmail?: string | null;
+	loginUserName?: string | null;
+	familyAccessActive?: boolean;
 };
 
 export type PayerFormValues = {

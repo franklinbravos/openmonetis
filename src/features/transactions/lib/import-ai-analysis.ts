@@ -7,8 +7,13 @@ import {
 } from "@/features/transactions/lib/import-duplicate-match";
 import { toDateOnlyString } from "@/shared/utils/date";
 
-export const IMPORT_AI_BATCH_SIZE = 18;
+export const IMPORT_AI_FIRST_BATCH_SIZE = 12;
+export const IMPORT_AI_BATCH_SIZE = 24;
 export const IMPORT_AI_MAX_CANDIDATES_PER_BATCH = 80;
+export const IMPORT_AI_PARALLEL_BATCH_LIMIT = 2;
+
+/** @deprecated Use IMPORT_AI_BATCH_SIZE — mantido para compatibilidade interna */
+export const IMPORT_AI_LEGACY_BATCH_SIZE = 18;
 
 export const IMPORT_AI_DUPLICATE_CONFIDENCE = 0.72;
 export const IMPORT_AI_CATEGORY_CONFIDENCE = 0.62;
@@ -125,6 +130,50 @@ export type ImportAiRowPatch = {
 	};
 };
 
+export type ImportAiAnalysisMode = "category" | "duplicate";
+
+export type ImportAiPartitionedRows = {
+	categoryRows: ImportAiAnalysisRowInput[];
+	duplicateRows: ImportAiAnalysisRowInput[];
+	skippedCount: number;
+};
+
+export type ImportAiRowEditSnapshot = {
+	categoryId: string | null;
+	isDuplicate: boolean;
+};
+
+export const IMPORT_AI_CATEGORY_SYSTEM_PROMPT = `Você é um analista financeiro especializado em categorização de lançamentos no OpenMonetis.
+
+Sua tarefa é sugerir a categoria mais adequada para CADA linha do lote, usando somente IDs da lista "categories".
+
+Regras obrigatórias:
+- suggestedCategoryId DEVE ser null ou um id EXATO de "categories".
+- Respeite o tipo da linha (income/expense) ao sugerir categoria.
+- duplicateVerdict deve ser sempre "new" e matchedExistingId sempre null (este lote não analisa duplicatas).
+- summary: frase curta em português (máx. 120 caracteres) explicando a escolha da categoria.
+- confidence: 0 a 1 refletindo certeza da categoria sugerida.
+
+Responda APENAS com JSON válido: {"rows":[{"rowIndex":number,"duplicateVerdict":"new","matchedExistingId":null,"suggestedCategoryId":string|null,"confidence":number,"summary":string}]}.`;
+
+export const IMPORT_AI_DUPLICATE_SYSTEM_PROMPT = `Você é um analista financeiro especializado em conciliação de extratos e faturas de cartão no OpenMonetis.
+
+Sua tarefa é decidir se CADA linha do lote já existe no cadastro do usuário (duplicata). Use principalmente nome/estabelecimento, parcela N/M e valor. A DATA do extrato NÃO é confiável em parcelamentos.
+
+Regras obrigatórias:
+- matchedExistingId DEVE ser null ou um id EXATO de "existingCandidates".
+- suggestedCategoryId deve ser sempre null (este lote não sugere categorias).
+- duplicateVerdict:
+  - "duplicate": mesma compra/parcela já cadastrada com alta confiança
+  - "likely_duplicate": provável duplicata, mas com alguma ambiguidade
+  - "new": lançamento novo
+  - "uncertain": não foi possível decidir
+- Se algorithmDuplicate já marcou match, confirme salvo evidência contrária forte.
+- summary: frase curta em português (máx. 120 caracteres).
+- confidence: 0 a 1 refletindo certeza geral da decisão de duplicata.
+
+Responda APENAS com JSON válido: {"rows":[{"rowIndex":number,"duplicateVerdict":"new"|"duplicate"|"likely_duplicate"|"uncertain","matchedExistingId":string|null,"suggestedCategoryId":null,"confidence":number,"summary":string}]}.`;
+
 export const IMPORT_AI_SYSTEM_PROMPT = `Você é um analista financeiro especializado em conciliação de extratos e faturas de cartão no OpenMonetis.
 
 Sua tarefa é revisar lançamentos importados de um arquivo e, para CADA linha do lote:
@@ -147,6 +196,70 @@ Regras obrigatórias:
 
 Responda APENAS com JSON válido no schema solicitado: {"rows":[{"rowIndex":number,"duplicateVerdict":"new"|"duplicate"|"likely_duplicate"|"uncertain","matchedExistingId":string|null,"suggestedCategoryId":string|null,"confidence":number,"summary":string}]}.`;
 
+export function isRowEligibleForCategoryAi(
+	row: ImportAiAnalysisRowInput,
+): boolean {
+	if (row.linked || row.reimported || !row.selected) return false;
+	if (row.kind !== "transaction") return false;
+	return !row.currentCategoryId;
+}
+
+export function isRowEligibleForDuplicateAi(
+	row: ImportAiAnalysisRowInput,
+): boolean {
+	if (row.linked || row.reimported || row.isDuplicate) return false;
+	if (row.algorithmDuplicate.isDuplicate) return false;
+	if (row.algorithmDuplicate.status === "match") return false;
+
+	return row.algorithmDuplicate.status === "link_suggestion";
+}
+
+export function partitionImportAiRows(
+	rows: ImportAiAnalysisRowInput[],
+): ImportAiPartitionedRows {
+	const categoryRows: ImportAiAnalysisRowInput[] = [];
+	const duplicateRows: ImportAiAnalysisRowInput[] = [];
+	let skippedCount = 0;
+
+	for (const row of rows) {
+		const needsCategory = isRowEligibleForCategoryAi(row);
+		const needsDuplicate = isRowEligibleForDuplicateAi(row);
+
+		if (!needsCategory && !needsDuplicate) {
+			skippedCount += 1;
+			continue;
+		}
+
+		if (needsCategory) {
+			categoryRows.push(row);
+		}
+		if (needsDuplicate) {
+			duplicateRows.push(row);
+		}
+	}
+
+	return { categoryRows, duplicateRows, skippedCount };
+}
+
+export function chunkImportAiRowsAdaptive<T>(
+	rows: T[],
+	options?: { firstBatchSize?: number; batchSize?: number },
+): T[][] {
+	if (rows.length === 0) return [];
+
+	const firstBatchSize = options?.firstBatchSize ?? IMPORT_AI_FIRST_BATCH_SIZE;
+	const batchSize = options?.batchSize ?? IMPORT_AI_BATCH_SIZE;
+	const chunks: T[][] = [];
+
+	chunks.push(rows.slice(0, firstBatchSize));
+
+	for (let index = firstBatchSize; index < rows.length; index += batchSize) {
+		chunks.push(rows.slice(index, index + batchSize));
+	}
+
+	return chunks;
+}
+
 export function chunkImportAiRows<T>(
 	rows: T[],
 	size = IMPORT_AI_BATCH_SIZE,
@@ -158,6 +271,64 @@ export function chunkImportAiRows<T>(
 		chunks.push(rows.slice(index, index + size));
 	}
 	return chunks;
+}
+
+export function buildImportAiCategoryBatchPrompt(input: {
+	context: {
+		isCreditCard: boolean;
+		invoicePeriod: string | null;
+		cardName: string | null;
+		accountName: string | null;
+	};
+	categories: ImportAiCategoryInput[];
+	rows: ImportAiAnalysisRowInput[];
+	batchIndex: number;
+	totalBatches: number;
+}): string {
+	const compactCategories = input.categories.map((category) => ({
+		id: category.id,
+		name: category.name,
+		transactionType: category.transactionType,
+	}));
+
+	return `Contexto da importação:
+${JSON.stringify(input.context, null, 2)}
+
+Lote ${input.batchIndex + 1} de ${input.totalBatches} (somente categorização).
+
+Categorias disponíveis:
+${JSON.stringify(compactCategories, null, 2)}
+
+Linhas importadas para categorizar neste lote:
+${JSON.stringify(input.rows, null, 2)}
+
+Sugira categoria para cada item de "rows" e retorne um objeto por rowIndex.`;
+}
+
+export function buildImportAiDuplicateBatchPrompt(input: {
+	context: {
+		isCreditCard: boolean;
+		invoicePeriod: string | null;
+		cardName: string | null;
+		accountName: string | null;
+	};
+	existingCandidates: ImportAiExistingCandidate[];
+	rows: ImportAiAnalysisRowInput[];
+	batchIndex: number;
+	totalBatches: number;
+}): string {
+	return `Contexto da importação:
+${JSON.stringify(input.context, null, 2)}
+
+Lote ${input.batchIndex + 1} de ${input.totalBatches} (somente duplicatas ambíguas).
+
+Lançamentos já cadastrados (candidatos a duplicata):
+${JSON.stringify(input.existingCandidates, null, 2)}
+
+Linhas importadas para analisar neste lote:
+${JSON.stringify(input.rows, null, 2)}
+
+Analise cada item de "rows" e retorne um objeto por rowIndex.`;
 }
 
 export function buildImportAiBatchPrompt(input: {
@@ -462,9 +633,104 @@ export function buildImportAiAnalysisStats(
 	};
 }
 
+export type ImportAiBatchJob = {
+	analysisMode: ImportAiAnalysisMode;
+	phaseBatchIndex: number;
+	phaseTotalBatches: number;
+	globalBatchIndex: number;
+	globalTotalBatches: number;
+	rows: ImportAiAnalysisRowInput[];
+};
+
+export function buildImportAiBatchJobs(
+	partitioned: ImportAiPartitionedRows,
+): ImportAiBatchJob[] {
+	const categoryBatches = chunkImportAiRowsAdaptive(partitioned.categoryRows);
+	const duplicateBatches = chunkImportAiRows(partitioned.duplicateRows);
+	const globalTotalBatches = categoryBatches.length + duplicateBatches.length;
+	const jobs: ImportAiBatchJob[] = [];
+
+	for (const [index, rows] of categoryBatches.entries()) {
+		jobs.push({
+			analysisMode: "category",
+			phaseBatchIndex: index,
+			phaseTotalBatches: categoryBatches.length,
+			globalBatchIndex: index,
+			globalTotalBatches,
+			rows,
+		});
+	}
+
+	for (const [index, rows] of duplicateBatches.entries()) {
+		jobs.push({
+			analysisMode: "duplicate",
+			phaseBatchIndex: index,
+			phaseTotalBatches: duplicateBatches.length,
+			globalBatchIndex: categoryBatches.length + index,
+			globalTotalBatches,
+			rows,
+		});
+	}
+
+	return jobs;
+}
+
+export async function runTasksWithConcurrency<T, R>(
+	items: T[],
+	limit: number,
+	worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+	if (items.length === 0) return [];
+
+	const results = new Array<R>(items.length);
+	let nextIndex = 0;
+
+	async function runWorker() {
+		while (nextIndex < items.length) {
+			const currentIndex = nextIndex;
+			nextIndex += 1;
+			results[currentIndex] = await worker(items[currentIndex], currentIndex);
+		}
+	}
+
+	const workers = Array.from({ length: Math.min(limit, items.length) }, () =>
+		runWorker(),
+	);
+	await Promise.all(workers);
+	return results;
+}
+
+export function buildImportAiRowEditSnapshots(
+	rows: ReviewRow[],
+): Map<number, ImportAiRowEditSnapshot> {
+	return new Map(
+		rows.map((row, index) => [
+			index,
+			{
+				categoryId: row.categoryId,
+				isDuplicate: row.isDuplicate,
+			},
+		]),
+	);
+}
+
+function rowWasManuallyEdited(
+	row: ReviewRow,
+	snapshot: ImportAiRowEditSnapshot | undefined,
+): boolean {
+	if (!snapshot) return false;
+	return (
+		row.categoryId !== snapshot.categoryId ||
+		row.isDuplicate !== snapshot.isDuplicate
+	);
+}
+
 export function applyImportAiPatchesToRows(
 	rows: ReviewRow[],
 	patches: ImportAiRowPatch[],
+	options?: {
+		rowEditSnapshots?: Map<number, ImportAiRowEditSnapshot>;
+	},
 ): ReviewRow[] {
 	if (patches.length === 0) return rows;
 
@@ -473,6 +739,23 @@ export function applyImportAiPatchesToRows(
 	return rows.map((row, index) => {
 		const patch = patchByIndex.get(index);
 		if (!patch) return row;
+
+		if (row.linked || row.linkedTransactionId) {
+			return row;
+		}
+
+		const snapshot = options?.rowEditSnapshots?.get(index);
+		const manuallyEdited = rowWasManuallyEdited(row, snapshot);
+
+		if (manuallyEdited) {
+			return {
+				...row,
+				aiSuggestion: {
+					...row.aiSuggestion,
+					...patch.aiSuggestion,
+				},
+			};
+		}
 
 		return {
 			...row,
@@ -486,6 +769,24 @@ export function applyImportAiPatchesToRows(
 			},
 		};
 	});
+}
+
+export function mergeImportAiAnalysisStats(
+	current: {
+		categoriesSuggested: number;
+		duplicatesFound: number;
+		rowsAnalyzed: number;
+	},
+	patchBatch: ImportAiRowPatch[],
+	rowsAnalyzedDelta: number,
+) {
+	const batchStats = buildImportAiAnalysisStats(patchBatch, rowsAnalyzedDelta);
+	return {
+		categoriesSuggested:
+			current.categoriesSuggested + batchStats.categoriesSuggested,
+		duplicatesFound: current.duplicatesFound + batchStats.duplicatesFound,
+		rowsAnalyzed: current.rowsAnalyzed + batchStats.rowsAnalyzed,
+	};
 }
 
 export function buildImportAiAnalysisPayload(input: {

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { attachments } from "@/db/schema";
 import { getOptionalUserSession } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { createPresignedGetUrl } from "@/shared/lib/storage/presign";
 
 const PRIVATE_RESPONSE_HEADERS = {
@@ -26,12 +27,16 @@ export async function GET(
 	}
 
 	const userId = session.user.id;
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 
 	const [row] = await db
 		.select({ fileKey: attachments.fileKey })
 		.from(attachments)
 		.where(
-			and(eq(attachments.id, attachmentId), eq(attachments.userId, userId)),
+			and(
+				eq(attachments.id, attachmentId),
+				eq(attachments.userId, dataOwnerUserId),
+			),
 		);
 
 	if (!row) {

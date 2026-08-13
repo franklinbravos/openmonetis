@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { type Category, categories, transactions } from "@/db/schema";
 import type { CategoryType } from "@/shared/lib/categories/constants";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 
 type CategoryData = {
 	id: string;
@@ -15,8 +16,9 @@ type CategoryData = {
 export async function fetchCategoriesForUser(
 	userId: string,
 ): Promise<CategoryData[]> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const categoryRows = await db.query.categories.findMany({
-		where: eq(categories.userId, userId),
+		where: eq(categories.userId, dataOwnerUserId),
 	});
 
 	return categoryRows.map((category: Category) => ({
@@ -42,6 +44,7 @@ export async function fetchCategoryLinkedTransactions(
 	userId: string,
 	categoryId: string,
 ): Promise<CategoryLinkedTransaction[]> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const rows = await db.query.transactions.findMany({
 		columns: {
 			id: true,
@@ -52,7 +55,7 @@ export async function fetchCategoryLinkedTransactions(
 			period: true,
 		},
 		where: and(
-			eq(transactions.userId, userId),
+			eq(transactions.userId, dataOwnerUserId),
 			eq(transactions.categoryId, categoryId),
 		),
 		limit: 500,

@@ -40,6 +40,10 @@ const updateNameSchema = z.object({
 	lastName: z.string().min(1, "Sobrenome é obrigatório"),
 });
 
+const updateAvatarSchema = z.object({
+	avatarUrl: z.string().min(1, "Selecione um avatar"),
+});
+
 const updatePasswordSchema = z
 	.object({
 		currentPassword: z.string().min(1, "Senha atual é obrigatória"),
@@ -223,6 +227,50 @@ export async function updateNameAction(
 		return {
 			success: false,
 			error: "Erro ao atualizar nome. Tente novamente.",
+		};
+	}
+}
+
+export async function updateAvatarAction(
+	data: z.infer<typeof updateAvatarSchema>,
+): Promise<ActionResponse> {
+	try {
+		const user = await getUser();
+		const validated = updateAvatarSchema.parse(data);
+		const adminPayerId = await getAdminPayerId(user.id);
+
+		await db
+			.update(schema.user)
+			.set({ image: validated.avatarUrl })
+			.where(eq(schema.user.id, user.id));
+
+		if (adminPayerId) {
+			await db
+				.update(payers)
+				.set({ avatarUrl: validated.avatarUrl })
+				.where(and(eq(payers.userId, user.id), eq(payers.id, adminPayerId)));
+		}
+
+		revalidatePath("/", "layout");
+		revalidatePath("/payers");
+		revalidatePath("/settings");
+
+		return {
+			success: true,
+			message: "Avatar atualizado com sucesso",
+		};
+	} catch (error) {
+		if (error instanceof z.ZodError) {
+			return {
+				success: false,
+				error: error.issues[0]?.message || "Dados inválidos",
+			};
+		}
+
+		console.error("Erro ao atualizar avatar:", error);
+		return {
+			success: false,
+			error: "Erro ao atualizar avatar. Tente novamente.",
 		};
 	}
 }

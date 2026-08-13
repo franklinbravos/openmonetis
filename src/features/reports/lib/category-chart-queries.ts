@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { categories } from "@/db/schema";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import { safeToNumber as toNumber } from "@/shared/utils/number";
@@ -69,9 +70,10 @@ export async function fetchCategoryChartData(
 		return { months: [], categories: [], chartData: [], allCategories: [] };
 	}
 
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const [rawRows, allCategoriesRows] = await Promise.all([
 		callRpc<CategoryTotalsRpcRow>("get_category_totals", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_admin_payer_id: adminPayerId,
 			p_periods: periods,
 			p_category_ids: categoryIds ?? [],
@@ -85,7 +87,7 @@ export async function fetchCategoryChartData(
 				type: categories.type,
 			})
 			.from(categories)
-			.where(eq(categories.userId, userId))
+			.where(eq(categories.userId, dataOwnerUserId))
 			.orderBy(categories.type, categories.name),
 	]);
 

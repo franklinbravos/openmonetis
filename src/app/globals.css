@@ -170,7 +170,8 @@
 }
 
 @theme inline {
-  --default-font-family: var(--font-bricolage);
+  --default-font-family: var(--font-inter);
+  --font-signature: var(--font-caveat), "Segoe Script", cursive;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

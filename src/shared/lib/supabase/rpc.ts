@@ -3,14 +3,29 @@ import { safeToNumber } from "@/shared/utils/number";
 
 export type RpcParams = Record<string, unknown>;
 
+function assertRpcParams(functionName: string, params?: RpcParams): RpcParams | undefined {
+	if (!params) return params;
+
+	for (const [key, value] of Object.entries(params)) {
+		if (value === undefined) {
+			throw new Error(
+				`Parâmetro RPC "${key}" indefinido em ${functionName}. Verifique o contexto financeiro (dataOwnerUserId).`,
+			);
+		}
+	}
+
+	return params;
+}
+
 export async function callRpc<TRow extends Record<string, unknown>>(
 	functionName: string,
 	params?: RpcParams,
 ): Promise<TRow[]> {
 	const supabase = getSupabaseAdmin();
+	const rpcParams = assertRpcParams(functionName, params);
 	const { data, error } = await supabase.rpc(
 		functionName as never,
-		params as never,
+		rpcParams as never,
 	);
 
 	if (error) {

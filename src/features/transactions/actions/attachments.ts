@@ -14,6 +14,7 @@ import {
 } from "@/shared/lib/actions/helpers";
 import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import {
 	createPresignedPutUrl,
 	deleteS3Object,
@@ -183,6 +184,7 @@ export async function getPresignedUploadUrlAction(input: {
 }): Promise<PresignResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = presignSchema.parse(input);
 
 		const [transaction] = await db
@@ -191,7 +193,7 @@ export async function getPresignedUploadUrlAction(input: {
 			.where(
 				and(
 					eq(transactions.id, data.transactionId),
-					eq(transactions.userId, user.id),
+					eq(transactions.userId, dataOwnerUserId),
 				),
 			);
 
@@ -200,10 +202,10 @@ export async function getPresignedUploadUrlAction(input: {
 		}
 
 		const ext = data.fileName.split(".").pop()?.toLowerCase() ?? "bin";
-		const fileKey = `${user.id}/${randomUUID()}.${ext}`;
+		const fileKey = `${dataOwnerUserId}/${randomUUID()}.${ext}`;
 		const presignedUrl = await createPresignedPutUrl(fileKey, data.mimeType);
 		const uploadToken = signUploadToken({
-			userId: user.id,
+			userId: dataOwnerUserId,
 			transactionId: data.transactionId,
 			fileKey,
 			fileName: data.fileName,
@@ -226,10 +228,11 @@ export async function confirmAttachmentUploadAction(input: {
 }): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = confirmSchema.parse(input);
 		const uploadPayload = verifyUploadToken(data.uploadToken);
 
-		if (!uploadPayload || uploadPayload.userId !== user.id) {
+		if (!uploadPayload || uploadPayload.userId !== dataOwnerUserId) {
 			return { success: false, error: "Upload de anexo inválido ou expirado." };
 		}
 
@@ -243,7 +246,7 @@ export async function confirmAttachmentUploadAction(input: {
 			.where(
 				and(
 					eq(transactions.id, uploadPayload.transactionId),
-					eq(transactions.userId, user.id),
+					eq(transactions.userId, dataOwnerUserId),
 				),
 			);
 
@@ -282,7 +285,7 @@ export async function confirmAttachmentUploadAction(input: {
 		const [attachment] = await db
 			.insert(attachments)
 			.values({
-				userId: user.id,
+				userId: dataOwnerUserId,
 				fileKey: uploadPayload.fileKey,
 				fileName: uploadPayload.fileName,
 				fileSize: uploadPayload.fileSize,
@@ -303,7 +306,7 @@ export async function confirmAttachmentUploadAction(input: {
 				.where(
 					and(
 						eq(transactions.seriesId, transaction.seriesId),
-						eq(transactions.userId, user.id),
+						eq(transactions.userId, dataOwnerUserId),
 					),
 				);
 
@@ -320,7 +323,7 @@ export async function confirmAttachmentUploadAction(input: {
 			}
 		}
 
-		transactionIds = await expandSplitSiblings(transactionIds, user.id);
+		transactionIds = await expandSplitSiblings(transactionIds, dataOwnerUserId);
 
 		await db.insert(transactionAttachments).values(
 			transactionIds.map((tid) => ({
@@ -343,6 +346,7 @@ export async function detachTransactionAttachmentAction(input: {
 }): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = detachSchema.parse(input);
 
 		const [transaction] = await db
@@ -351,7 +355,7 @@ export async function detachTransactionAttachmentAction(input: {
 			.where(
 				and(
 					eq(transactions.id, data.transactionId),
-					eq(transactions.userId, user.id),
+					eq(transactions.userId, dataOwnerUserId),
 				),
 			);
 
@@ -365,7 +369,7 @@ export async function detachTransactionAttachmentAction(input: {
 			.where(
 				and(
 					eq(attachments.id, data.attachmentId),
-					eq(attachments.userId, user.id),
+					eq(attachments.userId, dataOwnerUserId),
 				),
 			);
 
@@ -385,7 +389,7 @@ export async function detachTransactionAttachmentAction(input: {
 		const remaining = await callRpcOne<{ total: unknown }>(
 			"get_attachment_remaining",
 			{
-				p_user_id: user.id,
+				p_user_id: dataOwnerUserId,
 				p_attachment_id: data.attachmentId,
 			},
 		);
@@ -416,6 +420,7 @@ export async function detachAttachmentBulkAction(input: {
 }): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = detachBulkSchema.parse(input);
 
 		const [baseTransaction] = await db
@@ -428,7 +433,7 @@ export async function detachAttachmentBulkAction(input: {
 			.where(
 				and(
 					eq(transactions.id, data.transactionId),
-					eq(transactions.userId, user.id),
+					eq(transactions.userId, dataOwnerUserId),
 				),
 			);
 
@@ -442,7 +447,7 @@ export async function detachAttachmentBulkAction(input: {
 			.where(
 				and(
 					eq(attachments.id, data.attachmentId),
-					eq(attachments.userId, user.id),
+					eq(attachments.userId, dataOwnerUserId),
 				),
 			);
 
@@ -461,7 +466,7 @@ export async function detachAttachmentBulkAction(input: {
 				.where(
 					and(
 						eq(transactions.seriesId, baseTransaction.seriesId),
-						eq(transactions.userId, user.id),
+						eq(transactions.userId, dataOwnerUserId),
 					),
 				);
 
@@ -480,7 +485,7 @@ export async function detachAttachmentBulkAction(input: {
 
 		targetTransactionIds = await expandSplitSiblings(
 			targetTransactionIds,
-			user.id,
+			dataOwnerUserId,
 		);
 
 		if (targetTransactionIds.length > 0) {
@@ -497,7 +502,7 @@ export async function detachAttachmentBulkAction(input: {
 		const remaining = await callRpcOne<{ total: unknown }>(
 			"get_attachment_remaining",
 			{
-				p_user_id: user.id,
+				p_user_id: dataOwnerUserId,
 				p_attachment_id: data.attachmentId,
 			},
 		);

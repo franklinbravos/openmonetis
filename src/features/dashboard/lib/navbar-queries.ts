@@ -1,6 +1,8 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { cacheLife, cacheTag } from "next/cache";
-import { payers } from "@/db/schema";
+import { payers, user } from "@/db/schema";
+import { fetchPayersForUser } from "@/features/payers/queries";
+import type { Payer } from "@/features/payers/components/types";
 import { fetchPendingInboxCount } from "@/features/inbox/queries";
 import type { NavbarFinanceLinks } from "@/shared/components/navigation/navbar/nav-items";
 import { isAccountInactive } from "@/shared/lib/accounts/constants";
@@ -9,7 +11,9 @@ import {
 	fetchAccountsWithoutMovements,
 } from "@/shared/lib/accounts/queries";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
+import { PAYER_ROLE_ADMIN } from "@/shared/lib/payers/constants";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import { getBusinessDateString } from "@/shared/utils/date";
 import { safeToNumber } from "@/shared/utils/number";
@@ -19,7 +23,9 @@ import {
 } from "../notifications/notifications-queries";
 
 type DashboardNavbarData = {
-	payerAvatarUrl: string | null;
+	viewerAvatarUrl: string | null;
+	profilePayer: Payer | null;
+	avatarOptions: string[];
 	inboxPendingCount: number;
 	notificationsSnapshot: DashboardNotificationsSnapshot;
 	financeLinks: NavbarFinanceLinks;
@@ -41,22 +47,40 @@ type NavbarAccountRow = {
 	saldo_movimentacoes: string | number | null;
 };
 
-async function fetchAdminPayerAvatarUrl(
-	userId: string,
-	adminPayerId: string | null,
+async function fetchViewerAvatarUrl(
+	viewerUserId: string,
+	viewerEmail: string | null,
 ): Promise<string | null> {
-	if (!adminPayerId) {
+	const ownAdmin = await db.query.payers.findFirst({
+		columns: { avatarUrl: true },
+		where: and(
+			eq(payers.userId, viewerUserId),
+			eq(payers.role, PAYER_ROLE_ADMIN),
+		),
+	});
+	if (ownAdmin?.avatarUrl) {
+		return ownAdmin.avatarUrl;
+	}
+
+	const normalizedEmail = viewerEmail?.trim().toLowerCase();
+	if (!normalizedEmail) {
 		return null;
 	}
 
-	const payer = await db.query.payers.findFirst({
-		columns: {
-			avatarUrl: true,
-		},
-		where: and(eq(payers.id, adminPayerId), eq(payers.userId, userId)),
+	const dataOwnerUserId = await getFinancialDataOwnerId(viewerUserId);
+	if (!dataOwnerUserId) {
+		return null;
+	}
+
+	const familyPayer = await db.query.payers.findFirst({
+		columns: { avatarUrl: true },
+		where: and(
+			eq(payers.userId, dataOwnerUserId),
+			eq(sql`lower(${payers.email})`, normalizedEmail),
+		),
 	});
 
-	return payer?.avatarUrl ?? null;
+	return familyPayer?.avatarUrl ?? null;
 }
 
 const toNavbarAccountRow = (
@@ -74,33 +98,61 @@ async function fetchDashboardNavbarDataInternal(
 	userId: string,
 ): Promise<DashboardNavbarData> {
 	const currentPeriod = getBusinessDateString().slice(0, 7);
-	const adminPayerId = await getAdminPayerId(userId);
+	const [adminPayerId, dataOwnerUserId, viewerAccount] = await Promise.all([
+		getAdminPayerId(userId),
+		getFinancialDataOwnerId(userId),
+		db.query.user.findFirst({
+			columns: { email: true },
+			where: eq(user.id, userId),
+		}),
+	]);
+	const viewerEmail = viewerAccount?.email ?? null;
 	const [
-		payerAvatarUrl,
+		viewerAvatarUrl,
 		notificationsSnapshot,
 		inboxPendingCount,
 		activeCards,
 		activeAccounts,
+		payersPageData,
 	] = await Promise.all([
-		fetchAdminPayerAvatarUrl(userId, adminPayerId),
+		fetchViewerAvatarUrl(userId, viewerEmail),
 		fetchDashboardNotifications(userId, currentPeriod),
 		fetchPendingInboxCount(userId),
 		callRpc<NavbarCardRow>("get_navbar_cards", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_period: currentPeriod,
 		}),
 		adminPayerId
 			? callRpc<NavbarAccountRow>("get_account_balances", {
-					p_user_id: userId,
+					p_user_id: dataOwnerUserId,
 					p_admin_payer_id: adminPayerId,
 				})
-			: fetchAccountsWithoutMovements(userId).then((rows) =>
+			: fetchAccountsWithoutMovements(dataOwnerUserId).then((rows) =>
 					rows.map(toNavbarAccountRow),
 				),
+		fetchPayersForUser(userId),
 	]);
 
+	const normalizedViewerEmail = viewerEmail?.trim().toLowerCase() ?? null;
+	const profilePayer =
+		payersPageData.payers.find(
+			(payer) => payer.role === PAYER_ROLE_ADMIN && !payer.shareId,
+		) ??
+		(normalizedViewerEmail
+			? (payersPageData.payers.find((payer) => {
+					const loginEmail = payer.loginEmail?.trim().toLowerCase();
+					const payerEmail = payer.email?.trim().toLowerCase();
+					return (
+						loginEmail === normalizedViewerEmail ||
+						payerEmail === normalizedViewerEmail
+					);
+				}) ?? null)
+			: null);
+
 	return {
-		payerAvatarUrl,
+		viewerAvatarUrl,
+		profilePayer,
+		avatarOptions: payersPageData.avatarOptions,
 		inboxPendingCount,
 		notificationsSnapshot,
 		financeLinks: {

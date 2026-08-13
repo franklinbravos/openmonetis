@@ -7,6 +7,10 @@ import { buildRefundNote, isRefundNote } from "@/shared/lib/accounts/constants";
 import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
 import { PERIOD_FORMAT_REGEX } from "@/shared/lib/invoices";
+import {
+	assertFinancialEditAccess,
+	FinancialAccessError,
+} from "@/shared/lib/payers/financial-access";
 import type { ActionResult } from "@/shared/lib/types/actions";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 import { parseLocalDateString } from "@/shared/utils/date";
@@ -38,12 +42,13 @@ export async function refundTransactionAction(
 ): Promise<ActionResult<{ refundId: string }>> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = refundSchema.parse(input);
 
 		const original = await db.query.transactions.findFirst({
 			where: and(
 				eq(transactions.id, data.originalTransactionId),
-				eq(transactions.userId, user.id),
+				eq(transactions.userId, dataOwnerUserId),
 			),
 		});
 
@@ -84,7 +89,7 @@ export async function refundTransactionAction(
 				db.query.transactions.findFirst({
 					columns: { id: true },
 					where: and(
-						eq(transactions.userId, user.id),
+						eq(transactions.userId, dataOwnerUserId),
 						eq(transactions.note, buildRefundNote(original.id)),
 					),
 				}),
@@ -93,17 +98,19 @@ export async function refundTransactionAction(
 							columns: { id: true },
 							where: and(
 								eq(cards.id, original.cardId),
-								eq(cards.userId, user.id),
+								eq(cards.userId, dataOwnerUserId),
 							),
 						})
 					: Promise.resolve(null),
 				original.cardId
-					? getPaidInvoicePeriods(user.id, original.cardId, [data.refundPeriod])
+					? getPaidInvoicePeriods(dataOwnerUserId, original.cardId, [
+							data.refundPeriod,
+						])
 					: Promise.resolve([] as string[]),
 				db.query.categories.findFirst({
 					columns: { id: true },
 					where: and(
-						eq(categories.userId, user.id),
+						eq(categories.userId, dataOwnerUserId),
 						eq(categories.name, "Reembolso"),
 					),
 				}),
@@ -144,7 +151,7 @@ export async function refundTransactionAction(
 				transactionType: "Receita",
 				period: data.refundPeriod,
 				isSettled: false,
-				userId: user.id,
+				userId: dataOwnerUserId,
 				cardId: original.cardId,
 				accountId: original.accountId,
 				categoryId: refundCategory?.id ?? null,
@@ -160,6 +167,10 @@ export async function refundTransactionAction(
 			data: { refundId: inserted?.id ?? "" },
 		};
 	} catch (error) {
+		if (error instanceof FinancialAccessError) {
+			return { success: false, error: error.message };
+		}
+
 		if (error instanceof z.ZodError) {
 			return {
 				success: false,

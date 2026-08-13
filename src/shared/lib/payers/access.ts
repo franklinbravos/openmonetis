@@ -25,14 +25,36 @@ type SharedShareRow = {
 	id: string;
 	permission: string;
 	pagador_id: string;
-	pagadores: {
-		user_id: string;
-		user: {
-			name: string | null;
-			email: string | null;
-		} | null;
-	} | null;
+	pagadores: Record<string, unknown> | null;
 };
+
+/** Normaliza linha de pagador vinda do PostgREST (snake_case) para o shape Drizzle. */
+function mapPayerFromSupabase(
+	row: Record<string, unknown>,
+): typeof payers.$inferSelect {
+	return {
+		id: String(row.id),
+		name: String(row.nome ?? row.name ?? ""),
+		email: (row.email as string | null | undefined) ?? null,
+		avatarUrl: (row.avatar_url as string | null | undefined) ?? null,
+		status: String(row.status ?? "Ativo"),
+		note: (row.anotacao as string | null | undefined) ?? null,
+		role: (row.role as string | null | undefined) ?? null,
+		isAutoSend: Boolean(row.is_auto_send),
+		shareCode: String(row.share_code ?? ""),
+		lastMailAt:
+			row.last_mail instanceof Date
+				? row.last_mail
+				: row.last_mail
+					? new Date(String(row.last_mail))
+					: null,
+		createdAt:
+			row.created_at instanceof Date
+				? row.created_at
+				: new Date(String(row.created_at ?? Date.now())),
+		userId: String(row.user_id ?? row.userId),
+	};
+}
 
 async function fetchSharedSharesForUser(userId: string): Promise<
 	{
@@ -60,12 +82,27 @@ async function fetchSharedSharesForUser(userId: string): Promise<
 
 	return (data ?? []).map((row) => {
 		const share = row as unknown as SharedShareRow;
+		const payerRow = share.pagadores;
+		if (!payerRow) {
+			throw new Error("Share de pagador sem registro associado.");
+		}
+
 		return {
 			shareId: share.id,
 			permission: share.permission,
-			payer: share.pagadores as unknown as typeof payers.$inferSelect,
-			ownerName: share.pagadores?.user?.name ?? null,
-			ownerEmail: share.pagadores?.user?.email ?? null,
+			payer: mapPayerFromSupabase(payerRow),
+			ownerName:
+				typeof payerRow.user === "object" &&
+				payerRow.user &&
+				"name" in payerRow.user
+					? ((payerRow.user as { name?: string | null }).name ?? null)
+					: null,
+			ownerEmail:
+				typeof payerRow.user === "object" &&
+				payerRow.user &&
+				"email" in payerRow.user
+					? ((payerRow.user as { email?: string | null }).email ?? null)
+					: null,
 		};
 	});
 }

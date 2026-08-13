@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { user } from "@/db/schema";
 import { loadAvatarOptions } from "@/features/payers/lib/avatar-options";
+import { buildPayerLoginLinks } from "@/features/payers/lib/payer-family-access";
 import { db } from "@/shared/lib/db";
 import { fetchPayersWithAccess } from "@/shared/lib/payers/access";
 import type { PayerStatus } from "@/shared/lib/payers/constants";
@@ -24,6 +25,9 @@ type PayerData = {
 	sharedByEmail: string | null;
 	shareId: string | null;
 	shareCode: string | null;
+	loginEmail: string | null;
+	loginUserName: string | null;
+	familyAccessActive: boolean;
 };
 
 const resolveStatus = (status: string | null): PayerStatus => {
@@ -57,23 +61,49 @@ export async function fetchPayersForUser(
 		? [userImage, ...localAvatarOptions]
 		: localAvatarOptions;
 
-	const payers = payerRows
-		.map((pagador) => ({
-			id: pagador.id,
-			name: pagador.name,
-			email: pagador.email,
-			avatarUrl: pagador.avatarUrl,
-			status: resolveStatus(pagador.status),
-			note: pagador.note,
-			role: pagador.role,
-			isAutoSend: pagador.isAutoSend ?? false,
-			createdAt: toIsoString(pagador.createdAt),
-			canEdit: pagador.canEdit,
-			sharedByName: pagador.sharedByName ?? null,
-			sharedByEmail: pagador.sharedByEmail ?? null,
-			shareId: pagador.shareId ?? null,
-			shareCode: pagador.canManageShares ? (pagador.shareCode ?? null) : null,
-		}))
+	const payersMapped = payerRows.map((pagador) => ({
+		id: pagador.id,
+		name: pagador.name,
+		email: pagador.email,
+		avatarUrl: pagador.avatarUrl,
+		status: resolveStatus(pagador.status),
+		note: pagador.note,
+		role: pagador.role,
+		isAutoSend: pagador.isAutoSend ?? false,
+		createdAt: toIsoString(pagador.createdAt),
+		canEdit: pagador.canEdit,
+		sharedByName: pagador.sharedByName ?? null,
+		sharedByEmail: pagador.sharedByEmail ?? null,
+		shareId: pagador.shareId ?? null,
+		shareCode: pagador.canManageShares ? (pagador.shareCode ?? null) : null,
+		userId: pagador.userId,
+	}));
+
+	const loginLinks = await buildPayerLoginLinks(userId, payersMapped);
+
+	const payers = payersMapped
+		.map((pagador) => {
+			const login = loginLinks.get(pagador.id);
+			return {
+				id: pagador.id,
+				name: pagador.name,
+				email: pagador.email,
+				avatarUrl: pagador.avatarUrl,
+				status: pagador.status,
+				note: pagador.note,
+				role: pagador.role,
+				isAutoSend: pagador.isAutoSend,
+				createdAt: pagador.createdAt,
+				canEdit: pagador.canEdit,
+				sharedByName: pagador.sharedByName,
+				sharedByEmail: pagador.sharedByEmail,
+				shareId: pagador.shareId,
+				shareCode: pagador.shareCode,
+				loginEmail: login?.loginEmail ?? pagador.email,
+				loginUserName: login?.loginUserName ?? null,
+				familyAccessActive: login?.familyAccessActive ?? false,
+			};
+		})
 		.sort((a, b) => {
 			if (a.role === PAYER_ROLE_ADMIN && b.role !== PAYER_ROLE_ADMIN) return -1;
 			if (a.role !== PAYER_ROLE_ADMIN && b.role === PAYER_ROLE_ADMIN) return 1;

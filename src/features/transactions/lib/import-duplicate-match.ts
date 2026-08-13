@@ -20,7 +20,34 @@ export type ImportDuplicateSnapshot = {
 
 export type ImportDuplicateMatchOptions = {
 	invoicePeriods?: string[];
+	/** Lançamentos já vinculados nesta revisão não devem voltar como candidatos. */
+	excludeExistingTransactionIds?: ReadonlySet<string>;
 };
+
+export function collectImportLinkedExistingTransactionIds(
+	rows: Array<{
+		linked?: boolean;
+		linkedTransactionId?: string | null;
+		duplicateValidation?: ImportDuplicateValidation | null;
+	}>,
+): Set<string> {
+	const ids = new Set<string>();
+
+	for (const row of rows) {
+		if (!row.linked) continue;
+
+		if (row.linkedTransactionId) {
+			ids.add(row.linkedTransactionId);
+			continue;
+		}
+
+		if (row.duplicateValidation?.existingTransactionId) {
+			ids.add(row.duplicateValidation.existingTransactionId);
+		}
+	}
+
+	return ids;
+}
 
 export function mergeImportDuplicateSnapshots(
 	...lists: ImportDuplicateSnapshot[][]
@@ -492,6 +519,8 @@ export function resolveImportDuplicateMatches(
 	rows: Array<
 		ImportRowForMatch & {
 			externalId?: string | null;
+			linked?: boolean;
+			linkedTransactionId?: string | null;
 		}
 	>,
 	input: {
@@ -504,10 +533,19 @@ export function resolveImportDuplicateMatches(
 	isDuplicate: boolean;
 	duplicateValidation: ImportDuplicateValidation | null;
 }> {
+	const linkedExistingIds = collectImportLinkedExistingTransactionIds(rows);
+	const matchOptions: ImportDuplicateMatchOptions = {
+		...input.options,
+		excludeExistingTransactionIds: new Set([
+			...(input.options?.excludeExistingTransactionIds ?? []),
+			...linkedExistingIds,
+		]),
+	};
+
 	const semanticMatches = resolveSemanticImportMatches(
 		rows,
 		input.candidates,
-		input.options,
+		matchOptions,
 	);
 	const installmentDuplicateByIndex = new Map(
 		rows.flatMap((row, rowIndex) => {
@@ -521,6 +559,10 @@ export function resolveImportDuplicateMatches(
 	);
 
 	return rows.map((row, index) => {
+		if (row.linked || row.linkedTransactionId) {
+			return { isDuplicate: false, duplicateValidation: null };
+		}
+
 		let isDuplicate = row.externalId
 			? input.fitIdDuplicateIds.has(row.externalId)
 			: false;
@@ -533,7 +575,7 @@ export function resolveImportDuplicateMatches(
 			duplicateValidation = buildImportDuplicateValidation(
 				row,
 				existingSnapshot,
-				undefined,
+				"match",
 				input.options,
 			);
 		} else {
@@ -588,7 +630,9 @@ export function resolveSemanticImportMatches(
 		effectiveScoreMatrix.some((rowScores) => rowScores[candidateIndex] === 3),
 	);
 
-	const claimedExistingIds = new Set<string>();
+	const claimedExistingIds = new Set<string>(
+		options?.excludeExistingTransactionIds ?? [],
+	);
 
 	for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
 		const row = rows[rowIndex];
@@ -601,6 +645,11 @@ export function resolveSemanticImportMatches(
 			candidateIndex < candidates.length;
 			candidateIndex++
 		) {
+			const existing = candidates[candidateIndex];
+			if (claimedExistingIds.has(existing.id)) {
+				continue;
+			}
+
 			const score = scoreMatrix[rowIndex][candidateIndex];
 			const total = effectiveScoreMatrix[rowIndex][candidateIndex];
 			if (total < 2) continue;
@@ -634,6 +683,9 @@ export function resolveSemanticImportMatches(
 		if (bestCandidateIndex === null) continue;
 
 		const existing = candidates[bestCandidateIndex];
+		if (claimedExistingIds.has(existing.id)) {
+			continue;
+		}
 
 		const validation = buildImportDuplicateValidation(
 			row,

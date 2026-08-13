@@ -3,6 +3,7 @@ import type {
 	IncomeExpenseBalanceData,
 	MonthData,
 } from "@/features/dashboard/overview/income-expense-balance-queries";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import { safeToNumber } from "@/shared/utils/number";
@@ -130,7 +131,10 @@ export async function fetchDashboardPeriodOverview(
 	userId: string,
 	period: string,
 ): Promise<DashboardPeriodOverview> {
-	const adminPayerId = await getAdminPayerId(userId);
+	const [adminPayerId, dataOwnerUserId] = await Promise.all([
+		getAdminPayerId(userId),
+		getFinancialDataOwnerId(userId),
+	]);
 	if (!adminPayerId) {
 		return emptyOverview(period);
 	}
@@ -140,7 +144,7 @@ export async function fetchDashboardPeriodOverview(
 	const startPeriod = addMonthsToPeriod(period, -24);
 
 	const rows = await callRpc<PeriodOverviewRow>("get_period_overview", {
-		p_user_id: userId,
+		p_user_id: dataOwnerUserId,
 		p_admin_payer_id: adminPayerId,
 		p_start_period: startPeriod,
 		p_end_period: period,

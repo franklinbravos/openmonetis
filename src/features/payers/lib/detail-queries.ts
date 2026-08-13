@@ -1,4 +1,4 @@
-import { and, desc, eq, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, type SQL, sql } from "drizzle-orm";
 import {
 	cards,
 	categories,
@@ -27,21 +27,37 @@ export async function fetchPayerShares(payerId: string): Promise<ShareData[]> {
 			sharedWithUserId: payerShares.sharedWithUserId,
 			permission: payerShares.permission,
 			createdAt: payerShares.createdAt,
-			userName: usersTable.name,
-			userEmail: usersTable.email,
 		})
 		.from(payerShares)
-		.innerJoin(usersTable, eq(payerShares.sharedWithUserId, usersTable.id))
 		.where(eq(payerShares.payerId, payerId));
 
-	return shareRows.map((share) => ({
-		id: share.id,
-		userId: share.sharedWithUserId,
-		name: share.userName ?? "Usuário",
-		email: share.userEmail ?? "email não informado",
-		permission: share.permission,
-		createdAt: share.createdAt?.toISOString() ?? new Date().toISOString(),
-	}));
+	const sharedUserIds = [
+		...new Set(shareRows.map((share) => share.sharedWithUserId)),
+	];
+	const shareUsers =
+		sharedUserIds.length > 0
+			? await db
+					.select({
+						id: usersTable.id,
+						name: usersTable.name,
+						email: usersTable.email,
+					})
+					.from(usersTable)
+					.where(inArray(usersTable.id, sharedUserIds))
+			: [];
+	const userById = new Map(shareUsers.map((entry) => [entry.id, entry]));
+
+	return shareRows.map((share) => {
+		const shareUser = userById.get(share.sharedWithUserId);
+		return {
+			id: share.id,
+			userId: share.sharedWithUserId,
+			name: shareUser?.name ?? "Usuário",
+			email: shareUser?.email ?? "email não informado",
+			permission: share.permission,
+			createdAt: share.createdAt?.toISOString() ?? new Date().toISOString(),
+		};
+	});
 }
 
 export async function fetchCurrentUserShare(

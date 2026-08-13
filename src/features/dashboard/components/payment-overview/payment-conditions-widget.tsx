@@ -11,7 +11,6 @@ import {
 type PaymentConditionsWidgetProps = {
 	data: PaymentConditionsData;
 	period: string;
-	adminPayerSlug: string | null;
 };
 
 const resolveConditionIcon = (condition: string) =>
@@ -20,7 +19,6 @@ const resolveConditionIcon = (condition: string) =>
 export function PaymentConditionsWidget({
 	data,
 	period,
-	adminPayerSlug,
 }: PaymentConditionsWidgetProps) {
 	const items: PaymentBreakdownListItemData[] = data.conditions.map(
 		(condition) => {
@@ -29,7 +27,6 @@ export function PaymentConditionsWidget({
 				condition: slugify(condition.condition),
 				periodo: formatPeriodForUrl(period),
 			});
-			if (adminPayerSlug) params.set("payer", adminPayerSlug);
 			return {
 				id: condition.condition,
 				title: condition.condition,

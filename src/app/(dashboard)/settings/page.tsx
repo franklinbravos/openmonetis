@@ -4,9 +4,6 @@ import { AiProvidersTab } from "@/features/settings/components/ai-providers-tab"
 import { CompanionTab } from "@/features/settings/components/companion-tab";
 import { DeleteAccountForm } from "@/features/settings/components/delete-account-form";
 import { PreferencesForm } from "@/features/settings/components/preferences-form";
-import { UpdateEmailForm } from "@/features/settings/components/update-email-form";
-import { UpdateNameForm } from "@/features/settings/components/update-name-form";
-import { UpdatePasswordForm } from "@/features/settings/components/update-password-form";
 import { fetchSettingsPageData } from "@/features/settings/queries";
 import { Card } from "@/shared/components/ui/card";
 import { Separator } from "@/shared/components/ui/separator";
@@ -16,7 +13,6 @@ import {
 	TabsList,
 	TabsTrigger,
 } from "@/shared/components/ui/tabs";
-import { userUsesGoogleAuth } from "@/shared/lib/auth/password";
 import { getUser } from "@/shared/lib/auth/server";
 
 type PageSearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -41,14 +37,8 @@ export default async function Page({ searchParams }: PageProps) {
 	const defaultTab = abaParam === "ia" ? "ia" : "preferencias";
 	const user = await getUser();
 
-	const userName = user.name || "";
-	const userEmail = user.email || "";
-
 	const { userPreferences, userApiTokens, aiProviderSettings } =
 		await fetchSettingsPageData(user.id);
-	const authProvider = (await userUsesGoogleAuth(user.id))
-		? "google"
-		: "credential";
 
 	return (
 		<main className="flex flex-col gap-6">
@@ -61,9 +51,6 @@ export default async function Page({ searchParams }: PageProps) {
 								<TabsTrigger value="preferencias">Preferências</TabsTrigger>
 								<TabsTrigger value="ia">Inteligência artificial</TabsTrigger>
 								<TabsTrigger value="companion">Companion</TabsTrigger>
-								<TabsTrigger value="nome">Alterar nome</TabsTrigger>
-								<TabsTrigger value="senha">Alterar senha</TabsTrigger>
-								<TabsTrigger value="email">Alterar e-mail</TabsTrigger>
 								<TabsTrigger value="deletar" className="text-destructive">
 									Ações perigosas
 								</TabsTrigger>
@@ -152,59 +139,6 @@ export default async function Page({ searchParams }: PageProps) {
 								</div>
 								<Separator />
 								<CompanionTab tokens={userApiTokens} />
-							</div>
-						</Card>
-					</TabsContent>
-
-					<TabsContent value="nome" className="mt-4">
-						<Card className="p-6">
-							<div className="space-y-4">
-								<div>
-									<h2 className="text-xl font-semibold mb-1">Alterar nome</h2>
-									<p className="text-sm text-muted-foreground">
-										Atualize como seu nome aparece no OpenMonetis. Esse nome
-										pode ser exibido em diferentes seções do app e em
-										comunicações.
-									</p>
-								</div>
-								<Separator />
-								<UpdateNameForm currentName={userName} />
-							</div>
-						</Card>
-					</TabsContent>
-
-					<TabsContent value="senha" className="mt-4">
-						<Card className="p-6">
-							<div className="space-y-4">
-								<div>
-									<h2 className="text-xl font-semibold mb-1">Alterar senha</h2>
-									<p className="text-sm text-muted-foreground">
-										Defina uma nova senha para sua conta. Guarde-a em local
-										seguro.
-									</p>
-								</div>
-								<Separator />
-								<UpdatePasswordForm authProvider={authProvider} />
-							</div>
-						</Card>
-					</TabsContent>
-
-					<TabsContent value="email" className="mt-4">
-						<Card className="p-6">
-							<div className="space-y-4">
-								<div>
-									<h2 className="text-xl font-semibold mb-1">Alterar e-mail</h2>
-									<p className="text-sm text-muted-foreground">
-										Atualize o e-mail associado à sua conta. Você precisará
-										confirmar os links enviados para o novo e também para o
-										e-mail atual (quando aplicável) para concluir a alteração.
-									</p>
-								</div>
-								<Separator />
-								<UpdateEmailForm
-									currentEmail={userEmail}
-									authProvider={authProvider}
-								/>
 							</div>
 						</Card>
 					</TabsContent>

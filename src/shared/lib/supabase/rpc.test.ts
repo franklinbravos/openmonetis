@@ -30,6 +30,15 @@ describe("callRpc", () => {
 		expect(rows).toEqual([{ total_amount: "10.5" }]);
 	});
 
+	it("rejeita parâmetros undefined antes de chamar o Supabase", async () => {
+		await expect(
+			callRpc("get_dashboard_payers", {
+				p_user_id: undefined,
+				p_periods: ["2025-08"],
+			}),
+		).rejects.toThrow('Parâmetro RPC "p_user_id" indefinido');
+	});
+
 	it("propaga erro do Supabase com a mensagem", async () => {
 		const supabaseError = new Error("Relation does not exist");
 		rpcMock.rpc.mockResolvedValue({ data: null, error: supabaseError });

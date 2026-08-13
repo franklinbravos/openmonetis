@@ -2,6 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { cacheLife, cacheTag } from "next/cache";
 import { cards, financialAccounts, inboxItems } from "@/db/schema";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { callRpc, toRpcNumber } from "@/shared/lib/supabase/rpc";
 
 type InboxCountRow = {
@@ -31,6 +32,8 @@ export async function fetchDashboardInboxSnapshot(
 	cacheTag(`dashboard-${userId}`);
 	cacheLife({ revalidate: 3 });
 
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+
 	const [countRows, items, userCards, userAccounts] = await Promise.all([
 		callRpc<InboxCountRow>("get_inbox_count", {
 			p_user_id: userId,
@@ -56,11 +59,11 @@ export async function fetchDashboardInboxSnapshot(
 		db
 			.select({ name: cards.name, logo: cards.logo })
 			.from(cards)
-			.where(eq(cards.userId, userId)),
+			.where(eq(cards.userId, dataOwnerUserId)),
 		db
 			.select({ name: financialAccounts.name, logo: financialAccounts.logo })
 			.from(financialAccounts)
-			.where(eq(financialAccounts.userId, userId)),
+			.where(eq(financialAccounts.userId, dataOwnerUserId)),
 	]);
 
 	const logoMap: Record<string, string> = {};

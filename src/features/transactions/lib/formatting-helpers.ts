@@ -64,3 +64,16 @@ export function formatCondition(value?: string | null): string {
 export function formatCurrency(value: number): string {
 	return formatCurrencyValue(value);
 }
+
+const PAYER_EMPTY_LABEL = "Sem pessoa";
+
+export function resolvePayerLabel(name?: string | null): string {
+	return name?.trim() || PAYER_EMPTY_LABEL;
+}
+
+/** Primeiro nome para exibição compacta; mantém o fallback completo ("Sem pessoa"). */
+export function getPayerDisplayName(name?: string | null): string {
+	const label = resolvePayerLabel(name);
+	if (!name?.trim()) return label;
+	return label.split(/\s+/)[0] ?? label;
+}

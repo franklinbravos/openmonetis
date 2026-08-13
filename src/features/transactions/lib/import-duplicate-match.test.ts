@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildImportDuplicateValidation,
+	collectImportLinkedExistingTransactionIds,
 	findInstallmentDuplicateSnapshot,
 	mergeImportDuplicateSnapshots,
+	resolveImportDuplicateMatches,
 	resolveSemanticImportMatches,
 	scoreImportAgainstSnapshot,
 } from "./import-duplicate-match";
@@ -259,5 +261,108 @@ describe("resolveSemanticImportMatches — parcelamento", () => {
 
 		expect(matches.get(0)?.validation.status).toBe("match");
 		expect(matches.get(1)?.validation.status).toBe("match");
+	});
+});
+
+describe("resolveImportDuplicateMatches — vínculo e FITID", () => {
+	const existingPix = {
+		id: "existing-pix",
+		ofxFitId: "pix-fitid",
+		name: "Rava Clinic",
+		amount: "500.00",
+		purchaseDate: new Date(2026, 0, 15),
+		transactionType: "Receita",
+		currentInstallment: null,
+		installmentCount: null,
+		payerId: "payer-1",
+		categoryId: "cat-1",
+	};
+
+	const importRow = {
+		date: "2026-01-15",
+		amount: 500,
+		description:
+			"Transferência recebida pelo Pix - Rava Clinic Estetica E Spa Ltda",
+		transactionType: "income" as const,
+		externalId: "pix-fitid",
+	};
+
+	it("FITID já cadastrado vira duplicata verificada, não possível vínculo", () => {
+		const [state] = resolveImportDuplicateMatches([importRow], {
+			candidates: [existingPix],
+			fitIdDuplicateIds: new Set(["pix-fitid"]),
+			duplicateSnapshotByFitId: new Map([["pix-fitid", existingPix]]),
+		});
+
+		expect(state.isDuplicate).toBe(true);
+		expect(state.duplicateValidation?.status).toBe("match");
+	});
+
+	it("não sugere vínculo para lançamento já vinculado na revisão", () => {
+		const [state] = resolveImportDuplicateMatches(
+			[
+				{
+					...importRow,
+					externalId: null,
+					linked: true,
+					linkedTransactionId: "existing-pix",
+				},
+			],
+			{
+				candidates: [existingPix],
+				fitIdDuplicateIds: new Set(),
+				duplicateSnapshotByFitId: new Map(),
+			},
+		);
+
+		expect(state).toEqual({
+			isDuplicate: false,
+			duplicateValidation: null,
+		});
+	});
+
+	it("não sugere o mesmo cadastro para outra linha após vínculo", () => {
+		const linkedRow = {
+			...importRow,
+			description: `${importRow.description} (linha 1)`,
+			linked: true,
+			linkedTransactionId: "existing-pix",
+		};
+		const pendingRow = {
+			...importRow,
+			description: `${importRow.description} (linha 2)`,
+			externalId: "pix-fitid#2",
+		};
+
+		const states = resolveImportDuplicateMatches([linkedRow, pendingRow], {
+			candidates: [existingPix],
+			fitIdDuplicateIds: new Set(),
+			duplicateSnapshotByFitId: new Map(),
+		});
+
+		expect(states[0]?.duplicateValidation).toBeNull();
+		expect(states[1]?.duplicateValidation).toBeNull();
+	});
+});
+
+describe("collectImportLinkedExistingTransactionIds", () => {
+	it("coleta ids de linhas vinculadas", () => {
+		const ids = collectImportLinkedExistingTransactionIds([
+			{ linked: true, linkedTransactionId: "tx-1" },
+			{ linked: false },
+			{
+				linked: true,
+				duplicateValidation: {
+					status: "link_suggestion",
+					matchScore: { date: true, amount: true, description: false },
+					mismatches: [],
+					existingTransactionId: "tx-2",
+					existingPayerId: null,
+					existingCategoryId: null,
+				},
+			},
+		]);
+
+		expect([...ids]).toEqual(["tx-1", "tx-2"]);
 	});
 });

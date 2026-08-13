@@ -28,6 +28,7 @@ import PageDescription from "@/shared/components/page-description";
 import { Card } from "@/shared/components/ui/card";
 import { getUserId } from "@/shared/lib/auth/server";
 import { prefetchLogoMappings } from "@/shared/lib/logo/prefetch-server";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { parsePeriodParam } from "@/shared/utils/period";
 
 type PageSearchParams = Promise<ResolvedSearchParams>;
@@ -43,6 +44,7 @@ export const metadata: Metadata = {
 export default async function Page({ searchParams }: PageProps) {
 	await connection();
 	const userId = await getUserId();
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const resolvedSearchParams = searchParams ? await searchParams : undefined;
 
 	const periodoParamRaw = getSingleParam(resolvedSearchParams, "periodo");
@@ -73,7 +75,7 @@ export default async function Page({ searchParams }: PageProps) {
 	const [transactionsPage, estabelecimentos, monthSummaries] =
 		await Promise.all([
 			fetchTransactionsPage(filters, pagination),
-			fetchRecentEstablishments(userId),
+			fetchRecentEstablishments(dataOwnerUserId),
 			fetchTransactionsMonthSummaries(userId),
 		]);
 	const transactionData = mapTransactionsData(transactionsPage.rows);

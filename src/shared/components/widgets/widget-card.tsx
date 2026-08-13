@@ -33,7 +33,7 @@ export default function WidgetCard({
 	overlay,
 }: WidgetCardShellProps) {
 	return (
-		<Card className="relative gap-2 overflow-hidden md:h-custom-height-card">
+		<Card className="relative gap-2 overflow-hidden md:h-custom-height-card hover:border-transparent dark:hover:border-border">
 			<CardHeader>
 				<div className="flex w-full items-start justify-between">
 					<div>

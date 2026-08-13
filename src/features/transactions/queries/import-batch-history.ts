@@ -3,6 +3,7 @@ import { cards, financialAccounts, importBatches } from "@/db/schema";
 import { parseImportBatchStatus } from "@/features/transactions/lib/import-batch-status";
 import type { ImportFileHistoryEntry } from "@/features/transactions/lib/import-file-duplicate";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 
 type FetchImportBatchHistoryInput = {
 	userId: string;
@@ -23,7 +24,8 @@ export async function fetchImportBatchHistory({
 	accountId = null,
 	limit = 20,
 }: FetchImportBatchHistoryInput): Promise<ImportFileHistoryEntry[]> {
-	const filters = [eq(importBatches.userId, userId)];
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+	const filters = [eq(importBatches.userId, dataOwnerUserId)];
 
 	if (cardId) {
 		filters.push(eq(importBatches.cardId, cardId));

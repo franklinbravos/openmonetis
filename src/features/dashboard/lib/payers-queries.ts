@@ -1,4 +1,5 @@
 import { PAYER_ROLE_ADMIN } from "@/shared/lib/payers/constants";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { callRpc, toRpcNumber } from "@/shared/lib/supabase/rpc";
 import { calculatePercentageChange } from "@/shared/utils/math";
 import { getPreviousPeriod } from "@/shared/utils/period";
@@ -34,9 +35,10 @@ export async function fetchDashboardPayers(
 	period: string,
 ): Promise<DashboardPayersSnapshot> {
 	const previousPeriod = getPreviousPeriod(period);
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 
 	const rows = await callRpc<DashboardPayerRow>("get_dashboard_payers", {
-		p_user_id: userId,
+		p_user_id: dataOwnerUserId,
 		p_periods: [period, previousPeriod],
 	});
 

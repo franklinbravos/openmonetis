@@ -10,6 +10,7 @@ import {
 	INVOICE_PAYMENT_CATEGORY_NAME,
 } from "@/shared/lib/categories/constants";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpcOne } from "@/shared/lib/supabase/rpc";
 import { calculatePercentageChange } from "@/shared/utils/math";
@@ -43,8 +44,13 @@ export async function fetchCategoryDetails(
 	period: string,
 	hideAnticipatedInstallments = false,
 ): Promise<CategoryDetailData | null> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+
 	const category = await db.query.categories.findFirst({
-		where: and(eq(categories.userId, userId), eq(categories.id, categoryId)),
+		where: and(
+			eq(categories.userId, dataOwnerUserId),
+			eq(categories.id, categoryId),
+		),
 	});
 
 	if (!category) {
@@ -61,14 +67,12 @@ export async function fetchCategoryDetails(
 		sql`${transactions.note} NOT LIKE ${`${ACCOUNT_AUTO_INVOICE_NOTE_PREFIX}%`}`,
 	);
 
-	const currentRows = adminPayerId
-		? await db.query.transactions.findMany({
+	const currentRows = await db.query.transactions.findMany({
 				where: and(
-					eq(transactions.userId, userId),
+					eq(transactions.userId, dataOwnerUserId),
 					eq(transactions.categoryId, categoryId),
 					eq(transactions.transactionType, transactionType),
 					eq(transactions.period, period),
-					eq(transactions.payerId, adminPayerId),
 					...(hideAnticipatedInstallments
 						? [
 								or(
@@ -89,8 +93,7 @@ export async function fetchCategoryDetails(
 					desc(transactions.purchaseDate),
 					desc(transactions.createdAt),
 				],
-			})
-		: [];
+			});
 
 	const filteredRows = currentRows.filter((row) => {
 		if (
@@ -115,7 +118,7 @@ export async function fetchCategoryDetails(
 		previousTotalRow = await callRpcOne<CategoryPreviousTotalRow>(
 			"get_category_previous_total",
 			{
-				p_user_id: userId,
+				p_user_id: dataOwnerUserId,
 				p_admin_payer_id: adminPayerId,
 				p_category_id: categoryId,
 				p_transaction_type: transactionType,

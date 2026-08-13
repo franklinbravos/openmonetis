@@ -77,7 +77,7 @@ A ideia é simples: ter um lugar onde consigo ver todas as minhas contas, cartõ
 
 🤖 **Insights com IA** — Análises geradas por Claude, GPT, Gemini, MiniMax, OpenRouter ou modelos locais via Ollama. Insights personalizados e histórico salvo.
 
-👥 **Gestão colaborativa** — Pagadores com permissões (admin/viewer), notificações automáticas por e-mail, códigos de compartilhamento.
+👥 **Ambiente familiar** — Uma instância (banco) = uma família. Todos os membros com acesso veem e editam as mesmas contas, cartões e lançamentos. Cadastre pessoas em **Pessoas** com o e-mail de login de cada membro; o badge **Acesso ativo** confirma o vínculo. Pré-lançamentos (inbox/Companion) permanecem por usuário.
 
 📝 **Anotações e tarefas** — Notas de texto com anexos, listas com checkboxes e sistema de arquivamento.
 
@@ -97,7 +97,7 @@ A ideia é simples: ter um lugar onde consigo ver todas as minhas contas, cartõ
 - **PostgreSQL** + **Drizzle ORM**
 - **Better Auth** (email/senha, OAuth, Passkeys/WebAuthn)
 - **shadcn/ui** (Radix UI) + **Tailwind CSS**
-- **Bricolage Grotesque** via `next/font`
+- **Inter** via `next/font`
 - **Docker** (multi-stage build)
 - **Biome** (linting + formatting)
 - **Vercel AI SDK** (Claude, GPT, Gemini, MiniMax, OpenRouter, Ollama)
@@ -172,6 +172,18 @@ docker compose pull && docker compose up -d
 ```
 
 O schema do banco é aplicado automaticamente no startup — nenhum passo extra necessário.
+
+#### Ambiente familiar
+
+Cada instância (banco) representa **uma família**. O primeiro usuário que faz signup vira o admin financeiro; demais membros recebem acesso automático ao entrar, desde que o e-mail já esteja cadastrado em **Pessoas** com badge **Acesso ativo**.
+
+Para vincular manualmente um membro existente:
+
+```bash
+node --env-file=.env scripts/sync-family-access.mjs email@membro.com
+```
+
+Outra família = outro banco/instância (segurança entre famílias).
 
 ---
 
@@ -675,7 +687,7 @@ Para o plano OpenCode Go, use `https://opencode.ai/zen/go/v1` em `OPENCODE_BASE_
 ## 🎨 Design System
 
 O OpenMonetis usa uma identidade visual própria com superfícies quentes, laranja
-como cor de destaque, temas claro e escuro e tipografia Bricolage Grotesque. A
+como cor de destaque, temas claro e escuro e tipografia Inter. A
 interface é construída com tokens semânticos em OKLCH, Tailwind CSS 4 e
 componentes compartilhados baseados em shadcn/ui e Radix UI.
 

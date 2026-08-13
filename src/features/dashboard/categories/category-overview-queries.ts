@@ -12,6 +12,7 @@ import type {
 	GoalsProgressData,
 } from "@/features/dashboard/goals-progress/goals-progress-queries";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import { safeToNumber as toNumber } from "@/shared/utils/number";
@@ -142,7 +143,10 @@ export async function fetchDashboardCategoryOverview(
 	userId: string,
 	period: string,
 ): Promise<DashboardCategoryOverview> {
-	const adminPayerId = await getAdminPayerId(userId);
+	const [adminPayerId, dataOwnerUserId] = await Promise.all([
+		getAdminPayerId(userId),
+		getFinancialDataOwnerId(userId),
+	]);
 	if (!adminPayerId) {
 		return emptyOverview();
 	}
@@ -151,7 +155,7 @@ export async function fetchDashboardCategoryOverview(
 
 	const [rawTransactionRows, budgetRows, categoryRows] = await Promise.all([
 		callRpc<CategoryOverviewRpcRow>("get_category_overview", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_admin_payer_id: adminPayerId,
 			p_periods: [period, previousPeriod],
 		}),
@@ -167,9 +171,14 @@ export async function fetchDashboardCategoryOverview(
 			})
 			.from(budgets)
 			.innerJoin(categories, eq(budgets.categoryId, categories.id))
-			.where(and(eq(budgets.userId, userId), eq(budgets.period, period))),
+			.where(
+				and(eq(budgets.userId, dataOwnerUserId), eq(budgets.period, period)),
+			),
 		db.query.categories.findMany({
-			where: and(eq(categories.userId, userId), eq(categories.type, "despesa")),
+			where: and(
+				eq(categories.userId, dataOwnerUserId),
+				eq(categories.type, "despesa"),
+			),
 			orderBy: (category, { asc }) => [asc(category.name)],
 		}),
 	]);

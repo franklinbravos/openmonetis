@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { categories } from "@/db/schema";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import { safeToNumber } from "@/shared/utils/number";
@@ -123,7 +124,10 @@ export async function fetchTopEstablishmentsData(
 	const months = parseInt(periodFilter, 10);
 	const periods = buildPeriodRange(currentPeriod, months);
 	const startPeriod = periods[0];
-	const adminPayerId = await getAdminPayerId(userId);
+	const [adminPayerId, dataOwnerUserId] = await Promise.all([
+		getAdminPayerId(userId),
+		getFinancialDataOwnerId(userId),
+	]);
 	const periodLabel =
 		months === 3
 			? "Últimos 3 meses"
@@ -150,7 +154,7 @@ export async function fetchTopEstablishmentsData(
 	const establishmentsData = await callRpc<TopEstablishmentRow>(
 		"get_top_establishments",
 		{
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_admin_payer_id: adminPayerId,
 			p_start_period: startPeriod,
 			p_end_period: currentPeriod,
@@ -161,14 +165,14 @@ export async function fetchTopEstablishmentsData(
 
 	const [topCategoriesData, categoriesByEstablishment] = await Promise.all([
 		callRpc<TopCategoryRow>("get_top_categories", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_admin_payer_id: adminPayerId,
 			p_start_period: startPeriod,
 			p_end_period: currentPeriod,
 		}),
 		establishmentNames.length > 0
 			? callRpc<EstablishmentCategoryRow>("get_establishment_categories", {
-					p_user_id: userId,
+					p_user_id: dataOwnerUserId,
 					p_admin_payer_id: adminPayerId,
 					p_start_period: startPeriod,
 					p_end_period: currentPeriod,
@@ -185,7 +189,7 @@ export async function fetchTopEstablishmentsData(
 			icon: categories.icon,
 		})
 		.from(categories)
-		.where(eq(categories.userId, userId));
+		.where(eq(categories.userId, dataOwnerUserId));
 
 	const categoryMap = new Map<string, CategoryInfo>(
 		allCategories.map((c): [string, CategoryInfo] => [c.id, c]),

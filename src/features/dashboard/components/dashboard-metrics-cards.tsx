@@ -1,7 +1,6 @@
 import {
 	RiArrowLeftRightLine,
 	RiArrowRightDownLine,
-	RiArrowRightLine,
 	RiArrowRightUpLine,
 	RiCalendar2Line,
 } from "@remixicon/react";
@@ -26,7 +25,6 @@ import { cn } from "@/shared/utils/ui";
 type DashboardMetricsCardsProps = {
 	metrics: DashboardCardMetrics;
 	period: string;
-	adminPayerSlug: string | null;
 };
 
 type Trend = "up" | "down" | "flat";
@@ -41,7 +39,8 @@ const CARDS = [
 		icon: RiArrowRightDownLine,
 		invertTrend: false,
 		iconClass: "text-success",
-		transactionType: "receita",
+		getTransactionsHref: (period: string) =>
+			`/transactions?periodo=${formatPeriodForUrl(period)}&type=receita`,
 		helpTitle: "Como calculamos receitas",
 		helpLines: [
 			"Somamos os lançamentos do tipo Receita no período selecionado.",
@@ -59,7 +58,8 @@ const CARDS = [
 		icon: RiArrowRightUpLine,
 		invertTrend: true,
 		iconClass: "text-destructive",
-		transactionType: "despesa",
+		getTransactionsHref: (period: string) =>
+			`/transactions?periodo=${formatPeriodForUrl(period)}&type=despesa`,
 		helpTitle: "Como calculamos despesas",
 		helpLines: [
 			"Somamos os lançamentos do tipo Despesa no período selecionado.",
@@ -77,7 +77,8 @@ const CARDS = [
 		icon: RiArrowLeftRightLine,
 		invertTrend: false,
 		iconClass: "text-warning",
-		transactionType: null,
+		getTransactionsHref: (period: string) =>
+			`/transactions?periodo=${formatPeriodForUrl(period)}`,
 		helpTitle: "Como calculamos o balanço",
 		helpLines: [
 			"Partimos de receitas menos despesas do período.",
@@ -94,7 +95,8 @@ const CARDS = [
 		icon: RiCalendar2Line,
 		invertTrend: false,
 		iconClass: "text-cyan-600",
-		transactionType: null,
+		getTransactionsHref: (period: string) =>
+			`/transactions?periodo=${formatPeriodForUrl(period)}`,
 		helpTitle: "Como calculamos o previsto",
 		helpLines: [
 			"Acumulamos o balanço mês a mês até o período atual.",
@@ -135,10 +137,9 @@ const getPercentChange = (current: number, previous: number): string | null => {
 export function DashboardMetricsCards({
 	metrics,
 	period,
-	adminPayerSlug,
 }: DashboardMetricsCardsProps) {
 	return (
-		<div className="grid grid-cols-1 gap-3 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
+		<div className="grid grid-cols-2 gap-3 @5xl/main:grid-cols-4">
 			{CARDS.map(
 				({
 					label,
@@ -147,7 +148,7 @@ export function DashboardMetricsCards({
 					icon: Icon,
 					invertTrend,
 					iconClass,
-					transactionType,
+					getTransactionsHref,
 					helpTitle,
 					helpLines,
 				}) => {
@@ -157,32 +158,31 @@ export function DashboardMetricsCards({
 						metric.current,
 						metric.previous,
 					);
-					const transactionsHref = transactionType
-						? `/transactions?periodo=${formatPeriodForUrl(period)}&type=${transactionType}${adminPayerSlug ? `&payer=${adminPayerSlug}` : ""}`
-						: null;
+					const transactionsHref = getTransactionsHref(period);
 
 					return (
-						<Card key={label} className="gap-2 overflow-hidden py-6">
-							<CardHeader className="gap-1">
+						<Card
+							key={label}
+							className="relative min-w-0 cursor-pointer gap-2 overflow-hidden py-4 sm:py-6"
+						>
+							<Link
+								href={transactionsHref}
+								className="absolute inset-0 z-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+								aria-label={`Ver lançamentos de ${label.toLowerCase()}`}
+							/>
+							<CardHeader className="relative z-10 gap-1 pointer-events-none">
 								<div className="flex items-center justify-between gap-2">
 									<CardTitle className="flex items-center gap-1">
 										<Icon className={cn("size-4", iconClass)} aria-hidden />
 										{label}
-										<MetricsCardInfoButton
-											label={label}
-											helpTitle={helpTitle}
-											helpLines={helpLines}
-										/>
+										<span className="pointer-events-auto">
+											<MetricsCardInfoButton
+												label={label}
+												helpTitle={helpTitle}
+												helpLines={helpLines}
+											/>
+										</span>
 									</CardTitle>
-									{transactionsHref ? (
-										<Link
-											href={transactionsHref}
-											className="rounded-sm px-1 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-primary focus-visible:outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px]"
-											aria-label={`Ver lançamentos de ${label.toLowerCase()}`}
-										>
-											<RiArrowRightLine className="size-4" aria-hidden />
-										</Link>
-									) : null}
 								</div>
 								<CardDescription className="mt-1 tracking-tight">
 									{subtitle}
@@ -190,12 +190,12 @@ export function DashboardMetricsCards({
 								<Separator className="mt-1" />
 							</CardHeader>
 
-							<CardContent className="flex flex-col">
+							<CardContent className="relative z-10 flex flex-col pointer-events-none">
 								<div className="flex items-start justify-between mt-1">
 									<div className="flex flex-col gap-2 min-w-0">
 										<div className="flex flex-wrap items-center">
 											<MoneyValues
-												className="text-2xl leading-none"
+												className="text-lg leading-none sm:text-2xl"
 												amount={metric.current}
 											/>
 										</div>

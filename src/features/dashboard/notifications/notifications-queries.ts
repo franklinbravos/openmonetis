@@ -4,6 +4,7 @@ import { buildInvoiceDetailsHref } from "@/features/dashboard/invoices/invoices-
 import { db } from "@/shared/lib/db";
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import { isNotificationStatesTableMissing } from "@/shared/lib/notifications/is-table-missing";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import type {
@@ -172,11 +173,14 @@ export async function fetchDashboardNotifications(
 	const DAYS_THRESHOLD = 5;
 	const nextPeriod = getNextPeriod(currentPeriod);
 
-	const adminPayerId = await getAdminPayerId(userId);
+	const [adminPayerId, dataOwnerUserId] = await Promise.all([
+		getAdminPayerId(userId),
+		getFinancialDataOwnerId(userId),
+	]);
 
 	// --- Build conditions that depend on adminPayerId ---
 	const boletosConditions = [
-		eq(transactions.userId, userId),
+		eq(transactions.userId, dataOwnerUserId),
 		eq(transactions.paymentMethod, PAYMENT_METHOD_BOLETO),
 		eq(transactions.isSettled, false),
 	];
@@ -198,16 +202,16 @@ export async function fetchDashboardNotifications(
 	] = await Promise.all([
 		// Faturas atrasadas (períodos anteriores)
 		callRpc<OverdueInvoiceRpcRow>("get_overdue_invoices", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_current_period: currentPeriod,
 		}),
 		// Faturas do período atual e próximo
 		callRpc<PeriodInvoiceRpcRow>("get_period_invoice_totals", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_period: currentPeriod,
 		}),
 		callRpc<PeriodInvoiceRpcRow>("get_period_invoice_totals", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_period: nextPeriod,
 		}),
 		// Boletos não pagos
@@ -223,7 +227,7 @@ export async function fetchDashboardNotifications(
 			.where(and(...boletosConditions)),
 		// Orçamentos do período atual
 		callRpc<BudgetSpentRpcRow>("get_budget_spent", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_period: currentPeriod,
 			p_admin_payer_id: adminPayerId,
 		}),

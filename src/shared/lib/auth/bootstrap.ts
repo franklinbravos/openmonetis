@@ -1,3 +1,7 @@
+import {
+	bootstrapFamilyAccessForUser,
+	findFamilyAdminPayer,
+} from "@/features/payers/lib/payer-family-access";
 import type { AppUser } from "@/shared/lib/auth/server";
 import { seedDefaultCategoriesForUser } from "@/shared/lib/categories/defaults";
 import { ensureDefaultPayerForUser } from "@/shared/lib/payers/defaults";
@@ -7,6 +11,8 @@ const bootstrapped = new Set<string>();
 
 /**
  * Garante registro em public.user + seeds após signup (Supabase Auth).
+ * Primeiro usuário da instância: categorias + pagador admin.
+ * Demais usuários: acesso familiar automático, sem seed financeiro duplicado.
  */
 export async function ensureUserBootstrap(user: AppUser) {
 	if (bootstrapped.has(user.id)) return;
@@ -28,13 +34,23 @@ export async function ensureUserBootstrap(user: AppUser) {
 		{ onConflict: "id" },
 	);
 
-	await seedDefaultCategoriesForUser(user.id);
-	await ensureDefaultPayerForUser({
-		id: user.id,
-		name: user.name,
-		email: user.email,
-		image: user.image,
-	});
+	const familyAdmin = await findFamilyAdminPayer();
+	const isFirstFamilyUser = !familyAdmin;
+
+	if (isFirstFamilyUser) {
+		await seedDefaultCategoriesForUser(user.id);
+		await ensureDefaultPayerForUser({
+			id: user.id,
+			name: user.name,
+			email: user.email,
+			image: user.image,
+		});
+	} else {
+		await bootstrapFamilyAccessForUser({
+			id: user.id,
+			email: user.email,
+		});
+	}
 
 	bootstrapped.add(user.id);
 }

@@ -54,6 +54,12 @@ const updatePermissionSchema = z.object({
 	permission: permissionSchema,
 });
 
+const grantExistingUserAccessSchema = z.object({
+	payerId: uuidSchema("Payer"),
+	email: z.string().trim().email("Informe um e-mail válido."),
+	permission: permissionSchema,
+});
+
 const acceptInviteSchema = z.object({
 	token: z.string().trim().min(8, "Convite inválido."),
 });
@@ -109,6 +115,65 @@ async function createShareForUser(input: {
 		.returning({ id: payerShares.id });
 
 	return created.id;
+}
+
+export async function grantPayerAccessToExistingUserAction(
+	input: z.infer<typeof grantExistingUserAccessSchema>,
+): Promise<ActionResult> {
+	try {
+		const currentUser = await getUser();
+		const data = grantExistingUserAccessSchema.parse(input);
+		const email = data.email.toLowerCase();
+
+		const management = await assertPayerShareManagement(
+			currentUser.id,
+			data.payerId,
+		);
+		if (!management.ok) {
+			return { success: false, error: management.error };
+		}
+
+		const pagador = management.pagador;
+		if (pagador.email?.toLowerCase() === email) {
+			return {
+				success: false,
+				error: "Use o e-mail de outra pessoa para conceder acesso.",
+			};
+		}
+
+		const existingUser = await findUserByEmail(email);
+		if (!existingUser) {
+			return {
+				success: false,
+				error:
+					"Nenhuma conta encontrada com este e-mail. A pessoa precisa criar acesso em /signup antes de receber permissão.",
+			};
+		}
+
+		if (existingUser.id === pagador.userId) {
+			return {
+				success: false,
+				error: "Esta pessoa já é a proprietária do cadastro.",
+			};
+		}
+
+		await createShareForUser({
+			payerId: data.payerId,
+			sharedWithUserId: existingUser.id,
+			permission: data.permission,
+			createdByUserId: pagador.userId,
+		});
+
+		revalidatePayer(currentUser.id, data.payerId);
+		revalidateForEntity("payers", existingUser.id);
+
+		return {
+			success: true,
+			message: "Acesso concedido com sucesso.",
+		};
+	} catch (error) {
+		return handleActionError(error);
+	}
 }
 
 export async function createPayerAccessAction(

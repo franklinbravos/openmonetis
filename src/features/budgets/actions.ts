@@ -14,6 +14,7 @@ import {
 } from "@/shared/lib/actions/helpers";
 import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import { periodSchema, uuidSchema } from "@/shared/lib/schemas/common";
 import type { ActionResult } from "@/shared/lib/types/actions";
 import {
@@ -102,16 +103,17 @@ export async function createBudgetAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = createBudgetSchema.parse(input);
 
-		await ensureCategory(user.id, data.categoryId);
+		await ensureCategory(dataOwnerUserId, data.categoryId);
 
 		const [createdBudget] = await db
 			.insert(budgets)
 			.values({
 				amount: formatDecimalForDbRequired(data.amount),
 				period: data.period,
-				userId: user.id,
+				userId: dataOwnerUserId,
 				categoryId: data.categoryId,
 			})
 			.onConflictDoNothing({
@@ -146,9 +148,10 @@ export async function updateBudgetAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = updateBudgetSchema.parse(input);
 
-		await ensureCategory(user.id, data.categoryId);
+		await ensureCategory(dataOwnerUserId, data.categoryId);
 
 		const [updated] = await db
 			.update(budgets)
@@ -157,7 +160,7 @@ export async function updateBudgetAction(
 				period: data.period,
 				categoryId: data.categoryId,
 			})
-			.where(and(eq(budgets.id, data.id), eq(budgets.userId, user.id)))
+			.where(and(eq(budgets.id, data.id), eq(budgets.userId, dataOwnerUserId)))
 			.returning({ id: budgets.id });
 
 		if (!updated) {
@@ -187,11 +190,12 @@ export async function deleteBudgetAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = deleteBudgetSchema.parse(input);
 
 		const [deleted] = await db
 			.delete(budgets)
-			.where(and(eq(budgets.id, data.id), eq(budgets.userId, user.id)))
+			.where(and(eq(budgets.id, data.id), eq(budgets.userId, dataOwnerUserId)))
 			.returning({ id: budgets.id });
 
 		if (!deleted) {
@@ -248,6 +252,7 @@ export async function duplicatePreviousMonthBudgetsAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = duplicatePreviousMonthSchema.parse(input);
 
 		// Calcular mês anterior
@@ -256,7 +261,7 @@ export async function duplicatePreviousMonthBudgetsAction(
 		// Buscar orçamentos do mês anterior
 		const previousBudgets = (await db.query.budgets.findMany({
 			where: and(
-				eq(budgets.userId, user.id),
+				eq(budgets.userId, dataOwnerUserId),
 				eq(budgets.period, previousPeriod),
 			),
 		})) as BudgetCopyRow[];
@@ -270,7 +275,10 @@ export async function duplicatePreviousMonthBudgetsAction(
 
 		// Buscar orçamentos existentes do mês atual
 		const currentBudgets = (await db.query.budgets.findMany({
-			where: and(eq(budgets.userId, user.id), eq(budgets.period, data.period)),
+			where: and(
+				eq(budgets.userId, dataOwnerUserId),
+				eq(budgets.period, data.period),
+			),
 		})) as BudgetCopyRow[];
 
 		// Filtrar para evitar duplicatas
@@ -297,7 +305,7 @@ export async function duplicatePreviousMonthBudgetsAction(
 				budgetsToCopy.map((b) => ({
 					amount: b.amount as string,
 					period: data.period,
-					userId: user.id,
+					userId: dataOwnerUserId,
 					categoryId: b.categoryId as string,
 				})),
 			)

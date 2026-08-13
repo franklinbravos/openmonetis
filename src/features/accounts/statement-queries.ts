@@ -9,6 +9,7 @@ import type {
 	PeriodCarouselStatus,
 } from "@/shared/components/month-picker/period-carousel-types";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc, callRpcOne } from "@/shared/lib/supabase/rpc";
 import { safeToNumber } from "@/shared/utils/number";
@@ -41,6 +42,7 @@ type StatementSummaryRow = {
 };
 
 export async function fetchAccountData(userId: string, accountId: string) {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const account = await db.query.financialAccounts.findFirst({
 		columns: {
 			id: true,
@@ -53,7 +55,7 @@ export async function fetchAccountData(userId: string, accountId: string) {
 		},
 		where: and(
 			eq(financialAccounts.id, accountId),
-			eq(financialAccounts.userId, userId),
+			eq(financialAccounts.userId, dataOwnerUserId),
 		),
 	});
 
@@ -69,7 +71,10 @@ export async function fetchAccountStatementMonthSummaries(
 		return [];
 	}
 
-	const adminPayerId = await getAdminPayerId(userId);
+	const [adminPayerId, dataOwnerUserId] = await Promise.all([
+		getAdminPayerId(userId),
+		getFinancialDataOwnerId(userId),
+	]);
 	if (!adminPayerId) {
 		return [];
 	}
@@ -77,7 +82,7 @@ export async function fetchAccountStatementMonthSummaries(
 	const periodRows = await callRpc<StatementSummariesRow>(
 		"get_account_statement_summaries",
 		{
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_account_id: accountId,
 			p_admin_payer_id: adminPayerId,
 		},
@@ -144,7 +149,10 @@ export async function fetchAccountSummary(
 		throw new Error("Account not found");
 	}
 
-	const adminPayerId = await getAdminPayerId(userId);
+	const [adminPayerId, dataOwnerUserId] = await Promise.all([
+		getAdminPayerId(userId),
+		getFinancialDataOwnerId(userId),
+	]);
 	if (!adminPayerId) {
 		const initialBalance = safeToNumber(account.initialBalance);
 		return {
@@ -158,7 +166,7 @@ export async function fetchAccountSummary(
 	const summary = await callRpcOne<StatementSummaryRow>(
 		"get_account_statement_summary",
 		{
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_account_id: accountId,
 			p_admin_payer_id: adminPayerId,
 			p_period: selectedPeriod,

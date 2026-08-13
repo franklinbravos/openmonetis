@@ -11,6 +11,7 @@ import { ACCOUNT_AUTO_INVOICE_NOTE_PREFIX } from "@/shared/lib/accounts/constant
 import { handleActionError } from "@/shared/lib/actions/helpers";
 import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import {
 	buildEntriesByPayer,
 	sendPayerAutoEmails,
@@ -67,6 +68,7 @@ export async function deleteTransactionBulkAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = deleteBulkSchema.parse(input);
 
 		const existing = await db.query.transactions.findFirst({
@@ -82,7 +84,7 @@ export async function deleteTransactionBulkAction(
 			},
 			where: and(
 				eq(transactions.id, data.id),
-				eq(transactions.userId, user.id),
+				eq(transactions.userId, dataOwnerUserId),
 			),
 		});
 
@@ -132,7 +134,7 @@ export async function deleteTransactionBulkAction(
 		const targetRows = await db
 			.select({ id: transactions.id })
 			.from(transactions)
-			.where(and(scopeFilter, eq(transactions.userId, user.id)));
+			.where(and(scopeFilter, eq(transactions.userId, dataOwnerUserId)));
 
 		const targetIds = targetRows.map((r) => r.id);
 
@@ -154,11 +156,14 @@ export async function deleteTransactionBulkAction(
 			.where(
 				and(
 					inArray(transactions.id, targetIds),
-					eq(transactions.userId, user.id),
+					eq(transactions.userId, dataOwnerUserId),
 				),
 			);
 
-		await cleanupAttachmentsAfterTransactionDelete(linkedAttachments, user.id);
+		await cleanupAttachmentsAfterTransactionDelete(
+			linkedAttachments,
+			dataOwnerUserId,
+		);
 
 		revalidate(user.id);
 		return { success: true, message: successMessage };
@@ -172,6 +177,7 @@ export async function updateTransactionBulkAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = updateBulkSchema.parse(input);
 
 		const ownershipError = await validateAllOwnership(user.id, {
@@ -200,7 +206,7 @@ export async function updateTransactionBulkAction(
 			},
 			where: and(
 				eq(transactions.id, data.id),
-				eq(transactions.userId, user.id),
+				eq(transactions.userId, dataOwnerUserId),
 			),
 		});
 
@@ -357,9 +363,11 @@ export async function updateTransactionBulkAction(
 				return null;
 			}
 
-			const paidPeriods = await getPaidInvoicePeriods(user.id, targetCardId, [
-				...movedPeriods,
-			]);
+			const paidPeriods = await getPaidInvoicePeriods(
+				dataOwnerUserId,
+				targetCardId,
+				[...movedPeriods],
+			);
 
 			if (paidPeriods.length === 0) {
 				return null;
@@ -440,7 +448,7 @@ export async function updateTransactionBulkAction(
 						.where(
 							and(
 								inArray(transactions.id, group.ids),
-								eq(transactions.userId, user.id),
+								eq(transactions.userId, dataOwnerUserId),
 							),
 						);
 				}
@@ -478,7 +486,7 @@ export async function updateTransactionBulkAction(
 				columns: { id: true, purchaseDate: true, period: true },
 				where: and(
 					eq(transactions.seriesId, existing.seriesId),
-					eq(transactions.userId, user.id),
+					eq(transactions.userId, dataOwnerUserId),
 					eq(transactions.period, existing.period),
 				),
 				orderBy: asc(transactions.purchaseDate),
@@ -517,7 +525,7 @@ export async function updateTransactionBulkAction(
 				},
 				where: and(
 					eq(transactions.seriesId, existing.seriesId),
-					eq(transactions.userId, user.id),
+					eq(transactions.userId, dataOwnerUserId),
 					sql`${transactions.period} >= ${existing.period}`,
 					payerIdFilter,
 				),
@@ -553,7 +561,7 @@ export async function updateTransactionBulkAction(
 				},
 				where: and(
 					eq(transactions.seriesId, existing.seriesId),
-					eq(transactions.userId, user.id),
+					eq(transactions.userId, dataOwnerUserId),
 					payerIdFilter,
 				),
 				orderBy: asc(transactions.purchaseDate),
@@ -590,6 +598,7 @@ export async function createMassTransactionsAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = massAddSchema.parse(input);
 
 		const uniquePayerIds = new Set<string>();
@@ -705,7 +714,7 @@ export async function createMassTransactionsAction(
 				isDivided: false,
 				dueDate: null,
 				boletoPaymentDate: null,
-				userId: user.id,
+				userId: dataOwnerUserId,
 				seriesId: null,
 			};
 
@@ -761,6 +770,7 @@ export async function deleteMultipleTransactionsAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = deleteMultipleSchema.parse(input);
 
 		const existing = await db.query.transactions.findMany({
@@ -778,7 +788,7 @@ export async function deleteMultipleTransactionsAction(
 			},
 			where: and(
 				inArray(transactions.id, data.ids),
-				eq(transactions.userId, user.id),
+				eq(transactions.userId, dataOwnerUserId),
 			),
 		});
 
@@ -807,11 +817,14 @@ export async function deleteMultipleTransactionsAction(
 			.where(
 				and(
 					inArray(transactions.id, data.ids),
-					eq(transactions.userId, user.id),
+					eq(transactions.userId, dataOwnerUserId),
 				),
 			);
 
-		await cleanupAttachmentsAfterTransactionDelete(linkedAttachments, user.id);
+		await cleanupAttachmentsAfterTransactionDelete(
+			linkedAttachments,
+			dataOwnerUserId,
+		);
 
 		const notificationData = existing
 			.filter(

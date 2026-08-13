@@ -69,10 +69,9 @@ necessário, variantes Tailwind `dark:`.
 
 ## 4. Tipografia
 
-A família principal é **Bricolage Grotesque**, carregada com `next/font` em
-[`public/fonts/font_index.ts`](./public/fonts/font_index.ts). Os pesos
-disponíveis são `500`, `600` e `700`, com fallback para Arial e fontes sans-serif
-do sistema.
+A família principal é **Inter**, carregada com `next/font` em
+[`public/fonts/font_index.ts`](./public/fonts/font_index.ts), com fallback para
+fontes sans-serif do sistema.
 
 Diretrizes:
 

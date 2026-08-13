@@ -5,6 +5,7 @@ import { categories, financialAccounts, transactions } from "@/db/schema";
 import { ACCOUNT_AUTO_INVOICE_NOTE_PREFIX } from "@/shared/lib/accounts/constants";
 import { excludeTransactionsFromExcludedAccounts } from "@/shared/lib/accounts/query-filters";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc, type RpcParams } from "@/shared/lib/supabase/rpc";
 import { safeToNumber } from "@/shared/utils/number";
@@ -68,7 +69,10 @@ async function aggregateMonthDataInternal(userId: string, period: string) {
 	const previousPeriod = getPreviousPeriod(period);
 	const twoMonthsAgo = getPreviousPeriod(previousPeriod);
 	const threeMonthsAgo = getPreviousPeriod(twoMonthsAgo);
-	const adminPayerId = await getAdminPayerId(userId);
+	const [adminPayerId, dataOwnerUserId] = await Promise.all([
+		getAdminPayerId(userId),
+		getFinancialDataOwnerId(userId),
+	]);
 	const autoInvoiceExclusion =
 		or(
 			isNull(transactions.note),
@@ -93,7 +97,10 @@ async function aggregateMonthDataInternal(userId: string, period: string) {
 		excludeAutoInvoice?: boolean;
 		excludeExcludedAccounts?: boolean;
 	}) => {
-		const conditions = [eq(transactions.userId, userId), adminPayerCondition];
+		const conditions = [
+			eq(transactions.userId, dataOwnerUserId),
+			adminPayerCondition,
+		];
 
 		if (singlePeriod) {
 			conditions.push(eq(transactions.period, singlePeriod));
@@ -135,26 +142,28 @@ async function aggregateMonthDataInternal(userId: string, period: string) {
 		last3MonthsTransactions,
 	] = await Promise.all([
 		rpcForAdmin<PeriodTotalsRow>("get_insight_period_totals", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_admin_payer_id: adminPayerId,
 			p_periods: [threeMonthsAgo, twoMonthsAgo, previousPeriod, period],
 		}),
 		rpcForAdmin<TopExpenseCategoryRow>("get_insight_top_expense_categories", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_admin_payer_id: adminPayerId,
 			p_period: period,
 		}),
 		rpcForAdmin<BudgetRow>("get_insight_budgets", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_admin_payer_id: adminPayerId,
 			p_period: period,
 		}),
-		callRpc<CardsSummaryRow>("get_insight_cards", { p_user_id: userId }),
+		callRpc<CardsSummaryRow>("get_insight_cards", {
+			p_user_id: dataOwnerUserId,
+		}),
 		callRpc<AccountsSummaryRow>("get_insight_accounts", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 		}),
 		rpcForAdmin<AvgTicketRow>("get_insight_avg_ticket", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_admin_payer_id: adminPayerId,
 			p_period: period,
 		}),
@@ -177,7 +186,7 @@ async function aggregateMonthDataInternal(userId: string, period: string) {
 				),
 			),
 		rpcForAdmin<PaymentMethodRow>("get_insight_payment_methods", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_admin_payer_id: adminPayerId,
 			p_period: period,
 		}),

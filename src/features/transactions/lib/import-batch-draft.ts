@@ -58,6 +58,7 @@ const importBatchDraftRowSchema = z.object({
 	isDuplicate: z.boolean().optional(),
 	reimported: z.boolean().optional(),
 	linked: z.boolean().optional(),
+	linkedTransactionId: z.string().uuid().nullable().optional(),
 	duplicateValidation: importDuplicateValidationDraftSchema
 		.nullable()
 		.optional(),
@@ -127,6 +128,11 @@ export function buildImportBatchDraft(input: {
 			isDuplicate: row.isDuplicate,
 			reimported: row.reimported,
 			linked: row.linked ?? false,
+			linkedTransactionId: row.linked
+				? (row.linkedTransactionId ??
+					row.duplicateValidation?.existingTransactionId ??
+					null)
+				: null,
 			duplicateValidation: row.linked ? null : row.duplicateValidation,
 		})),
 	};
@@ -161,6 +167,9 @@ export function applyImportBatchDraftToRows(
 		if (!draft) return row;
 
 		const linked = draft.linked ?? false;
+		const linkedTransactionId = linked
+			? (draft.linkedTransactionId ?? null)
+			: null;
 		const isDuplicate = linked
 			? false
 			: draft.isDuplicate === false
@@ -195,6 +204,7 @@ export function applyImportBatchDraftToRows(
 			duplicateValidation,
 			reimported: draft.reimported ?? row.reimported,
 			linked,
+			linkedTransactionId,
 		};
 	});
 }

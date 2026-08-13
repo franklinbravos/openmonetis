@@ -30,6 +30,8 @@ import { getUserId } from "@/shared/lib/auth/server";
 import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants";
 import { db } from "@/shared/lib/db";
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
+import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { uuidSchema } from "@/shared/lib/schemas/common";
 import { deleteS3Object } from "@/shared/lib/storage/presign";
@@ -167,6 +169,7 @@ export async function checkDuplicateFitIds(
 	fitIds: string[],
 ): Promise<string[]> {
 	const userId = await getUserId();
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const ids = fitIds.filter(Boolean);
 	if (ids.length === 0) return [];
 
@@ -174,7 +177,10 @@ export async function checkDuplicateFitIds(
 		.select({ ofxFitId: transactions.ofxFitId })
 		.from(transactions)
 		.where(
-			and(eq(transactions.userId, userId), inArray(transactions.ofxFitId, ids)),
+			and(
+				eq(transactions.userId, dataOwnerUserId),
+				inArray(transactions.ofxFitId, ids),
+			),
 		);
 
 	return rows.map((r) => r.ofxFitId).filter((id): id is string => id !== null);
@@ -182,6 +188,7 @@ export async function checkDuplicateFitIds(
 
 export async function fetchImportDuplicateSnapshots(fitIds: string[]) {
 	const userId = await getUserId();
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const ids = fitIds.filter(Boolean);
 	if (ids.length === 0) return [];
 
@@ -200,7 +207,10 @@ export async function fetchImportDuplicateSnapshots(fitIds: string[]) {
 		})
 		.from(transactions)
 		.where(
-			and(eq(transactions.userId, userId), inArray(transactions.ofxFitId, ids)),
+			and(
+				eq(transactions.userId, dataOwnerUserId),
+				inArray(transactions.ofxFitId, ids),
+			),
 		)
 		.then((rows) =>
 			rows.map((row) => ({
@@ -252,6 +262,7 @@ export async function fetchInvoicePeriodDuplicateSnapshots(
 	invoicePeriod: string,
 ) {
 	const userId = await getUserId();
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 
 	return db
 		.select({
@@ -270,7 +281,7 @@ export async function fetchInvoicePeriodDuplicateSnapshots(
 		.from(transactions)
 		.where(
 			and(
-				eq(transactions.userId, userId),
+				eq(transactions.userId, dataOwnerUserId),
 				eq(transactions.cardId, cardId),
 				eq(transactions.period, invoicePeriod),
 			),
@@ -281,6 +292,7 @@ export async function fetchInvoicePeriodDuplicateSnapshots(
 /** Parcelas ficam em outros períodos; inclui série parcelada e linhas à vista com "parcela" no nome. */
 export async function fetchCardInstallmentDuplicateSnapshots(cardId: string) {
 	const userId = await getUserId();
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 
 	return db
 		.select({
@@ -299,7 +311,7 @@ export async function fetchCardInstallmentDuplicateSnapshots(cardId: string) {
 		.from(transactions)
 		.where(
 			and(
-				eq(transactions.userId, userId),
+				eq(transactions.userId, dataOwnerUserId),
 				eq(transactions.cardId, cardId),
 				or(
 					isNotNull(transactions.installmentCount),
@@ -316,6 +328,7 @@ export async function fetchAccountImportDuplicateSnapshots(
 	dateTo: string,
 ) {
 	const userId = await getUserId();
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const fromDate = parseLocalDateString(dateFrom);
 	const toDate = parseLocalDateString(dateTo);
 
@@ -335,7 +348,7 @@ export async function fetchAccountImportDuplicateSnapshots(
 		.from(transactions)
 		.where(
 			and(
-				eq(transactions.userId, userId),
+				eq(transactions.userId, dataOwnerUserId),
 				eq(transactions.accountId, accountId),
 				gte(transactions.purchaseDate, fromDate),
 				lte(transactions.purchaseDate, toDate),
@@ -382,6 +395,7 @@ export async function linkImportToExistingAction(
 ): Promise<{ success: true } | { success: false; error: string }> {
 	try {
 		const userId = await getUserId();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
 		const data = linkImportSchema.parse(input);
 
 		const existing = await db.query.transactions.findFirst({
@@ -393,7 +407,7 @@ export async function linkImportToExistingAction(
 				payerId: true,
 			},
 			where: and(
-				eq(transactions.userId, userId),
+				eq(transactions.userId, dataOwnerUserId),
 				eq(transactions.id, data.existingTransactionId),
 			),
 		});
@@ -445,7 +459,7 @@ export async function linkImportToExistingAction(
 			})
 			.where(
 				and(
-					eq(transactions.userId, userId),
+					eq(transactions.userId, dataOwnerUserId),
 					eq(transactions.id, data.existingTransactionId),
 				),
 			);
@@ -465,11 +479,15 @@ export async function deleteImportDuplicateTransaction(
 	if (!transactionId) return { success: false, error: "Lançamento inválido." };
 
 	const userId = await getUserId();
+	const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
 
 	const deleted = await db
 		.delete(transactions)
 		.where(
-			and(eq(transactions.userId, userId), eq(transactions.id, transactionId)),
+			and(
+				eq(transactions.userId, dataOwnerUserId),
+				eq(transactions.id, transactionId),
+			),
 		)
 		.returning({ id: transactions.id });
 
@@ -486,6 +504,7 @@ export async function importTransactionsAction(
 	input: ImportInput,
 ): Promise<ImportResult> {
 	const userId = await getUserId();
+	const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
 	const parsed = importSchema.safeParse(input);
 
 	if (!parsed.success) {
@@ -657,7 +676,7 @@ export async function importTransactionsAction(
 			const existingUploadBatch = await db.query.importBatches.findFirst({
 				columns: { id: true },
 				where: and(
-					eq(importBatches.userId, userId),
+					eq(importBatches.userId, dataOwnerUserId),
 					eq(importBatches.id, parsed.data.importBatchId),
 				),
 			});
@@ -703,7 +722,7 @@ export async function importTransactionsAction(
 		const existingBatch = await db.query.importBatches.findFirst({
 			columns: { id: true },
 			where: and(
-				eq(importBatches.userId, userId),
+				eq(importBatches.userId, dataOwnerUserId),
 				eq(importBatches.id, importBatchId),
 			),
 		});
@@ -716,7 +735,7 @@ export async function importTransactionsAction(
 		} else {
 			await db.insert(importBatches).values({
 				id: importBatchId,
-				userId,
+				userId: dataOwnerUserId,
 				...batchPayload,
 			});
 		}
@@ -735,7 +754,7 @@ export async function importTransactionsAction(
 		const existingUploadBatch = await db.query.importBatches.findFirst({
 			columns: { id: true },
 			where: and(
-				eq(importBatches.userId, userId),
+				eq(importBatches.userId, dataOwnerUserId),
 				eq(importBatches.id, parsed.data.importBatchId),
 			),
 		});
@@ -752,7 +771,7 @@ export async function importTransactionsAction(
 	const pagamentosCategory = await db.query.categories.findFirst({
 		columns: { id: true },
 		where: and(
-			eq(categories.userId, userId),
+			eq(categories.userId, dataOwnerUserId),
 			eq(categories.name, INVOICE_PAYMENT_CATEGORY_NAME),
 		),
 	});
@@ -761,7 +780,7 @@ export async function importTransactionsAction(
 		? await db.query.categories.findFirst({
 				columns: { id: true },
 				where: and(
-					eq(categories.userId, userId),
+					eq(categories.userId, dataOwnerUserId),
 					eq(categories.name, TRANSFER_CATEGORY_NAME),
 				),
 			})
@@ -788,7 +807,7 @@ export async function importTransactionsAction(
 		? await db.query.financialAccounts.findMany({
 				columns: { id: true, name: true },
 				where: and(
-					eq(financialAccounts.userId, userId),
+					eq(financialAccounts.userId, dataOwnerUserId),
 					inArray(financialAccounts.id, transferAccountIds),
 				),
 			})
@@ -802,7 +821,7 @@ export async function importTransactionsAction(
 		? await db.query.cards.findMany({
 				columns: { id: true, name: true },
 				where: and(
-					eq(cards.userId, userId),
+					eq(cards.userId, dataOwnerUserId),
 					inArray(cards.id, invoicePaymentCardIds),
 				),
 			})
@@ -855,7 +874,7 @@ export async function importTransactionsAction(
 					startInstallment: 1,
 					isSettled: null,
 				},
-				userId,
+				userId: dataOwnerUserId,
 				period: firstPeriod,
 				purchaseDate,
 				dueDate: null,
@@ -907,7 +926,7 @@ export async function importTransactionsAction(
 					recurrenceCount: recurrence.recurrenceCount,
 					isSettled: null,
 				},
-				userId,
+				userId: dataOwnerUserId,
 				period,
 				purchaseDate,
 				dueDate: null,
@@ -947,7 +966,7 @@ export async function importTransactionsAction(
 				purchaseDate,
 				period,
 				isSettled,
-				userId,
+				userId: dataOwnerUserId,
 				payerId: payerIdValue,
 				accountId: accountId ?? null,
 				cardId: cardId ?? null,
@@ -999,7 +1018,7 @@ export async function importTransactionsAction(
 				purchaseDate,
 				period,
 				isSettled: true,
-				userId,
+				userId: dataOwnerUserId,
 				payerId: payerIdValue,
 				accountId: fromAccountId,
 				cardId: null,
@@ -1021,7 +1040,7 @@ export async function importTransactionsAction(
 				purchaseDate,
 				period,
 				isSettled: true,
-				userId,
+				userId: dataOwnerUserId,
 				payerId: payerIdValue,
 				accountId: toAccountId,
 				cardId: null,
@@ -1060,7 +1079,7 @@ export async function importTransactionsAction(
 				purchaseDate,
 				period,
 				isSettled: true,
-				userId,
+				userId: dataOwnerUserId,
 				payerId: payerIdsByRow[rowIndex],
 				accountId,
 				cardId: null,
@@ -1100,7 +1119,7 @@ export async function importTransactionsAction(
 					.from(transactions)
 					.where(
 						and(
-							eq(transactions.userId, userId),
+							eq(transactions.userId, dataOwnerUserId),
 							inArray(transactions.ofxFitId, fitIdsInBatch),
 						),
 					);
@@ -1131,7 +1150,7 @@ export async function importTransactionsAction(
 
 			for (const record of invoicePaymentRecords) {
 				await upsertInvoicePaymentStatus(tx, {
-					userId,
+					userId: dataOwnerUserId,
 					cardId: record.settleCardId,
 					period: record.settlePeriod,
 					paymentStatus: INVOICE_PAYMENT_STATUS.PAID,
@@ -1142,7 +1161,7 @@ export async function importTransactionsAction(
 					.set({ isSettled: true })
 					.where(
 						and(
-							eq(transactions.userId, userId),
+							eq(transactions.userId, dataOwnerUserId),
 							eq(transactions.cardId, record.settleCardId),
 							eq(transactions.period, record.settlePeriod),
 						),
@@ -1223,7 +1242,7 @@ export async function importTransactionsAction(
 	const existingBatch = await db.query.importBatches.findFirst({
 		columns: { id: true },
 		where: and(
-			eq(importBatches.userId, userId),
+			eq(importBatches.userId, dataOwnerUserId),
 			eq(importBatches.id, importBatchId),
 		),
 	});
@@ -1255,11 +1274,15 @@ export async function deleteTransactionByFitId(
 	if (!fitId) return { success: false, error: "FITID inválido." };
 
 	const userId = await getUserId();
+	const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
 
 	await db
 		.delete(transactions)
 		.where(
-			and(eq(transactions.userId, userId), eq(transactions.ofxFitId, fitId)),
+			and(
+				eq(transactions.userId, dataOwnerUserId),
+				eq(transactions.ofxFitId, fitId),
+			),
 		);
 
 	await revalidateForEntity("transactions", userId);
@@ -1273,6 +1296,7 @@ export async function undoImportAction(
 	if (!importBatchId) return { success: false, error: "Batch inválido." };
 
 	const userId = await getUserId();
+	const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
 
 	const batch = await db.query.importBatches.findFirst({
 		columns: {
@@ -1280,7 +1304,7 @@ export async function undoImportAction(
 			attachmentId: true,
 		},
 		where: and(
-			eq(importBatches.userId, userId),
+			eq(importBatches.userId, dataOwnerUserId),
 			eq(importBatches.id, importBatchId),
 		),
 		with: {
@@ -1297,7 +1321,7 @@ export async function undoImportAction(
 		.delete(transactions)
 		.where(
 			and(
-				eq(transactions.userId, userId),
+				eq(transactions.userId, dataOwnerUserId),
 				eq(transactions.importBatchId, importBatchId),
 			),
 		);

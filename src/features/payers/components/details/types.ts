@@ -2,6 +2,8 @@ export type PayerInfo = {
 	id: string;
 	name: string;
 	email: string | null;
+	loginEmail: string | null;
+	familyAccessActive: boolean;
 	avatarUrl: string | null;
 	status: string;
 	note: string | null;

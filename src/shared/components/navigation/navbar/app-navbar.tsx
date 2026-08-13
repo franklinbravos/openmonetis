@@ -1,4 +1,5 @@
 import { AnimatedThemeToggler } from "@/shared/components/animated-theme-toggler";
+import type { Payer } from "@/features/payers/components/types";
 import { NotificationBell } from "@/shared/components/navigation/navbar/notification-bell";
 import { RefreshPageButton } from "@/shared/components/refresh-page-button";
 import type { DashboardNotificationsSnapshot } from "@/shared/lib/types/notifications";
@@ -15,7 +16,9 @@ type AppNavbarProps = {
 		email: string;
 		image: string | null;
 	};
-	payerAvatarUrl: string | null;
+	viewerAvatarUrl: string | null;
+	profilePayer: Payer | null;
+	avatarOptions: string[];
 	inboxPendingCount?: number;
 	notificationsSnapshot: DashboardNotificationsSnapshot;
 	financeLinks: NavbarFinanceLinks;
@@ -23,7 +26,9 @@ type AppNavbarProps = {
 
 export async function AppNavbar({
 	user,
-	payerAvatarUrl,
+	viewerAvatarUrl,
+	profilePayer,
+	avatarOptions,
 	inboxPendingCount = 0,
 	notificationsSnapshot,
 	financeLinks,
@@ -46,7 +51,9 @@ export async function AppNavbar({
 			</div>
 			<NavbarUser
 				user={user}
-				payerAvatarUrl={payerAvatarUrl}
+				viewerAvatarUrl={viewerAvatarUrl}
+				profilePayer={profilePayer}
+				avatarOptions={avatarOptions}
 				updateCheck={updateCheck}
 			/>
 		</NavbarShell>

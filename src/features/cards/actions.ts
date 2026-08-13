@@ -18,6 +18,8 @@ import {
 } from "@/shared/lib/cards/import-pdf-password";
 import { db } from "@/shared/lib/db";
 import { loadLogoOptions } from "@/shared/lib/logo/options";
+import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import {
 	dayOfMonthSchema,
 	noteSchema,
@@ -143,9 +145,10 @@ export async function createCardAction(
 ): Promise<ActionResult<CardCreateResultData>> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = createCardSchema.parse(input);
 
-		await assertAccountOwnership(user.id, data.accountId);
+		await assertAccountOwnership(dataOwnerUserId, data.accountId);
 
 		const logoFile = normalizeFilePath(data.logo);
 		const importPdfPassword = resolveImportPdfPasswordPersistence(
@@ -168,7 +171,7 @@ export async function createCardAction(
 				limit: formatDecimalForDbRequired(data.limit),
 				logo: logoFile,
 				accountId: data.accountId,
-				userId: user.id,
+				userId: dataOwnerUserId,
 				importPdfPasswordRule: importPdfPassword.importPdfPasswordRule,
 				importPdfPasswordSecret: importPdfPassword.importPdfPasswordSecret,
 			})
@@ -211,6 +214,7 @@ export async function fetchCardFormOptionsAction(): Promise<{
 	accounts: Array<{ id: string; name: string; logo: string | null }>;
 }> {
 	const user = await getUser();
+	const dataOwnerUserId = await getFinancialDataOwnerId(user.id);
 	const [logoOptions, accountRows] = await Promise.all([
 		loadLogoOptions(),
 		db.query.financialAccounts.findMany({
@@ -221,7 +225,7 @@ export async function fetchCardFormOptionsAction(): Promise<{
 			},
 			orderBy: (table, { desc }) => [desc(table.name)],
 			where: and(
-				eq(financialAccounts.userId, user.id),
+				eq(financialAccounts.userId, dataOwnerUserId),
 				eq(financialAccounts.status, "Ativa"),
 			),
 		}),
@@ -235,9 +239,10 @@ export async function updateCardAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = updateCardSchema.parse(input);
 
-		await assertAccountOwnership(user.id, data.accountId);
+		await assertAccountOwnership(dataOwnerUserId, data.accountId);
 
 		const logoFile = normalizeFilePath(data.logo);
 
@@ -245,7 +250,7 @@ export async function updateCardAction(
 			columns: {
 				importPdfPasswordSecret: true,
 			},
-			where: and(eq(cards.id, data.id), eq(cards.userId, user.id)),
+			where: and(eq(cards.id, data.id), eq(cards.userId, dataOwnerUserId)),
 		});
 
 		if (!existingCard) {
@@ -278,7 +283,7 @@ export async function updateCardAction(
 				importPdfPasswordRule: importPdfPassword.importPdfPasswordRule,
 				importPdfPasswordSecret: importPdfPassword.importPdfPasswordSecret,
 			})
-			.where(and(eq(cards.id, data.id), eq(cards.userId, user.id)))
+			.where(and(eq(cards.id, data.id), eq(cards.userId, dataOwnerUserId)))
 			.returning();
 
 		if (!updated) {
@@ -301,11 +306,12 @@ export async function deleteCardAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = deleteCardSchema.parse(input);
 
 		const [deleted] = await db
 			.delete(cards)
-			.where(and(eq(cards.id, data.id), eq(cards.userId, user.id)))
+			.where(and(eq(cards.id, data.id), eq(cards.userId, dataOwnerUserId)))
 			.returning({ id: cards.id });
 
 		if (!deleted) {

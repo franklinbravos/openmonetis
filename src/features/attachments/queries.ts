@@ -1,4 +1,5 @@
 import { cacheLife, cacheTag } from "next/cache";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { getSupabaseAdmin } from "@/shared/lib/supabase/admin";
 
@@ -59,7 +60,10 @@ export async function fetchAttachmentsForPeriod(
 	cacheTag(`dashboard-${userId}`);
 	cacheLife({ revalidate: 3 });
 
-	const adminPayerId = await getAdminPayerId(userId);
+	const [adminPayerId, dataOwnerUserId] = await Promise.all([
+		getAdminPayerId(userId),
+		getFinancialDataOwnerId(userId),
+	]);
 	if (!adminPayerId) return [];
 	const payerId = payerScope ?? adminPayerId;
 
@@ -72,7 +76,7 @@ export async function fetchAttachmentsForPeriod(
 	let query = supabase
 		.from("lancamento_anexos")
 		.select(select)
-		.eq("lancamentos.user_id", userId)
+		.eq("lancamentos.user_id", dataOwnerUserId)
 		.eq("lancamentos.periodo", period);
 
 	if (payerId !== "all") {

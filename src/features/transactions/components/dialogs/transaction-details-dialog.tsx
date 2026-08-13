@@ -7,10 +7,12 @@ import {
 	useEffect,
 	useState,
 } from "react";
+import { fetchTransactionByIdAction } from "@/features/transactions/actions/fetch-by-id";
 import {
 	currencyFormatter,
 	formatCondition,
 	formatPeriod,
+	getPayerDisplayName,
 } from "@/features/transactions/lib/formatting-helpers";
 import { EstablishmentLogo } from "@/shared/components/entity-avatar";
 import { TransactionTypeBadge } from "@/shared/components/transaction-type-badge";
@@ -54,21 +56,54 @@ export function TransactionDetailsDialog({
 	onEdit,
 }: TransactionDetailsDialogProps) {
 	const [attachmentCount, setAttachmentCount] = useState<number | null>(null);
+	const [resolvedTransaction, setResolvedTransaction] =
+		useState<TransactionItem | null>(null);
+	const [isLoadingDetails, setIsLoadingDetails] = useState(false);
 
 	useEffect(() => {
 		setAttachmentCount(null);
-	}, []);
+	}, [transaction?.id]);
+
+	useEffect(() => {
+		if (!open || !transaction?.id) {
+			setResolvedTransaction(null);
+			setIsLoadingDetails(false);
+			return;
+		}
+
+		let cancelled = false;
+		setIsLoadingDetails(true);
+
+		void fetchTransactionByIdAction(transaction.id)
+			.then((full) => {
+				if (cancelled) return;
+				setResolvedTransaction(full);
+			})
+			.catch(() => {
+				if (cancelled) return;
+				setResolvedTransaction(null);
+			})
+			.finally(() => {
+				if (!cancelled) setIsLoadingDetails(false);
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [open, transaction?.id]);
 
 	if (!transaction) return null;
 
-	const isInstallment =
-		transaction.condition?.toLowerCase() === "parcelado" &&
-		transaction.currentInstallment &&
-		transaction.installmentCount;
+	const details = resolvedTransaction ?? transaction;
 
-	const valorParcela = Math.abs(transaction.amount);
-	const totalParcelas = transaction.installmentCount ?? 1;
-	const parcelaAtual = transaction.currentInstallment ?? 1;
+	const isInstallment =
+		details.condition?.toLowerCase() === "parcelado" &&
+		details.currentInstallment &&
+		details.installmentCount;
+
+	const valorParcela = Math.abs(details.amount);
+	const totalParcelas = details.installmentCount ?? 1;
+	const parcelaAtual = details.currentInstallment ?? 1;
 	const valorTotal = isInstallment
 		? valorParcela * totalParcelas
 		: valorParcela;
@@ -76,11 +111,11 @@ export function TransactionDetailsDialog({
 		? valorParcela * (totalParcelas - parcelaAtual)
 		: 0;
 
-	const isBoleto = transaction.paymentMethod === "Boleto";
+	const isBoleto = details.paymentMethod === "Boleto";
 
 	const handleEdit = () => {
 		onOpenChange(false);
-		onEdit?.(transaction);
+		onEdit?.(details);
 	};
 
 	return (
@@ -88,11 +123,11 @@ export function TransactionDetailsDialog({
 			<DialogContent className="min-w-0 overflow-x-hidden sm:max-w-xl">
 				<DialogHeader className="text-left">
 					<div className="flex min-w-0 items-start gap-2">
-						<EstablishmentLogo size={40} name={transaction.name} />
+						<EstablishmentLogo size={40} name={details.name} />
 						<div className="min-w-0">
-							<DialogTitle className="truncate">{transaction.name}</DialogTitle>
+							<DialogTitle className="truncate">{details.name}</DialogTitle>
 							<DialogDescription className="mt-1">
-								{formatDate(transaction.purchaseDate)}
+								{formatDate(details.purchaseDate)}
 							</DialogDescription>
 						</div>
 					</div>
@@ -111,25 +146,25 @@ export function TransactionDetailsDialog({
 									</p>
 								</div>
 								<Badge
-									variant={transaction.isSettled ? "secondary" : "info"}
+									variant={details.isSettled ? "secondary" : "info"}
 									className={
-										transaction.isSettled
+										details.isSettled
 											? "text-success bg-success/10"
 											: undefined
 									}
 								>
-									{transaction.isSettled ? "Pago" : "Em aberto"}
+									{details.isSettled ? "Pago" : "Em aberto"}
 								</Badge>
 							</div>
 							<div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
 								<TransactionTypeBadge
 									kind={
-										transaction.categoriaName === "Saldo inicial"
+										details.categoriaName === "Saldo inicial"
 											? "Saldo inicial"
-											: transaction.transactionType
+											: details.transactionType
 									}
 								/>
-								<span>{formatCondition(transaction.condition)}</span>
+								<span>{formatCondition(details.condition)}</span>
 							</div>
 						</section>
 
@@ -140,13 +175,13 @@ export function TransactionDetailsDialog({
 							<ul className="min-w-0 grid gap-2 rounded-lg border p-3">
 								<DetailRow
 									label="ID"
-									value={transaction.id}
+									value={details.id}
 									valueClassName="font-mono"
 								/>
 
 								<DetailRow
 									label="Período"
-									value={formatPeriod(transaction.period)}
+									value={formatPeriod(details.period)}
 								/>
 
 								<li className="flex items-center justify-between">
@@ -154,23 +189,30 @@ export function TransactionDetailsDialog({
 										Forma de Pagamento
 									</span>
 									<span className="flex items-center gap-1.5">
-										{getPaymentMethodIcon(transaction.paymentMethod)}
-										<span>{transaction.paymentMethod}</span>
+										{getPaymentMethodIcon(details.paymentMethod)}
+										<span>{details.paymentMethod}</span>
 									</span>
 								</li>
 
 								<li className="min-w-0 flex items-center justify-between gap-3">
 									<span className="text-muted-foreground">
-										{transaction.cartaoName ? "Cartão" : "Conta"}
+										{details.cartaoName ? "Cartão" : "Conta"}
 									</span>
 									{(() => {
+										if (isLoadingDetails) {
+											return (
+												<span className="min-w-0 truncate text-muted-foreground">
+													Carregando...
+												</span>
+											);
+										}
 										const accountLabel =
-											transaction.cartaoName ?? transaction.contaName;
+											details.cartaoName ?? details.contaName;
 										if (!accountLabel) {
 											return <span className="min-w-0 truncate">—</span>;
 										}
 										const logoSrc = resolveLogoSrc(
-											transaction.cartaoLogo ?? transaction.contaLogo,
+											details.cartaoLogo ?? details.contaLogo,
 										);
 										return (
 											<span className="inline-flex min-w-0 items-center gap-2">
@@ -192,19 +234,26 @@ export function TransactionDetailsDialog({
 								<li className="min-w-0 flex items-center justify-between gap-3">
 									<span className="text-muted-foreground">Categoria</span>
 									{(() => {
-										if (!transaction.categoriaName) {
+										if (isLoadingDetails) {
+											return (
+												<span className="min-w-0 truncate text-muted-foreground">
+													Carregando...
+												</span>
+											);
+										}
+										if (!details.categoriaName) {
 											return <span className="min-w-0 truncate">—</span>;
 										}
-										const IconComponent = transaction.categoriaIcon
+										const IconComponent = details.categoriaIcon
 											? (getIconComponent(
-													transaction.categoriaIcon,
+													details.categoriaIcon,
 												) as ComponentType<{
 													className?: string;
 													style?: CSSProperties;
 												}> | null)
 											: null;
 										const color = getCategoryColorFromName(
-											transaction.categoriaName,
+											details.categoriaName,
 										);
 										return (
 											<span className="inline-flex min-w-0 items-center gap-1.5">
@@ -215,7 +264,7 @@ export function TransactionDetailsDialog({
 													/>
 												) : null}
 												<span className="min-w-0 truncate">
-													{transaction.categoriaName}
+													{details.categoriaName}
 												</span>
 											</span>
 										);
@@ -225,12 +274,19 @@ export function TransactionDetailsDialog({
 								<li className="min-w-0 flex items-center justify-between gap-3">
 									<span className="text-muted-foreground">Responsável</span>
 									{(() => {
-										const label = transaction.pagadorName?.trim() || "—";
+										if (isLoadingDetails) {
+											return (
+												<span className="min-w-0 truncate text-muted-foreground">
+													Carregando...
+												</span>
+											);
+										}
+										const label = details.pagadorName?.trim() || "—";
 										if (label === "—") {
 											return <span className="min-w-0 truncate">—</span>;
 										}
-										const displayName = label.split(/\s+/)[0] ?? label;
-										const avatarSrc = getAvatarSrc(transaction.pagadorAvatar);
+										const displayName = getPayerDisplayName(details.pagadorName);
+										const avatarSrc = getAvatarSrc(details.pagadorAvatar);
 										const initial = displayName.charAt(0).toUpperCase() || "?";
 										return (
 											<span className="inline-flex min-w-0 items-center gap-2">
@@ -249,14 +305,14 @@ export function TransactionDetailsDialog({
 									})()}
 								</li>
 
-								{isBoleto && transaction.dueDate && (
+								{isBoleto && details.dueDate && (
 									<DetailRow
 										label="Vencimento"
-										value={formatDate(transaction.dueDate)}
+										value={formatDate(details.dueDate)}
 									/>
 								)}
 
-								{transaction.isDivided && (
+								{details.isDivided && (
 									<li className="flex items-center justify-between">
 										<span className="text-muted-foreground">Divisão</span>
 										<Badge variant="outline">Dividido</Badge>
@@ -274,11 +330,11 @@ export function TransactionDetailsDialog({
 									<li className="mb-1">
 										<InstallmentTimeline
 											purchaseDate={parseLocalDateString(
-												transaction.purchaseDate,
+												details.purchaseDate,
 											)}
 											currentInstallment={parcelaAtual}
 											totalInstallments={totalParcelas}
-											period={transaction.period}
+											period={details.period}
 										/>
 									</li>
 								)}
@@ -295,22 +351,22 @@ export function TransactionDetailsDialog({
 									/>
 								)}
 
-								{transaction.recurrenceCount && (
+								{details.recurrenceCount && (
 									<DetailRow
 										label="Quantidade de Recorrências"
-										value={`${transaction.recurrenceCount} meses`}
+										value={`${details.recurrenceCount} meses`}
 									/>
 								)}
 							</ul>
 						</section>
 
-						{transaction.note ? (
+						{details.note ? (
 							<section className="space-y-2">
 								<h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 									Notas
 								</h3>
 								<div className="rounded-lg border p-3 text-foreground">
-									{transaction.note}
+									{details.note}
 								</div>
 							</section>
 						) : null}
@@ -322,7 +378,7 @@ export function TransactionDetailsDialog({
 								</h3>
 								<div className="min-w-0">
 									<AttachmentSection
-										transactionId={transaction.id}
+										transactionId={details.id}
 										readonly
 										onLoaded={setAttachmentCount}
 									/>
@@ -340,7 +396,7 @@ export function TransactionDetailsDialog({
 							Fechar
 						</Button>
 					</DialogClose>
-					{onEdit && !transaction.readonly && (
+					{onEdit && !details.readonly && (
 						<Button onClick={handleEdit}>Alterar</Button>
 					)}
 				</DialogFooter>

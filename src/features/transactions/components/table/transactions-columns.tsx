@@ -9,6 +9,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { DEFAULT_TRANSACTIONS_COLUMN_ORDER } from "@/features/transactions/lib/column-order";
 import {
+	getPayerDisplayName,
+	resolvePayerLabel,
+} from "@/features/transactions/lib/formatting-helpers";
+import {
 	CategoryIconBadge,
 	EstablishmentLogo,
 } from "@/shared/components/entity-avatar";
@@ -417,8 +421,8 @@ function buildColumns({
 			header: "Pessoa",
 			cell: ({ row }) => {
 				const { payerId, pagadorName, pagadorAvatar } = row.original;
-				const label = pagadorName?.trim() || "Sem pessoa";
-				const displayName = label.split(/\s+/)[0] ?? label;
+				const label = resolvePayerLabel(pagadorName);
+				const displayName = getPayerDisplayName(pagadorName);
 				const avatarSrc = getAvatarSrc(pagadorAvatar);
 				const initial = displayName.charAt(0).toUpperCase() || "?";
 				const content = (

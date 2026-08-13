@@ -18,6 +18,7 @@ import {
 } from "@remixicon/react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { dashboardWidgetListStyles as styles } from "@/features/dashboard/components/dashboard-widget-list-styles";
 import { AttachmentsWidget } from "@/features/dashboard/components/widgets/attachments-widget";
 import { BillWidget } from "@/features/dashboard/components/widgets/bill-widget";
 import { CategoryTrendsWidget } from "@/features/dashboard/components/widgets/category-trends-widget";
@@ -58,7 +59,6 @@ export type WidgetConfig = {
 	component: (props: {
 		data: DashboardData;
 		period: string;
-		adminPayerSlug: string | null;
 		widgetPreferences: WidgetPreferences;
 		quickActionOptions: DashboardWidgetQuickActionOptions;
 		onMyAccountsShowExcludedChange?: (value: boolean) => void;
@@ -86,6 +86,12 @@ export const widgetsConfig: WidgetConfig[] = [
 				period={period}
 			/>
 		),
+		action: (
+			<Link href="/accounts" className={styles.headerActionLink}>
+				Ver contas
+				<RiArrowRightLine className="size-4" />
+			</Link>
+		),
 	},
 	{
 		id: "invoices",
@@ -97,6 +103,12 @@ export const widgetsConfig: WidgetConfig[] = [
 				invoices={data.invoicesSnapshot.invoices}
 				paymentAccountOptions={data.invoicesSnapshot.paymentAccountOptions}
 			/>
+		),
+		action: (
+			<Link href="/cards" className={styles.headerActionLink}>
+				Ver cartões
+				<RiArrowRightLine className="size-4" />
+			</Link>
 		),
 	},
 	{
@@ -198,12 +210,11 @@ export const widgetsConfig: WidgetConfig[] = [
 		title: "Distribuição de despesas",
 		subtitle: "Por condição e forma de pagamento",
 		icon: <RiWallet3Line className="size-4" />,
-		component: ({ data, period, adminPayerSlug }) => (
+		component: ({ data, period }) => (
 			<PaymentOverviewWidget
 				paymentConditionsData={data.paymentConditionsData}
 				paymentMethodsData={data.paymentMethodsData}
 				period={period}
-				adminPayerSlug={adminPayerSlug}
 			/>
 		),
 	},

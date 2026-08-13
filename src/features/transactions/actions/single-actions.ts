@@ -12,6 +12,7 @@ import { ACCOUNT_AUTO_INVOICE_NOTE_PREFIX } from "@/shared/lib/accounts/constant
 import { handleActionError } from "@/shared/lib/actions/helpers";
 import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import {
 	buildEntriesByPayer,
 	sendPayerAutoEmails,
@@ -56,6 +57,7 @@ export async function createTransactionAction(
 ): Promise<ActionResult<{ ids: string[] }>> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = createSchema.parse(input);
 
 		const ownershipError = await validateAllOwnership(user.id, {
@@ -105,7 +107,7 @@ export async function createTransactionAction(
 
 		const records = buildTransactionRecords({
 			data,
-			userId: user.id,
+			userId: dataOwnerUserId,
 			period,
 			purchaseDate,
 			dueDate,
@@ -128,7 +130,7 @@ export async function createTransactionAction(
 			];
 
 			const paidPeriods = await getPaidInvoicePeriods(
-				user.id,
+				dataOwnerUserId,
 				data.cardId,
 				uniquePeriods,
 			);
@@ -144,7 +146,7 @@ export async function createTransactionAction(
 
 			if (data.transactionType === "Despesa") {
 				const limitCheck = await validateCardLimit({
-					userId: user.id,
+					userId: dataOwnerUserId,
 					cardId: data.cardId,
 					addAmount: Math.abs(data.amount),
 				});
@@ -166,7 +168,7 @@ export async function createTransactionAction(
 			await copyAttachmentsForImport({
 				sourceTransactionId: data.importFromTransactionId,
 				targetTransactionIds: inserted.map((r) => r.id),
-				targetUserId: user.id,
+				targetUserId: dataOwnerUserId,
 			});
 		}
 
@@ -209,6 +211,7 @@ export async function updateTransactionAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = updateSchema.parse(input);
 
 		const ownershipError = await validateAllOwnership(user.id, {
@@ -237,7 +240,7 @@ export async function updateTransactionAction(
 			},
 			where: and(
 				eq(transactions.id, data.id),
-				eq(transactions.userId, user.id),
+				eq(transactions.userId, dataOwnerUserId),
 			),
 		})) as
 			| {
@@ -293,9 +296,11 @@ export async function updateTransactionAction(
 			(targetCardId !== existing.cardId || period !== existing.period);
 
 		if (movedInvoice) {
-			const paidPeriods = await getPaidInvoicePeriods(user.id, targetCardId, [
-				period,
-			]);
+			const paidPeriods = await getPaidInvoicePeriods(
+				dataOwnerUserId,
+				targetCardId,
+				[period],
+			);
 			if (paidPeriods.length > 0) {
 				return {
 					success: false,
@@ -312,7 +317,7 @@ export async function updateTransactionAction(
 			data.transactionType === "Despesa"
 		) {
 			const limitCheck = await validateCardLimit({
-				userId: user.id,
+				userId: dataOwnerUserId,
 				cardId: data.cardId,
 				addAmount: Math.abs(data.amount),
 				excludeTransactionIds: [data.id],
@@ -344,7 +349,10 @@ export async function updateTransactionAction(
 				period,
 			})
 			.where(
-				and(eq(transactions.id, data.id), eq(transactions.userId, user.id)),
+				and(
+					eq(transactions.id, data.id),
+					eq(transactions.userId, dataOwnerUserId),
+				),
 			);
 
 		if (isInitialBalanceTransaction(existing) && existing.accountId) {
@@ -357,7 +365,7 @@ export async function updateTransactionAction(
 				.where(
 					and(
 						eq(financialAccounts.id, existing.accountId),
-						eq(financialAccounts.userId, user.id),
+						eq(financialAccounts.userId, dataOwnerUserId),
 					),
 				);
 		}
@@ -375,6 +383,7 @@ export async function deleteTransactionAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = deleteSchema.parse(input);
 
 		const existing = (await db.query.transactions.findFirst({
@@ -393,7 +402,7 @@ export async function deleteTransactionAction(
 			},
 			where: and(
 				eq(transactions.id, data.id),
-				eq(transactions.userId, user.id),
+				eq(transactions.userId, dataOwnerUserId),
 			),
 		})) as
 			| {
@@ -441,10 +450,16 @@ export async function deleteTransactionAction(
 		await db
 			.delete(transactions)
 			.where(
-				and(eq(transactions.id, data.id), eq(transactions.userId, user.id)),
+				and(
+					eq(transactions.id, data.id),
+					eq(transactions.userId, dataOwnerUserId),
+				),
 			);
 
-		await cleanupAttachmentsAfterTransactionDelete(linkedAttachments, user.id);
+		await cleanupAttachmentsAfterTransactionDelete(
+			linkedAttachments,
+			dataOwnerUserId,
+		);
 
 		if (existing.payerId) {
 			const notificationEntries = buildEntriesByPayer([
@@ -481,12 +496,13 @@ export async function convertTransactionToInstallmentAction(
 ): Promise<ActionResult<{ createdCount: number }>> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = convertToInstallmentSchema.parse(input);
 
 		const existing = await db.query.transactions.findFirst({
 			where: and(
 				eq(transactions.id, data.id),
-				eq(transactions.userId, user.id),
+				eq(transactions.userId, dataOwnerUserId),
 			),
 		});
 
@@ -556,7 +572,7 @@ export async function convertTransactionToInstallmentAction(
 				dueDate: existing.dueDate?.toISOString().slice(0, 10),
 				isSettled: null,
 			},
-			userId: user.id,
+			userId: dataOwnerUserId,
 			period: existing.period,
 			purchaseDate: existing.purchaseDate,
 			dueDate: existing.dueDate,
@@ -580,7 +596,7 @@ export async function convertTransactionToInstallmentAction(
 			.map((row) => row.period)
 			.filter((period): period is string => Boolean(period));
 		const paidPeriods = await getPaidInvoicePeriods(
-			user.id,
+			dataOwnerUserId,
 			existing.cardId,
 			periodsToUpdate,
 		);
@@ -596,7 +612,7 @@ export async function convertTransactionToInstallmentAction(
 
 		if (existing.transactionType === "Despesa") {
 			const limitCheck = await validateCardLimit({
-				userId: user.id,
+				userId: dataOwnerUserId,
 				cardId: existing.cardId,
 				addAmount: records.reduce(
 					(acc, row) => acc + Math.abs(Number(row.amount)),
@@ -628,7 +644,7 @@ export async function convertTransactionToInstallmentAction(
 				.where(
 					and(
 						eq(transactions.id, existing.id),
-						eq(transactions.userId, user.id),
+						eq(transactions.userId, dataOwnerUserId),
 					),
 				);
 
@@ -654,12 +670,13 @@ export async function convertTransactionToRecurringAction(
 ): Promise<ActionResult<{ createdCount: number }>> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = convertToRecurringSchema.parse(input);
 
 		const existing = await db.query.transactions.findFirst({
 			where: and(
 				eq(transactions.id, data.id),
-				eq(transactions.userId, user.id),
+				eq(transactions.userId, dataOwnerUserId),
 			),
 		});
 
@@ -730,7 +747,7 @@ export async function convertTransactionToRecurringAction(
 					.slice(0, 10),
 				isSettled: existing.isSettled,
 			},
-			userId: user.id,
+			userId: dataOwnerUserId,
 			period: existing.period,
 			purchaseDate: existing.purchaseDate,
 			dueDate: existing.dueDate,
@@ -755,7 +772,7 @@ export async function convertTransactionToRecurringAction(
 				.map((row) => row.period)
 				.filter((period): period is string => Boolean(period));
 			const paidPeriods = await getPaidInvoicePeriods(
-				user.id,
+				dataOwnerUserId,
 				existing.cardId,
 				periodsToUpdate,
 			);
@@ -771,7 +788,7 @@ export async function convertTransactionToRecurringAction(
 
 			if (existing.transactionType === "Despesa") {
 				const limitCheck = await validateCardLimit({
-					userId: user.id,
+					userId: dataOwnerUserId,
 					cardId: existing.cardId,
 					addAmount: records.reduce(
 						(acc, row) => acc + Math.abs(Number(row.amount)),
@@ -806,7 +823,7 @@ export async function convertTransactionToRecurringAction(
 				.where(
 					and(
 						eq(transactions.id, existing.id),
-						eq(transactions.userId, user.id),
+						eq(transactions.userId, dataOwnerUserId),
 					),
 				);
 
@@ -832,6 +849,7 @@ export async function updateTransactionSplitPairAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = updateSchema.parse(input);
 
 		const ownershipError = await validateAllOwnership(user.id, {
@@ -859,7 +877,7 @@ export async function updateTransactionSplitPairAction(
 			},
 			where: and(
 				eq(transactions.id, data.id),
-				eq(transactions.userId, user.id),
+				eq(transactions.userId, dataOwnerUserId),
 			),
 		});
 
@@ -889,9 +907,11 @@ export async function updateTransactionSplitPairAction(
 			(targetCardId !== existing.cardId || period !== existing.period);
 
 		if (movedInvoice) {
-			const paidPeriods = await getPaidInvoicePeriods(user.id, targetCardId, [
-				period,
-			]);
+			const paidPeriods = await getPaidInvoicePeriods(
+				dataOwnerUserId,
+				targetCardId,
+				[period],
+			);
 			if (paidPeriods.length > 0) {
 				return {
 					success: false,
@@ -932,7 +952,10 @@ export async function updateTransactionSplitPairAction(
 					recurrenceCount: data.recurrenceCount ?? null,
 				})
 				.where(
-					and(eq(transactions.id, data.id), eq(transactions.userId, user.id)),
+					and(
+						eq(transactions.id, data.id),
+						eq(transactions.userId, dataOwnerUserId),
+					),
 				);
 
 			if (existing.splitGroupId) {
@@ -942,7 +965,7 @@ export async function updateTransactionSplitPairAction(
 					.where(
 						and(
 							eq(transactions.splitGroupId, existing.splitGroupId),
-							eq(transactions.userId, user.id),
+							eq(transactions.userId, dataOwnerUserId),
 							ne(transactions.id, data.id),
 						),
 					);
@@ -961,6 +984,7 @@ export async function toggleTransactionSettlementAction(
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const data = toggleSettlementSchema.parse(input);
 
 		const existing = await db.query.transactions.findFirst({
@@ -972,7 +996,7 @@ export async function toggleTransactionSettlementAction(
 			},
 			where: and(
 				eq(transactions.id, data.id),
-				eq(transactions.userId, user.id),
+				eq(transactions.userId, dataOwnerUserId),
 			),
 		});
 
@@ -1007,7 +1031,7 @@ export async function toggleTransactionSettlementAction(
 				columns: { id: true },
 				where: and(
 					eq(financialAccounts.id, data.paymentAccountId),
-					eq(financialAccounts.userId, user.id),
+					eq(financialAccounts.userId, dataOwnerUserId),
 				),
 			});
 
@@ -1036,7 +1060,10 @@ export async function toggleTransactionSettlementAction(
 			.update(transactions)
 			.set(updatePayload)
 			.where(
-				and(eq(transactions.id, data.id), eq(transactions.userId, user.id)),
+				and(
+					eq(transactions.id, data.id),
+					eq(transactions.userId, dataOwnerUserId),
+				),
 			);
 
 		revalidate(user.id);

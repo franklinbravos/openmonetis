@@ -101,8 +101,8 @@ export function InvoiceListItem({ invoice, onPay }: InvoiceListItemProps) {
 				href={detailHref}
 				prefetch
 				className={cn(
-					"flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md transition-colors",
-					"hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+					"flex min-w-0 flex-1 items-center justify-between gap-2 py-1.5",
+					styles.interactiveHover,
 				)}
 			>
 				<div className={styles.main}>

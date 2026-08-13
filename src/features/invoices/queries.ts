@@ -9,6 +9,7 @@ import {
 	INVOICE_PAYMENT_STATUS,
 	type InvoicePaymentStatus,
 } from "@/shared/lib/invoices";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { callRpc, callRpcOne } from "@/shared/lib/supabase/rpc";
 import { safeToNumber as toNumber } from "@/shared/utils/number";
 import {
@@ -28,6 +29,7 @@ type InvoiceMonthSummaryRow = {
 };
 
 export async function fetchCardData(userId: string, cardId: string) {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const [card] = await db
 		.select({
 			id: cards.id,
@@ -45,7 +47,7 @@ export async function fetchCardData(userId: string, cardId: string) {
 			hasImportPdfPasswordSecret: sql<boolean>`${cards.importPdfPasswordSecret} IS NOT NULL`,
 		})
 		.from(cards)
-		.where(and(eq(cards.id, cardId), eq(cards.userId, userId)));
+		.where(and(eq(cards.id, cardId), eq(cards.userId, dataOwnerUserId)));
 
 	return card ?? null;
 }
@@ -59,6 +61,7 @@ export async function fetchInvoiceData(
 	invoiceStatus: InvoicePaymentStatus;
 	paymentDate: Date | null;
 }> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const [invoiceRow, totalRow] = await Promise.all([
 		db.query.invoices.findFirst({
 			columns: {
@@ -68,12 +71,12 @@ export async function fetchInvoiceData(
 			},
 			where: and(
 				eq(invoices.cardId, cardId),
-				eq(invoices.userId, userId),
+				eq(invoices.userId, dataOwnerUserId),
 				eq(invoices.period, selectedPeriod),
 			),
 		}),
 		callRpcOne<InvoiceTotalRow>("get_invoice_total", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_card_id: cardId,
 			p_period: selectedPeriod,
 		}),
@@ -98,7 +101,7 @@ export async function fetchInvoiceData(
 				purchaseDate: true,
 			},
 			where: and(
-				eq(transactions.userId, userId),
+				eq(transactions.userId, dataOwnerUserId),
 				eq(transactions.note, invoiceNote),
 			),
 		});
@@ -116,16 +119,20 @@ export async function fetchCardInvoiceMonthSummaries(
 	closingDay: string,
 	dueDay: string,
 ): Promise<PeriodCarouselMonth[]> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const [invoiceRows, amountRows] = await Promise.all([
 		db.query.invoices.findMany({
 			columns: {
 				period: true,
 				paymentStatus: true,
 			},
-			where: and(eq(invoices.userId, userId), eq(invoices.cardId, cardId)),
+			where: and(
+				eq(invoices.userId, dataOwnerUserId),
+				eq(invoices.cardId, cardId),
+			),
 		}),
 		callRpc<InvoiceMonthSummaryRow>("get_card_invoice_month_summaries", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_card_id: cardId,
 		}),
 	]);

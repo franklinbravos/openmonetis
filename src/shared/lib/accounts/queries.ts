@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { financialAccounts } from "@/db/schema";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 
 export type AccountWithoutMovements = {
 	id: string;
@@ -17,6 +18,8 @@ export type AccountWithoutMovements = {
 export async function fetchAccountsWithoutMovements(
 	userId: string,
 ): Promise<AccountWithoutMovements[]> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+
 	return db.query.financialAccounts.findMany({
 		columns: {
 			id: true,
@@ -29,6 +32,6 @@ export async function fetchAccountsWithoutMovements(
 			excludeFromBalance: true,
 			excludeInitialBalanceFromIncome: true,
 		},
-		where: eq(financialAccounts.userId, userId),
+		where: eq(financialAccounts.userId, dataOwnerUserId),
 	});
 }

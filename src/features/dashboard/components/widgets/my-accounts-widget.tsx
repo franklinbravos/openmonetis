@@ -213,10 +213,7 @@ export function MyAccountsWidget({
 
 			{remainingCount > 0 ? (
 				<CardFooter className="border-border/60 border-t pt-4">
-					<Link
-						href="/accounts"
-						className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
-					>
+					<Link href="/accounts" className={styles.footerActionLink}>
 						+{remainingCount} contas não exibidas
 						<RiArrowRightLine className="size-4" aria-hidden />
 					</Link>

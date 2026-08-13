@@ -16,6 +16,8 @@ import { fetchImportBatchHistory } from "@/features/transactions/queries/import-
 import { handleActionError } from "@/shared/lib/actions/helpers";
 import { getUserId } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { uuidSchema } from "@/shared/lib/schemas/common";
 import {
 	canInlineDownloadS3Object,
@@ -79,12 +81,13 @@ export async function registerImportUploadAction(
 > {
 	try {
 		const userId = await getUserId();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
 		const data = registerUploadSchema.parse(input);
 		const importBatchId = randomUUID();
 
 		await db.insert(importBatches).values({
 			id: importBatchId,
-			userId,
+			userId: dataOwnerUserId,
 			sourceFileName: data.sourceFileName,
 			sourceFileSize: data.sourceFileSize,
 			cardId: data.cardId ?? null,
@@ -122,6 +125,7 @@ export async function syncImportBatchContextAction(
 ): Promise<{ success: boolean; error?: string }> {
 	try {
 		const userId = await getUserId();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
 		const data = syncBatchContextSchema.parse(input);
 
 		const updated = await db
@@ -133,7 +137,7 @@ export async function syncImportBatchContextAction(
 			})
 			.where(
 				and(
-					eq(importBatches.userId, userId),
+					eq(importBatches.userId, dataOwnerUserId),
 					eq(importBatches.id, data.batchId),
 				),
 			)
@@ -160,6 +164,7 @@ export async function saveImportBatchDraftAction(
 ): Promise<{ success: boolean; message?: string; error?: string }> {
 	try {
 		const userId = await getUserId();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
 		const data = saveDraftSchema.parse(input);
 
 		const batch = await db.query.importBatches.findFirst({
@@ -168,7 +173,7 @@ export async function saveImportBatchDraftAction(
 				status: true,
 			},
 			where: and(
-				eq(importBatches.userId, userId),
+				eq(importBatches.userId, dataOwnerUserId),
 				eq(importBatches.id, data.batchId),
 			),
 		});
@@ -192,7 +197,7 @@ export async function saveImportBatchDraftAction(
 			})
 			.where(
 				and(
-					eq(importBatches.userId, userId),
+					eq(importBatches.userId, dataOwnerUserId),
 					eq(importBatches.id, data.batchId),
 				),
 			);
@@ -225,10 +230,11 @@ export async function fetchImportBatchHistoryAction(
 	input: z.infer<typeof historySchema> = {},
 ): Promise<ImportFileHistoryEntry[]> {
 	const userId = await getUserId();
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const data = historySchema.parse(input);
 
 	return fetchImportBatchHistory({
-		userId,
+		userId: dataOwnerUserId,
 		cardId: data.cardId ?? null,
 		invoicePeriod: data.invoicePeriod ?? null,
 		accountId: data.accountId ?? null,
@@ -260,6 +266,7 @@ export async function getImportBatchDraftAction(input: {
 > {
 	try {
 		const userId = await getUserId();
+		const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 		const data = resumeSchema.parse(input);
 
 		const batch = await db.query.importBatches.findFirst({
@@ -269,7 +276,7 @@ export async function getImportBatchDraftAction(input: {
 				draftData: true,
 			},
 			where: and(
-				eq(importBatches.userId, userId),
+				eq(importBatches.userId, dataOwnerUserId),
 				eq(importBatches.id, data.batchId),
 			),
 		});
@@ -322,6 +329,7 @@ export async function getImportBatchResumeAction(input: {
 > {
 	try {
 		const userId = await getUserId();
+		const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 		const data = resumeSchema.parse(input);
 
 		const batch = await db.query.importBatches.findFirst({
@@ -336,7 +344,7 @@ export async function getImportBatchResumeAction(input: {
 				attachmentId: true,
 			},
 			where: and(
-				eq(importBatches.userId, userId),
+				eq(importBatches.userId, dataOwnerUserId),
 				eq(importBatches.id, data.batchId),
 			),
 			with: {
@@ -416,6 +424,7 @@ export async function getImportBatchDownloadUrlAction(input: {
 	| { success: false; error: string }
 > {
 	const userId = await getUserId();
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const data = downloadSchema.parse(input);
 
 	const batch = await db.query.importBatches.findFirst({
@@ -424,7 +433,7 @@ export async function getImportBatchDownloadUrlAction(input: {
 			attachmentId: true,
 		},
 		where: and(
-			eq(importBatches.userId, userId),
+			eq(importBatches.userId, dataOwnerUserId),
 			eq(importBatches.id, data.batchId),
 		),
 		with: {
@@ -450,6 +459,7 @@ export async function deleteImportBatchAction(input: {
 }): Promise<{ success: boolean; error?: string; message?: string }> {
 	try {
 		const userId = await getUserId();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
 		const data = downloadSchema.parse(input);
 
 		const batch = await db.query.importBatches.findFirst({
@@ -459,7 +469,7 @@ export async function deleteImportBatchAction(input: {
 				attachmentId: true,
 			},
 			where: and(
-				eq(importBatches.userId, userId),
+				eq(importBatches.userId, dataOwnerUserId),
 				eq(importBatches.id, data.batchId),
 			),
 			with: {
@@ -487,7 +497,7 @@ export async function deleteImportBatchAction(input: {
 			.delete(transactions)
 			.where(
 				and(
-					eq(transactions.userId, userId),
+					eq(transactions.userId, dataOwnerUserId),
 					eq(transactions.importBatchId, data.batchId),
 				),
 			);
@@ -507,7 +517,7 @@ export async function deleteImportBatchAction(input: {
 			.delete(importBatches)
 			.where(
 				and(
-					eq(importBatches.userId, userId),
+					eq(importBatches.userId, dataOwnerUserId),
 					eq(importBatches.id, data.batchId),
 				),
 			);

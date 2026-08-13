@@ -11,6 +11,7 @@ import {
 	type InvoicePaymentStatus,
 } from "@/shared/lib/invoices";
 import { loadLogoOptions } from "@/shared/lib/logo/options";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import { safeToNumber } from "@/shared/utils/number";
 import {
@@ -72,6 +73,7 @@ async function fetchCardsByStatus(
 	accounts: AccountSimple[];
 	logoOptions: string[];
 }> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const currentPeriod = getCurrentPeriod();
 	const currentInvoiceLabel = formatCurrentInvoiceLabel(currentPeriod);
 	const [
@@ -85,7 +87,7 @@ async function fetchCardsByStatus(
 		db.query.cards.findMany({
 			orderBy: (table, { desc }) => [desc(table.name)],
 			where: and(
-				eq(cards.userId, userId),
+				eq(cards.userId, dataOwnerUserId),
 				archived
 					? ilike(cards.status, "inativo")
 					: not(ilike(cards.status, "inativo")),
@@ -101,7 +103,7 @@ async function fetchCardsByStatus(
 		}),
 		db.query.financialAccounts.findMany({
 			orderBy: (table, { desc }) => [desc(table.name)],
-			where: eq(financialAccounts.userId, userId),
+			where: eq(financialAccounts.userId, dataOwnerUserId),
 			columns: {
 				id: true,
 				name: true,
@@ -109,9 +111,9 @@ async function fetchCardsByStatus(
 			},
 		}),
 		loadLogoOptions(),
-		callRpc<CardUsageRow>("get_card_usage", { p_user_id: userId }),
+		callRpc<CardUsageRow>("get_card_usage", { p_user_id: dataOwnerUserId }),
 		callRpc<CardInvoiceTotalRow>("get_card_invoice_totals", {
-			p_user_id: userId,
+			p_user_id: dataOwnerUserId,
 			p_period: currentPeriod,
 		}),
 		db
@@ -121,7 +123,10 @@ async function fetchCardsByStatus(
 			})
 			.from(invoices)
 			.where(
-				and(eq(invoices.userId, userId), eq(invoices.period, currentPeriod)),
+				and(
+					eq(invoices.userId, dataOwnerUserId),
+					eq(invoices.period, currentPeriod),
+				),
 			),
 	]);
 

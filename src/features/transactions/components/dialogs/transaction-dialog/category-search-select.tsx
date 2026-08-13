@@ -172,7 +172,7 @@ export function CategorySearchSelect({
 	}, [popoverOpen]);
 
 	return (
-		<Popover open={popoverOpen} onOpenChange={handleOpenChange}>
+		<Popover open={popoverOpen} onOpenChange={handleOpenChange} modal>
 			<PopoverTrigger asChild>
 				<Button
 					id={id}
@@ -258,7 +258,7 @@ export function CategorySearchSelect({
 			</PopoverTrigger>
 			<PopoverContent
 				ref={popoverContentRef}
-				className="w-[var(--radix-popover-trigger-width)] p-0"
+				className="w-[var(--radix-popover-trigger-width)] overflow-hidden p-0"
 				align="start"
 				onOpenAutoFocus={(event) => {
 					event.preventDefault();
@@ -270,7 +270,7 @@ export function CategorySearchSelect({
 						value={searchValue}
 						onValueChange={setSearchValue}
 					/>
-					<CommandList>
+					<CommandList className="overscroll-contain">
 						<CommandEmpty>Nenhuma categoria encontrada.</CommandEmpty>
 						{categoryGroups.map((group) => (
 							<CommandGroup key={group.label} heading={group.label}>

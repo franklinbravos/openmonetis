@@ -4,12 +4,9 @@ import { RiDeleteBin5Line } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import {
-	deletePayerShareAction,
-	regeneratePayerShareCodeAction,
-} from "@/features/payers/actions";
+import { deletePayerShareAction } from "@/features/payers/actions";
 import { updatePayerSharePermissionAction } from "@/features/payers/actions/share-access";
-import { PayerAccessForm } from "@/features/payers/components/details/payer-access-form";
+import { PayerGrantAccessForm } from "@/features/payers/components/details/payer-grant-access-form";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import {
@@ -43,52 +40,20 @@ type PayerShare = {
 
 interface PayerSharingCardProps {
 	payerId: string;
-	shareCode: string;
-	payerEmail?: string | null;
 	shares: PayerShare[];
 }
 
-export function PayerSharingCard({
-	payerId,
-	shareCode,
-	payerEmail,
-	shares,
-}: PayerSharingCardProps) {
+export function PayerSharingCard({ payerId, shares }: PayerSharingCardProps) {
 	const router = useRouter();
-	const [currentCode, setCurrentCode] = useState(shareCode);
-	const [regeneratePending, startRegenerate] = useTransition();
 	const [removePendingId, setRemovePendingId] = useState<string | null>(null);
 	const [permissionPendingId, setPermissionPendingId] = useState<string | null>(
 		null,
 	);
-
-	const handleCopyCode = async () => {
-		try {
-			await navigator.clipboard.writeText(currentCode);
-			toast.success("Código copiado para a área de transferência.");
-		} catch {
-			toast.error("Não foi possível copiar o código.");
-		}
-	};
-
-	const handleRegenerate = () => {
-		startRegenerate(async () => {
-			const result = await regeneratePayerShareCodeAction({ payerId });
-
-			if (!result.success) {
-				toast.error(result.error);
-				return;
-			}
-
-			if ("code" in result) setCurrentCode(result.code);
-			toast.success("Novo código gerado com sucesso.");
-			router.refresh();
-		});
-	};
+	const [, startTransition] = useTransition();
 
 	const handleRemove = (shareId: string) => {
 		setRemovePendingId(shareId);
-		startRegenerate(async () => {
+		startTransition(async () => {
 			const result = await deletePayerShareAction({ shareId });
 
 			if (!result.success) {
@@ -108,7 +73,7 @@ export function PayerSharingCard({
 		permission: PayerSharePermission,
 	) => {
 		setPermissionPendingId(shareId);
-		startRegenerate(async () => {
+		startTransition(async () => {
 			const result = await updatePayerSharePermissionAction({
 				shareId,
 				permission,
@@ -129,55 +94,23 @@ export function PayerSharingCard({
 	return (
 		<Card className="border">
 			<CardHeader>
-				<CardTitle className="text-lg font-semibold">
-					Compartilhamentos
+				<CardTitle className="font-semibold text-lg">
+					Acessos familiares
 				</CardTitle>
-				<p className="text-sm text-muted-foreground">
-					Gere acesso de usuário com permissões ou compartilhe o código para
-					entrada manual na página de pessoas.
+				<p className="text-muted-foreground text-sm">
+					Conceda permissão para contas já cadastradas. Cada membro entra com
+					seu login e visualiza o mesmo ambiente financeiro.
 				</p>
 			</CardHeader>
 			<CardContent className="space-y-6">
-				<PayerAccessForm
+				<PayerGrantAccessForm
 					payerId={payerId}
-					defaultEmail={payerEmail}
 					onSuccess={() => router.refresh()}
 				/>
 
-				<div className="flex flex-col gap-2 rounded-lg border border-dashed p-4 text-sm">
-					<span className="text-xs font-medium uppercase text-muted-foreground/80">
-						Código de compartilhamento manual
-					</span>
-					<div className="flex flex-wrap items-center gap-2">
-						<code className="rounded bg-muted px-2 py-1 text-xs font-mono">
-							{currentCode}
-						</code>
-						<Button
-							type="button"
-							size="sm"
-							variant="outline"
-							onClick={handleCopyCode}
-						>
-							Copiar
-						</Button>
-						<Button
-							type="button"
-							size="sm"
-							onClick={handleRegenerate}
-							disabled={regeneratePending}
-						>
-							{regeneratePending ? "Gerando..." : "Gerar novo código"}
-						</Button>
-					</div>
-					<p className="text-xs text-muted-foreground">
-						O código manual concede acesso somente leitura via &quot;Adicionar
-						por código&quot;.
-					</p>
-				</div>
-
 				{shares.length === 0 ? (
-					<p className="text-sm text-muted-foreground">
-						Nenhum usuário com acesso ativo.
+					<p className="text-muted-foreground text-sm">
+						Nenhum membro com acesso ativo.
 					</p>
 				) : (
 					<ul className="space-y-3">

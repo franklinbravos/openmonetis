@@ -243,7 +243,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 				/>
 			</section>
 
-			<UiCard className="sticky top-18 z-10 gap-0 overflow-hidden py-0 backdrop-blur-md supports-backdrop-filter:bg-card/60">
+			<UiCard className="gap-0 overflow-hidden py-0">
 				<StatementPeriodNavigation
 					embedded
 					hideCarousel
