@@ -69,6 +69,31 @@ export function tryDecryptSecret(payload: string): string | null {
 	}
 }
 
+export type SecretReadFailureReason =
+	| "missing_app_secret"
+	| "malformed_payload"
+	| "app_secret_changed";
+
+/**
+ * Diagnostica por que um payload criptografado não abre com o APP_SECRET atual.
+ * Usado para logar no servidor a causa exata (útil em produção), sem vazar
+ * conteúdo sensível.
+ */
+export function diagnoseSecretReadFailure(
+	payload: string,
+): SecretReadFailureReason {
+	if (!process.env.APP_SECRET) {
+		return "missing_app_secret";
+	}
+
+	const parts = payload.split(":");
+	if (parts.length !== 3 || parts.some((part) => part.length === 0)) {
+		return "malformed_payload";
+	}
+
+	return "app_secret_changed";
+}
+
 export function maskApiKey(apiKey: string): string {
 	const trimmedKey = apiKey.trim();
 	if (trimmedKey.length <= 4) {

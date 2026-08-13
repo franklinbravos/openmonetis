@@ -4,8 +4,14 @@ import { db, schema } from "@/shared/lib/db";
 import { getEnvProviderCredential } from "./env-credentials";
 import { resolveOpenCodePlanBaseUrl } from "./opencode-plans";
 import {
+	AI_STORED_KEY_MISSING_APP_SECRET_MESSAGE,
+	AI_STORED_KEY_UNREADABLE_MESSAGE,
+} from "./provider-messages";
+import {
+	diagnoseSecretReadFailure,
 	encryptSecret,
 	maskApiKey,
+	type SecretReadFailureReason,
 	tryDecryptSecret,
 } from "./secret-encryption";
 import type {
@@ -175,16 +181,72 @@ export async function fetchUserAiProviderSettings(userId: string): Promise<{
 	};
 }
 
+export function hasInvalidStoredAiKeyForProvider(
+	stored: StoredAiProviderSettings | null | undefined,
+	provider: AIProvider,
+): boolean {
+	const entry = stored?.[provider];
+	if (!entry?.encryptedApiKey) return false;
+	return tryDecryptSecret(entry.encryptedApiKey) == null;
+}
+
 export function hasInvalidStoredAiKeys(
 	stored: StoredAiProviderSettings | null | undefined,
 ): boolean {
 	if (!stored) return false;
 
-	return AI_PROVIDER_IDS.some((provider) => {
+	const hasInvalid = AI_PROVIDER_IDS.some((provider) =>
+		hasInvalidStoredAiKeyForProvider(stored, provider),
+	);
+
+	if (hasInvalid) {
+		const details = AI_PROVIDER_IDS.flatMap((provider) => {
+			const entry = stored[provider];
+			if (!entry?.encryptedApiKey) return [];
+			if (tryDecryptSecret(entry.encryptedApiKey) != null) return [];
+			return [
+				`${provider}: ${diagnoseSecretReadFailure(entry.encryptedApiKey)}`,
+			];
+		}).join(", ");
+
+		console.error("[hasInvalidStoredAiKeys] chaves de IA ilegíveis no banco", {
+			hasAppSecret: Boolean(process.env.APP_SECRET),
+			details,
+		});
+	}
+
+	return hasInvalid;
+}
+
+/**
+ * Mensagem contextual quando há chaves ilegíveis no banco. Diferencia a causa
+ * mais comum (APP_SECRET ausente no servidor) da troca de APP_SECRET.
+ */
+export function getStoredKeyUnreadableMessage(
+	stored: StoredAiProviderSettings | null | undefined,
+): string {
+	if (!stored) return AI_STORED_KEY_UNREADABLE_MESSAGE;
+
+	const anyMalformed = AI_PROVIDER_IDS.some((provider) => {
 		const entry = stored[provider];
 		if (!entry?.encryptedApiKey) return false;
 		return tryDecryptSecret(entry.encryptedApiKey) == null;
 	});
+
+	if (!anyMalformed) return AI_STORED_KEY_UNREADABLE_MESSAGE;
+
+	const firstFailure = AI_PROVIDER_IDS.map((provider) => {
+		const entry = stored[provider];
+		if (!entry?.encryptedApiKey) return null;
+		if (tryDecryptSecret(entry.encryptedApiKey) != null) return null;
+		return diagnoseSecretReadFailure(entry.encryptedApiKey);
+	}).find((reason): reason is SecretReadFailureReason => Boolean(reason));
+
+	if (firstFailure === "missing_app_secret") {
+		return AI_STORED_KEY_MISSING_APP_SECRET_MESSAGE;
+	}
+
+	return AI_STORED_KEY_UNREADABLE_MESSAGE;
 }
 
 export function isAnyAiProviderConfigured(

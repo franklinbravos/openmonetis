@@ -15,6 +15,7 @@ import { fetchImportBatchHistory } from "@/features/transactions/queries/import-
 import PageDescription from "@/shared/components/page-description";
 import {
 	fetchUserAiProviderSettings,
+	getStoredKeyUnreadableMessage,
 	hasInvalidStoredAiKeys,
 	isAnyAiProviderConfigured,
 } from "@/shared/lib/ai/user-provider-config";
@@ -134,6 +135,9 @@ export default async function Page({ searchParams }: PageProps) {
 		defaultPayerId,
 	} = optionSets.options;
 	const aiStoredKeysInvalid = hasInvalidStoredAiKeys(aiSettings.storedSettings);
+	const aiStoredKeysInvalidMessage = aiStoredKeysInvalid
+		? getStoredKeyUnreadableMessage(aiSettings.storedSettings)
+		: undefined;
 	const aiAnalysisEnabled =
 		isAnyAiProviderConfigured(aiSettings.credentials) && !aiStoredKeysInvalid;
 
@@ -221,6 +225,7 @@ export default async function Page({ searchParams }: PageProps) {
 				aiAnalysisEnabled={aiAnalysisEnabled}
 				aiDefaultModelId={aiSettings.insightsDefaultModelId}
 				aiStoredKeysInvalid={aiStoredKeysInvalid}
+				aiStoredKeysInvalidMessage={aiStoredKeysInvalidMessage}
 				initialCardId={validCardId}
 				initialAccountId={validAccountId}
 				initialInvoicePeriod={

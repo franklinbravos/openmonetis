@@ -209,9 +209,11 @@ export function useAiModelConfiguration({
 
 			setFetchedModels(result.data.models);
 			const hasTypedKey = apiKeyInput.trim().length > 0;
+			const providerListsWithoutKey =
+				currentProvider === "opencode" || currentProvider === "ollama";
 			setCredentialValidated(
 				result.data.models.length > 0 &&
-					(hasTypedKey || hasConfiguredCredential),
+					(hasTypedKey || hasConfiguredCredential || providerListsWithoutKey),
 			);
 
 			if (options?.showFeedback) {
@@ -299,11 +301,17 @@ export function useAiModelConfiguration({
 		baseUrlInput.trim() !== lastSavedBaseUrl.trim() ||
 		selectedModelId !== lastSavedModelId;
 
+	const requiresFreshKeyValidation =
+		apiKeyInput.trim().length > 0 || hasInvalidDatabaseKey;
+
 	const canSave =
 		Boolean(selectedModelId) &&
 		!isIncompleteCustomModelId(selectedModelId, currentProvider) &&
 		(currentProvider === "ollama" ||
-			(hasInvalidDatabaseKey
+			(currentProvider === "opencode" &&
+				!requiresFreshKeyValidation &&
+				credentialValidated) ||
+			(requiresFreshKeyValidation
 				? apiKeyInput.trim().length > 0 && credentialValidated
 				: credentialValidated || hasConfiguredCredential));
 
@@ -372,7 +380,13 @@ export function useAiModelConfiguration({
 			return;
 		}
 
-		if (!hasConfiguredCredential || !credentialValidated) {
+		const canAutoSaveWithoutStoredCredential =
+			currentProvider === "opencode" || currentProvider === "ollama";
+
+		if (
+			!credentialValidated ||
+			(!hasConfiguredCredential && !canAutoSaveWithoutStoredCredential)
+		) {
 			return;
 		}
 

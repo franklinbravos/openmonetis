@@ -241,6 +241,7 @@ interface ImportPageProps {
 	aiAnalysisEnabled?: boolean;
 	aiDefaultModelId?: string | null;
 	aiStoredKeysInvalid?: boolean;
+	aiStoredKeysInvalidMessage?: string;
 	initialCardId?: string | null;
 	initialAccountId?: string | null;
 	initialInvoicePeriod?: string | null;
@@ -262,6 +263,7 @@ export function ImportPage({
 	aiAnalysisEnabled = false,
 	aiDefaultModelId = null,
 	aiStoredKeysInvalid = false,
+	aiStoredKeysInvalidMessage = AI_STORED_KEY_UNREADABLE_MESSAGE,
 	initialCardId = null,
 	initialAccountId = null,
 	initialInvoicePeriod = null,
@@ -3175,7 +3177,7 @@ export function ImportPage({
 								<Alert variant="destructive">
 									<AlertTitle>Chave de IA ilegível</AlertTitle>
 									<AlertDescription className="text-sm">
-										{AI_STORED_KEY_UNREADABLE_MESSAGE}
+										{aiStoredKeysInvalidMessage}
 									</AlertDescription>
 								</Alert>
 							) : null}

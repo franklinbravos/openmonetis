@@ -6,7 +6,7 @@ import { AI_STORED_KEY_UNREADABLE_MESSAGE } from "@/shared/lib/ai/provider-messa
 import { resolveRuntimeProviderCredential } from "@/shared/lib/ai/resolve-runtime-ai-credentials";
 import {
 	fetchUserAiProviderSettings,
-	hasInvalidStoredAiKeys,
+	hasInvalidStoredAiKeyForProvider,
 } from "@/shared/lib/ai/user-provider-config";
 import { getUser } from "@/shared/lib/auth/server";
 import type { ActionResult } from "./types";
@@ -36,8 +36,15 @@ export async function fetchProviderModelsAction(
 		const user = await getUser();
 		const data = fetchProviderModelsSchema.parse(input);
 		const { storedSettings } = await fetchUserAiProviderSettings(user.id);
+		const usingFreshApiKey = Boolean(data.apiKey?.trim());
+		const providerListsWithoutKey =
+			data.provider === "opencode" || data.provider === "ollama";
 
-		if (hasInvalidStoredAiKeys(storedSettings)) {
+		if (
+			!usingFreshApiKey &&
+			!providerListsWithoutKey &&
+			hasInvalidStoredAiKeyForProvider(storedSettings, data.provider)
+		) {
 			return {
 				success: false,
 				error: AI_STORED_KEY_UNREADABLE_MESSAGE,
