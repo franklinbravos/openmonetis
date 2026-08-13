@@ -29,6 +29,12 @@ import {
 } from "@/shared/lib/ai/model-config-helpers";
 import { OPENCODE_PLAN_ZEN_URL } from "@/shared/lib/ai/opencode-plans";
 import type { AiProviderSettingsView } from "@/shared/lib/ai/types";
+import {
+	buildProviderModelsCacheKey,
+	type ProviderModelsCacheEntry,
+	readProviderModelsSessionCache,
+	writeProviderModelsSessionCache,
+} from "../lib/provider-models-session-cache";
 
 interface UseAiModelConfigurationOptions {
 	settings: AiProviderSettingsView;
@@ -39,6 +45,28 @@ interface UseAiModelConfigurationOptions {
 
 function isIncompleteCustomModelId(modelId: string, provider: AIProvider) {
 	return isCustomModelProvider(provider) && modelId === `${provider}:`;
+}
+
+function resolveProviderBaseUrl(
+	provider: AIProvider,
+	providerSettings: AiProviderSettingsView["providers"],
+): string {
+	if (provider === "opencode") {
+		return providerSettings[provider]?.baseUrl ?? OPENCODE_PLAN_ZEN_URL;
+	}
+
+	return providerSettings[provider]?.baseUrl ?? "";
+}
+
+function hydrateModelsFromSessionCache(
+	cacheKey: string,
+): ProviderModelsCacheEntry | null {
+	const cached = readProviderModelsSessionCache(cacheKey);
+	if (!cached || cached.models.length === 0) {
+		return null;
+	}
+
+	return cached;
 }
 
 export function useAiModelConfiguration({
@@ -56,14 +84,28 @@ export function useAiModelConfiguration({
 	const hasConfiguredCredential =
 		providerConfig?.activeSource !== "none" && !hasInvalidDatabaseKey;
 
+	const initialProvider =
+		getProviderFromModelId(selectedModelId) ?? DEFAULT_PROVIDER;
+	const initialBaseUrl = resolveProviderBaseUrl(
+		initialProvider,
+		settings.providers,
+	);
+	const initialSessionCache = readProviderModelsSessionCache(
+		buildProviderModelsCacheKey(initialProvider, initialBaseUrl, ""),
+	);
+
 	const [apiKeyInput, setApiKeyInput] = useState("");
 	const [baseUrlInput, setBaseUrlInput] = useState(
-		providerConfig?.baseUrl ?? "",
+		providerConfig?.baseUrl ?? initialBaseUrl,
 	);
-	const [fetchedModels, setFetchedModels] = useState<ListedProviderModel[]>([]);
+	const [fetchedModels, setFetchedModels] = useState<ListedProviderModel[]>(
+		() => initialSessionCache?.models ?? [],
+	);
 	const [isLoadingModels, setIsLoadingModels] = useState(false);
 	const [modelsError, setModelsError] = useState<string | null>(null);
-	const [credentialValidated, setCredentialValidated] = useState(false);
+	const [credentialValidated, setCredentialValidated] = useState(
+		() => initialSessionCache?.credentialValidated ?? false,
+	);
 	const [lastSavedModelId, setLastSavedModelId] = useState(
 		settings.insightsDefaultModelId ?? "",
 	);
@@ -72,6 +114,13 @@ export function useAiModelConfiguration({
 	);
 	const [isSaving, startSave] = useTransition();
 	const autoSaveAttemptRef = useRef<string | null>(null);
+	const previousProviderRef = useRef(currentProvider);
+
+	const modelsCacheKey = useMemo(
+		() =>
+			buildProviderModelsCacheKey(currentProvider, baseUrlInput, apiKeyInput),
+		[currentProvider, baseUrlInput, apiKeyInput],
+	);
 
 	const savedModelIdForProvider = useMemo(
 		() =>
@@ -102,16 +151,26 @@ export function useAiModelConfiguration({
 	);
 
 	useEffect(() => {
+		if (previousProviderRef.current === currentProvider) {
+			return;
+		}
+
+		previousProviderRef.current = currentProvider;
 		setApiKeyInput("");
-		const nextBaseUrl =
-			currentProvider === "opencode"
-				? (providerSettings[currentProvider]?.baseUrl ?? OPENCODE_PLAN_ZEN_URL)
-				: (providerSettings[currentProvider]?.baseUrl ?? "");
+
+		const nextBaseUrl = resolveProviderBaseUrl(
+			currentProvider,
+			providerSettings,
+		);
 		setBaseUrlInput(nextBaseUrl);
 		setLastSavedBaseUrl(nextBaseUrl);
-		setFetchedModels([]);
 		setModelsError(null);
-		setCredentialValidated(false);
+
+		const cached = hydrateModelsFromSessionCache(
+			buildProviderModelsCacheKey(currentProvider, nextBaseUrl, ""),
+		);
+		setFetchedModels(cached?.models ?? []);
+		setCredentialValidated(cached?.credentialValidated ?? false);
 
 		const providerSavedModel = resolveSavedModelIdForProvider(currentProvider, {
 			defaultModelId: providerSettings[currentProvider]?.defaultModelId,
@@ -142,8 +201,16 @@ export function useAiModelConfiguration({
 	]);
 
 	useEffect(() => {
+		const cached = hydrateModelsFromSessionCache(modelsCacheKey);
+		if (cached) {
+			setFetchedModels(cached.models);
+			setCredentialValidated(cached.credentialValidated);
+			setModelsError(null);
+			return;
+		}
+
 		setCredentialValidated(false);
-	}, [apiKeyInput, baseUrlInput, currentProvider]);
+	}, [modelsCacheKey]);
 
 	useEffect(() => {
 		const serverModelId = settings.insightsDefaultModelId ?? "";
@@ -154,10 +221,10 @@ export function useAiModelConfiguration({
 			onSelectedModelIdChange(serverModelId);
 		}
 
-		const savedBaseUrl =
-			currentProvider === "opencode"
-				? (providerSettings[currentProvider]?.baseUrl ?? OPENCODE_PLAN_ZEN_URL)
-				: (providerSettings[currentProvider]?.baseUrl ?? "");
+		const savedBaseUrl = resolveProviderBaseUrl(
+			currentProvider,
+			providerSettings,
+		);
 		setLastSavedBaseUrl(savedBaseUrl);
 	}, [
 		currentProvider,
@@ -168,6 +235,11 @@ export function useAiModelConfiguration({
 
 	const loadProviderModels = useCallback(
 		async (options?: { showFeedback?: boolean }) => {
+			const cacheKey = buildProviderModelsCacheKey(
+				currentProvider,
+				baseUrlInput,
+				apiKeyInput,
+			);
 			const canTestNow =
 				currentProvider === "ollama" ||
 				currentProvider === "opencode" ||
@@ -176,7 +248,10 @@ export function useAiModelConfiguration({
 				Boolean(providerConfig?.hasDatabaseKey);
 
 			if (!canTestNow) {
-				setFetchedModels([]);
+				const cached = hydrateModelsFromSessionCache(cacheKey);
+				if (!cached) {
+					setFetchedModels([]);
+				}
 				setModelsError(null);
 				if (options?.showFeedback) {
 					toast.error(
@@ -198,23 +273,34 @@ export function useAiModelConfiguration({
 			setIsLoadingModels(false);
 
 			if (!result.success) {
-				setFetchedModels([]);
+				const cached = hydrateModelsFromSessionCache(cacheKey);
+				if (cached) {
+					setFetchedModels(cached.models);
+					setCredentialValidated(cached.credentialValidated);
+				} else {
+					setFetchedModels([]);
+					setCredentialValidated(false);
+				}
 				setModelsError(result.error);
-				setCredentialValidated(false);
 				if (options?.showFeedback) {
 					toast.error(result.error);
 				}
 				return;
 			}
 
-			setFetchedModels(result.data.models);
 			const hasTypedKey = apiKeyInput.trim().length > 0;
 			const providerListsWithoutKey =
 				currentProvider === "opencode" || currentProvider === "ollama";
-			setCredentialValidated(
+			const nextCredentialValidated =
 				result.data.models.length > 0 &&
-					(hasTypedKey || hasConfiguredCredential || providerListsWithoutKey),
-			);
+				(hasTypedKey || hasConfiguredCredential || providerListsWithoutKey);
+
+			setFetchedModels(result.data.models);
+			setCredentialValidated(nextCredentialValidated);
+			writeProviderModelsSessionCache(cacheKey, {
+				models: result.data.models,
+				credentialValidated: nextCredentialValidated,
+			});
 
 			if (options?.showFeedback) {
 				toast.success(
@@ -239,7 +325,6 @@ export function useAiModelConfiguration({
 
 	useEffect(() => {
 		if (!canListModels) {
-			setFetchedModels([]);
 			setModelsError(null);
 			return;
 		}
@@ -251,7 +336,7 @@ export function useAiModelConfiguration({
 		return () => {
 			window.clearTimeout(timer);
 		};
-	}, [canListModels, loadProviderModels]);
+	}, [canListModels, loadProviderModels, modelsCacheKey]);
 
 	const canTestCredential =
 		currentProvider === "ollama" ||

@@ -30,8 +30,23 @@ interface ModelSearchComboboxProps {
 	className?: string;
 }
 
+function getProviderModelCode(model: ListedProviderModel): string {
+	const colonIndex = model.id.indexOf(":");
+	return colonIndex >= 0 ? model.id.slice(colonIndex + 1) : model.id;
+}
+
+function modelDisplayDiffersFromCode(model: ListedProviderModel): boolean {
+	const code = getProviderModelCode(model);
+	return model.name.trim().toLowerCase() !== code.trim().toLowerCase();
+}
+
 function formatModelLabel(model: ListedProviderModel) {
 	return model.id === "gpt-5.5" ? `${model.name} (Recomendado)` : model.name;
+}
+
+function formatModelSearchValue(model: ListedProviderModel) {
+	const code = getProviderModelCode(model);
+	return `${model.id} ${model.name} ${code}`;
 }
 
 function FreeModelBadge({ className }: { className?: string }) {
@@ -63,7 +78,14 @@ function ModelOptionRow({
 					isSelected ? "opacity-100" : "opacity-0",
 				)}
 			/>
-			<span className="min-w-0 flex-1 truncate">{formatModelLabel(model)}</span>
+			<span className="min-w-0 flex-1">
+				<span className="block truncate">{formatModelLabel(model)}</span>
+				{modelDisplayDiffersFromCode(model) ? (
+					<span className="block truncate font-mono text-muted-foreground text-xs">
+						{getProviderModelCode(model)}
+					</span>
+				) : null}
+			</span>
 			{model.unavailableInCatalog ? (
 				<Badge variant="outline" className="shrink-0 text-[10px]">
 					Salvo
@@ -105,14 +127,30 @@ export function ModelSearchCombobox({
 					aria-expanded={open}
 					disabled={disabled}
 					className={cn(
-						"h-9 w-full justify-between border-border/70 bg-background font-normal shadow-none",
+						"w-full justify-between border-border/70 bg-background font-normal shadow-none",
+						selectedModel && modelDisplayDiffersFromCode(selectedModel)
+							? "h-auto min-h-9 py-1.5"
+							: "h-9",
 						!selectedModel && "text-muted-foreground",
 						className,
 					)}
 				>
 					<span className="flex min-w-0 items-center gap-2">
-						<span className="truncate">
-							{selectedModel ? formatModelLabel(selectedModel) : placeholder}
+						<span className="min-w-0 text-left">
+							{selectedModel ? (
+								<>
+									<span className="block truncate">
+										{formatModelLabel(selectedModel)}
+									</span>
+									{modelDisplayDiffersFromCode(selectedModel) ? (
+										<span className="block truncate font-mono text-muted-foreground text-xs">
+											{getProviderModelCode(selectedModel)}
+										</span>
+									) : null}
+								</>
+							) : (
+								<span className="truncate">{placeholder}</span>
+							)}
 						</span>
 						{selectedModel?.isFreeTier ? <FreeModelBadge /> : null}
 					</span>
@@ -133,7 +171,7 @@ export function ModelSearchCombobox({
 									{freeModels.map((model) => (
 										<CommandItem
 											key={model.id}
-											value={`${model.id} ${model.name} grátis free`}
+											value={`${formatModelSearchValue(model)} grátis free`}
 											onSelect={() => {
 												onValueChange(model.id);
 												setOpen(false);
@@ -151,7 +189,7 @@ export function ModelSearchCombobox({
 									{paidModels.map((model) => (
 										<CommandItem
 											key={model.id}
-											value={`${model.id} ${model.name}`}
+											value={formatModelSearchValue(model)}
 											onSelect={() => {
 												onValueChange(model.id);
 												setOpen(false);
@@ -171,7 +209,7 @@ export function ModelSearchCombobox({
 								{models.map((model) => (
 									<CommandItem
 										key={model.id}
-										value={`${model.id} ${model.name}`}
+										value={formatModelSearchValue(model)}
 										onSelect={() => {
 											onValueChange(model.id);
 											setOpen(false);

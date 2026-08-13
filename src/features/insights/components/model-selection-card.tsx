@@ -217,13 +217,17 @@ export function ModelSelectionCard({
 								models={providerModels}
 								onValueChange={onModelSelect}
 								disabled={
-									disabled || !canListModels || providerModels.length === 0
+									disabled ||
+									!canListModels ||
+									(providerModels.length === 0 && isLoadingModels)
 								}
 								placeholder={
 									canListModels
 										? providerModels.length > 0
 											? "Selecione um modelo"
-											: "Carregando modelos..."
+											: isLoadingModels
+												? "Carregando modelos..."
+												: "Nenhum modelo disponível"
 										: "Informe a chave API para listar modelos"
 								}
 								className={cn(credentialValidated && "border-emerald-500/40")}
