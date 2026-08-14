@@ -38,6 +38,7 @@ import {
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import { parseLocalDateString, toDateOnlyString } from "@/shared/utils/date";
+import { getPeriodPurchaseDateBounds } from "@/shared/utils/period";
 import { slugify } from "@/shared/utils/string";
 
 type PayerRow = typeof payers.$inferSelect;
@@ -419,26 +420,34 @@ export const buildTransactionWhere = async ({
 	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const where: SQL[] = [eq(transactions.userId, dataOwnerUserId)];
 
-	if (filters.dateStartFilter || filters.dateEndFilter) {
-		if (filters.dateStartFilter) {
-			where.push(
-				gte(
-					transactions.purchaseDate,
-					parseLocalDateString(filters.dateStartFilter),
-				),
-			);
-		}
+	const usePurchaseDateMonthFilter = !cardId && !accountId && !payerId;
 
-		if (filters.dateEndFilter) {
-			where.push(
-				lte(
-					transactions.purchaseDate,
-					parseLocalDateString(filters.dateEndFilter),
-				),
-			);
-		}
+	if (usePurchaseDateMonthFilter) {
+		const { start, end } = getPeriodPurchaseDateBounds(period);
+		where.push(
+			gte(transactions.purchaseDate, parseLocalDateString(start)),
+			lte(transactions.purchaseDate, parseLocalDateString(end)),
+		);
 	} else {
 		where.push(eq(transactions.period, period));
+	}
+
+	if (filters.dateStartFilter) {
+		where.push(
+			gte(
+				transactions.purchaseDate,
+				parseLocalDateString(filters.dateStartFilter),
+			),
+		);
+	}
+
+	if (filters.dateEndFilter) {
+		where.push(
+			lte(
+				transactions.purchaseDate,
+				parseLocalDateString(filters.dateEndFilter),
+			),
+		);
 	}
 
 	if (payerId) {

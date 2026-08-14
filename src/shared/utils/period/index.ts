@@ -198,6 +198,14 @@ export function buildPeriodWindow(
 // URL PARAM HANDLING (mes-ano format for Portuguese URLs)
 // ============================================================================
 
+export const PERIOD_SEARCH_PARAM = "periodo";
+
+/** Filtros de data em /transactions que restringem purchaseDate dentro do período. */
+export const TRANSACTIONS_DATE_RANGE_SEARCH_PARAMS = [
+	"dataInicio",
+	"dataFim",
+] as const;
+
 const MONTH_MAP = new Map<string, number>(
 	MONTH_NAMES.map((name, index) => [name, index]),
 );
@@ -292,6 +300,23 @@ export function formatPeriodForUrl(period: string): string {
 export function periodToDate(period: string): Date {
 	const { year, month } = parsePeriod(period);
 	return new Date(year, month - 1, 1);
+}
+
+/**
+ * Intervalo calendário (YYYY-MM-DD) de um período para filtrar data_compra.
+ */
+export function getPeriodPurchaseDateBounds(period: string): {
+	start: string;
+	end: string;
+} {
+	const { year, month } = parsePeriod(period);
+	const monthLabel = String(month).padStart(2, "0");
+	const lastDay = new Date(year, month, 0).getDate();
+
+	return {
+		start: `${year}-${monthLabel}-01`,
+		end: `${year}-${monthLabel}-${String(lastDay).padStart(2, "0")}`,
+	};
 }
 
 /**

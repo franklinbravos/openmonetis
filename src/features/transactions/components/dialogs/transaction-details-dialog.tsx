@@ -94,7 +94,15 @@ export function TransactionDetailsDialog({
 
 	if (!transaction) return null;
 
+	const listMissingRelations =
+		!transaction.pagadorName &&
+		!transaction.contaName &&
+		!transaction.cartaoName &&
+		!transaction.categoriaName;
+
 	const details = resolvedTransaction ?? transaction;
+	const awaitingRelationDetails =
+		isLoadingDetails || (open && listMissingRelations && !resolvedTransaction);
 
 	const isInstallment =
 		details.condition?.toLowerCase() === "parcelado" &&
@@ -124,8 +132,10 @@ export function TransactionDetailsDialog({
 				<DialogHeader className="text-left">
 					<div className="flex min-w-0 items-start gap-2">
 						<EstablishmentLogo size={40} name={details.name} />
-						<div className="min-w-0">
-							<DialogTitle className="truncate">{details.name}</DialogTitle>
+						<div className="min-w-0 flex-1">
+							<DialogTitle className="text-balance break-words leading-snug">
+								{details.name}
+							</DialogTitle>
 							<DialogDescription className="mt-1">
 								{formatDate(details.purchaseDate)}
 							</DialogDescription>
@@ -199,7 +209,7 @@ export function TransactionDetailsDialog({
 										{details.cartaoName ? "Cartão" : "Conta"}
 									</span>
 									{(() => {
-										if (isLoadingDetails) {
+										if (awaitingRelationDetails) {
 											return (
 												<span className="min-w-0 truncate text-muted-foreground">
 													Carregando...
@@ -234,7 +244,7 @@ export function TransactionDetailsDialog({
 								<li className="min-w-0 flex items-center justify-between gap-3">
 									<span className="text-muted-foreground">Categoria</span>
 									{(() => {
-										if (isLoadingDetails) {
+										if (awaitingRelationDetails) {
 											return (
 												<span className="min-w-0 truncate text-muted-foreground">
 													Carregando...
@@ -274,7 +284,7 @@ export function TransactionDetailsDialog({
 								<li className="min-w-0 flex items-center justify-between gap-3">
 									<span className="text-muted-foreground">Responsável</span>
 									{(() => {
-										if (isLoadingDetails) {
+										if (awaitingRelationDetails) {
 											return (
 												<span className="min-w-0 truncate text-muted-foreground">
 													Carregando...

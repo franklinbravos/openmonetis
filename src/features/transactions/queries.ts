@@ -3,8 +3,12 @@ import {
 	count,
 	desc,
 	eq,
+	gte,
+	inArray,
 	isNull,
+	lte,
 	ne,
+	not,
 	or,
 	type SQL,
 	sql,
@@ -25,17 +29,23 @@ import type {
 	PeriodCarouselMonth,
 	PeriodCarouselStatus,
 } from "@/shared/components/month-picker/period-carousel-types";
-import { INITIAL_BALANCE_NOTE } from "@/shared/lib/accounts/constants";
+import {
+	ACCOUNT_AUTO_INVOICE_NOTE_PREFIX,
+	INITIAL_BALANCE_NOTE,
+} from "@/shared/lib/accounts/constants";
+import { excludeTransactionsFromExcludedAccounts } from "@/shared/lib/accounts/query-filters";
 import { db } from "@/shared/lib/db";
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import { enrichTransactionsWithTransferPeers } from "@/shared/lib/transfers/enrich-transfer-peers";
+import { parseLocalDateString } from "@/shared/utils/date";
 import {
 	addMonthsToPeriod,
 	buildPeriodRange,
 	comparePeriods,
 	getCurrentPeriod,
+	getPeriodPurchaseDateBounds,
 } from "@/shared/utils/period";
 
 type BaseTransactionQueryInput = {
@@ -104,6 +114,82 @@ const mapTransactionRows = (
 		hasAttachments: row.hasAttachments,
 	}));
 
+type TransactionWithRelations = ReturnType<typeof mapTransactionRows>[number];
+
+/** Fallback quando embeds do bridge não retornam relações, mas os FKs existem. */
+async function enrichMissingTransactionRelations(
+	rows: TransactionWithRelations[],
+): Promise<TransactionWithRelations[]> {
+	const missingPayerIds = new Set<string>();
+	const missingCategoryIds = new Set<string>();
+	const missingAccountIds = new Set<string>();
+	const missingCardIds = new Set<string>();
+
+	for (const row of rows) {
+		if (row.payerId && !row.payer) {
+			missingPayerIds.add(row.payerId);
+		}
+		if (row.categoryId && !row.category) {
+			missingCategoryIds.add(row.categoryId);
+		}
+		if (row.accountId && !row.financialAccount) {
+			missingAccountIds.add(row.accountId);
+		}
+		if (row.cardId && !row.card) {
+			missingCardIds.add(row.cardId);
+		}
+	}
+
+	if (
+		missingPayerIds.size === 0 &&
+		missingCategoryIds.size === 0 &&
+		missingAccountIds.size === 0 &&
+		missingCardIds.size === 0
+	) {
+		return rows;
+	}
+
+	const [payerRows, categoryRows, accountRows, cardRows] = await Promise.all([
+		missingPayerIds.size > 0
+			? db.query.payers.findMany({
+					where: inArray(payers.id, [...missingPayerIds]),
+				})
+			: Promise.resolve([]),
+		missingCategoryIds.size > 0
+			? db.query.categories.findMany({
+					where: inArray(categories.id, [...missingCategoryIds]),
+				})
+			: Promise.resolve([]),
+		missingAccountIds.size > 0
+			? db.query.financialAccounts.findMany({
+					where: inArray(financialAccounts.id, [...missingAccountIds]),
+				})
+			: Promise.resolve([]),
+		missingCardIds.size > 0
+			? db.query.cards.findMany({
+					where: inArray(cards.id, [...missingCardIds]),
+				})
+			: Promise.resolve([]),
+	]);
+
+	const payerById = new Map(payerRows.map((row) => [row.id, row]));
+	const categoryById = new Map(categoryRows.map((row) => [row.id, row]));
+	const accountById = new Map(accountRows.map((row) => [row.id, row]));
+	const cardById = new Map(cardRows.map((row) => [row.id, row]));
+
+	return rows.map((row) => ({
+		...row,
+		payer: row.payer ?? (row.payerId ? (payerById.get(row.payerId) ?? null) : null),
+		category:
+			row.category ??
+			(row.categoryId ? (categoryById.get(row.categoryId) ?? null) : null),
+		financialAccount:
+			row.financialAccount ??
+			(row.accountId ? (accountById.get(row.accountId) ?? null) : null),
+		card: row.card ?? (row.cardId ? (cardById.get(row.cardId) ?? null) : null),
+	}));
+}
+
 async function selectTransactionsWithRelations({
 	filters,
 	extraFilters = [],
@@ -145,9 +231,11 @@ async function selectTransactionsWithRelations({
 			? await baseQuery.limit(limit).offset(offset ?? 0)
 			: await baseQuery;
 
-	return enrichTransactionsWithTransferPeers(
+	const mappedRows = await enrichMissingTransactionRelations(
 		mapTransactionRows(transactionRows),
 	);
+
+	return enrichTransactionsWithTransferPeers(mappedRows);
 }
 
 export async function fetchTransactionFilterSources(userId: string) {
@@ -285,13 +373,69 @@ export async function fetchRecentEstablishments(
 		.filter((name): name is string => name !== null);
 }
 
-type PeriodOverviewRow = {
-	periodo: string | null;
-	tipo_transacao: string | null;
-	total_amount: string | number | null;
-	refund_amount: string | number | null;
-	conta_excluir_do_saldo: boolean | null;
-};
+const TRANSACTION_OVERVIEW_TYPES = ["Receita", "Despesa", "Transferência"] as const;
+
+async function fetchTransactionsPurchaseDateOverview(
+	dataOwnerUserId: string,
+	adminPayerId: string,
+	startPeriod: string,
+	endPeriod: string,
+): Promise<PeriodSummaryRow[]> {
+	const startDate = parseLocalDateString(
+		getPeriodPurchaseDateBounds(startPeriod).start,
+	);
+	const endDate = parseLocalDateString(getPeriodPurchaseDateBounds(endPeriod).end);
+	const purchaseMonthSql = sql<string>`to_char(${transactions.purchaseDate}, 'YYYY-MM')`;
+
+	const rows = await db
+		.select({
+			period: purchaseMonthSql,
+			transactionType: transactions.transactionType,
+			totalAmount: sql<string>`coalesce(sum(case when ${transactions.note} ilike 'AUTO_REEMBOLSO:%' then 0 else ${transactions.amount} end), 0)`,
+			refundAmount: sql<string>`coalesce(sum(case when ${transactions.note} ilike 'AUTO_REEMBOLSO:%' then ${transactions.amount} else 0 end), 0)`,
+			accountExcludeFromBalance: financialAccounts.excludeFromBalance,
+		})
+		.from(transactions)
+		.leftJoin(
+			financialAccounts,
+			eq(transactions.accountId, financialAccounts.id),
+		)
+		.where(
+			and(
+				eq(transactions.userId, dataOwnerUserId),
+				eq(transactions.payerId, adminPayerId),
+				gte(transactions.purchaseDate, startDate),
+				lte(transactions.purchaseDate, endDate),
+				inArray(transactions.transactionType, [...TRANSACTION_OVERVIEW_TYPES]),
+				or(
+					isNull(transactions.note),
+					not(
+						sql`${transactions.note} ilike ${`${ACCOUNT_AUTO_INVOICE_NOTE_PREFIX}%`}`,
+					),
+				),
+				or(
+					isNull(transactions.note),
+					ne(transactions.note, INITIAL_BALANCE_NOTE),
+					isNull(financialAccounts.excludeInitialBalanceFromIncome),
+					eq(financialAccounts.excludeInitialBalanceFromIncome, false),
+				),
+				excludeTransactionsFromExcludedAccounts(),
+			),
+		)
+		.groupBy(
+			purchaseMonthSql,
+			transactions.transactionType,
+			financialAccounts.excludeFromBalance,
+		);
+
+	return rows.map((row) => ({
+		period: row.period,
+		transactionType: row.transactionType,
+		totalAmount: row.totalAmount,
+		refundAmount: row.refundAmount,
+		accountExcludeFromBalance: row.accountExcludeFromBalance,
+	}));
+}
 
 export async function fetchTransactionsMonthSummaries(
 	userId: string,
@@ -308,24 +452,14 @@ export async function fetchTransactionsMonthSummaries(
 	const endPeriod = addMonthsToPeriod(currentPeriod, 2);
 	const startPeriod = addMonthsToPeriod(currentPeriod, -24);
 
-	const rows = await callRpc<PeriodOverviewRow>("get_period_overview", {
-		p_user_id: dataOwnerUserId,
-		p_admin_payer_id: adminPayerId,
-		p_start_period: startPeriod,
-		p_end_period: endPeriod,
-	});
-
-	const periodTotals = buildPeriodTotals(
-		rows.map(
-			(row): PeriodSummaryRow => ({
-				period: row.periodo,
-				transactionType: row.tipo_transacao ?? "",
-				totalAmount: row.total_amount,
-				refundAmount: row.refund_amount,
-				accountExcludeFromBalance: row.conta_excluir_do_saldo,
-			}),
-		),
+	const rows = await fetchTransactionsPurchaseDateOverview(
+		dataOwnerUserId,
+		adminPayerId,
+		startPeriod,
+		endPeriod,
 	);
+
+	const periodTotals = buildPeriodTotals(rows);
 
 	const knownPeriods = Array.from(periodTotals.keys()).sort((left, right) =>
 		comparePeriods(left, right),

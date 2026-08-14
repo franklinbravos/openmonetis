@@ -7,6 +7,7 @@ import {
 import type { ColumnDef } from "@tanstack/react-table";
 import Image from "next/image";
 import Link from "next/link";
+import { canManageFamilyTransaction } from "@/features/transactions/lib/access-helpers";
 import { DEFAULT_TRANSACTIONS_COLUMN_ORDER } from "@/features/transactions/lib/column-order";
 import {
 	getPayerDisplayName,
@@ -40,7 +41,8 @@ import { TransactionActionsMenu } from "./transaction-actions-menu";
 import { TransactionSettlementButton } from "./transaction-settlement-button";
 
 type BuildColumnsArgs = {
-	currentUserId: string;
+	financialDataOwnerId: string;
+	canEditFinancial: boolean;
 	noteAsColumn: boolean;
 	onEdit?: (item: TransactionItem) => void;
 	onCopy?: (item: TransactionItem) => void;
@@ -105,7 +107,8 @@ function reorderColumnsByPreference<T>(
 }
 
 function buildColumns({
-	currentUserId,
+	financialDataOwnerId,
+	canEditFinancial,
 	noteAsColumn,
 	onEdit,
 	onCopy,
@@ -473,7 +476,11 @@ function buildColumns({
 					: accountId
 						? `/accounts/${accountId}/statement`
 						: null;
-				const isOwnData = userId === currentUserId;
+				const canManage = canManageFamilyTransaction(
+					{ userId },
+					financialDataOwnerId,
+					canEditFinancial,
+				);
 
 				const content = (
 					<span className="inline-flex items-center gap-2">
@@ -488,7 +495,7 @@ function buildColumns({
 						<span
 							className={cn(
 								"truncate underline-offset-2",
-								isOwnData && href && "group-hover:underline",
+								canManage && href && "group-hover:underline",
 							)}
 						>
 							{label}
@@ -496,7 +503,7 @@ function buildColumns({
 					</span>
 				);
 
-				if (!isOwnData || !href) {
+				if (!canManage || !href) {
 					return (
 						<Tooltip>
 							<TooltipTrigger asChild>{content}</TooltipTrigger>
@@ -559,7 +566,8 @@ function buildColumns({
 					/>
 					<TransactionActionsMenu
 						item={row.original}
-						currentUserId={currentUserId}
+						financialDataOwnerId={financialDataOwnerId}
+						canEditFinancial={canEditFinancial}
 						onEdit={handleEdit}
 						onCopy={handleCopy}
 						onImport={handleImport}

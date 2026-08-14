@@ -13,6 +13,7 @@ import {
 } from "@remixicon/react";
 import Image from "next/image";
 import type { ReactNode } from "react";
+import { CategoryIcon } from "@/features/categories/components/category-icon";
 import { EstablishmentLogo } from "@/shared/components/entity-avatar";
 import MoneyValues from "@/shared/components/money-values";
 import {
@@ -27,18 +28,20 @@ import {
 	TooltipTrigger,
 } from "@/shared/components/ui/tooltip";
 import { resolveLogoSrc } from "@/shared/lib/logo";
+import { getAvatarSrc } from "@/shared/lib/payers/utils";
 import { resolveTransferAccountsPreview } from "@/shared/lib/transfers/utils";
 import { formatDate, formatDateGroupLabel } from "@/shared/utils/date";
 import { getConditionIcon, getPaymentMethodIcon } from "@/shared/utils/icons";
 import { cn } from "@/shared/utils/ui";
-import { getPayerDisplayName } from "../../lib/formatting-helpers";
+import { getPayerDisplayName, resolvePayerLabel } from "../../lib/formatting-helpers";
 import type { TransactionItem } from "../types";
 import { TransactionActionsMenu } from "./transaction-actions-menu";
 import { TransactionSettlementButton } from "./transaction-settlement-button";
 
 type TransactionsMobileListProps = {
 	data: TransactionItem[];
-	currentUserId: string;
+	financialDataOwnerId: string;
+	canEditFinancial: boolean;
 	onEdit?: (item: TransactionItem) => void;
 	onCopy?: (item: TransactionItem) => void;
 	onImport?: (item: TransactionItem) => void;
@@ -57,7 +60,8 @@ type TransactionsMobileListProps = {
 
 export function TransactionsMobileList({
 	data,
-	currentUserId,
+	financialDataOwnerId,
+	canEditFinancial,
 	onEdit,
 	onCopy,
 	onImport,
@@ -98,7 +102,8 @@ export function TransactionsMobileList({
 					<TransactionMobileCard
 						key={item.id}
 						item={item}
-						currentUserId={currentUserId}
+						financialDataOwnerId={financialDataOwnerId}
+						canEditFinancial={canEditFinancial}
 						onEdit={onEdit}
 						onCopy={onCopy}
 						onImport={onImport}
@@ -134,7 +139,8 @@ export function TransactionsMobileList({
 							<TransactionMobileCard
 								key={item.id}
 								item={item}
-								currentUserId={currentUserId}
+								financialDataOwnerId={financialDataOwnerId}
+						canEditFinancial={canEditFinancial}
 								onEdit={onEdit}
 								onCopy={onCopy}
 								onImport={onImport}
@@ -164,7 +170,8 @@ type TransactionMobileCardProps = Omit<TransactionsMobileListProps, "data"> & {
 
 function TransactionMobileCard({
 	item,
-	currentUserId,
+	financialDataOwnerId,
+	canEditFinancial,
 	onEdit,
 	onCopy,
 	onImport,
@@ -196,6 +203,8 @@ function TransactionMobileCard({
 	const isTransfer = item.transactionType === "Transferência";
 	const isIncomingTransfer = isTransfer && Number(item.amount) > 0;
 	const payerDisplayName = getPayerDisplayName(item.pagadorName);
+	const payerLabel = resolvePayerLabel(item.pagadorName);
+	const hasPayer = Boolean(item.pagadorName?.trim());
 	const paymentMethodLabel =
 		item.paymentMethod === "Transferência bancária"
 			? "Transf. bancária"
@@ -262,7 +271,17 @@ function TransactionMobileCard({
 										{dueDateLabel}
 									</span>
 								) : null}
-								<span className="truncate">{payerDisplayName}</span>
+								<span className="inline-flex min-w-0 items-center gap-1 truncate">
+									{item.categoriaIcon ? (
+										<CategoryIcon
+											name={item.categoriaIcon}
+											className="size-3.5 shrink-0"
+										/>
+									) : null}
+									<span className="truncate">
+										{item.categoriaName ?? "Sem categoria"}
+									</span>
+								</span>
 							</div>
 						</div>
 						<div className="shrink-0 text-right">
@@ -298,6 +317,7 @@ function TransactionMobileCard({
 										<IconBadge
 											label={`${accountCardType}: ${accountCardLabel}`}
 											compact
+											compactVariant="media"
 										>
 											<AccountMiniAvatar
 												name={accountCardLabel}
@@ -310,6 +330,14 @@ function TransactionMobileCard({
 							<IconBadge label={item.condition} compact>
 								{getConditionIcon(item.condition)}
 							</IconBadge>
+							{hasPayer ? (
+								<IconBadge label={payerLabel} compact compactVariant="media">
+									<PayerMiniAvatar
+										name={payerDisplayName}
+										avatar={item.pagadorAvatar}
+									/>
+								</IconBadge>
+							) : null}
 							{installmentBadge ? (
 								<Badge variant="outline" className="px-1.5 text-xs">
 									{installmentBadge}
@@ -379,7 +407,8 @@ function TransactionMobileCard({
 								/>
 								<TransactionActionsMenu
 									item={item}
-									currentUserId={currentUserId}
+									financialDataOwnerId={financialDataOwnerId}
+						canEditFinancial={canEditFinancial}
 									onEdit={onEdit}
 									onCopy={onCopy}
 									onImport={onImport}
@@ -400,17 +429,45 @@ function TransactionMobileCard({
 	);
 }
 
+function PayerMiniAvatar({
+	name,
+	avatar,
+	className,
+}: {
+	name: string;
+	avatar: string | null;
+	className?: string;
+}) {
+	const avatarSrc = getAvatarSrc(avatar);
+	const initial = name.charAt(0).toUpperCase() || "?";
+
+	return (
+		<Avatar className={cn("size-full", className)}>
+			{avatarSrc ? (
+				<AvatarImage src={avatarSrc} alt="" className="object-cover" />
+			) : null}
+			<AvatarFallback className="bg-muted font-semibold text-[10px] uppercase">
+				{initial}
+			</AvatarFallback>
+		</Avatar>
+	);
+}
+
 function AccountMiniAvatar({
 	name,
 	logo,
+	className,
 }: {
 	name: string;
 	logo?: string | null;
+	className?: string;
 }) {
 	return (
-		<Avatar className="size-3.5">
-			{logo ? <AvatarImage src={logo} alt="" className="object-cover" /> : null}
-			<AvatarFallback className="font-medium text-[8px] uppercase">
+		<Avatar className={cn("size-full", className)}>
+			{logo ? (
+				<AvatarImage src={logo} alt="" className="object-cover" />
+			) : null}
+			<AvatarFallback className="bg-muted font-semibold text-[9px] uppercase">
 				{name.slice(0, 2)}
 			</AvatarFallback>
 		</Avatar>
@@ -427,16 +484,20 @@ function TransferAccountsBadge({
 	return (
 		<Tooltip>
 			<TooltipTrigger asChild>
-				<span className="inline-flex items-center gap-1 rounded-full border border-info/30 bg-info/5 px-1.5 py-0.5 text-info">
-					<AccountMiniAvatar
-						name={accounts.from.name}
-						logo={resolveLogoSrc(accounts.from.logo)}
-					/>
+				<span className="inline-flex items-center gap-1 rounded-full border border-info/30 bg-info/5 p-0.5 text-info">
+					<span className="inline-flex size-5 shrink-0 overflow-hidden rounded-full">
+						<AccountMiniAvatar
+							name={accounts.from.name}
+							logo={resolveLogoSrc(accounts.from.logo)}
+						/>
+					</span>
 					<RiArrowRightLine className="size-3 shrink-0" aria-hidden />
-					<AccountMiniAvatar
-						name={accounts.to.name}
-						logo={resolveLogoSrc(accounts.to.logo)}
-					/>
+					<span className="inline-flex size-5 shrink-0 overflow-hidden rounded-full">
+						<AccountMiniAvatar
+							name={accounts.to.name}
+							logo={resolveLogoSrc(accounts.to.logo)}
+						/>
+					</span>
 					<span className="sr-only">{label}</span>
 				</span>
 			</TooltipTrigger>
@@ -449,11 +510,13 @@ function IconBadge({
 	label,
 	children,
 	compact = false,
+	compactVariant = "icon",
 	className,
 }: {
 	label: string;
 	children: ReactNode;
 	compact?: boolean;
+	compactVariant?: "icon" | "media";
 	className?: string;
 }) {
 	if (!children) return null;
@@ -463,8 +526,12 @@ function IconBadge({
 			<TooltipTrigger asChild>
 				<span
 					className={cn(
-						"inline-flex items-center rounded-full border text-xs text-muted-foreground",
-						compact ? "size-6 justify-center" : "gap-1 px-2 py-0.5",
+						"inline-flex shrink-0 items-center rounded-full border text-xs text-muted-foreground",
+						compact && compactVariant === "media"
+							? "size-7 overflow-hidden p-0"
+							: compact
+								? "size-6 justify-center"
+								: "gap-1 px-2 py-0.5",
 						className,
 					)}
 				>

@@ -53,6 +53,7 @@ import {
 } from "@/shared/components/ui/tabs";
 import { ExpandableWidgetCard } from "@/shared/components/widgets/expandable-widget-card";
 import { getUserId } from "@/shared/lib/auth/server";
+import { resolveFinancialDataContext } from "@/shared/lib/payers/financial-context";
 import { prefetchLogoMappings } from "@/shared/lib/logo/prefetch-server";
 import { getPayerAccess } from "@/shared/lib/payers/access";
 import {
@@ -106,6 +107,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 	await connection();
 	const { payerId } = await params;
 	const userId = await getUserId();
+	const financialContext = await resolveFinancialDataContext(userId);
 	const resolvedSearchParams = searchParams ? await searchParams : undefined;
 
 	const access = await getPayerAccess(userId, payerId);
@@ -402,7 +404,8 @@ export default async function Page({ params, searchParams }: PageProps) {
 					<TabsContent value="lancamentos">
 						<section className="flex flex-col gap-4">
 							<LancamentosSection
-								currentUserId={userId}
+								financialDataOwnerId={financialContext.dataOwnerUserId}
+								canEditFinancial={financialContext.canEditFinancial}
 								transactions={transactionData}
 								payerOptions={optionSets.payerOptions}
 								splitPayerOptions={optionSets.splitPayerOptions}

@@ -11,6 +11,7 @@ import {
 	RiRefundLine,
 	RiTimeLine,
 } from "@remixicon/react";
+import { canManageFamilyTransaction } from "@/features/transactions/lib/access-helpers";
 import { CREDIT_CARD_PAYMENT_METHOD } from "@/features/transactions/lib/constants";
 import { Button } from "@/shared/components/ui/button";
 import {
@@ -26,7 +27,8 @@ import type { TransactionItem } from "../types";
 
 type TransactionActionsMenuProps = {
 	item: TransactionItem;
-	currentUserId: string;
+	financialDataOwnerId: string;
+	canEditFinancial: boolean;
 	onEdit?: (item: TransactionItem) => void;
 	onCopy?: (item: TransactionItem) => void;
 	onImport?: (item: TransactionItem) => void;
@@ -41,7 +43,8 @@ type TransactionActionsMenuProps = {
 
 export function TransactionActionsMenu({
 	item,
-	currentUserId,
+	financialDataOwnerId,
+	canEditFinancial,
 	onEdit,
 	onCopy,
 	onImport,
@@ -53,9 +56,13 @@ export function TransactionActionsMenu({
 	onConvertToInstallment,
 	onConvertToRecurring,
 }: TransactionActionsMenuProps) {
-	const isOwnData = item.userId === currentUserId;
+	const canManage = canManageFamilyTransaction(
+		item,
+		financialDataOwnerId,
+		canEditFinancial,
+	);
 	const canRefund =
-		isOwnData &&
+		canManage &&
 		item.transactionType === "Despesa" &&
 		item.condition === "À vista" &&
 		!item.splitGroupId &&
@@ -63,10 +70,10 @@ export function TransactionActionsMenu({
 		!item.note?.startsWith(REFUND_NOTE_PREFIX);
 
 	const showInstallmentActions =
-		isOwnData && item.condition === "Parcelado" && item.seriesId;
+		canManage && item.condition === "Parcelado" && item.seriesId;
 
 	const canConvertToInstallment =
-		isOwnData &&
+		canManage &&
 		item.paymentMethod === CREDIT_CARD_PAYMENT_METHOD &&
 		item.condition === "À vista" &&
 		!item.splitGroupId &&
@@ -75,7 +82,7 @@ export function TransactionActionsMenu({
 		Boolean(onConvertToInstallment);
 
 	const canConvertToRecurring =
-		isOwnData &&
+		canManage &&
 		item.condition === "À vista" &&
 		!item.splitGroupId &&
 		!item.isDivided &&
@@ -99,7 +106,7 @@ export function TransactionActionsMenu({
 					Detalhes
 				</DropdownMenuItem>
 
-				{isOwnData ? (
+				{canManage ? (
 					<DropdownMenuItem
 						onSelect={() => onEdit?.(item)}
 						disabled={item.readonly || !onEdit}
@@ -109,14 +116,14 @@ export function TransactionActionsMenu({
 					</DropdownMenuItem>
 				) : null}
 
-				{!item.readonly && isOwnData ? (
+				{!item.readonly && canManage ? (
 					<DropdownMenuItem onSelect={() => onCopy?.(item)} disabled={!onCopy}>
 						<RiFileCopyLine className="size-4" aria-hidden />
 						Copiar
 					</DropdownMenuItem>
 				) : null}
 
-				{!isOwnData ? (
+				{!canManage ? (
 					<DropdownMenuItem
 						onSelect={() => onImport?.(item)}
 						disabled={!onImport}
@@ -150,7 +157,7 @@ export function TransactionActionsMenu({
 					</DropdownMenuItem>
 				) : null}
 
-				{isOwnData ? (
+				{canManage ? (
 					<DropdownMenuItem
 						variant="destructive"
 						onSelect={() => onConfirmDelete?.(item)}

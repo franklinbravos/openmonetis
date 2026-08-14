@@ -1,12 +1,16 @@
 "use client";
 
 import type { ComponentProps } from "react";
+import {
+	monthToolbarIconClassName,
+	monthToolbarMobileCellClassName,
+	monthToolbarMobileLabelClassName,
+} from "@/features/transactions/lib/month-toolbar";
 import { Button } from "@/shared/components/ui/button";
 import { cn } from "@/shared/utils/ui";
 import {
 	TRANSACTION_QUICK_ACTIONS,
 	type TransactionQuickActionKind,
-	transactionQuickActionButtonClassName,
 } from "./constants";
 
 type TransactionQuickActionButtonProps = Omit<
@@ -21,18 +25,25 @@ export function TransactionQuickActionButton({
 	className,
 	...props
 }: TransactionQuickActionButtonProps) {
-	const { label, shortLabel, Icon, variant, iconClassName } =
+	const { label, shortLabel, Icon, iconClassName } =
 		TRANSACTION_QUICK_ACTIONS[kind];
 
 	return (
 		<Button
-			variant={variant}
-			className={cn(transactionQuickActionButtonClassName, className)}
+			variant="ghost"
+			className={cn(monthToolbarMobileCellClassName, className)}
 			{...props}
 		>
-			<Icon className={iconClassName} aria-hidden />
-			<span className="md:hidden">{shortLabel}</span>
-			<span className="hidden md:inline">{label}</span>
+			<Icon
+				className={cn(monthToolbarIconClassName, iconClassName)}
+				aria-hidden
+			/>
+			<span className={cn(monthToolbarMobileLabelClassName, "md:hidden")}>
+				{shortLabel}
+			</span>
+			<span className={cn(monthToolbarMobileLabelClassName, "hidden md:inline")}>
+				{label}
+			</span>
 		</Button>
 	);
 }

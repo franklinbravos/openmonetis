@@ -60,7 +60,7 @@ export function TransactionsQuickActions({
 	};
 
 	return (
-		<div className="quick-actions-root max-md:contents md:flex md:h-full md:min-w-0 md:flex-none md:items-stretch md:gap-0 md:divide-x md:divide-border md:self-stretch">
+		<div className="quick-actions-root contents md:flex md:h-full md:min-w-0 md:flex-none md:items-stretch md:gap-0 md:divide-x md:divide-border md:self-stretch">
 			<TransactionDialog
 				{...sharedDialogProps}
 				defaultTransactionType="Receita"

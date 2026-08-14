@@ -22,7 +22,6 @@ import {
 	useState,
 	useTransition,
 } from "react";
-import { createPortal } from "react-dom";
 import {
 	AMOUNT_MAX_PARAM,
 	AMOUNT_MIN_PARAM,
@@ -43,11 +42,14 @@ import {
 	monthToolbarIconButtonClassName,
 	monthToolbarIconClassName,
 	monthToolbarMobileCellClassName,
+	monthToolbarMobileLabelClassName,
 } from "@/features/transactions/lib/month-toolbar";
 import {
 	parseDateFilterParam,
 	parsePositiveAmount,
 } from "@/features/transactions/lib/page-helpers";
+import { MonthToolbarPortal } from "@/shared/components/month-picker/month-toolbar-portal";
+import { useResolvedMonthToolbarSlot } from "@/shared/components/month-picker/month-toolbar-slot-context";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
@@ -619,17 +621,6 @@ export function TransactionsFilters({
 
 	const [drawerOpen, setDrawerOpen] = useState(false);
 	const [searchExpanded, setSearchExpanded] = useState(false);
-	const [monthToolbarSlot, setMonthToolbarSlot] = useState<HTMLElement | null>(
-		null,
-	);
-	const [monthToolbarExpandSlot, setMonthToolbarExpandSlot] =
-		useState<HTMLElement | null>(null);
-	const [monthToolbarEndSlot, setMonthToolbarEndSlot] =
-		useState<HTMLElement | null>(null);
-	const [monthToolbarFiltersSlot, setMonthToolbarFiltersSlot] =
-		useState<HTMLElement | null>(null);
-	const [monthToolbarMobileActionsSlot, setMonthToolbarMobileActionsSlot] =
-		useState<HTMLElement | null>(null);
 	const searchInputRef = useRef<HTMLInputElement>(null);
 	const useMonthToolbar = Boolean(monthToolbarSlotId);
 	const monthToolbarExpandSlotId = monthToolbarSlotId
@@ -644,57 +635,26 @@ export function TransactionsFilters({
 	const monthToolbarMobileActionsSlotId = monthToolbarSlotId
 		? getMonthToolbarMobileActionsSlotId(monthToolbarSlotId)
 		: null;
-
-	useEffect(() => {
-		if (!monthToolbarSlotId) {
-			setMonthToolbarSlot(null);
-			return;
-		}
-
-		setMonthToolbarSlot(document.getElementById(monthToolbarSlotId));
-	}, [monthToolbarSlotId]);
-
-	useEffect(() => {
-		if (!monthToolbarExpandSlotId) {
-			setMonthToolbarExpandSlot(null);
-			return;
-		}
-
-		setMonthToolbarExpandSlot(
-			document.getElementById(monthToolbarExpandSlotId),
-		);
-	}, [monthToolbarExpandSlotId]);
-
-	useEffect(() => {
-		if (!monthToolbarEndSlotId) {
-			setMonthToolbarEndSlot(null);
-			return;
-		}
-
-		setMonthToolbarEndSlot(document.getElementById(monthToolbarEndSlotId));
-	}, [monthToolbarEndSlotId]);
-
-	useEffect(() => {
-		if (!monthToolbarFiltersSlotId) {
-			setMonthToolbarFiltersSlot(null);
-			return;
-		}
-
-		setMonthToolbarFiltersSlot(
-			document.getElementById(monthToolbarFiltersSlotId),
-		);
-	}, [monthToolbarFiltersSlotId]);
-
-	useEffect(() => {
-		if (!monthToolbarMobileActionsSlotId) {
-			setMonthToolbarMobileActionsSlot(null);
-			return;
-		}
-
-		setMonthToolbarMobileActionsSlot(
-			document.getElementById(monthToolbarMobileActionsSlotId),
-		);
-	}, [monthToolbarMobileActionsSlotId]);
+	const monthToolbarSlot = useResolvedMonthToolbarSlot(
+		monthToolbarSlotId,
+		"legacy",
+	);
+	const monthToolbarExpandSlot = useResolvedMonthToolbarSlot(
+		monthToolbarExpandSlotId,
+		"expand",
+	);
+	const monthToolbarEndSlot = useResolvedMonthToolbarSlot(
+		monthToolbarEndSlotId,
+		"end",
+	);
+	const monthToolbarFiltersSlot = useResolvedMonthToolbarSlot(
+		monthToolbarFiltersSlotId,
+		"filters",
+	);
+	const monthToolbarMobileActionsSlot = useResolvedMonthToolbarSlot(
+		monthToolbarMobileActionsSlotId,
+		"mobileActions",
+	);
 
 	const hasSearchQuery =
 		searchValue.trim().length > 0 || currentSearchParam.trim().length > 0;
@@ -946,122 +906,115 @@ export function TransactionsFilters({
 	);
 
 	const monthSearchExpandBar =
-		useMonthToolbar && monthToolbarExpandSlot && searchExpanded
-			? createPortal(
-					<div className="w-full border-t border-border/60 pt-2 animate-in slide-in-from-top-2 fade-in duration-200">
-						<div className="relative">
-							<Input
-								ref={searchInputRef}
-								value={searchValue}
-								onChange={(event) => setSearchValue(event.target.value)}
-								placeholder="Buscar lançamentos"
-								aria-label="Buscar lançamentos"
-								className="w-full border bg-white pr-9 text-sm shadow-xs dark:bg-card"
-							/>
-							<button
-								type="button"
-								onClick={() => {
-									if (searchValue.length > 0) {
-										setSearchValue("");
-										return;
-									}
-									setSearchExpanded(false);
-								}}
-								aria-label={
-									searchValue.length > 0 ? "Limpar busca" : "Fechar busca"
+		useMonthToolbar && monthToolbarExpandSlot && searchExpanded ? (
+			<MonthToolbarPortal container={monthToolbarExpandSlot}>
+				<div className="w-full border-t border-border/60 pt-2 animate-in slide-in-from-top-2 fade-in duration-200">
+					<div className="relative">
+						<Input
+							ref={searchInputRef}
+							value={searchValue}
+							onChange={(event) => setSearchValue(event.target.value)}
+							placeholder="Buscar lançamentos"
+							aria-label="Buscar lançamentos"
+							className="w-full border bg-white pr-9 text-sm shadow-xs dark:bg-card"
+						/>
+						<button
+							type="button"
+							onClick={() => {
+								if (searchValue.length > 0) {
+									setSearchValue("");
+									return;
 								}
-								className="absolute top-1/2 right-2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-							>
-								<RiCloseLine className="size-4" aria-hidden />
-							</button>
-						</div>
-					</div>,
-					monthToolbarExpandSlot,
-				)
-			: null;
+								setSearchExpanded(false);
+							}}
+							aria-label={
+								searchValue.length > 0 ? "Limpar busca" : "Fechar busca"
+							}
+							className="absolute top-1/2 right-2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						>
+							<RiCloseLine className="size-4" aria-hidden />
+						</button>
+					</div>
+				</div>
+			</MonthToolbarPortal>
+		) : null;
 
 	const monthToolbarMobileActions =
-		useMonthToolbar && monthToolbarMobileActionsSlot
-			? createPortal(
-					<>
-						<Button
-							type="button"
-							variant="outline"
-							size="icon-sm"
-							className={cn(
-								monthToolbarMobileCellClassName,
-								searchExpanded && "bg-accent text-accent-foreground",
-							)}
-							aria-label="Buscar lançamentos"
-							aria-expanded={searchExpanded}
-							onClick={() => setSearchExpanded((prev) => !prev)}
-						>
-							<RiSearchLine className={monthToolbarIconClassName} aria-hidden />
-							<span>Buscar</span>
-							{hasSearchQuery ? (
-								<span
-									className="absolute top-1.5 right-1.5 size-2 rounded-full bg-primary"
-									aria-hidden
-								/>
-							) : null}
-						</Button>
+		useMonthToolbar && monthToolbarMobileActionsSlot ? (
+			<MonthToolbarPortal container={monthToolbarMobileActionsSlot}>
+				<Button
+					type="button"
+					variant="ghost"
+					className={cn(
+						monthToolbarMobileCellClassName,
+						searchExpanded &&
+							"bg-card text-foreground shadow-xs ring-1 ring-border/60",
+					)}
+					aria-label="Buscar lançamentos"
+					aria-expanded={searchExpanded}
+					onClick={() => setSearchExpanded((prev) => !prev)}
+				>
+					<RiSearchLine className={monthToolbarIconClassName} aria-hidden />
+					<span className={monthToolbarMobileLabelClassName}>Buscar</span>
+					{hasSearchQuery ? (
+						<span
+							className="absolute top-1.5 right-1.5 size-2 rounded-full bg-primary"
+							aria-hidden
+						/>
+					) : null}
+				</Button>
 
-						{!hideAdvancedFilters ? (
-							<Button
-								type="button"
-								variant="outline"
-								size="icon-sm"
-								className={monthToolbarMobileCellClassName}
-								aria-label={isPending ? "Aplicando filtros" : "Abrir filtros"}
-								onClick={() => setDrawerOpen(true)}
-							>
-								{isPending ? (
-									<Spinner
-										className={monthToolbarIconClassName}
-										role="presentation"
-										aria-hidden
-									/>
-								) : (
-									<RiFilterLine
-										className={monthToolbarIconClassName}
-										aria-hidden
-									/>
-								)}
-								<span>{isPending ? "Aplicando…" : "Filtros"}</span>
-								{hasActiveFilters ? (
-									<span
-										className="absolute top-1.5 right-1.5 size-2 rounded-full bg-primary"
-										aria-hidden
-									/>
-								) : null}
-							</Button>
+				{!hideAdvancedFilters ? (
+					<Button
+						type="button"
+						variant="ghost"
+						className={monthToolbarMobileCellClassName}
+						aria-label={isPending ? "Aplicando filtros" : "Abrir filtros"}
+						onClick={() => setDrawerOpen(true)}
+					>
+						{isPending ? (
+							<Spinner
+								className={monthToolbarIconClassName}
+								role="presentation"
+								aria-hidden
+							/>
+						) : (
+							<RiFilterLine
+								className={monthToolbarIconClassName}
+								aria-hidden
+							/>
+						)}
+						<span className={monthToolbarMobileLabelClassName}>
+							{isPending ? "Aplicando…" : "Filtros"}
+						</span>
+						{hasActiveFilters ? (
+							<span
+								className="absolute top-1.5 right-1.5 size-2 rounded-full bg-primary"
+								aria-hidden
+							/>
 						) : null}
+					</Button>
+				) : null}
 
-						{importButton}
-						{exportButton}
-					</>,
-					monthToolbarMobileActionsSlot,
-				)
-			: null;
+				{importButton}
+				{exportButton}
+			</MonthToolbarPortal>
+		) : null;
 
 	const monthToolbarEnd =
 		useMonthToolbar &&
 		!monthToolbarMobileActionsSlot &&
 		monthToolbarEndSlot &&
-		(exportButton || importButton)
-			? createPortal(
-					<>
-						{importButton}
-						{exportButton}
-					</>,
-					monthToolbarEndSlot,
-				)
-			: null;
+		(exportButton || importButton) ? (
+			<MonthToolbarPortal container={monthToolbarEndSlot}>
+				{importButton}
+				{exportButton}
+			</MonthToolbarPortal>
+		) : null;
 
 	const monthToolbar =
-		useMonthToolbar && !monthToolbarMobileActionsSlot && monthToolbarSlot
-			? createPortal(
-					<>
+		useMonthToolbar && !monthToolbarMobileActionsSlot && monthToolbarSlot ? (
+			<MonthToolbarPortal container={monthToolbarSlot}>
 						<Button
 							type="button"
 							variant="outline"
@@ -1112,10 +1065,8 @@ export function TransactionsFilters({
 								) : null}
 							</Button>
 						) : null}
-					</>,
-					monthToolbarSlot,
-				)
-			: null;
+			</MonthToolbarPortal>
+		) : null;
 
 	const desktopFiltersRow = (
 		<div
@@ -1510,19 +1461,31 @@ export function TransactionsFilters({
 	);
 
 	const renderedDesktopFilters =
-		useMonthToolbar && monthToolbarFiltersSlot
-			? createPortal(desktopFiltersRow, monthToolbarFiltersSlot)
-			: !useMonthToolbar
-				? desktopFiltersRow
-				: null;
+		useMonthToolbar && monthToolbarFiltersSlot ? (
+			<MonthToolbarPortal container={monthToolbarFiltersSlot}>
+				{desktopFiltersRow}
+			</MonthToolbarPortal>
+		) : !useMonthToolbar ? (
+			desktopFiltersRow
+		) : null;
 
-	return (
-		<div aria-busy={isPending} className={cn("flex flex-col gap-2", className)}>
+	const filtersContent = (
+		<>
 			{monthSearchExpandBar}
 			{monthToolbarMobileActions}
 			{monthToolbarEnd}
 			{monthToolbar}
 			{renderedDesktopFilters}
+		</>
+	);
+
+	if (useMonthToolbar) {
+		return filtersContent;
+	}
+
+	return (
+		<div aria-busy={isPending} className={cn("flex flex-col gap-2", className)}>
+			{filtersContent}
 		</div>
 	);
 }

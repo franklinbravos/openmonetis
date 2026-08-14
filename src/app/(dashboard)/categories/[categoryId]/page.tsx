@@ -14,6 +14,7 @@ import {
 } from "@/features/transactions/queries";
 import MonthNavigation from "@/shared/components/month-picker/month-navigation";
 import { getUserId } from "@/shared/lib/auth/server";
+import { resolveFinancialDataContext } from "@/shared/lib/payers/financial-context";
 import { displayPeriod, parsePeriodParam } from "@/shared/utils/period";
 
 type PageSearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -36,6 +37,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 	await connection();
 	const { categoryId } = await params;
 	const userId = await getUserId();
+	const financialContext = await resolveFinancialDataContext(userId);
 	const resolvedSearchParams = searchParams ? await searchParams : undefined;
 
 	const periodoParam = getSingleParam(resolvedSearchParams, "periodo");
@@ -89,7 +91,8 @@ export default async function Page({ params, searchParams }: PageProps) {
 				transactionCount={detail.transactions.length}
 			/>
 			<TransactionsPage
-				currentUserId={userId}
+				financialDataOwnerId={financialContext.dataOwnerUserId}
+				canEditFinancial={financialContext.canEditFinancial}
 				transactions={detail.transactions}
 				payerOptions={payerOptions}
 				splitPayerOptions={splitPayerOptions}

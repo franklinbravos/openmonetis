@@ -15,6 +15,7 @@ import {
 	monthToolbarDesktopActionClassName,
 	monthToolbarIconClassName,
 	monthToolbarMobileCellClassName,
+	monthToolbarMobileLabelClassName,
 } from "@/features/transactions/lib/month-toolbar";
 import { Button } from "@/shared/components/ui/button";
 import {
@@ -374,7 +375,7 @@ export function TransactionsExport({
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>
 				<Button
-					variant="outline"
+					variant="ghost"
 					className={cn(
 						monthToolbarMobileCellClassName,
 						monthToolbarDesktopActionClassName,
@@ -383,14 +384,10 @@ export function TransactionsExport({
 					disabled={isExporting || lancamentos.length === 0}
 					aria-label="Exportar lançamentos"
 				>
-					<RiDownloadLine
-						className={cn(
-							monthToolbarIconClassName,
-							"md:size-4 md:text-foreground",
-						)}
-						aria-hidden
-					/>
-					<span className="md:hidden">{isExporting ? "..." : "Exportar"}</span>
+					<RiDownloadLine className={monthToolbarIconClassName} aria-hidden />
+					<span className={cn(monthToolbarMobileLabelClassName, "md:hidden")}>
+						{isExporting ? "..." : "Exportar"}
+					</span>
 					<span className="hidden md:inline">
 						{isExporting ? "Exportando..." : "Exportar"}
 					</span>

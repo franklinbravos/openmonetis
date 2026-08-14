@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { logoQueryKeys } from "@/shared/lib/logo";
 import type { LogoPrefetchEntry } from "@/shared/lib/logo/types";
 
@@ -22,15 +22,18 @@ export function LogoPrefetchProvider({
 	const queryClient = useQueryClient();
 	const seeded = useRef(false);
 
-	if (!seeded.current) {
+	useEffect(() => {
+		if (seeded.current) return;
+
 		for (const { nameKey, domain, logoUrl } of mappings) {
 			queryClient.setQueryData(logoQueryKeys.mapping(nameKey), {
 				domain,
 				logoUrl,
 			});
 		}
-		seeded.current = true;
-	}
 
-	return <>{children}</>;
+		seeded.current = true;
+	}, [mappings, queryClient]);
+
+	return children;
 }

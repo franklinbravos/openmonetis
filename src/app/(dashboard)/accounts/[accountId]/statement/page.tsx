@@ -31,10 +31,12 @@ import {
 	fetchTransactionFilterSources,
 } from "@/features/transactions/queries";
 import { StatementPeriodNavigation } from "@/shared/components/month-picker/statement-period-navigation";
+import { MonthToolbarSlotProvider } from "@/shared/components/month-picker/month-toolbar-slot-context";
 import { PageBreadcrumb } from "@/shared/components/navigation/page-breadcrumb";
 import { Card } from "@/shared/components/ui/card";
 import { getUserId } from "@/shared/lib/auth/server";
 import { loadLogoOptions } from "@/shared/lib/logo/options";
+import { resolveFinancialDataContext } from "@/shared/lib/payers/financial-context";
 import { getBusinessDateString } from "@/shared/utils/date";
 import { parsePeriodParam } from "@/shared/utils/period";
 
@@ -72,6 +74,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 	await connection();
 	const { accountId } = await params;
 	const userId = await getUserId();
+	const financialContext = await resolveFinancialDataContext(userId);
 	const resolvedSearchParams = searchParams ? await searchParams : undefined;
 
 	const periodoParamRaw = getSingleParam(resolvedSearchParams, "periodo");
@@ -208,17 +211,19 @@ export default async function Page({ params, searchParams }: PageProps) {
 				sticky={false}
 			/>
 
-			<Card className="gap-0 overflow-hidden py-0">
-				<StatementPeriodNavigation
-					embedded
-					hideCarousel
-					toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID}
-				/>
-			</Card>
+			<MonthToolbarSlotProvider>
+				<Card className="gap-0 overflow-hidden py-0">
+					<StatementPeriodNavigation
+						embedded
+						hideCarousel
+						toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID}
+					/>
+				</Card>
 
-			<section className="flex flex-col gap-4">
-				<LancamentosSection
-					currentUserId={userId}
+				<section className="flex flex-col gap-4">
+					<LancamentosSection
+					financialDataOwnerId={financialContext.dataOwnerUserId}
+					canEditFinancial={financialContext.canEditFinancial}
 					transactions={transactionData}
 					payerOptions={payerOptions}
 					splitPayerOptions={splitPayerOptions}
@@ -257,7 +262,8 @@ export default async function Page({ params, searchParams }: PageProps) {
 					attachmentMaxSizeMb={userPreferences?.attachmentMaxSizeMb ?? 50}
 					showImportButton={false}
 				/>
-			</section>
+				</section>
+			</MonthToolbarSlotProvider>
 		</main>
 	);
 }

@@ -66,7 +66,8 @@ import type {
 } from "../types";
 
 interface TransactionsPageProps {
-	currentUserId: string;
+	financialDataOwnerId: string;
+	canEditFinancial: boolean;
 	transactions: TransactionItem[];
 	payerOptions: SelectOption[];
 	splitPayerOptions: SelectOption[];
@@ -100,13 +101,15 @@ interface TransactionsPageProps {
 	importCardOptions?: SelectOption[];
 	importCategoryOptions?: SelectOption[];
 	showImportButton?: boolean;
+	embeddedInToolbarCard?: boolean;
 }
 
 const pluralize = (count: number, singular: string, plural: string) =>
 	count === 1 ? singular : plural;
 
 export function TransactionsPage({
-	currentUserId,
+	financialDataOwnerId,
+	canEditFinancial,
 	transactions: transactionList,
 	payerOptions,
 	splitPayerOptions,
@@ -139,6 +142,7 @@ export function TransactionsPage({
 	importCardOptions,
 	importCategoryOptions,
 	showImportButton = true,
+	embeddedInToolbarCard = false,
 }: TransactionsPageProps) {
 	const [selectedTransaction, setSelectedTransaction] =
 		useState<TransactionItem | null>(null);
@@ -716,7 +720,8 @@ export function TransactionsPage({
 		<>
 			<TransactionsTable
 				data={transactionList}
-				currentUserId={currentUserId}
+				financialDataOwnerId={financialDataOwnerId}
+				canEditFinancial={canEditFinancial}
 				noteAsColumn={noteAsColumn}
 				columnOrder={columnOrder}
 				groupTransactionsByDate={groupTransactionsByDate}
@@ -743,6 +748,7 @@ export function TransactionsPage({
 				onViewAnticipationHistory={handleViewAnticipationHistory}
 				isSettlementLoading={(id) => settlementLoadingId === id}
 				showImportButton={showImportButton}
+				embeddedInToolbarCard={embeddedInToolbarCard}
 			/>
 
 			<TransactionDialog

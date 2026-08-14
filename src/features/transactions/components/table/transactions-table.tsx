@@ -12,8 +12,8 @@ import {
 	type VisibilityState,
 } from "@tanstack/react-table";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
+import { canManageFamilyTransaction } from "@/features/transactions/lib/access-helpers";
 import type {
 	TransactionsExportContext,
 	TransactionsPaginationState,
@@ -40,10 +40,14 @@ import { formatDateGroupLabel } from "@/shared/utils/date";
 import { cn } from "@/shared/utils/ui";
 import {
 	getMonthToolbarCreateSlotId,
-	monthToolbarCreateGroupClassName,
-	monthToolbarMassAddClassName,
+	monthToolbarIconClassName,
+	monthToolbarMobileBarClassName,
+	monthToolbarMobileCellClassName,
+	monthToolbarMobileLabelClassName,
 	TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID,
 } from "../../lib/month-toolbar";
+import { MonthToolbarPortal } from "@/shared/components/month-picker/month-toolbar-portal";
+import { useResolvedMonthToolbarSlot } from "@/shared/components/month-picker/month-toolbar-slot-context";
 import { TransactionsExport } from "../transactions-export";
 import { TransactionsImportButton } from "../transactions-import-button";
 import type {
@@ -59,7 +63,8 @@ import { TransactionsPagination } from "./transactions-pagination";
 
 type TransactionsTableProps = {
 	data: TransactionItem[];
-	currentUserId: string;
+	financialDataOwnerId: string;
+	canEditFinancial: boolean;
 	noteAsColumn?: boolean;
 	columnOrder?: string[] | null;
 	payerFilterOptions?: TransactionFilterOption[];
@@ -88,11 +93,13 @@ type TransactionsTableProps = {
 	showFilters?: boolean;
 	showImportButton?: boolean;
 	groupTransactionsByDate?: boolean;
+	embeddedInToolbarCard?: boolean;
 };
 
 export function TransactionsTable({
 	data,
-	currentUserId,
+	financialDataOwnerId,
+	canEditFinancial,
 	noteAsColumn = false,
 	columnOrder: columnOrderPreference = null,
 	payerFilterOptions = [],
@@ -121,6 +128,7 @@ export function TransactionsTable({
 	showFilters = true,
 	showImportButton = true,
 	groupTransactionsByDate = true,
+	embeddedInToolbarCard = false,
 }: TransactionsTableProps) {
 	const router = useRouter();
 	const pathname = usePathname();
@@ -141,7 +149,8 @@ export function TransactionsTable({
 	const columns = useMemo(
 		() =>
 			getTransactionColumns({
-				currentUserId,
+				financialDataOwnerId,
+				canEditFinancial,
 				noteAsColumn,
 				onEdit,
 				onCopy,
@@ -160,7 +169,8 @@ export function TransactionsTable({
 				columnOrder: columnOrderPreference,
 			}),
 		[
-			currentUserId,
+			financialDataOwnerId,
+			canEditFinancial,
 			noteAsColumn,
 			columnOrderPreference,
 			groupTransactionsByDate,
@@ -197,7 +207,11 @@ export function TransactionsTable({
 		manualPagination: isServerPaginated,
 		pageCount: serverPagination?.totalPages,
 		enableRowSelection: (row) =>
-			row.original.userId === currentUserId
+			canManageFamilyTransaction(
+				row.original,
+				financialDataOwnerId,
+				canEditFinancial,
+			)
 				? !row.original.readonly
 				: Boolean(onBulkImport),
 	});
@@ -226,11 +240,20 @@ export function TransactionsTable({
 		? (serverPagination?.totalItems ?? 0)
 		: table.getCoreRowModel().rows.length;
 	const selectedRows = table.getFilteredSelectedRowModel().rows;
-	const selectedOwnRows = selectedRows.filter(
-		(row) => row.original.userId === currentUserId,
+	const selectedOwnRows = selectedRows.filter((row) =>
+		canManageFamilyTransaction(
+			row.original,
+			financialDataOwnerId,
+			canEditFinancial,
+		),
 	);
 	const selectedImportRows = selectedRows.filter(
-		(row) => row.original.userId !== currentUserId,
+		(row) =>
+			!canManageFamilyTransaction(
+				row.original,
+				financialDataOwnerId,
+				canEditFinancial,
+			),
 	);
 	const selectedCount = selectedRows.length;
 	const selectedTotal = selectedRows.reduce(
@@ -252,8 +275,6 @@ export function TransactionsTable({
 		: Math.max(table.getPageCount(), 1);
 	const canPreviousPage = currentPage > 1;
 	const canNextPage = currentPage < totalPages;
-
-	const hasOtherUserData = data.some((item) => item.userId !== currentUserId);
 
 	const handleBulkDelete = () => {
 		if (onBulkDelete && selectedCount > 0) {
@@ -326,49 +347,38 @@ export function TransactionsTable({
 	const monthToolbarCreateSlotId = showFilters
 		? getMonthToolbarCreateSlotId(TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID)
 		: null;
-	const [monthToolbarCreateSlot, setMonthToolbarCreateSlot] =
-		useState<HTMLElement | null>(null);
-
-	useEffect(() => {
-		if (!monthToolbarCreateSlotId) {
-			setMonthToolbarCreateSlot(null);
-			return;
-		}
-
-		setMonthToolbarCreateSlot(
-			document.getElementById(monthToolbarCreateSlotId),
-		);
-	}, [monthToolbarCreateSlotId]);
+	const monthToolbarCreateSlot = useResolvedMonthToolbarSlot(
+		monthToolbarCreateSlotId,
+		"create",
+	);
 
 	const createActions =
 		createSlot || onMassAdd ? (
-			<div
-				className={cn(
-					monthToolbarCreateGroupClassName,
-					"md:[&_.quick-actions-root_button]:h-full md:[&_.quick-actions-root_button]:min-h-0 md:[&_.quick-actions-root_button]:rounded-none md:[&_.quick-actions-root_button]:border-0 md:[&_.quick-actions-root_button]:py-0 md:[&_.quick-actions-root_button]:shadow-none",
-				)}
-			>
+			<div className={monthToolbarMobileBarClassName}>
 				{createSlot}
 				{onMassAdd ? (
 					<Button
 						onClick={onMassAdd}
 						variant="ghost"
-						size="sm"
-						className={monthToolbarMassAddClassName}
+						className={monthToolbarMobileCellClassName}
 						aria-label="Adicionar múltiplos lançamentos"
 					>
-						<RiFlashlightFill className="size-5 shrink-0 text-primary md:size-4" />
-						<span className="md:hidden">Múltiplos</span>
-						<span className="hidden md:inline">Múltiplos</span>
+						<RiFlashlightFill
+							className={cn(monthToolbarIconClassName, "text-primary")}
+							aria-hidden
+						/>
+						<span className={monthToolbarMobileLabelClassName}>Múltiplos</span>
 					</Button>
 				) : null}
 			</div>
 		) : null;
 
 	const portaledCreateActions =
-		monthToolbarCreateSlot && createActions
-			? createPortal(createActions, monthToolbarCreateSlot)
-			: null;
+		monthToolbarCreateSlot && createActions ? (
+			<MonthToolbarPortal container={monthToolbarCreateSlot}>
+				{createActions}
+			</MonthToolbarPortal>
+		) : null;
 	const showCreateInline = createActions && !monthToolbarCreateSlot;
 	const hasPortaledToolbar = Boolean(monthToolbarCreateSlot);
 
@@ -425,6 +435,85 @@ export function TransactionsTable({
 		</TableRow>
 	);
 
+	const transactionsListContent = hasRows ? (
+		<>
+			<TransactionsMobileList
+				data={rowModel.rows.map((row) => row.original)}
+				financialDataOwnerId={financialDataOwnerId}
+				canEditFinancial={canEditFinancial}
+				onEdit={onEdit}
+				onCopy={onCopy}
+				onImport={onImport}
+				onConfirmDelete={onConfirmDelete}
+				onViewDetails={onViewDetails}
+				onRefund={onRefund}
+				onToggleSettlement={onToggleSettlement}
+				onAnticipate={onAnticipate}
+				onViewAnticipationHistory={onViewAnticipationHistory}
+				isSettlementLoading={isSettlementLoading ?? (() => false)}
+				showActions={showActions}
+				showDateGroups={groupTransactionsByDate}
+			/>
+
+			<div className="hidden overflow-x-auto md:block">
+				<Table>
+					<TableHeader>
+						{table.getHeaderGroups().map((headerGroup) => (
+							<TableRow key={headerGroup.id}>
+								{headerGroup.headers.map((header) => (
+									<TableHead key={header.id} className="whitespace-nowrap">
+										{header.isPlaceholder
+											? null
+											: flexRender(
+													header.column.columnDef.header,
+													header.getContext(),
+												)}
+									</TableHead>
+								))}
+							</TableRow>
+						))}
+					</TableHeader>
+					<TableBody>
+						{groupTransactionsByDate
+							? groupedRows.map((group, groupIndex) => (
+									<Fragment key={`${group.date || group.label}-${groupIndex}`}>
+										<TableRow className="border-y bg-muted/40 hover:bg-muted/60">
+											<TableCell
+												colSpan={visibleColumnCount}
+												className="h-9 px-3 py-2 text-xs font-semibold text-muted-foreground"
+											>
+												{group.label}
+											</TableCell>
+										</TableRow>
+										{group.rows.map(renderTransactionRow)}
+									</Fragment>
+								))
+							: rowModel.rows.map(renderTransactionRow)}
+					</TableBody>
+				</Table>
+			</div>
+
+			<TransactionsPagination
+				totalRows={totalRows}
+				currentPage={currentPage}
+				currentPageSize={currentPageSize}
+				totalPages={totalPages}
+				canPreviousPage={canPreviousPage}
+				canNextPage={canNextPage}
+				onPageChange={handlePageChange}
+				onPageSizeChange={handlePageSizeChange}
+			/>
+		</>
+	) : (
+		<div className="flex w-full items-center justify-center py-12">
+			<EmptyState
+				media={<RiArrowLeftRightLine className="size-6 text-primary" />}
+				title="Nenhum lançamento encontrado"
+				description="Ajuste os filtros ou cadastre um novo lançamento para visualizar aqui."
+			/>
+		</div>
+	);
+
 	return (
 		<TooltipProvider>
 			{portaledCreateActions}
@@ -433,7 +522,6 @@ export function TransactionsTable({
 					payerOptions={payerFilterOptions}
 					categoryOptions={categoryFilterOptions}
 					accountCardOptions={accountCardFilterOptions}
-					hideAdvancedFilters={hasOtherUserData}
 					exportButton={exportSlot}
 					importButton={importSlot}
 					monthToolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID}
@@ -449,7 +537,6 @@ export function TransactionsTable({
 							categoryOptions={categoryFilterOptions}
 							accountCardOptions={accountCardFilterOptions}
 							className="w-full lg:flex-1 lg:justify-end"
-							hideAdvancedFilters={hasOtherUserData}
 							exportButton={exportSlot}
 							importButton={importSlot}
 							monthToolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID}
@@ -478,92 +565,17 @@ export function TransactionsTable({
 				/>
 			) : null}
 
-			<Card className="py-2">
-				<CardContent className="px-2 sm:px-4">
-					{hasRows ? (
-						<>
-							<TransactionsMobileList
-								data={rowModel.rows.map((row) => row.original)}
-								currentUserId={currentUserId}
-								onEdit={onEdit}
-								onCopy={onCopy}
-								onImport={onImport}
-								onConfirmDelete={onConfirmDelete}
-								onViewDetails={onViewDetails}
-								onRefund={onRefund}
-								onToggleSettlement={onToggleSettlement}
-								onAnticipate={onAnticipate}
-								onViewAnticipationHistory={onViewAnticipationHistory}
-								isSettlementLoading={isSettlementLoading ?? (() => false)}
-								showActions={showActions}
-								showDateGroups={groupTransactionsByDate}
-							/>
-
-							<div className="hidden overflow-x-auto md:block">
-								<Table>
-									<TableHeader>
-										{table.getHeaderGroups().map((headerGroup) => (
-											<TableRow key={headerGroup.id}>
-												{headerGroup.headers.map((header) => (
-													<TableHead
-														key={header.id}
-														className="whitespace-nowrap"
-													>
-														{header.isPlaceholder
-															? null
-															: flexRender(
-																	header.column.columnDef.header,
-																	header.getContext(),
-																)}
-													</TableHead>
-												))}
-											</TableRow>
-										))}
-									</TableHeader>
-									<TableBody>
-										{groupTransactionsByDate
-											? groupedRows.map((group, groupIndex) => (
-													<Fragment
-														key={`${group.date || group.label}-${groupIndex}`}
-													>
-														<TableRow className="border-y bg-muted/40 hover:bg-muted/60">
-															<TableCell
-																colSpan={visibleColumnCount}
-																className="h-9 px-3 py-2 text-xs font-semibold text-muted-foreground"
-															>
-																{group.label}
-															</TableCell>
-														</TableRow>
-														{group.rows.map(renderTransactionRow)}
-													</Fragment>
-												))
-											: rowModel.rows.map(renderTransactionRow)}
-									</TableBody>
-								</Table>
-							</div>
-
-							<TransactionsPagination
-								totalRows={totalRows}
-								currentPage={currentPage}
-								currentPageSize={currentPageSize}
-								totalPages={totalPages}
-								canPreviousPage={canPreviousPage}
-								canNextPage={canNextPage}
-								onPageChange={handlePageChange}
-								onPageSizeChange={handlePageSizeChange}
-							/>
-						</>
-					) : (
-						<div className="flex w-full items-center justify-center py-12">
-							<EmptyState
-								media={<RiArrowLeftRightLine className="size-6 text-primary" />}
-								title="Nenhum lançamento encontrado"
-								description="Ajuste os filtros ou cadastre um novo lançamento para visualizar aqui."
-							/>
-						</div>
-					)}
-				</CardContent>
-			</Card>
+			{embeddedInToolbarCard ? (
+				<div className="border-t border-border/60 px-2 py-2 sm:px-4">
+					{transactionsListContent}
+				</div>
+			) : (
+				<Card className="py-2">
+					<CardContent className="px-2 sm:px-4">
+						{transactionsListContent}
+					</CardContent>
+				</Card>
+			)}
 		</TooltipProvider>
 	);
 }

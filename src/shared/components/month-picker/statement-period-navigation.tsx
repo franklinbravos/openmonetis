@@ -24,6 +24,7 @@ import {
 	monthToolbarPanelClassName,
 } from "@/features/transactions/lib/month-toolbar";
 import LoadingSpinner from "@/shared/components/month-picker/loading-spinner";
+import { useMonthToolbarSlotRef } from "@/shared/components/month-picker/month-toolbar-slot-context";
 import type {
 	PeriodCarouselMonth,
 	PeriodCarouselStatus,
@@ -206,25 +207,14 @@ function PeriodMonthCarousel({
 	};
 
 	return (
-		<div className="flex w-full items-center gap-1 sm:gap-2">
-			<Button
-				type="button"
-				variant="ghost"
-				size="icon-sm"
-				className="size-8 shrink-0 bg-card shadow-xs sm:size-9"
-				onClick={() => scrollByOffset(-200)}
-				aria-label="Rolar meses anteriores"
-			>
-				<RiArrowLeftSLine className="size-4 text-primary sm:size-5" />
-			</Button>
-
+		<div className="relative isolate w-full">
 			<div
 				ref={scrollRef}
-				className="min-w-0 flex-1 overflow-x-auto scrollbar-none"
+				className="relative z-0 w-full overflow-x-auto scrollbar-none"
 			>
 				<div
 					ref={trackRef}
-					className="relative flex min-w-min items-stretch px-1 py-1"
+					className="relative flex w-max min-w-full items-stretch px-1 py-1"
 				>
 					{chartWidth > 0 && chartPoints.length > 0 ? (
 						<svg
@@ -333,7 +323,7 @@ function PeriodMonthCarousel({
 									columnRefs.current[index] = node;
 								}}
 								className={cn(
-									"relative flex flex-col items-center px-0.5",
+									"relative flex flex-1 basis-0 flex-col items-center px-0.5",
 									isAccountVariant
 										? "min-w-[7.25rem] sm:min-w-[8rem] md:min-w-[8.75rem]"
 										: "min-w-[5.75rem] sm:min-w-[6.75rem] md:min-w-[7.5rem]",
@@ -473,15 +463,35 @@ function PeriodMonthCarousel({
 				</div>
 			</div>
 
+			<div
+				className="pointer-events-none absolute inset-y-0 left-0 z-40 w-11 bg-gradient-to-r from-card from-50% via-card/90 to-transparent sm:w-12"
+				aria-hidden
+			/>
+			<div
+				className="pointer-events-none absolute inset-y-0 right-0 z-40 w-11 bg-gradient-to-l from-card from-50% via-card/90 to-transparent sm:w-12"
+				aria-hidden
+			/>
+
 			<Button
 				type="button"
-				variant="ghost"
+				variant="outline"
 				size="icon-sm"
-				className="size-8 shrink-0 bg-card shadow-xs sm:size-9"
+				className="absolute top-1/2 left-1.5 z-50 size-9 -translate-y-1/2 rounded-full border border-border bg-card text-primary shadow-md hover:bg-accent/60 sm:left-2"
+				onClick={() => scrollByOffset(-200)}
+				aria-label="Rolar meses anteriores"
+			>
+				<RiArrowLeftSLine className="size-5" aria-hidden />
+			</Button>
+
+			<Button
+				type="button"
+				variant="outline"
+				size="icon-sm"
+				className="absolute top-1/2 right-1.5 z-50 size-9 -translate-y-1/2 rounded-full border border-border bg-card text-primary shadow-md hover:bg-accent/60 sm:right-2"
 				onClick={() => scrollByOffset(200)}
 				aria-label="Rolar próximos meses"
 			>
-				<RiArrowRightSLine className="size-4 text-primary sm:size-5" />
+				<RiArrowRightSLine className="size-5" aria-hidden />
 			</Button>
 		</div>
 	);
@@ -560,31 +570,48 @@ type StatementPeriodToolbarPanelProps = {
 function StatementPeriodToolbarPanel({
 	toolbarSlotId,
 }: StatementPeriodToolbarPanelProps) {
+	const createSlotRef = useMonthToolbarSlotRef("create");
+	const mobileActionsSlotRef = useMonthToolbarSlotRef("mobileActions");
+	const filtersSlotRef = useMonthToolbarSlotRef("filters");
+	const expandSlotRef = useMonthToolbarSlotRef("expand");
+	const legacySlotRef = useMonthToolbarSlotRef("legacy");
+	const endSlotRef = useMonthToolbarSlotRef("end");
+
 	return (
 		<div className={monthToolbarPanelClassName}>
 			<div
+				ref={createSlotRef}
 				id={getMonthToolbarCreateSlotId(toolbarSlotId)}
 				className="flex w-full min-w-0 empty:hidden md:h-full md:w-auto md:shrink-0 md:items-stretch md:self-stretch"
 			/>
 
 			<div
+				ref={mobileActionsSlotRef}
 				id={getMonthToolbarMobileActionsSlotId(toolbarSlotId)}
 				className={cn(monthToolbarMobileActionsClassName, "empty:hidden")}
 			/>
 
 			<div
+				ref={filtersSlotRef}
 				id={getMonthToolbarFiltersSlotId(toolbarSlotId)}
 				className="hidden min-w-0 flex-1 empty:hidden md:flex md:h-full md:items-stretch md:self-stretch"
 			/>
 
 			<div
+				ref={expandSlotRef}
 				id={getMonthToolbarExpandSlotId(toolbarSlotId)}
 				className="empty:hidden md:hidden"
 			/>
 
 			{/* Slots legados para MonthNavigation em outras páginas */}
-			<div id={toolbarSlotId} className="hidden" aria-hidden />
 			<div
+				ref={legacySlotRef}
+				id={toolbarSlotId}
+				className="hidden"
+				aria-hidden
+			/>
+			<div
+				ref={endSlotRef}
 				id={getMonthToolbarEndSlotId(toolbarSlotId)}
 				className="hidden"
 				aria-hidden
@@ -630,7 +657,12 @@ export function StatementPeriodNavigation({
 		hideCarousel && toolbarSlotId && !hideCreateActions;
 
 	const content = (
-		<div className="flex w-full flex-col gap-2.5 sm:gap-3">
+		<div
+			className={cn(
+				"flex w-full flex-col",
+				showUnifiedToolbar ? "gap-0" : "gap-2.5 sm:gap-3",
+			)}
+		>
 			{showUnifiedToolbar ? (
 				<StatementPeriodToolbarPanel toolbarSlotId={toolbarSlotId} />
 			) : null}
@@ -662,7 +694,7 @@ export function StatementPeriodNavigation({
 
 	if (embedded) {
 		return (
-			<div className="flex w-full flex-col gap-0 px-3 py-2.5 sm:px-4 sm:py-3">
+			<div className="flex w-full flex-col gap-0 px-3 py-2 sm:px-4">
 				{content}
 			</div>
 		);

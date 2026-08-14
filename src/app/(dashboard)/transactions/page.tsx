@@ -23,12 +23,13 @@ import {
 	fetchTransactionsPage,
 } from "@/features/transactions/queries";
 import { LogoPrefetchProvider } from "@/shared/components/entity-avatar";
+import { MonthToolbarSlotProvider } from "@/shared/components/month-picker/month-toolbar-slot-context";
 import { StatementPeriodNavigation } from "@/shared/components/month-picker/statement-period-navigation";
 import PageDescription from "@/shared/components/page-description";
 import { Card } from "@/shared/components/ui/card";
 import { getUserId } from "@/shared/lib/auth/server";
 import { prefetchLogoMappings } from "@/shared/lib/logo/prefetch-server";
-import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
+import { resolveFinancialDataContext } from "@/shared/lib/payers/financial-context";
 import { parsePeriodParam } from "@/shared/utils/period";
 
 type PageSearchParams = Promise<ResolvedSearchParams>;
@@ -44,7 +45,8 @@ export const metadata: Metadata = {
 export default async function Page({ searchParams }: PageProps) {
 	await connection();
 	const userId = await getUserId();
-	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+	const financialContext = await resolveFinancialDataContext(userId);
+	const dataOwnerUserId = financialContext.dataOwnerUserId;
 	const resolvedSearchParams = searchParams ? await searchParams : undefined;
 
 	const periodoParamRaw = getSingleParam(resolvedSearchParams, "periodo");
@@ -101,7 +103,7 @@ export default async function Page({ searchParams }: PageProps) {
 	);
 
 	return (
-		<main className="flex flex-col gap-6">
+		<main className="flex flex-col gap-3 md:gap-6">
 			<PageDescription
 				icon={<RiArrowLeftRightLine />}
 				title="Lançamentos"
@@ -116,49 +118,53 @@ export default async function Page({ searchParams }: PageProps) {
 				months={monthSummaries}
 			/>
 
-			<Card className="gap-0 overflow-hidden py-0">
-				<StatementPeriodNavigation
-					embedded
-					hideCarousel
-					toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID}
-				/>
-			</Card>
+			<MonthToolbarSlotProvider>
+				<Card className="gap-0 overflow-hidden py-0">
+					<StatementPeriodNavigation
+						embedded
+						hideCarousel
+						toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID}
+					/>
 
-			<LogoPrefetchProvider mappings={logoMappings}>
-				<TransactionsPage
-					currentUserId={userId}
-					transactions={transactionData}
-					payerOptions={payerOptions}
-					splitPayerOptions={splitPayerOptions}
-					defaultPayerId={defaultPayerId}
-					accountOptions={accountOptions}
-					cardOptions={cardOptions}
-					categoryOptions={categoryOptions}
-					payerFilterOptions={payerFilterOptions}
-					categoryFilterOptions={categoryFilterOptions}
-					accountCardFilterOptions={accountCardFilterOptions}
-					selectedPeriod={selectedPeriod}
-					estabelecimentos={estabelecimentos}
-					pagination={{
-						page: transactionsPage.page,
-						pageSize: transactionsPage.pageSize,
-						totalItems: transactionsPage.totalItems,
-						totalPages: transactionsPage.totalPages,
-					}}
-					exportContext={{
-						source: "transactions",
-						period: selectedPeriod,
-						filters: searchFilters,
-					}}
-					noteAsColumn={userPreferences?.statementNoteAsColumn ?? false}
-					columnOrder={userPreferences?.transactionsColumnOrder ?? null}
-					groupTransactionsByDate={
-						userPreferences?.groupTransactionsByDate ?? true
-					}
-					attachmentMaxSizeMb={userPreferences?.attachmentMaxSizeMb ?? 50}
-					transferAccounts={activeAccounts}
-				/>
-			</LogoPrefetchProvider>
+					<LogoPrefetchProvider mappings={logoMappings}>
+						<TransactionsPage
+							embeddedInToolbarCard
+							financialDataOwnerId={dataOwnerUserId}
+							canEditFinancial={financialContext.canEditFinancial}
+							transactions={transactionData}
+							payerOptions={payerOptions}
+							splitPayerOptions={splitPayerOptions}
+							defaultPayerId={defaultPayerId}
+							accountOptions={accountOptions}
+							cardOptions={cardOptions}
+							categoryOptions={categoryOptions}
+							payerFilterOptions={payerFilterOptions}
+							categoryFilterOptions={categoryFilterOptions}
+							accountCardFilterOptions={accountCardFilterOptions}
+							selectedPeriod={selectedPeriod}
+							estabelecimentos={estabelecimentos}
+							pagination={{
+								page: transactionsPage.page,
+								pageSize: transactionsPage.pageSize,
+								totalItems: transactionsPage.totalItems,
+								totalPages: transactionsPage.totalPages,
+							}}
+							exportContext={{
+								source: "transactions",
+								period: selectedPeriod,
+								filters: searchFilters,
+							}}
+							noteAsColumn={userPreferences?.statementNoteAsColumn ?? false}
+							columnOrder={userPreferences?.transactionsColumnOrder ?? null}
+							groupTransactionsByDate={
+								userPreferences?.groupTransactionsByDate ?? true
+							}
+							attachmentMaxSizeMb={userPreferences?.attachmentMaxSizeMb ?? 50}
+							transferAccounts={activeAccounts}
+						/>
+					</LogoPrefetchProvider>
+				</Card>
+			</MonthToolbarSlotProvider>
 		</main>
 	);
 }

@@ -6,6 +6,7 @@ import {
 	monthToolbarDesktopActionClassName,
 	monthToolbarIconClassName,
 	monthToolbarMobileCellClassName,
+	monthToolbarMobileLabelClassName,
 } from "@/features/transactions/lib/month-toolbar";
 import { Button } from "@/shared/components/ui/button";
 import { cn } from "@/shared/utils/ui";
@@ -20,7 +21,7 @@ export function TransactionsImportButton({
 	return (
 		<Button
 			type="button"
-			variant="outline"
+			variant="ghost"
 			onClick={() => {
 				router.push(href);
 				router.refresh();
@@ -32,14 +33,10 @@ export function TransactionsImportButton({
 			)}
 			aria-label="Importar extrato"
 		>
-			<RiFileExcel2Line
-				className={cn(
-					monthToolbarIconClassName,
-					"md:size-4 md:text-foreground",
-				)}
-				aria-hidden
-			/>
-			<span className="md:hidden">Importar</span>
+			<RiFileExcel2Line className={monthToolbarIconClassName} aria-hidden />
+			<span className={cn(monthToolbarMobileLabelClassName, "md:hidden")}>
+				Importar
+			</span>
 			<span className="hidden md:inline">Importar</span>
 		</Button>
 	);

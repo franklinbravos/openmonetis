@@ -6,15 +6,15 @@ import { useRef } from "react";
 import {
 	formatPeriod,
 	formatPeriodForUrl,
+	PERIOD_SEARCH_PARAM,
 	parsePeriodParam,
+	TRANSACTIONS_DATE_RANGE_SEARCH_PARAMS,
 } from "@/shared/utils/period";
-
-const PERIOD_PARAM = "periodo";
 
 export function useMonthPeriod() {
 	const searchParams = useSearchParams();
 	const pathname = usePathname();
-	const periodFromParams = searchParams.get(PERIOD_PARAM);
+	const periodFromParams = searchParams.get(PERIOD_SEARCH_PARAM);
 	const referenceDate = useRef(new Date()).current;
 	const defaultPeriod = formatPeriod(
 		referenceDate.getFullYear(),
@@ -27,8 +27,11 @@ export function useMonthPeriod() {
 
 	const buildHref = (targetPeriod: string) => {
 		const params = new URLSearchParams(searchParams.toString());
-		params.set(PERIOD_PARAM, formatPeriodForUrl(targetPeriod));
+		params.set(PERIOD_SEARCH_PARAM, formatPeriodForUrl(targetPeriod));
 		params.delete("page");
+		for (const key of TRANSACTIONS_DATE_RANGE_SEARCH_PARAMS) {
+			params.delete(key);
+		}
 
 		return `${pathname}?${params.toString()}`;
 	};

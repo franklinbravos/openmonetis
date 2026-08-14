@@ -15,6 +15,7 @@ import {
 	formatShortPeriodLabel,
 	getCurrentPeriod,
 	getNextPeriod,
+	getPeriodPurchaseDateBounds,
 	getPreviousPeriod,
 	parsePeriod,
 	parsePeriodParam,
@@ -165,6 +166,17 @@ describe("data <-> período", () => {
 		expect(date.getFullYear()).toBe(2025);
 		expect(date.getMonth()).toBe(10);
 		expect(date.getDate()).toBe(1);
+	});
+
+	it("getPeriodPurchaseDateBounds retorna intervalo do mês", () => {
+		expect(getPeriodPurchaseDateBounds("2026-08")).toEqual({
+			start: "2026-08-01",
+			end: "2026-08-31",
+		});
+		expect(getPeriodPurchaseDateBounds("2026-02")).toEqual({
+			start: "2026-02-01",
+			end: "2026-02-28",
+		});
 	});
 
 	it("dateToPeriod extrai período da data", () => {
