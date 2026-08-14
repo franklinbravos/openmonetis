@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { apiTokens } from "@/db/schema";
-import { fetchUserAiProviderSettings } from "@/shared/lib/ai/user-provider-config";
+import { fetchInstanceAiProviderSettings } from "@/shared/lib/ai/user-provider-config";
 import { db, schema } from "@/shared/lib/db";
 
 interface UserPreferences {
@@ -75,7 +75,7 @@ export async function fetchSettingsPageData(userId: string) {
 			fetchAuthProvider(userId),
 			fetchUserPreferences(userId),
 			fetchApiTokens(userId),
-			fetchUserAiProviderSettings(userId),
+			fetchInstanceAiProviderSettings(userId),
 		]);
 
 	return {

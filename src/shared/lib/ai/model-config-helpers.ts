@@ -19,7 +19,7 @@ function modelHasUsableCredential(
 	if (!provider) return false;
 
 	const credential = credentials[provider];
-	return Boolean(credential?.apiKey) || provider === "ollama";
+	return credential?.source !== "none" && Boolean(credential?.apiKey);
 }
 
 function buildStoredProviderModelId(
@@ -66,7 +66,9 @@ export function resolveAiModelIdForCredentials(
 	}
 
 	for (const provider of AI_PROVIDER_IDS) {
-		if (!credentials[provider]?.apiKey && provider !== "ollama") continue;
+		if (credentials[provider]?.source === "none" || !credentials[provider]?.apiKey) {
+			continue;
+		}
 
 		const staticModel = AVAILABLE_MODELS.find(
 			(model) => model.provider === provider,

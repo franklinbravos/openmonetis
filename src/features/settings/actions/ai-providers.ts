@@ -5,10 +5,11 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { AIProvider } from "@/features/insights/constants";
 import {
-	fetchUserAiProviderSettings,
+	fetchInstanceAiProviderSettings,
 	mergeStoredProviderSettings,
 } from "@/shared/lib/ai/user-provider-config";
 import { getUser } from "@/shared/lib/auth/server";
+import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import { db, schema } from "@/shared/lib/db";
 
 type ActionResponse<T = void> = {
@@ -45,7 +46,7 @@ export async function updateAiProviderSettingsAction(
 ): Promise<ActionResponse> {
 	try {
 		const user = await getUser();
-		const userId = user.id;
+		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
 		const validated = updateAiProviderSettingsSchema.parse(input);
 
 		const existingResult = await db
@@ -54,7 +55,7 @@ export async function updateAiProviderSettingsAction(
 				aiProviderSettings: schema.userPreferences.aiProviderSettings,
 			})
 			.from(schema.userPreferences)
-			.where(eq(schema.userPreferences.userId, userId))
+			.where(eq(schema.userPreferences.userId, dataOwnerUserId))
 			.limit(1);
 
 		const existing = existingResult[0] ?? null;
@@ -94,10 +95,10 @@ export async function updateAiProviderSettingsAction(
 			await db
 				.update(schema.userPreferences)
 				.set(preferencesPayload)
-				.where(eq(schema.userPreferences.userId, userId));
+				.where(eq(schema.userPreferences.userId, dataOwnerUserId));
 		} else {
 			await db.insert(schema.userPreferences).values({
-				userId,
+				userId: dataOwnerUserId,
 				...preferencesPayload,
 			});
 		}
@@ -127,6 +128,6 @@ export async function updateAiProviderSettingsAction(
 
 export async function fetchAiProviderSettingsAction() {
 	const user = await getUser();
-	const settings = await fetchUserAiProviderSettings(user.id);
+	const settings = await fetchInstanceAiProviderSettings(user.id);
 	return settings.view;
 }

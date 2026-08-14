@@ -96,6 +96,77 @@ export function buildPeriodFromTransactions(
 	return { from: dates[0], to: dates[dates.length - 1] };
 }
 
+export function stripImportExternalIdSuffix(externalId: string): string {
+	return externalId.replace(/#\d+$/, "");
+}
+
+/** Inclui variantes com/sem sufixo `#2` gerado por `uniquifyImportedExternalIds`. */
+export function expandImportExternalIdsForLookup(externalIds: string[]): string[] {
+	const expanded = new Set<string>();
+
+	for (const externalId of externalIds) {
+		if (!externalId) continue;
+		expanded.add(externalId);
+		const baseId = stripImportExternalIdSuffix(externalId);
+		if (baseId !== externalId) {
+			expanded.add(baseId);
+		}
+	}
+
+	return [...expanded];
+}
+
+export function importExternalIdCollidesWithStored(
+	externalId: string,
+	storedExternalIds: Iterable<string>,
+): boolean {
+	const baseId = stripImportExternalIdSuffix(externalId);
+
+	for (const storedId of storedExternalIds) {
+		if (storedId === externalId) return true;
+		if (stripImportExternalIdSuffix(storedId) === baseId) return true;
+	}
+
+	return false;
+}
+
+export function buildImportTransactionFingerprint(transaction: {
+	date: string;
+	amount: number;
+	description: string;
+	transactionType: "income" | "expense";
+}): string {
+	return [
+		transaction.date,
+		transaction.amount.toFixed(2),
+		transaction.transactionType,
+		normalizeImportedText(transaction.description).toLowerCase(),
+	].join("|");
+}
+
+/**
+ * Remove linhas idênticas repetidas no mesmo arquivo (ruído de parser).
+ * Compras legítimas iguais no mesmo dia continuam passando por
+ * `uniquifyImportedExternalIds` antes desta etapa.
+ */
+export function dedupeImportedTransactionsByFingerprint<
+	T extends {
+		date: string;
+		amount: number;
+		description: string;
+		transactionType: "income" | "expense";
+	},
+>(transactions: T[]): T[] {
+	const seen = new Set<string>();
+
+	return transactions.filter((transaction) => {
+		const fingerprint = buildImportTransactionFingerprint(transaction);
+		if (seen.has(fingerprint)) return false;
+		seen.add(fingerprint);
+		return true;
+	});
+}
+
 export function makeSyntheticExternalId(parts: string[]): string {
 	return parts
 		.map((p) => p.trim().toLowerCase())

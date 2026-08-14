@@ -39,12 +39,21 @@ export function getEnvProviderCredential(
 				baseUrl: process.env.OPENCODE_BASE_URL ?? OPENCODE_PLAN_ZEN_URL,
 				source: process.env.OPENCODE_API_KEY ? "env" : "none",
 			};
-		case "ollama":
+		case "ollama": {
+			const hasExplicitEnvConfig = Boolean(
+				process.env.OLLAMA_BASE_URL?.trim() ||
+					process.env.OLLAMA_API_KEY?.trim(),
+			);
+			if (!hasExplicitEnvConfig) {
+				return { source: "none" };
+			}
+
 			return {
-				apiKey: process.env.OLLAMA_API_KEY || "ollama",
-				baseUrl: process.env.OLLAMA_BASE_URL ?? DEFAULT_OLLAMA_BASE_URL,
+				apiKey: process.env.OLLAMA_API_KEY?.trim() || "ollama",
+				baseUrl: process.env.OLLAMA_BASE_URL?.trim() ?? DEFAULT_OLLAMA_BASE_URL,
 				source: "env",
 			};
+		}
 		default:
 			return { source: "none" };
 	}

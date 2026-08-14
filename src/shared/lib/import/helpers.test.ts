@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildPeriodFromTransactions,
+	dedupeImportedTransactionsByFingerprint,
+	expandImportExternalIdsForLookup,
+	importExternalIdCollidesWithStored,
 	makeSyntheticExternalId,
 	parseBrazilianAmount,
 	parseCnabDate,
@@ -8,6 +11,7 @@ import {
 	parsePortugueseLongDate,
 	parsePortugueseShortDate,
 	parseSlashDateDMY,
+	stripImportExternalIdSuffix,
 	uniquifyImportedExternalIds,
 } from "./helpers";
 
@@ -135,5 +139,64 @@ describe("uniquifyImportedExternalIds", () => {
 			"a|b|1#3",
 			null,
 		]);
+	});
+});
+
+describe("stripImportExternalIdSuffix", () => {
+	it("remove sufixo numérico de colisão no extrato", () => {
+		expect(stripImportExternalIdSuffix("2025-08-01|20.00|pix")).toBe(
+			"2025-08-01|20.00|pix",
+		);
+		expect(stripImportExternalIdSuffix("2025-08-01|20.00|pix#2")).toBe(
+			"2025-08-01|20.00|pix",
+		);
+	});
+});
+
+describe("importExternalIdCollidesWithStored", () => {
+	it("trata sufixos do mesmo lançamento como colisão", () => {
+		const stored = ["2025-08-01|20.00|pix"];
+
+		expect(
+			importExternalIdCollidesWithStored("2025-08-01|20.00|pix#2", stored),
+		).toBe(true);
+		expect(
+			importExternalIdCollidesWithStored("2025-08-01|20.00|pix", stored),
+		).toBe(true);
+	});
+});
+
+describe("dedupeImportedTransactionsByFingerprint", () => {
+	it("remove repetições exatas do parser", () => {
+		const rows = dedupeImportedTransactionsByFingerprint([
+			{
+				date: "2025-08-01",
+				amount: 20,
+				description: "Pix recebido",
+				transactionType: "income",
+			},
+			{
+				date: "2025-08-01",
+				amount: 20,
+				description: "Pix recebido",
+				transactionType: "income",
+			},
+			{
+				date: "2025-08-04",
+				amount: 20,
+				description: "Pix recebido",
+				transactionType: "income",
+			},
+		]);
+
+		expect(rows).toHaveLength(2);
+	});
+});
+
+describe("expandImportExternalIdsForLookup", () => {
+	it("inclui id base e com sufixo", () => {
+		expect(
+			expandImportExternalIdsForLookup(["abc#2", "def"]).sort(),
+		).toEqual(["abc", "abc#2", "def"].sort());
 	});
 });

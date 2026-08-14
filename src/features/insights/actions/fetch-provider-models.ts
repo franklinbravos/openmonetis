@@ -5,7 +5,7 @@ import { listProviderModels } from "@/shared/lib/ai/list-provider-models";
 import { AI_STORED_KEY_UNREADABLE_MESSAGE } from "@/shared/lib/ai/provider-messages";
 import { resolveRuntimeProviderCredential } from "@/shared/lib/ai/resolve-runtime-ai-credentials";
 import {
-	fetchUserAiProviderSettings,
+	fetchInstanceAiProviderSettings,
 	hasInvalidStoredAiKeyForProvider,
 } from "@/shared/lib/ai/user-provider-config";
 import { getUser } from "@/shared/lib/auth/server";
@@ -35,7 +35,7 @@ export async function fetchProviderModelsAction(
 	try {
 		const user = await getUser();
 		const data = fetchProviderModelsSchema.parse(input);
-		const { storedSettings } = await fetchUserAiProviderSettings(user.id);
+		const { storedSettings } = await fetchInstanceAiProviderSettings(user.id);
 		const usingFreshApiKey = Boolean(data.apiKey?.trim());
 		const providerListsWithoutKey =
 			data.provider === "opencode" || data.provider === "ollama";

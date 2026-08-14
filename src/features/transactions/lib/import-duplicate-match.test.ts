@@ -343,6 +343,50 @@ describe("resolveImportDuplicateMatches — vínculo e FITID", () => {
 		expect(states[0]?.duplicateValidation).toBeNull();
 		expect(states[1]?.duplicateValidation).toBeNull();
 	});
+
+	it("reconhece FITID com sufixo #2 como já importado", () => {
+		const [state] = resolveImportDuplicateMatches(
+			[
+				{
+					...importRow,
+					externalId: "pix-fitid#2",
+				},
+			],
+			{
+				candidates: [existingPix],
+				fitIdDuplicateIds: new Set(["pix-fitid#2"]),
+				duplicateSnapshotByFitId: new Map([["pix-fitid", existingPix]]),
+			},
+		);
+
+		expect(state.isDuplicate).toBe(true);
+		expect(state.duplicateValidation?.status).toBe("match");
+	});
+
+	it("marca repetição idêntica no mesmo extrato como duplicata", () => {
+		const row = {
+			date: "2026-01-15",
+			amount: 500,
+			description: "Pix recebido",
+			transactionType: "income" as const,
+			externalId: "line-1",
+		};
+
+		const states = resolveImportDuplicateMatches(
+			[
+				row,
+				{ ...row, externalId: "line-1#2" },
+			],
+			{
+				candidates: [],
+				fitIdDuplicateIds: new Set(),
+				duplicateSnapshotByFitId: new Map(),
+			},
+		);
+
+		expect(states[0]?.isDuplicate).toBe(false);
+		expect(states[1]?.isDuplicate).toBe(true);
+	});
 });
 
 describe("collectImportLinkedExistingTransactionIds", () => {

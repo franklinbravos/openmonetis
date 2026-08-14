@@ -1,7 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { and, eq, gte, ilike, inArray, isNotNull, lte, or } from "drizzle-orm";
+import { and, eq, gte, ilike, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { z } from "zod";
 import {
 	attachments,
@@ -44,6 +44,10 @@ import {
 } from "@/shared/lib/transfers/constants";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 import { parseLocalDateString } from "@/shared/utils/date";
+import {
+	expandImportExternalIdsForLookup,
+	importExternalIdCollidesWithStored,
+} from "@/shared/lib/import/helpers";
 
 const installmentImportSchema = z
 	.object({
@@ -173,17 +177,23 @@ export async function checkDuplicateFitIds(
 	const ids = fitIds.filter(Boolean);
 	if (ids.length === 0) return [];
 
+	const lookupIds = expandImportExternalIdsForLookup(ids);
+
 	const rows = await db
 		.select({ ofxFitId: transactions.ofxFitId })
 		.from(transactions)
 		.where(
 			and(
 				eq(transactions.userId, dataOwnerUserId),
-				inArray(transactions.ofxFitId, ids),
+				inArray(transactions.ofxFitId, lookupIds),
 			),
 		);
 
-	return rows.map((r) => r.ofxFitId).filter((id): id is string => id !== null);
+	const storedIds = rows
+		.map((r) => r.ofxFitId)
+		.filter((id): id is string => Boolean(id));
+
+	return ids.filter((id) => importExternalIdCollidesWithStored(id, storedIds));
 }
 
 export async function fetchImportDuplicateSnapshots(fitIds: string[]) {
@@ -191,6 +201,8 @@ export async function fetchImportDuplicateSnapshots(fitIds: string[]) {
 	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const ids = fitIds.filter(Boolean);
 	if (ids.length === 0) return [];
+
+	const lookupIds = expandImportExternalIdsForLookup(ids);
 
 	return db
 		.select({
@@ -209,7 +221,7 @@ export async function fetchImportDuplicateSnapshots(fitIds: string[]) {
 		.where(
 			and(
 				eq(transactions.userId, dataOwnerUserId),
-				inArray(transactions.ofxFitId, ids),
+				inArray(transactions.ofxFitId, lookupIds),
 			),
 		)
 		.then((rows) =>
@@ -349,7 +361,10 @@ export async function fetchAccountImportDuplicateSnapshots(
 		.where(
 			and(
 				eq(transactions.userId, dataOwnerUserId),
-				eq(transactions.accountId, accountId),
+				or(
+					eq(transactions.accountId, accountId),
+					isNull(transactions.accountId),
+				),
 				gte(transactions.purchaseDate, fromDate),
 				lte(transactions.purchaseDate, toDate),
 			),
@@ -1134,8 +1149,12 @@ export async function importTransactionsAction(
 			const seenFitIdsInBatch = new Set<string>();
 			const recordsToInsert = allRecords.filter((record) => {
 				if (!record.ofxFitId) return true;
-				if (existingFitIds.has(record.ofxFitId)) return false;
-				if (seenFitIdsInBatch.has(record.ofxFitId)) return false;
+				if (importExternalIdCollidesWithStored(record.ofxFitId, existingFitIds)) {
+					return false;
+				}
+				if (importExternalIdCollidesWithStored(record.ofxFitId, seenFitIdsInBatch)) {
+					return false;
+				}
 				seenFitIdsInBatch.add(record.ofxFitId);
 				return true;
 			});

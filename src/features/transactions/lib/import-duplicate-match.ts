@@ -1,6 +1,11 @@
 import type { ReviewInstallmentImport } from "@/features/transactions/lib/import-installments";
 import { detectInstallmentFromName } from "@/features/transactions/lib/installment-detection";
 import type { ImportedTransaction } from "@/shared/lib/import/types";
+import {
+	buildImportTransactionFingerprint,
+	importExternalIdCollidesWithStored,
+	stripImportExternalIdSuffix,
+} from "@/shared/lib/import/helpers";
 import { formatCurrency } from "@/shared/utils/currency";
 import { formatDateOnly, toDateOnlyString } from "@/shared/utils/date";
 
@@ -515,6 +520,69 @@ export type ResolvedImportSemanticMatch = {
 	validation: ImportDuplicateValidation;
 };
 
+function resolveExistingSnapshotForExternalId(
+	externalId: string | null | undefined,
+	duplicateSnapshotByFitId: Map<string, ImportDuplicateSnapshot>,
+): ImportDuplicateSnapshot | undefined {
+	if (!externalId) return undefined;
+
+	return (
+		duplicateSnapshotByFitId.get(externalId) ??
+		duplicateSnapshotByFitId.get(stripImportExternalIdSuffix(externalId))
+	);
+}
+
+function resolveWithinFileDuplicateStates(
+	rows: Array<
+		ImportRowForMatch & {
+			linked?: boolean;
+			linkedTransactionId?: string | null;
+		}
+	>,
+	states: Array<{
+		isDuplicate: boolean;
+		duplicateValidation: ImportDuplicateValidation | null;
+	}>,
+): Array<{
+	isDuplicate: boolean;
+	duplicateValidation: ImportDuplicateValidation | null;
+}> {
+	const firstIndexByFingerprint = new Map<string, number>();
+
+	return states.map((state, index) => {
+		const row = rows[index];
+		if (!row || state.isDuplicate || row.linked || row.linkedTransactionId) {
+			return state;
+		}
+
+		const fingerprint = buildImportTransactionFingerprint({
+			date: row.date,
+			amount: row.amount,
+			description: row.description,
+			transactionType: row.transactionType,
+		});
+
+		const firstIndex = firstIndexByFingerprint.get(fingerprint);
+		if (firstIndex === undefined) {
+			firstIndexByFingerprint.set(fingerprint, index);
+			return state;
+		}
+
+		const firstState = states[firstIndex];
+		if (firstState.isDuplicate && firstState.duplicateValidation) {
+			return {
+				isDuplicate: true,
+				duplicateValidation: firstState.duplicateValidation,
+			};
+		}
+
+		return {
+			isDuplicate: true,
+			duplicateValidation: null,
+		};
+	});
+}
+
 export function resolveImportDuplicateMatches(
 	rows: Array<
 		ImportRowForMatch & {
@@ -558,17 +626,22 @@ export function resolveImportDuplicateMatches(
 		}),
 	);
 
-	return rows.map((row, index) => {
+	const mappedStates = rows.map((row, index) => {
 		if (row.linked || row.linkedTransactionId) {
 			return { isDuplicate: false, duplicateValidation: null };
 		}
 
-		let isDuplicate = row.externalId
-			? input.fitIdDuplicateIds.has(row.externalId)
+		const isDuplicateByFitId = row.externalId
+			? importExternalIdCollidesWithStored(
+					row.externalId,
+					input.fitIdDuplicateIds,
+				)
 			: false;
-		const existingSnapshot: ImportDuplicateSnapshot | undefined = row.externalId
-			? input.duplicateSnapshotByFitId.get(row.externalId)
-			: undefined;
+		let isDuplicate = isDuplicateByFitId;
+		const existingSnapshot = resolveExistingSnapshotForExternalId(
+			row.externalId,
+			input.duplicateSnapshotByFitId,
+		);
 		let duplicateValidation: ImportDuplicateValidation | null = null;
 
 		if (isDuplicate && existingSnapshot) {
@@ -601,6 +674,8 @@ export function resolveImportDuplicateMatches(
 
 		return { isDuplicate, duplicateValidation };
 	});
+
+	return resolveWithinFileDuplicateStates(rows, mappedStates);
 }
 
 export function resolveSemanticImportMatches(

@@ -48,7 +48,7 @@ import { getOpenCodePlanFromBaseUrl } from "@/shared/lib/ai/opencode-plans";
 import { AI_STORED_KEY_UNREADABLE_MESSAGE } from "@/shared/lib/ai/provider-messages";
 import type { ResolvedAiCredentials } from "@/shared/lib/ai/types";
 import {
-	fetchUserAiProviderSettings,
+	fetchInstanceAiProviderSettings,
 	hasInvalidStoredAiKeys,
 	isAnyAiProviderConfigured,
 } from "@/shared/lib/ai/user-provider-config";
@@ -292,7 +292,7 @@ async function resolveImportAiExecutionContext(
 ) {
 	const userId = await getUserId();
 	const { credentials, insightsDefaultModelId, storedSettings } =
-		await fetchUserAiProviderSettings(userId);
+		await fetchInstanceAiProviderSettings(userId);
 
 	if (hasInvalidStoredAiKeys(storedSettings)) {
 		return {

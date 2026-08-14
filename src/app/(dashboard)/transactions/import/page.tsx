@@ -14,7 +14,7 @@ import { fetchTransactionFilterSources } from "@/features/transactions/queries";
 import { fetchImportBatchHistory } from "@/features/transactions/queries/import-batch-history";
 import PageDescription from "@/shared/components/page-description";
 import {
-	fetchUserAiProviderSettings,
+	fetchInstanceAiProviderSettings,
 	getStoredKeyUnreadableMessage,
 	hasInvalidStoredAiKeys,
 	isAnyAiProviderConfigured,
@@ -124,7 +124,7 @@ export default async function Page({ searchParams }: PageProps) {
 				}),
 			};
 		})(),
-		fetchUserAiProviderSettings(userId),
+		fetchInstanceAiProviderSettings(userId),
 	]);
 	const filterSources = optionSets.sources;
 	const {

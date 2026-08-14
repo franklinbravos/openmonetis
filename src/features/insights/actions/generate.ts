@@ -5,7 +5,7 @@ import { z } from "zod";
 import { applyProviderCredentialOverride } from "@/shared/lib/ai/list-provider-models";
 import { AI_STORED_KEY_UNREADABLE_MESSAGE } from "@/shared/lib/ai/provider-messages";
 import {
-	fetchUserAiProviderSettings,
+	fetchInstanceAiProviderSettings,
 	hasInvalidStoredAiKeys,
 } from "@/shared/lib/ai/user-provider-config";
 import { getUser } from "@/shared/lib/auth/server";
@@ -67,7 +67,7 @@ export async function generateInsightsAction(
 			};
 		}
 
-		const { credentials, storedSettings } = await fetchUserAiProviderSettings(
+		const { credentials, storedSettings } = await fetchInstanceAiProviderSettings(
 			user.id,
 		);
 

@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { type AIProvider, PROVIDERS } from "@/features/insights/constants";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { db, schema } from "@/shared/lib/db";
 import { getEnvProviderCredential } from "./env-credentials";
 import { resolveOpenCodePlanBaseUrl } from "./opencode-plans";
@@ -141,6 +142,14 @@ function buildProviderViewEntry(
 		baseUrl: storedEntry?.baseUrl ?? envCredential.baseUrl ?? null,
 		defaultModelId: storedEntry?.defaultModelId ?? null,
 	};
+}
+
+/** Configuração de IA única por instância (dono dos dados financeiros). */
+export async function fetchInstanceAiProviderSettings(
+	viewerUserId: string,
+): Promise<Awaited<ReturnType<typeof fetchUserAiProviderSettings>>> {
+	const settingsOwnerUserId = await getFinancialDataOwnerId(viewerUserId);
+	return fetchUserAiProviderSettings(settingsOwnerUserId);
 }
 
 export async function fetchUserAiProviderSettings(userId: string): Promise<{

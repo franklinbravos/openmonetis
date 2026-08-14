@@ -110,6 +110,7 @@ import {
 	buildInvoiceImportHistoryHref,
 } from "@/features/transactions/lib/import-continue-href";
 import {
+	type ImportDuplicateSnapshot,
 	type ImportDuplicateValidation,
 	isImportLinkSuggestion,
 	isImportRowResolved,
@@ -169,7 +170,9 @@ import type { CategoryType } from "@/shared/lib/categories/constants";
 import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants";
 import {
 	buildPeriodFromTransactions,
+	dedupeImportedTransactionsByFingerprint,
 	normalizeImportedText,
+	stripImportExternalIdSuffix,
 	uniquifyImportedExternalIds,
 } from "@/shared/lib/import/helpers";
 import { mapPdfLoadError } from "@/shared/lib/import/pdf-password";
@@ -205,18 +208,39 @@ const normalizeCategoryName = (value: string) => value.trim().toLowerCase();
 function withNormalizedDescriptions(
 	statement: ImportStatement,
 ): ImportStatement {
+	const normalizedTransactions = statement.transactions.map((transaction) => ({
+		...transaction,
+		description: normalizeImportedText(transaction.description),
+		categoryRaw: transaction.categoryRaw
+			? normalizeImportedText(transaction.categoryRaw)
+			: transaction.categoryRaw,
+	}));
+
 	return {
 		...statement,
-		transactions: uniquifyImportedExternalIds(
-			statement.transactions.map((transaction) => ({
-				...transaction,
-				description: normalizeImportedText(transaction.description),
-				categoryRaw: transaction.categoryRaw
-					? normalizeImportedText(transaction.categoryRaw)
-					: transaction.categoryRaw,
-			})),
+		transactions: dedupeImportedTransactionsByFingerprint(
+			uniquifyImportedExternalIds(normalizedTransactions),
 		),
 	};
+}
+
+function buildDuplicateSnapshotByFitId(
+	snapshots: ImportDuplicateSnapshot[],
+): Map<string, ImportDuplicateSnapshot> {
+	const map = new Map<string, ImportDuplicateSnapshot>();
+
+	for (const snapshot of snapshots) {
+		if (!snapshot.ofxFitId) continue;
+
+		map.set(snapshot.ofxFitId, snapshot);
+
+		const baseId = stripImportExternalIdSuffix(snapshot.ofxFitId);
+		if (baseId !== snapshot.ofxFitId && !map.has(baseId)) {
+			map.set(baseId, snapshot);
+		}
+	}
+
+	return map;
 }
 
 function mergeSelectOptions(
@@ -1097,10 +1121,8 @@ export function ImportPage({
 					...invoicePeriodSnapshotGroups,
 				);
 
-				const duplicateSnapshotByFitId = new Map(
-					duplicateSnapshots.flatMap((snapshot) =>
-						snapshot.ofxFitId ? [[snapshot.ofxFitId, snapshot] as const] : [],
-					),
+				const duplicateSnapshotByFitId = buildDuplicateSnapshotByFitId(
+					duplicateSnapshots,
 				);
 
 				const semanticCandidates = shouldFetchInvoiceSnapshots
@@ -1397,10 +1419,8 @@ export function ImportPage({
 				...invoicePeriodSnapshotGroups,
 			);
 
-			const duplicateSnapshotByFitId = new Map(
-				duplicateSnapshots.flatMap((snapshot) =>
-					snapshot.ofxFitId ? [[snapshot.ofxFitId, snapshot] as const] : [],
-				),
+			const duplicateSnapshotByFitId = buildDuplicateSnapshotByFitId(
+				duplicateSnapshots,
 			);
 
 			const semanticCandidates = shouldFetchInvoiceSnapshots
