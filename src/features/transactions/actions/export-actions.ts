@@ -89,7 +89,7 @@ export async function exportTransactionsDataAction(
 			success: true,
 			message: "Dados carregados para exportação.",
 			data: {
-				transactions: mapTransactionsData(rows),
+				transactions: mapTransactionsData(rows, filterSources.categoryRows),
 			},
 		};
 	} catch (error) {

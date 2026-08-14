@@ -18,7 +18,7 @@ import type {
 	TransactionsExportContext,
 	TransactionsPaginationState,
 } from "@/features/transactions/lib/export-types";
-import { buildAccountImportHref } from "@/features/transactions/lib/import-continue-href";
+import { resolveTransactionsImportHref } from "@/features/transactions/lib/import-continue-href";
 import { EmptyState } from "@/shared/components/feedback/empty-state";
 import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent } from "@/shared/components/ui/card";
@@ -40,14 +40,17 @@ import { formatDateGroupLabel } from "@/shared/utils/date";
 import { cn } from "@/shared/utils/ui";
 import {
 	getMonthToolbarCreateSlotId,
+	getMonthToolbarMobileBarClassName,
 	monthToolbarIconClassName,
-	monthToolbarMobileBarClassName,
 	monthToolbarMobileCellClassName,
 	monthToolbarMobileLabelClassName,
 	TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID,
 } from "../../lib/month-toolbar";
 import { MonthToolbarPortal } from "@/shared/components/month-picker/month-toolbar-portal";
-import { useResolvedMonthToolbarSlot } from "@/shared/components/month-picker/month-toolbar-slot-context";
+import {
+	useMonthToolbarMobileColumns,
+	useResolvedMonthToolbarSlot,
+} from "@/shared/components/month-picker/month-toolbar-slot-context";
 import { TransactionsExport } from "../transactions-export";
 import { TransactionsImportButton } from "../transactions-import-button";
 import type {
@@ -335,10 +338,9 @@ export function TransactionsTable({
 				exportContext={exportContext}
 			/>
 		) : null;
-	const importHref =
-		exportContext?.source === "account-statement" && exportContext.accountId
-			? buildAccountImportHref(exportContext.accountId, exportContext.period)
-			: undefined;
+	const importHref = exportContext
+		? resolveTransactionsImportHref(exportContext)
+		: undefined;
 	const importSlot =
 		showTopControls && showImportButton ? (
 			<TransactionsImportButton href={importHref} />
@@ -351,10 +353,11 @@ export function TransactionsTable({
 		monthToolbarCreateSlotId,
 		"create",
 	);
+	const mobileToolbarColumns = useMonthToolbarMobileColumns();
 
 	const createActions =
 		createSlot || onMassAdd ? (
-			<div className={monthToolbarMobileBarClassName}>
+			<div className={getMonthToolbarMobileBarClassName(mobileToolbarColumns)}>
 				{createSlot}
 				{onMassAdd ? (
 					<Button

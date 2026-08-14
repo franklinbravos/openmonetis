@@ -116,7 +116,10 @@ export default async function Page({ params, searchParams }: PageProps) {
 
 	const transactionRows = await fetchCardTransactions(filters);
 
-	const transactionData = mapTransactionsData(transactionRows);
+	const transactionData = mapTransactionsData(
+		transactionRows,
+		filterSources.categoryRows,
+	);
 
 	const {
 		payerOptions,
@@ -246,7 +249,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 				/>
 			</section>
 
-			<MonthToolbarSlotProvider>
+			<MonthToolbarSlotProvider mobileColumns={3}>
 				<UiCard className="gap-0 overflow-hidden py-0">
 					<StatementPeriodNavigation
 						embedded
@@ -283,6 +286,12 @@ export default async function Page({ params, searchParams }: PageProps) {
 					lockCardSelection
 					lockPaymentMethod
 					showImportButton={false}
+					exportContext={{
+						source: "transactions",
+						period: selectedPeriod,
+						filters: searchFilters,
+						cardId: card.id,
+					}}
 				/>
 				</section>
 			</MonthToolbarSlotProvider>

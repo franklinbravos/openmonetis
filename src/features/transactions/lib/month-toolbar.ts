@@ -1,3 +1,5 @@
+import { cn } from "@/shared/utils/ui";
+
 export const TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID = "transactions-month-toolbar";
 
 export function getMonthToolbarExpandSlotId(toolbarSlotId: string) {
@@ -32,11 +34,33 @@ export const monthToolbarFiltersGroupClassName =
 export const monthToolbarDesktopActionClassName =
 	"md:h-full md:min-h-0 md:rounded-none md:border-0 md:px-3 md:py-0 md:shadow-none";
 
-export const monthToolbarMobileBarClassName =
-	"grid w-full min-w-0 grid-cols-4 gap-1 rounded-xl border border-border/80 bg-muted/20 p-1 shadow-xs md:flex md:items-stretch md:overflow-hidden md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none md:divide-x md:divide-border";
+export type MonthToolbarMobileColumns = 3 | 4;
 
+const monthToolbarMobileBarBaseClassName =
+	"grid w-full min-w-0 gap-1 rounded-xl border border-border/80 bg-muted/20 p-1 shadow-xs md:flex md:items-stretch md:overflow-hidden md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none md:divide-x md:divide-border";
+
+export function getMonthToolbarMobileBarClassName(
+	columns: MonthToolbarMobileColumns = 4,
+) {
+	return cn(
+		monthToolbarMobileBarBaseClassName,
+		columns === 3 ? "grid-cols-3" : "grid-cols-4",
+	);
+}
+
+export function getMonthToolbarMobileActionsClassName(
+	columns: MonthToolbarMobileColumns = 4,
+) {
+	return cn(getMonthToolbarMobileBarClassName(columns), "md:hidden");
+}
+
+/** @deprecated Use getMonthToolbarMobileBarClassName() */
+export const monthToolbarMobileBarClassName =
+	getMonthToolbarMobileBarClassName(4);
+
+/** @deprecated Use getMonthToolbarMobileActionsClassName() */
 export const monthToolbarMobileActionsClassName =
-	`${monthToolbarMobileBarClassName} md:hidden`;
+	getMonthToolbarMobileActionsClassName(4);
 
 export const monthToolbarMobileCellClassName =
 	"relative flex h-11 min-h-11 w-full min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 py-1.5 text-[10px] font-semibold leading-none text-muted-foreground transition-all hover:bg-card hover:text-foreground hover:shadow-xs active:scale-[0.98] md:h-full md:min-h-0 md:w-auto md:flex-none md:flex-row md:gap-2 md:rounded-none md:border-0 md:bg-transparent md:px-3 md:py-0 md:text-sm md:font-medium md:leading-normal md:shadow-none md:hover:bg-accent/40 md:active:scale-100";

@@ -9,6 +9,7 @@ import {
 	useMemo,
 	useState,
 } from "react";
+import type { MonthToolbarMobileColumns } from "@/features/transactions/lib/month-toolbar";
 
 type MonthToolbarSlotElements = {
 	create: HTMLDivElement | null;
@@ -21,6 +22,7 @@ type MonthToolbarSlotElements = {
 
 type MonthToolbarSlotContextValue = {
 	slots: MonthToolbarSlotElements;
+	mobileColumns: MonthToolbarMobileColumns;
 	setCreateSlot: (node: HTMLDivElement | null) => void;
 	setMobileActionsSlot: (node: HTMLDivElement | null) => void;
 	setFiltersSlot: (node: HTMLDivElement | null) => void;
@@ -32,7 +34,15 @@ type MonthToolbarSlotContextValue = {
 const MonthToolbarSlotContext =
 	createContext<MonthToolbarSlotContextValue | null>(null);
 
-export function MonthToolbarSlotProvider({ children }: { children: ReactNode }) {
+type MonthToolbarSlotProviderProps = {
+	children: ReactNode;
+	mobileColumns?: MonthToolbarMobileColumns;
+};
+
+export function MonthToolbarSlotProvider({
+	children,
+	mobileColumns = 4,
+}: MonthToolbarSlotProviderProps) {
 	const [create, setCreateSlot] = useState<HTMLDivElement | null>(null);
 	const [mobileActions, setMobileActionsSlot] =
 		useState<HTMLDivElement | null>(null);
@@ -44,6 +54,7 @@ export function MonthToolbarSlotProvider({ children }: { children: ReactNode }) 
 	const value = useMemo(
 		() => ({
 			slots: { create, mobileActions, filters, expand, end, legacy },
+			mobileColumns,
 			setCreateSlot,
 			setMobileActionsSlot,
 			setFiltersSlot,
@@ -51,7 +62,7 @@ export function MonthToolbarSlotProvider({ children }: { children: ReactNode }) 
 			setEndSlot,
 			setLegacySlot,
 		}),
-		[create, mobileActions, filters, expand, end, legacy],
+		[create, mobileActions, filters, expand, end, legacy, mobileColumns],
 	);
 
 	return (
@@ -63,6 +74,10 @@ export function MonthToolbarSlotProvider({ children }: { children: ReactNode }) 
 
 export function useMonthToolbarSlotContext() {
 	return useContext(MonthToolbarSlotContext);
+}
+
+export function useMonthToolbarMobileColumns(): MonthToolbarMobileColumns {
+	return useMonthToolbarSlotContext()?.mobileColumns ?? 4;
 }
 
 export function useMonthToolbarSlot(

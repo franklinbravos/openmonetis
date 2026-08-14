@@ -278,9 +278,23 @@ function TransactionMobileCard({
 											className="size-3.5 shrink-0"
 										/>
 									) : null}
-									<span className="truncate">
-										{item.categoriaName ?? "Sem categoria"}
-									</span>
+									{item.categoriaParentName && item.categoriaName ? (
+										<>
+											<span className="truncate">
+												{item.categoriaParentName}
+											</span>
+											<span aria-hidden className="shrink-0">
+												›
+											</span>
+											<span className="truncate font-medium text-foreground/85">
+												{item.categoriaName}
+											</span>
+										</>
+									) : (
+										<span className="truncate">
+											{item.categoriaName ?? "Sem categoria"}
+										</span>
+									)}
 								</span>
 							</div>
 						</div>

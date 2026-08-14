@@ -228,7 +228,10 @@ export default async function Page({ params, searchParams }: PageProps) {
 		fetchRecentEstablishments(userId),
 	]);
 
-	const mappedTransactions = mapTransactionsData(transactionRows);
+	const mappedTransactions = mapTransactionsData(
+		transactionRows,
+		filterSources?.categoryRows,
+	);
 	const transactionData = canEdit
 		? mappedTransactions
 		: mappedTransactions.map((item) => ({ ...item, readonly: true }));

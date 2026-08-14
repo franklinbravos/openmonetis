@@ -20,11 +20,14 @@ import {
 	getMonthToolbarExpandSlotId,
 	getMonthToolbarFiltersSlotId,
 	getMonthToolbarMobileActionsSlotId,
-	monthToolbarMobileActionsClassName,
+	getMonthToolbarMobileActionsClassName,
 	monthToolbarPanelClassName,
 } from "@/features/transactions/lib/month-toolbar";
 import LoadingSpinner from "@/shared/components/month-picker/loading-spinner";
-import { useMonthToolbarSlotRef } from "@/shared/components/month-picker/month-toolbar-slot-context";
+import {
+	useMonthToolbarMobileColumns,
+	useMonthToolbarSlotRef,
+} from "@/shared/components/month-picker/month-toolbar-slot-context";
 import type {
 	PeriodCarouselMonth,
 	PeriodCarouselStatus,
@@ -570,6 +573,7 @@ type StatementPeriodToolbarPanelProps = {
 function StatementPeriodToolbarPanel({
 	toolbarSlotId,
 }: StatementPeriodToolbarPanelProps) {
+	const mobileColumns = useMonthToolbarMobileColumns();
 	const createSlotRef = useMonthToolbarSlotRef("create");
 	const mobileActionsSlotRef = useMonthToolbarSlotRef("mobileActions");
 	const filtersSlotRef = useMonthToolbarSlotRef("filters");
@@ -588,7 +592,10 @@ function StatementPeriodToolbarPanel({
 			<div
 				ref={mobileActionsSlotRef}
 				id={getMonthToolbarMobileActionsSlotId(toolbarSlotId)}
-				className={cn(monthToolbarMobileActionsClassName, "empty:hidden")}
+				className={cn(
+					getMonthToolbarMobileActionsClassName(mobileColumns),
+					"empty:hidden",
+				)}
 			/>
 
 			<div

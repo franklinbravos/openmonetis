@@ -20,6 +20,7 @@ export type TransactionItem = {
 	cartaoLogo: string | null;
 	categoryId: string | null;
 	categoriaName: string | null;
+	categoriaParentName: string | null;
 	categoriaType: string | null;
 	categoriaIcon: string | null;
 	installmentCount: number | null;

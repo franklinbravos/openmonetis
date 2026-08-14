@@ -91,6 +91,26 @@ export function buildImportLandingHref(input: {
 	return query ? `/transactions/import?${query}` : "/transactions/import";
 }
 
+export function resolveTransactionsImportHref(input: {
+	source?: "transactions" | "account-statement";
+	period: string;
+	accountId?: string | null;
+	cardId?: string | null;
+}): string | undefined {
+	if (input.source === "account-statement" && input.accountId) {
+		return buildAccountImportHref(input.accountId, input.period);
+	}
+
+	if (input.cardId) {
+		return buildImportLandingHref({
+			cardId: input.cardId,
+			invoicePeriod: input.period,
+		});
+	}
+
+	return undefined;
+}
+
 export function buildAccountStatementHref(
 	accountId: string,
 	period: string,

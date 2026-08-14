@@ -126,7 +126,10 @@ export default async function Page({ params, searchParams }: PageProps) {
 		pagination,
 	);
 
-	const transactionData = mapTransactionsData(transactionsPage.rows);
+	const transactionData = mapTransactionsData(
+		transactionsPage.rows,
+		filterSources.categoryRows,
+	);
 
 	const { openingBalance, currentBalance, totalIncomes, totalExpenses } =
 		accountSummary;
@@ -211,7 +214,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 				sticky={false}
 			/>
 
-			<MonthToolbarSlotProvider>
+			<MonthToolbarSlotProvider mobileColumns={3}>
 				<Card className="gap-0 overflow-hidden py-0">
 					<StatementPeriodNavigation
 						embedded
