@@ -29,6 +29,7 @@ import {
 import {
 	buildCategoryTree,
 	flattenCategoryTree,
+	getCategoryAncestorPathLabel,
 	getCategoryPathLabel,
 } from "@/shared/lib/categories/tree";
 import {
@@ -588,8 +589,23 @@ type TransactionRowWithRelations = Partial<typeof transactions.$inferSelect> & {
 	transferToAccountLogo?: string | null;
 };
 
-export const mapTransactionsData = (rows: TransactionRowWithRelations[]) =>
-	rows.map((item) => ({
+export const mapTransactionsData = (
+	rows: TransactionRowWithRelations[],
+	categoryRows?: CategoryRow[],
+) => {
+	const categoriesById = categoryRows
+		? new Map(
+				categoryRows.map((category) => [
+					category.id,
+					{ name: category.name, parentId: category.parentId },
+				]),
+			)
+		: null;
+
+	return rows.map((item) => {
+		const categoryId = item.categoryId ?? null;
+
+		return {
 		id: item.id ?? "",
 		userId: item.userId ?? "",
 		name: item.name ?? "",
@@ -609,8 +625,12 @@ export const mapTransactionsData = (rows: TransactionRowWithRelations[]) =>
 		cardId: item.cardId ?? null,
 		cartaoName: item.card?.name ?? null,
 		cartaoLogo: item.card?.logo ?? null,
-		categoryId: item.categoryId ?? null,
+		categoryId,
 		categoriaName: item.category?.name ?? null,
+		categoriaParentName:
+			categoryId && categoriesById
+				? getCategoryAncestorPathLabel(categoryId, categoriesById)
+				: null,
 		categoriaType: item.category?.type ?? null,
 		categoriaIcon: item.category?.icon ?? null,
 		installmentCount: item.installmentCount ?? null,
@@ -640,7 +660,9 @@ export const mapTransactionsData = (rows: TransactionRowWithRelations[]) =>
 				item.transactionType === INITIAL_BALANCE_TRANSACTION_TYPE &&
 				item.condition === INITIAL_BALANCE_CONDITION &&
 				item.paymentMethod === INITIAL_BALANCE_PAYMENT_METHOD),
-	}));
+	};
+	});
+};
 
 const sortByLabel = <T extends { label: string }>(items: T[]) =>
 	items.sort((a, b) =>

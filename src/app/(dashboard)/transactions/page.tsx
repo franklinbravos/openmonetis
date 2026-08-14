@@ -80,7 +80,10 @@ export default async function Page({ searchParams }: PageProps) {
 			fetchRecentEstablishments(dataOwnerUserId),
 			fetchTransactionsMonthSummaries(userId),
 		]);
-	const transactionData = mapTransactionsData(transactionsPage.rows);
+	const transactionData = mapTransactionsData(
+		transactionsPage.rows,
+		filterSources.categoryRows,
+	);
 
 	const {
 		payerOptions,

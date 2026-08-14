@@ -85,7 +85,10 @@ export const fetchCalendarData = async ({
 		fetchTransactionFilterSources(userId),
 	]);
 
-	const transactionData = mapTransactionsData(transactionRows);
+	const transactionData = mapTransactionsData(
+		transactionRows,
+		filterSources.categoryRows,
+	);
 	const events: CalendarEvent[] = [];
 
 	// Totais por cartão para exibir no vencimento
