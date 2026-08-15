@@ -34,6 +34,7 @@ import {
 	PaymentMethodSelectContent,
 } from "../../select-items";
 import type { PaymentMethodSectionProps } from "./transaction-dialog-types";
+import { PaymentSchedulingSection } from "./payment-scheduling-section";
 
 function InlinePeriodPicker({
 	period,
@@ -357,6 +358,13 @@ export function PaymentMethodSection({
 						)}
 					</Button>
 				</div>
+			) : null}
+
+			{!isUpdateMode ? (
+				<PaymentSchedulingSection
+					formState={formState}
+					onFieldChange={onFieldChange}
+				/>
 			) : null}
 		</div>
 	);

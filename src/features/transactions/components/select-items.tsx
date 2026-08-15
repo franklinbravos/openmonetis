@@ -34,7 +34,12 @@ export function PayerSelectTriggerValue({
 	const initial = label.charAt(0).toUpperCase() || "?";
 
 	return (
-		<span className="flex min-w-0 items-center gap-2">
+		<span
+			className={cn(
+				"flex min-w-0 items-center gap-2",
+				!showLabel && "justify-center",
+			)}
+		>
 			<Avatar
 				className={cn(
 					"size-6 shrink-0 border border-border/60 bg-background",

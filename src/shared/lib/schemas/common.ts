@@ -12,6 +12,14 @@ export const uuidSchema = (entityName: string = "ID") =>
 		.string({ message: `${entityName} inválido.` })
 		.uuid(`${entityName} inválido.`);
 
+/** Converte string vazia em null — evita 22P02 em colunas uuid. */
+export function normalizeOptionalUuid(
+	value: string | null | undefined,
+): string | null {
+	if (value == null || value.trim() === "") return null;
+	return value;
+}
+
 /**
  * Required positive decimal schema — accepts number or numeric string.
  */

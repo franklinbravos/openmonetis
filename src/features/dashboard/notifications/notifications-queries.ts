@@ -226,11 +226,13 @@ export async function fetchDashboardNotifications(
 			.from(transactions)
 			.where(and(...boletosConditions)),
 		// Orçamentos do período atual
-		callRpc<BudgetSpentRpcRow>("get_budget_spent", {
-			p_user_id: dataOwnerUserId,
-			p_period: currentPeriod,
-			p_admin_payer_id: adminPayerId,
-		}),
+		adminPayerId
+			? callRpc<BudgetSpentRpcRow>("get_budget_spent", {
+					p_user_id: dataOwnerUserId,
+					p_period: currentPeriod,
+					p_admin_payer_id: adminPayerId,
+				})
+			: Promise.resolve([]),
 	]);
 
 	const overdueInvoices = overdueInvoiceRows.map(mapOverdueInvoiceRow);

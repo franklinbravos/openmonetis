@@ -63,14 +63,25 @@ function PayerTag({
 				</AvatarFallback>
 			</Avatar>
 			<span className="max-w-[9rem] truncate">{label}</span>
-			<button
-				type="button"
-				onClick={onRemove}
+			<span
+				role="button"
+				tabIndex={0}
+				onClick={(event) => {
+					event.stopPropagation();
+					onRemove();
+				}}
+				onKeyDown={(event) => {
+					if (event.key !== "Enter" && event.key !== " ") return;
+					event.preventDefault();
+					event.stopPropagation();
+					onRemove();
+				}}
+				onMouseDown={(event) => event.stopPropagation()}
 				className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 				aria-label={`Remover ${label}`}
 			>
 				<RiCloseLine className="size-3" aria-hidden />
-			</button>
+			</span>
 		</Badge>
 	);
 }
@@ -126,11 +137,7 @@ export function PayerTagsSelect({
 							<span className="px-1 text-sm">{placeholder}</span>
 						) : (
 							selectedOptions.map((option) => (
-								<span
-									key={option.value}
-									role="group"
-									onMouseDown={(event) => event.stopPropagation()}
-								>
+								<span key={option.value} role="presentation">
 									<PayerTag
 										label={option.label}
 										avatarUrl={option.avatarUrl}

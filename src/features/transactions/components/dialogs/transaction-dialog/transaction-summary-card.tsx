@@ -8,6 +8,7 @@ import {
 	RiPriceTag3Line,
 } from "@remixicon/react";
 import type { ReactNode } from "react";
+import { DEFAULT_OPEN_RECURRENCE_COUNT } from "@/features/transactions/lib/constants";
 import { formatCurrency } from "@/shared/utils/currency";
 import { safeToNumber } from "@/shared/utils/number";
 import { MONTH_NAMES, parsePeriod } from "@/shared/utils/period";
@@ -124,17 +125,24 @@ export function TransactionSummaryCard({
 	categoryOptions,
 }: TransactionSummaryCardProps) {
 	const totalCents = Math.abs(toCents(formState.amount));
-	const totalAmount = totalCents / 100;
 	const installmentCount = Math.max(
 		0,
 		Math.trunc(safeToNumber(formState.installmentCount)),
 	);
+	const isFixedInstallment =
+		formState.condition === "Parcelado" &&
+		formState.installmentAmountMode === "fixed" &&
+		installmentCount > 1;
+	const totalAmount = isFixedInstallment
+		? (totalCents * installmentCount) / 100
+		: totalCents / 100;
 	const startInstallment = Math.max(
 		1,
 		Math.trunc(safeToNumber(formState.startInstallment, 1)),
 	);
 	const isInstallment =
 		formState.condition === "Parcelado" && installmentCount > 1;
+	const isRecurring = formState.condition === "Recorrente";
 	const remainingInstallments = isInstallment
 		? Math.max(0, installmentCount - startInstallment + 1)
 		: 1;
@@ -152,8 +160,21 @@ export function TransactionSummaryCard({
 		formState.isSplit && Math.abs(shareTotalCents - totalCents) > 1;
 	const displayedShares = shares.slice(0, 3);
 	const remainingShares = Math.max(0, shares.length - displayedShares.length);
+	const recurrenceCount = Math.max(
+		1,
+		Math.trunc(
+			safeToNumber(formState.recurrenceCount, DEFAULT_OPEN_RECURRENCE_COUNT),
+		),
+	);
 	const operationCount =
-		Math.max(1, remainingInstallments) * Math.max(1, shares.length);
+		Math.max(
+			1,
+			isRecurring
+				? recurrenceCount
+				: isInstallment
+					? remainingInstallments
+					: 1,
+		) * Math.max(1, shares.length);
 	const statusLabel =
 		formState.paymentMethod === "Cartão de crédito"
 			? `na fatura de ${formatInvoicePeriod(formState.period)}`
@@ -212,17 +233,24 @@ export function TransactionSummaryCard({
 				) : null}
 				{isInstallment ? (
 					<SummaryChip icon={RiCalendarScheduleLine}>
-						{startInstallment > 1
-							? `${remainingInstallments} parcelas restantes de ${installmentCount}`
-							: `${installmentCount} parcelas`}
+						{isFixedInstallment
+							? `${installmentCount}x de ${formatCurrency(totalCents / 100)}`
+							: startInstallment > 1
+								? `${remainingInstallments} parcelas restantes de ${installmentCount}`
+								: `${installmentCount} parcelas`}
 					</SummaryChip>
+				) : null}
+				{isRecurring ? (
+					<SummaryChip icon={RiCalendarScheduleLine}>Recorrente</SummaryChip>
 				) : null}
 			</div>
 
 			<div className="mt-2 space-y-1">
 				{displayedShares.map((share) => {
 					const installmentLabel = isInstallment
-						? formatInstallmentPart(share.amountCents, installmentCount)
+						? isFixedInstallment
+							? `${installmentCount}x de ${formatCurrency(share.amountCents / 100)}`
+							: formatInstallmentPart(share.amountCents, installmentCount)
 						: null;
 
 					return (

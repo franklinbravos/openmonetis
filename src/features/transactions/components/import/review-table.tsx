@@ -2389,10 +2389,12 @@ function ReviewPayerSelect({
 					compactAvatarTrigger
 						? "size-9 shrink-0 justify-center p-0 [&>svg]:hidden"
 						: cn(
-								dense ? "h-7" : "h-8",
 								compact || !fullWidth
-									? "size-8 shrink-0 px-1.5 [&>svg]:hidden"
-									: "w-full",
+									? cn(
+											dense ? "size-7" : "size-8",
+											"shrink-0 justify-center p-0 [&>svg]:hidden",
+										)
+									: cn(dense ? "h-7" : "h-8", fullWidth && "w-full"),
 							),
 				)}
 				aria-label={payerOption?.label ?? "Pessoa"}

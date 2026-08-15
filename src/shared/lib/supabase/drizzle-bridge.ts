@@ -11,7 +11,7 @@ import { getSupabaseAdmin } from "@/shared/lib/supabase/admin";
 import type { Database } from "@/shared/lib/supabase/database.types";
 
 /** Incrementar ao alterar a API pública do bridge (invalida cache em db.ts). */
-export const DRIZZLE_BRIDGE_VERSION = 11;
+export const DRIZZLE_BRIDGE_VERSION = 12;
 
 type ColumnFilter = {
 	table?: string;
@@ -33,6 +33,25 @@ type Filter =
 	| { type: "unsupported" };
 
 const DRIZZLE_QUERY_KEY = "queryChunks";
+
+function toBridgeError(error: unknown): Error {
+	if (error instanceof Error) return error;
+	if (typeof error === "string") return new Error(error);
+	if (
+		error &&
+		typeof error === "object" &&
+		"message" in error &&
+		typeof (error as { message: unknown }).message === "string"
+	) {
+		const message = (error as { message: string }).message;
+		const code =
+			"code" in error && typeof (error as { code: unknown }).code === "string"
+				? (error as { code: string }).code
+				: null;
+		return new Error(code ? `[${code}] ${message}` : message);
+	}
+	return new Error("Falha na operação do banco.");
+}
 
 const TABLE_BY_JS_NAME: Record<string, Table> = {
 	user: schema.user,
@@ -1179,7 +1198,7 @@ async function runFind<T extends Table>(
 			table: tableName,
 			error: error.message,
 		});
-		throw error;
+		throw toBridgeError(error);
 	}
 
 	const mapRow = (row: Record<string, unknown>) => {
@@ -1369,7 +1388,7 @@ function createInsertBuilder(client: SupabaseClient<Database>, table: Table) {
 						table: tableName,
 						error: error.message,
 					});
-					throw error;
+					throw toBridgeError(error);
 				}
 				return mapInsertReturningRows(
 					table,
@@ -1387,7 +1406,7 @@ function createInsertBuilder(client: SupabaseClient<Database>, table: Table) {
 					table: tableName,
 					error: error.message,
 				});
-				throw error;
+				throw toBridgeError(error);
 			}
 			return mapInsertReturningRows(
 				table,
@@ -1492,7 +1511,7 @@ function createDeleteBuilder(client: SupabaseClient<Database>, table: Table) {
 						table: tableName,
 						error: error.message,
 					});
-					throw error;
+					throw toBridgeError(error);
 				}
 				if (!withReturning) return [];
 				return (data ?? []).map((row: Record<string, unknown>) =>
@@ -1562,7 +1581,7 @@ function createUpdateBuilder(client: SupabaseClient<Database>, table: Table) {
 								table: tableName,
 								error: error.message,
 							});
-							throw error;
+							throw toBridgeError(error);
 						}
 						if (!withReturning) return [];
 						return (data ?? []).map((row: Record<string, unknown>) =>
@@ -1736,7 +1755,7 @@ class SupabaseSelectBuilder {
 					table: tableName,
 					error: error.message,
 				});
-				throw error;
+				throw toBridgeError(error);
 			}
 			return [
 				Object.fromEntries(
@@ -1805,7 +1824,7 @@ class SupabaseSelectBuilder {
 				with: withParts,
 				error,
 			});
-			throw error;
+			throw toBridgeError(error);
 		}
 
 		const rows = (data ?? []).filter((row) => {
@@ -1870,7 +1889,7 @@ class SupabaseSelectBuilder {
 				table: tableName,
 				error: error.message,
 			});
-			throw error;
+			throw toBridgeError(error);
 		}
 
 		const rows = (data ?? []).filter((row) => {
@@ -2184,11 +2203,11 @@ function buildSupabaseDb(client?: SupabaseClient<Database>): SupabaseDb {
 		async execute(sql: SQL | string) {
 			if (typeof sql === "string") {
 				const { error } = await supabase.rpc("health_check" as never);
-				if (error) throw error;
+				if (error) throw toBridgeError(error);
 				return;
 			}
 			const { error } = await supabase.rpc("health_check" as never);
-			if (error) throw error;
+			if (error) throw toBridgeError(error);
 		},
 		transaction: async <T>(fn: (tx: SupabaseDb) => Promise<T>) => {
 			return fn(buildSupabaseDb(supabase));

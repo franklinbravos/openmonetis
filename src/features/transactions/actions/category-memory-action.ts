@@ -16,6 +16,7 @@ import { getUserId } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
 import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
+import { normalizeOptionalUuid } from "@/shared/lib/schemas/common";
 
 export type ImportDescriptionMemory = {
 	categoryId: string | null;
@@ -276,96 +277,107 @@ export async function saveCategoryMappings(
 		payerId?: string | null;
 	}[],
 ): Promise<void> {
-	const userId = await getUserId();
-	const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
+	try {
+		const userId = await getUserId();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
 
-	const toUpsert = rows
-		.filter((row) => row.categoryId !== null)
-		.flatMap((row) => {
-			const keys = new Set<string>();
-			const correctedKey = normalizeDescriptionKey(row.description);
-			const sourceKey = normalizeDescriptionKey(
-				row.sourceDescription ?? row.description,
-			);
+		const toUpsert = rows
+			.map((row) => ({
+				...row,
+				categoryId: normalizeOptionalUuid(row.categoryId),
+				payerId: normalizeOptionalUuid(row.payerId),
+			}))
+			.filter((row) => row.categoryId !== null)
+			.flatMap((row) => {
+				const keys = new Set<string>();
+				const correctedKey = normalizeDescriptionKey(row.description);
+				const sourceKey = normalizeDescriptionKey(
+					row.sourceDescription ?? row.description,
+				);
 
-			if (correctedKey.length > 0) keys.add(correctedKey);
-			if (sourceKey.length > 0) keys.add(sourceKey);
+				if (correctedKey.length > 0) keys.add(correctedKey);
+				if (sourceKey.length > 0) keys.add(sourceKey);
 
-			return [...keys].map((descriptionKey) => ({
-				userId: dataOwnerUserId,
-				descriptionKey,
-				categoryId: row.categoryId as string,
-				payerId: row.payerId ?? null,
-				updatedAt: new Date(),
-			}));
-		})
-		.filter((row) => row.descriptionKey.length > 0);
+				return [...keys].map((descriptionKey) => ({
+					userId: dataOwnerUserId,
+					descriptionKey,
+					categoryId: row.categoryId as string,
+					payerId: row.payerId,
+					updatedAt: new Date(),
+				}));
+			})
+			.filter((row) => row.descriptionKey.length > 0);
 
-	if (toUpsert.length === 0) return;
+		if (toUpsert.length === 0) return;
 
-	// Valida ownership de todas as referências antes de gravar — IDs de
-	// categorias/pessoas de outro usuário jamais devem entrar na memória.
-	const referencedCategoryIds = new Set(toUpsert.map((row) => row.categoryId));
-	const referencedPayerIds = new Set(
-		toUpsert
-			.map((row) => row.payerId)
-			.filter((id): id is string => Boolean(id)),
-	);
+		// Valida ownership de todas as referências antes de gravar — IDs de
+		// categorias/pessoas de outro usuário jamais devem entrar na memória.
+		const referencedCategoryIds = new Set(
+			toUpsert.map((row) => row.categoryId),
+		);
+		const referencedPayerIds = new Set(
+			toUpsert
+				.map((row) => row.payerId)
+				.filter((id): id is string => Boolean(id)),
+		);
 
-	const [ownedCategories, ownedPayers] = await Promise.all([
-		referencedCategoryIds.size > 0
-			? db
-					.select({ id: categories.id })
-					.from(categories)
-					.where(
-						and(
-							inArray(categories.id, [...referencedCategoryIds]),
-							eq(categories.userId, dataOwnerUserId),
-						),
-					)
-			: Promise.resolve([]),
-		referencedPayerIds.size > 0
-			? db
-					.select({ id: payers.id })
-					.from(payers)
-					.where(
-						and(
-							inArray(payers.id, [...referencedPayerIds]),
-							eq(payers.userId, dataOwnerUserId),
-						),
-					)
-			: Promise.resolve([]),
-	]);
+		const [ownedCategories, ownedPayers] = await Promise.all([
+			referencedCategoryIds.size > 0
+				? db
+						.select({ id: categories.id })
+						.from(categories)
+						.where(
+							and(
+								inArray(categories.id, [...referencedCategoryIds]),
+								eq(categories.userId, dataOwnerUserId),
+							),
+						)
+				: Promise.resolve([]),
+			referencedPayerIds.size > 0
+				? db
+						.select({ id: payers.id })
+						.from(payers)
+						.where(
+							and(
+								inArray(payers.id, [...referencedPayerIds]),
+								eq(payers.userId, dataOwnerUserId),
+							),
+						)
+				: Promise.resolve([]),
+		]);
 
-	const ownedCategoryIds = new Set(ownedCategories.map((row) => row.id));
-	const ownedPayerIds = new Set(ownedPayers.map((row) => row.id));
+		const ownedCategoryIds = new Set(ownedCategories.map((row) => row.id));
+		const ownedPayerIds = new Set(ownedPayers.map((row) => row.id));
 
-	const validRows = toUpsert.filter(
-		(row) =>
-			ownedCategoryIds.has(row.categoryId) &&
-			(row.payerId === null || ownedPayerIds.has(row.payerId)),
-	);
+		const validRows = toUpsert.filter(
+			(row) =>
+				ownedCategoryIds.has(row.categoryId) &&
+				(row.payerId === null || ownedPayerIds.has(row.payerId)),
+		);
 
-	if (validRows.length === 0) return;
+		if (validRows.length === 0) return;
 
-	// Mesma descrição pode aparecer mais de uma vez no lote; o Postgres
-	// não aceita duas linhas com a mesma PK no mesmo INSERT ... ON CONFLICT.
-	const dedupedByKey = new Map(
-		validRows.map((row) => [row.descriptionKey, row] as const),
-	);
+		// Mesma descrição pode aparecer mais de uma vez no lote; o Postgres
+		// não aceita duas linhas com a mesma PK no mesmo INSERT ... ON CONFLICT.
+		const dedupedByKey = new Map(
+			validRows.map((row) => [row.descriptionKey, row] as const),
+		);
 
-	await db
-		.insert(importCategoryMappings)
-		.values([...dedupedByKey.values()])
-		.onConflictDoUpdate({
-			target: [
-				importCategoryMappings.userId,
-				importCategoryMappings.descriptionKey,
-			],
-			set: {
-				categoryId: sql`excluded.category_id`,
-				payerId: sql`excluded.pagador_id`,
-				updatedAt: sql`excluded.updated_at`,
-			},
-		});
+		await db
+			.insert(importCategoryMappings)
+			.values([...dedupedByKey.values()])
+			.onConflictDoUpdate({
+				target: [
+					importCategoryMappings.userId,
+					importCategoryMappings.descriptionKey,
+				],
+				set: {
+					categoryId: sql`excluded.category_id`,
+					payerId: sql`excluded.pagador_id`,
+					updatedAt: sql`excluded.updated_at`,
+				},
+			});
+	} catch (error) {
+		console.error("[saveCategoryMappings]", error);
+	}
 }

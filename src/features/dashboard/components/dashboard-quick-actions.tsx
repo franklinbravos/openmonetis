@@ -6,6 +6,7 @@ import {
 	RiArrowRightUpLine,
 	type RemixiconComponentType,
 } from "@remixicon/react";
+import type { ComponentProps } from "react";
 import { TransferDialog } from "@/features/accounts/components/transfer-dialog";
 import type { AccountData } from "@/features/accounts/queries";
 import type { DashboardAccount } from "@/features/dashboard/lib/accounts-queries";
@@ -83,9 +84,10 @@ function QuickActionLabel({
 
 function QuickActionTrigger({
 	kind,
+	...props
 }: {
 	kind: QuickActionKind;
-}) {
+} & Omit<ComponentProps<typeof Button>, "children" | "variant">) {
 	const ui = QUICK_ACTION_UI[kind];
 	const Icon = ui.Icon;
 
@@ -94,6 +96,7 @@ function QuickActionTrigger({
 			type="button"
 			variant="ghost"
 			className={cn(quickActionButtonClassName, ui.surfaceClassName)}
+			{...props}
 		>
 			<span
 				className={cn(

@@ -25,6 +25,7 @@ import {
 	getPresignedUploadUrlAction,
 } from "@/features/transactions/actions/attachments";
 import { groupAndSortCategories } from "@/features/transactions/lib/category-helpers";
+import { DEFAULT_OPEN_RECURRENCE_COUNT } from "@/features/transactions/lib/constants";
 import {
 	applyFieldDependencies,
 	buildTransactionInitialState,
@@ -57,7 +58,6 @@ import type { SelectOption } from "../../types";
 import { BasicFieldsSection } from "./basic-fields-section";
 import { BoletoFieldsSection } from "./boleto-fields-section";
 import { CategorySection } from "./category-section";
-import { ConditionSection } from "./condition-section";
 import { NoteSection } from "./note-section";
 import { PayerSection } from "./payer-section";
 import { PaymentMethodSection } from "./payment-method-section";
@@ -210,7 +210,7 @@ export function TransactionDialog({
 			setPendingFiles([]);
 			setPendingDetachIds([]);
 			setPendingUploadFiles([]);
-			setExtrasOpen(initial.condition !== "À vista");
+			setExtrasOpen(Boolean(initial.note?.trim()));
 			setExtraAccountOptions([]);
 			setExtraCardOptions([]);
 			setExtraCategoryOptions([]);
@@ -448,9 +448,30 @@ export function TransactionDialog({
 		}
 
 		const sanitizedAmount = Math.abs(amountValue);
+		if (
+			formState.condition === "Parcelado" &&
+			(!formState.installmentCount ||
+				Number(formState.installmentCount) < 2)
+		) {
+			const message = "Selecione a quantidade de parcelas.";
+			setErrorMessage(message);
+			toast.error(message);
+			return;
+		}
+
+		const installmentCount =
+			formState.condition === "Parcelado" && formState.installmentCount
+				? Number(formState.installmentCount)
+				: 0;
+		const normalizedAmount =
+			formState.condition === "Parcelado" &&
+			formState.installmentAmountMode === "fixed" &&
+			installmentCount > 0
+				? sanitizedAmount * installmentCount
+				: sanitizedAmount;
 		const submitState = normalizeSplitStateForSubmit(
 			formState,
-			sanitizedAmount,
+			normalizedAmount,
 		);
 		const normalizedSplitShares = submitState.isSplit
 			? [
@@ -492,7 +513,7 @@ export function TransactionDialog({
 			name: formState.name.trim(),
 			transactionType:
 				formState.transactionType as CreateTransactionInput["transactionType"],
-			amount: sanitizedAmount,
+			amount: normalizedAmount,
 			condition: formState.condition as CreateTransactionInput["condition"],
 			paymentMethod:
 				formState.paymentMethod as CreateTransactionInput["paymentMethod"],
@@ -524,8 +545,9 @@ export function TransactionDialog({
 					? Number(formState.startInstallment)
 					: undefined,
 			recurrenceCount:
-				formState.condition === "Recorrente" && formState.recurrenceCount
-					? Number(formState.recurrenceCount)
+				formState.condition === "Recorrente"
+					? Number(formState.recurrenceCount) ||
+						DEFAULT_OPEN_RECURRENCE_COUNT
 					: undefined,
 			dueDate:
 				formState.paymentMethod === "Boleto" && formState.dueDate
@@ -730,8 +752,6 @@ export function TransactionDialog({
 			: "Atualize as informações do lançamento selecionado.";
 	const submitLabel = mode === "create" ? "Salvar" : "Atualizar";
 
-	const showInstallments = formState.condition === "Parcelado";
-	const showRecurrence = formState.condition === "Recorrente";
 	const showDueDate = formState.paymentMethod === "Boleto";
 	const showPaymentDate = mode === "update" && showDueDate;
 	const showSettledToggle = formState.paymentMethod !== "Cartão de crédito";
@@ -867,15 +887,9 @@ export function TransactionDialog({
 										className="text-primary size-4 transition-transform duration-200"
 										aria-hidden
 									/>
-									Condições, anotações e anexos
+									Anotações e anexos
 								</CollapsibleTrigger>
 								<CollapsibleContent className="min-w-0 overflow-hidden space-y-3 pt-3">
-									<ConditionSection
-										formState={formState}
-										onFieldChange={handleFieldChange}
-										showInstallments={showInstallments}
-										showRecurrence={showRecurrence}
-									/>
 									<NoteSection
 										formState={formState}
 										onFieldChange={handleFieldChange}

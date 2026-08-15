@@ -5,6 +5,7 @@ import {
 	PAYMENT_METHODS,
 	TRANSACTION_CONDITIONS,
 	TRANSACTION_TYPES,
+	type InstallmentAmountMode,
 } from "./constants";
 
 /**
@@ -83,6 +84,7 @@ export type TransactionFormState = {
 	installmentCount: string;
 	startInstallment: string;
 	recurrenceCount: string;
+	installmentAmountMode: InstallmentAmountMode;
 	dueDate: string;
 	boletoPaymentDate: string;
 	note: string;
@@ -206,6 +208,7 @@ export function buildTransactionInitialState(
 		recurrenceCount: transaction?.recurrenceCount
 			? String(transaction.recurrenceCount)
 			: "",
+		installmentAmountMode: "total",
 		dueDate: transaction?.dueDate ?? "",
 		boletoPaymentDate,
 		note: transaction?.note ?? "",
@@ -265,6 +268,7 @@ export function applyFieldDependencies(
 		if (value !== "Parcelado") {
 			updates.installmentCount = "";
 			updates.startInstallment = "1";
+			updates.installmentAmountMode = "total";
 		}
 		if (value !== "Recorrente") {
 			updates.recurrenceCount = "";

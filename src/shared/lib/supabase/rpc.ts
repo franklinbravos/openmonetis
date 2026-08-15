@@ -3,18 +3,28 @@ import { safeToNumber } from "@/shared/utils/number";
 
 export type RpcParams = Record<string, unknown>;
 
-function assertRpcParams(functionName: string, params?: RpcParams): RpcParams | undefined {
+function assertRpcParams(
+	functionName: string,
+	params?: RpcParams,
+): RpcParams | undefined {
 	if (!params) return params;
 
-	for (const [key, value] of Object.entries(params)) {
+	const normalized: RpcParams = { ...params };
+
+	for (const [key, value] of Object.entries(normalized)) {
 		if (value === undefined) {
 			throw new Error(
 				`Parâmetro RPC "${key}" indefinido em ${functionName}. Verifique o contexto financeiro (dataOwnerUserId).`,
 			);
 		}
+
+		// Evita 22P02 em casts ::uuid quando o cliente envia string vazia.
+		if (value === "" && key.endsWith("_id")) {
+			normalized[key] = null;
+		}
 	}
 
-	return params;
+	return normalized;
 }
 
 export async function callRpc<TRow extends Record<string, unknown>>(

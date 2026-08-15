@@ -1,6 +1,5 @@
 "use client";
 
-import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
 import { RiSliceFill } from "@remixicon/react";
 import { useState } from "react";
 import {
@@ -14,6 +13,11 @@ import {
 } from "@/shared/components/ui/avatar";
 import { Button } from "@/shared/components/ui/button";
 import { Label } from "@/shared/components/ui/label";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@/shared/components/ui/tooltip";
 import { getAvatarSrc } from "@/shared/lib/payers/utils";
 import { cn } from "@/shared/utils/ui";
 import { PayerTagsSelect } from "./payer-tags-select";
@@ -96,74 +100,54 @@ export function PayerSection({
 		}
 	};
 
-	const handleSplitCardClick = () => {
-		if (formState.isSplit) {
-			setSplitConfigOpen(true);
-			return;
-		}
-
-		handleSplitToggle(true);
-	};
-
 	return (
-		<div className="space-y-3">
-			<div className="space-y-1">
-				<Label htmlFor="payer">Pessoa</Label>
-				<PayerTagsSelect
-					id="payer"
-					options={payerOptions}
-					selectedIds={selectedPayerIds}
-					onChange={applySelection}
-					placeholder="Adicionar pessoa"
-				/>
-			</div>
+		<div className="space-y-2">
+			<Label htmlFor="payer">Pessoa</Label>
 
-			<div
-				className={cn(
-					"rounded-lg border px-3 py-2.5 transition-colors",
-					formState.isSplit
-						? "border-primary/20 bg-primary/5"
-						: "border-border bg-transparent",
-				)}
-			>
-				<div className="flex items-start justify-between gap-3">
-					<button
-						type="button"
-						className="min-w-0 flex-1 space-y-0.5 text-left"
-						onClick={handleSplitCardClick}
-					>
-						<p className="text-sm text-foreground">Dividir lançamento</p>
-						<SplitSummaryContent summary={splitSummary} />
-					</button>
-					<CheckboxPrimitive.Root
-						checked={formState.isSplit}
-						onCheckedChange={(checked) => handleSplitToggle(Boolean(checked))}
-						aria-label="Dividir lançamento"
-						className={cn(
-							"peer mt-0.5 size-4 shrink-0 rounded-lg border shadow-xs transition-shadow outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
-							formState.isSplit
-								? "border-primary bg-primary text-primary-foreground"
-								: "border-input dark:bg-input/30",
-						)}
-					>
-						<CheckboxPrimitive.Indicator className="grid place-content-center text-current transition-none">
-							<RiSliceFill className="size-3" />
-						</CheckboxPrimitive.Indicator>
-					</CheckboxPrimitive.Root>
+			<div className="flex items-center gap-2">
+				<div className="min-w-0 flex-1">
+					<PayerTagsSelect
+						id="payer"
+						options={payerOptions}
+						selectedIds={selectedPayerIds}
+						onChange={applySelection}
+						placeholder="Adicionar pessoa"
+					/>
 				</div>
 
-				{formState.isSplit ? (
-					<Button
-						type="button"
-						variant="outline"
-						size="sm"
-						className="mt-3 w-full"
-						onClick={() => setSplitConfigOpen(true)}
-					>
-						Editar divisão
-					</Button>
-				) : null}
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<Button
+							type="button"
+							variant="outline"
+							size="icon"
+							aria-pressed={formState.isSplit}
+							aria-label="Dividir lançamento"
+							className={cn(
+								"size-9 shrink-0",
+								formState.isSplit &&
+									"border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
+							)}
+							onClick={() => handleSplitToggle(!formState.isSplit)}
+						>
+							<RiSliceFill className="size-4" aria-hidden />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent side="top">
+						Dividir lançamento entre pessoas
+					</TooltipContent>
+				</Tooltip>
 			</div>
+
+			{formState.isSplit ? (
+				<button
+					type="button"
+					className="w-full rounded-md border border-primary/15 bg-primary/5 px-2.5 py-2 text-left transition-colors hover:bg-primary/8"
+					onClick={() => setSplitConfigOpen(true)}
+				>
+					<SplitSummaryContent summary={splitSummary} />
+				</button>
+			) : null}
 
 			<SplitConfigDialog
 				open={splitConfigOpen}

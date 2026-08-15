@@ -10,6 +10,11 @@ export const TRANSACTION_CONDITIONS = [
 	"Recorrente",
 ] as const;
 
+/** Meses gerados ao marcar recorrência sem prazo explícito na UI. */
+export const DEFAULT_OPEN_RECURRENCE_COUNT = 12;
+
+export type InstallmentAmountMode = "total" | "fixed";
+
 export const PAYMENT_METHODS = [
 	"Cartão de crédito",
 	"Cartão de débito",
