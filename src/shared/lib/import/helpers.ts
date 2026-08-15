@@ -73,9 +73,16 @@ export function parsePortugueseShortDate(
 	monthAbbr: string,
 	year: number,
 ): string | null {
-	const month = PT_MONTHS_ABBR[monthAbbr.toLowerCase()];
+	const month = getPortugueseMonthNumberFromAbbr(monthAbbr);
 	if (!month) return null;
 	return `${year}-${String(month).padStart(2, "0")}-${day.padStart(2, "0")}`;
+}
+
+export function getPortugueseMonthNumberFromAbbr(
+	monthAbbr: string,
+): number | null {
+	const month = PT_MONTHS_ABBR[monthAbbr.replace(/\./g, "").toLowerCase()];
+	return month ?? null;
 }
 
 export function parsePortugueseAbbrevDotDate(

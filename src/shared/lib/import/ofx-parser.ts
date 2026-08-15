@@ -1,4 +1,5 @@
 import { derivePeriodFromDate } from "@/shared/utils/period";
+import { deriveNubankInvoicePeriodFromDueDate } from "./nubank-invoice-period";
 import type {
 	ImportedTransaction,
 	ImportStatement,
@@ -79,7 +80,7 @@ function buildNubankCardInvoiceMetadata(
 	);
 
 	return {
-		period: derivePeriodFromDate(dueDate),
+		period: deriveNubankInvoicePeriodFromDueDate(dueDate),
 		dueDate,
 		isPaid: Boolean(paymentTxn),
 		paymentDate: paymentTxn?.date ?? null,

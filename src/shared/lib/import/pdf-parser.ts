@@ -1,6 +1,7 @@
 import { derivePeriodFromDate } from "@/shared/utils/period";
 import {
 	buildPeriodFromTransactions,
+	getPortugueseMonthNumberFromAbbr,
 	makeSyntheticExternalId,
 	parseBrazilianAmount,
 	parsePortugueseAbbrevDotDate,
@@ -8,6 +9,7 @@ import {
 	parsePortugueseShortDate,
 	parseSlashDateDMY,
 } from "./helpers";
+import { resolveNubankInvoicePeriod } from "./nubank-invoice-period";
 import { openPdfDocumentWithPassword } from "./pdf-password";
 import type {
 	ImportedTransaction,
@@ -445,18 +447,118 @@ function parseInterCardInvoiceMetadata(
 	});
 }
 
+/** Fatura Nubank: usa o ano do cabeçalho FATURA (antes do ciclo de compras). */
+function parseNubankFaturaHeader(text: string): { invoiceYear: number } | null {
+	const cycleIdx = findNubankBillingCycleIndex(text);
+	const faturaRe = /FATURA\s+(\d{2})\s+([A-Z]{3})\s+(\d{4})/gi;
+	const allMatches = [...text.matchAll(faturaRe)];
+	const headerMatches =
+		cycleIdx >= 0
+			? allMatches.filter(
+					(match) =>
+						match.index !== undefined && match.index < cycleIdx,
+				)
+			: allMatches;
+
+	const match = headerMatches.at(-1) ?? allMatches.at(0);
+	if (!match) return null;
+
+	const year = Number.parseInt(match[3], 10);
+	if (Number.isNaN(year)) return null;
+
+	return { invoiceYear: year };
+}
+
+function findNubankBillingCycleIndex(text: string): number {
+	const markers = [
+		text.search(/Per[ií]odo vigente/i),
+		text.search(/TRANSAÇÕES/i),
+	].filter((index) => index >= 0);
+
+	if (markers.length === 0) return -1;
+	return Math.min(...markers);
+}
+
+const NUBANK_BILLING_WINDOW_RE =
+	/(?:Per[ií]odo vigente:\s*|TRANSAÇÕES\s+DE\s+)(\d{2}\s+[A-Z]{3})\s+a\s+(\d{2}\s+[A-Z]{3})/i;
+
+function parseNubankDueDate(text: string): string | null {
+	const patterns = [
+		/Data de vencimento:\s*(\d{2})\s+([A-Z]{3})\s+(\d{4})/i,
+		/Vencimento\s+(\d{2})\s+([A-Z]{3})\s+(\d{4})/i,
+	];
+
+	for (const pattern of patterns) {
+		const match = text.match(pattern);
+		if (!match) continue;
+
+		const parsed = parsePortugueseShortDate(
+			match[1],
+			match[2],
+			Number.parseInt(match[3], 10),
+		);
+		if (parsed) return parsed;
+	}
+
+	return null;
+}
+
+function parseNubankBillingWindow(
+	text: string,
+	invoiceYear: number,
+): {
+	from: string;
+	to: string;
+	fromYear: number;
+	toYear: number;
+	fromMonth: number;
+	toMonth: number;
+} | null {
+	const periodMatch = text.match(NUBANK_BILLING_WINDOW_RE);
+	if (!periodMatch) return null;
+
+	const [fromDay, fromMonthAbbr] = periodMatch[1].split(/\s+/);
+	const [toDay, toMonthAbbr] = periodMatch[2].split(/\s+/);
+	const fromMonth = getPortugueseMonthNumberFromAbbr(fromMonthAbbr);
+	const toMonth = getPortugueseMonthNumberFromAbbr(toMonthAbbr);
+	if (!fromMonth || !toMonth) return null;
+
+	let fromYear = invoiceYear;
+	const toYear = invoiceYear;
+	if (fromMonth > toMonth) {
+		fromYear = invoiceYear - 1;
+	}
+
+	const from = parsePortugueseShortDate(fromDay, fromMonthAbbr, fromYear);
+	const to = parsePortugueseShortDate(toDay, toMonthAbbr, toYear);
+	if (!from || !to) return null;
+
+	return { from, to, fromYear, toYear, fromMonth, toMonth };
+}
+
+function resolveNubankTransactionYear(
+	monthAbbr: string,
+	billingWindow: ReturnType<typeof parseNubankBillingWindow>,
+	fallbackYear: number,
+): number {
+	if (!billingWindow) return fallbackYear;
+
+	const month = getPortugueseMonthNumberFromAbbr(monthAbbr);
+	if (!month) return fallbackYear;
+	if (month === billingWindow.fromMonth) return billingWindow.fromYear;
+	if (month === billingWindow.toMonth) return billingWindow.toYear;
+
+	return month > billingWindow.toMonth
+		? billingWindow.fromYear
+		: billingWindow.toYear;
+}
+
 function parseNubankInvoiceMetadata(
 	text: string,
 	transactions: ImportedTransaction[],
+	billingWindow: ReturnType<typeof parseNubankBillingWindow>,
 ): InvoiceImportMetadata | null {
-	const dueMatch = text.match(/Vencimento\s+(\d{2})\s+([A-Z]{3})\s+(\d{4})/i);
-	const dueDate = dueMatch
-		? parsePortugueseShortDate(
-				dueMatch[1],
-				dueMatch[2],
-				Number.parseInt(dueMatch[3], 10),
-			)
-		: null;
+	const dueDate = parseNubankDueDate(text);
 
 	const totalMatch = text.match(/Total a pagar\s+R\$\s*([\d.]+,\d{2})/i);
 	const parsedTotal = totalMatch ? parseBrazilianAmount(totalMatch[1]) : null;
@@ -485,12 +587,21 @@ function parseNubankInvoiceMetadata(
 		/Total a pagar\s+R\$\s*0,00/i.test(text) ||
 		/Pagamento recebido/i.test(text);
 
-	return buildInvoiceMetadataFromDueDate(dueDate, {
+	const period = resolveNubankInvoicePeriod({
+		billingWindowEndDate: billingWindow?.to ?? null,
+		dueDate,
+	});
+
+	if (!dueDate && !period) return null;
+
+	return {
+		period,
+		dueDate,
 		isPaid,
 		paymentDate,
 		totalAmount:
 			parsedTotal ?? (transactionTotal > 0 ? transactionTotal : null),
-	});
+	};
 }
 
 function parseInterCardPdf(text: string): ImportStatement {
@@ -553,34 +664,54 @@ function parseInterCardPdf(text: string): ImportStatement {
 	};
 }
 
+function isNubankCardInvoicePdf(text: string): boolean {
+	return (
+		/Nu Pagamentos|Nubank/i.test(text) &&
+		(/TRANSAÇÕES/i.test(text) || /Per[ií]odo vigente/i.test(text))
+	);
+}
+
+function findNubankTransactionsSectionStart(text: string): number {
+	const transactionsDeIdx = text.search(/TRANSAÇÕES\s+DE/i);
+	if (transactionsDeIdx >= 0) return transactionsDeIdx;
+
+	const vigenteMatch = text.match(/Per[ií]odo vigente:[^\n]*/i);
+	if (vigenteMatch?.index !== undefined) {
+		const lineEnd = text.indexOf("\n", vigenteMatch.index);
+		return lineEnd >= 0 ? lineEnd + 1 : vigenteMatch.index;
+	}
+
+	return text.search(/TRANSAÇÕES/i);
+}
+
 function parseNubankPdf(text: string): ImportStatement {
-	if (!/Nu Pagamentos|Nubank/i.test(text) || !/TRANSAÇÕES/i.test(text)) {
+	if (!isNubankCardInvoicePdf(text)) {
 		throw new Error("Fatura Nubank não reconhecida.");
 	}
 
-	const yearMatch = text.match(/FATURA\s+\d{2}\s+[A-Z]{3}\s+(\d{4})/i);
-	const invoiceYear = yearMatch
-		? Number.parseInt(yearMatch[1], 10)
-		: new Date().getFullYear();
+	const dueDate = parseNubankDueDate(text);
+	const faturaHeader = parseNubankFaturaHeader(text);
+	const invoiceYear =
+		faturaHeader?.invoiceYear ??
+		(dueDate ? Number.parseInt(dueDate.slice(0, 4), 10) : new Date().getFullYear());
+	const billingWindow = parseNubankBillingWindow(text, invoiceYear);
+	const period = billingWindow
+		? { from: billingWindow.from, to: billingWindow.to }
+		: null;
 
-	const periodMatch = text.match(
-		/TRANSAÇÕES\s+DE\s+(\d{2}\s+[A-Z]{3})\s+A\s+(\d{2}\s+[A-Z]{3})/i,
-	);
-	let period: { from: string; to: string } | null = null;
-	if (periodMatch) {
-		const [fromDay, fromMonth] = periodMatch[1].split(/\s+/);
-		const [toDay, toMonth] = periodMatch[2].split(/\s+/);
-		const from = parsePortugueseShortDate(fromDay, fromMonth, invoiceYear);
-		const to = parsePortugueseShortDate(toDay, toMonth, invoiceYear);
-		if (from && to) period = { from, to };
-	}
-
-	const transactionsStart = text.search(/TRANSAÇÕES\s+DE/i);
+	const transactionsStart = findNubankTransactionsSectionStart(text);
 	const paymentsStart = text.search(/Pagamentos e Financiamentos/i);
-	const transactionsSection =
+	let transactionsSection =
 		paymentsStart > transactionsStart
 			? text.slice(transactionsStart, paymentsStart)
 			: text.slice(transactionsStart);
+
+	transactionsSection = transactionsSection
+		.replace(
+			/^TRANSAÇÕES\s+DE\s+\d{2}\s+[A-Z]{3}\s+A\s+\d{2}\s+[A-Z]{3}\s*\n/i,
+			"",
+		)
+		.replace(/^Per[ií]odo vigente:\s*[^\n]*\n/i, "");
 
 	const txnRe =
 		/(\d{2}\s+[A-Z]{3})\s+(?:••••\s+\d{4}\s+)?(.+?)\s+R\$\s*([\d.]+,\d{2})/g;
@@ -589,7 +720,12 @@ function parseNubankPdf(text: string): ImportStatement {
 
 	for (const match of transactionsSection.matchAll(txnRe)) {
 		const [day, monthAbbr] = match[1].split(/\s+/);
-		const date = parsePortugueseShortDate(day, monthAbbr, invoiceYear);
+		const transactionYear = resolveNubankTransactionYear(
+			monthAbbr,
+			billingWindow,
+			invoiceYear,
+		);
+		const date = parsePortugueseShortDate(day, monthAbbr, transactionYear);
 		if (!date) continue;
 
 		const description = match[2].trim();
@@ -623,7 +759,7 @@ function parseNubankPdf(text: string): ImportStatement {
 		period: period ?? buildPeriodFromTransactions(transactions),
 		isCreditCard: true,
 		transactions,
-		invoice: parseNubankInvoiceMetadata(text, transactions),
+		invoice: parseNubankInvoiceMetadata(text, transactions, billingWindow),
 	};
 }
 
@@ -641,7 +777,7 @@ export function parsePdfText(text: string): ImportStatement {
 		return parseItauCardPdf(text);
 	}
 
-	if (/Nu Pagamentos|Nubank/i.test(text) && /TRANSAÇÕES/i.test(text)) {
+	if (isNubankCardInvoicePdf(text)) {
 		return parseNubankPdf(text);
 	}
 

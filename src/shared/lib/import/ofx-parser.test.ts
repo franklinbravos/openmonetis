@@ -180,7 +180,7 @@ describe("parseOfx", () => {
 		expect(result.isCreditCard).toBe(true);
 		expect(result.period).toEqual({ from: "2026-06-05", to: "2026-07-05" });
 		expect(result.invoice).toEqual({
-			period: "2026-07",
+			period: "2026-06",
 			dueDate: "2026-07-12",
 			isPaid: true,
 			paymentDate: "2026-06-10",
@@ -247,7 +247,7 @@ describe("parseOfx", () => {
 
 		expect(result.source).toBe("Nubank");
 		expect(result.isCreditCard).toBe(true);
-		expect(result.invoice?.period).toBe("2026-07");
+		expect(result.invoice?.period).toBe("2026-06");
 		expect(result.invoice?.dueDate).toBe("2026-07-12");
 		expect(result.invoice?.totalAmount).toBe(2109.5);
 		expect(result.transactions.length).toBe(26);
