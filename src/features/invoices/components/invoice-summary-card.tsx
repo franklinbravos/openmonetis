@@ -60,6 +60,7 @@ import { cn } from "@/shared/utils/ui";
 import { AdjustInvoiceDialog } from "./adjust-invoice-dialog";
 import { EditPaymentDateDialog } from "./edit-payment-date-dialog";
 import { InvoiceImportHistoryButton } from "./invoice-import-history-button";
+import { InvoiceViewSourceButton } from "./invoice-view-source-button";
 
 type PaymentAccountOption = {
 	value: string;
@@ -81,6 +82,7 @@ type InvoiceSummaryCardProps = {
 	defaultPaymentAccountId: string | null;
 	paymentAccountOptions: PaymentAccountOption[];
 	hasImportHistory?: boolean;
+	hasImportAttachment?: boolean;
 };
 
 const actionLabelByStatus: Record<InvoicePaymentStatus, string> = {
@@ -126,6 +128,7 @@ export function InvoiceSummaryCard({
 	defaultPaymentAccountId,
 	paymentAccountOptions,
 	hasImportHistory = false,
+	hasImportAttachment = false,
 }: InvoiceSummaryCardProps) {
 	const router = useRouter();
 	const [isPending, startTransition] = useTransition();
@@ -211,6 +214,10 @@ export function InvoiceSummaryCard({
 			toast.error(result.error);
 		});
 	};
+
+	const showViewInvoice = isPaid && hasImportAttachment;
+	const actionColumnCount =
+		2 + Number(hasImportHistory) + Number(showViewInvoice);
 
 	return (
 		<Card className="gap-0 py-0 space-y-2">
@@ -326,11 +333,22 @@ export function InvoiceSummaryCard({
 					<div
 						className={cn(
 							"grid w-full gap-1.5 rounded-md border border-dashed bg-muted/30 p-2",
-							hasImportHistory ? "grid-cols-3" : "grid-cols-2",
+							actionColumnCount === 4
+								? "grid-cols-2 sm:grid-cols-4"
+								: actionColumnCount === 3
+									? "grid-cols-3"
+									: "grid-cols-2",
 						)}
 					>
 						{hasImportHistory ? (
 							<InvoiceImportHistoryButton
+								cardId={cardId}
+								invoicePeriod={period}
+								className="w-full min-w-0"
+							/>
+						) : null}
+						{showViewInvoice ? (
+							<InvoiceViewSourceButton
 								cardId={cardId}
 								invoicePeriod={period}
 								className="w-full min-w-0"

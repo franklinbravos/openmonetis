@@ -18,6 +18,7 @@ import { excludeTransactionsFromExcludedAccounts } from "@/features/dashboard/li
 import type { PaymentConditionsData } from "@/features/dashboard/payments/payment-conditions-queries";
 import type { PaymentMethodsData } from "@/features/dashboard/payments/payment-methods-queries";
 import type { PaymentStatusData } from "@/features/dashboard/payments/payment-status-queries";
+import { ensureOpenRecurrenceInstancesForPeriod } from "@/features/transactions/lib/open-recurrence";
 import {
 	ACCOUNT_AUTO_INVOICE_NOTE_PREFIX,
 	INITIAL_BALANCE_NOTE,
@@ -561,6 +562,8 @@ export async function fetchDashboardCurrentPeriodOverview(
 	if (!adminPayerId) {
 		return emptyOverview();
 	}
+
+	await ensureOpenRecurrenceInstancesForPeriod(dataOwnerUserId, period);
 
 	const rows = (await db
 		.select({

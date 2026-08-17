@@ -361,12 +361,16 @@ export function TransactionDetailsDialog({
 									/>
 								)}
 
-								{details.recurrenceCount && (
+								{details.condition === "Recorrente" ? (
 									<DetailRow
-										label="Quantidade de Recorrências"
-										value={`${details.recurrenceCount} meses`}
+										label="Recorrência"
+										value={
+											details.recurrenceCount
+												? `${details.recurrenceCount} meses`
+												: "Sem prazo definido"
+										}
 									/>
-								)}
+								) : null}
 							</ul>
 						</section>
 

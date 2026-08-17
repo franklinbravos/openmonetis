@@ -401,14 +401,8 @@ const refineLancamento = (
 		});
 	}
 
-	if (data.condition === "Recorrente") {
-		if (!data.recurrenceCount) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				path: ["recurrenceCount"],
-				message: "Informe por quantos meses a recorrência acontecerá.",
-			});
-		} else if (data.recurrenceCount < 2) {
+	if (data.condition === "Recorrente" && data.recurrenceCount) {
+		if (data.recurrenceCount < 2) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
 				path: ["recurrenceCount"],
@@ -785,9 +779,10 @@ export const buildTransactionRecords = ({
 	}
 
 	if (data.condition === "Recorrente") {
-		const recurrenceTotal = data.recurrenceCount ?? 0;
+		const recurrenceTotal = data.recurrenceCount ?? null;
+		const iterationCount = recurrenceTotal ?? 1;
 
-		for (let index = 0; index < recurrenceTotal; index += 1) {
+		for (let index = 0; index < iterationCount; index += 1) {
 			const recurrencePeriod = addMonthsToPeriod(period, index);
 			const recurrencePurchaseDate = addMonthsToDate(purchaseDate, index);
 			const recurrenceDueDate = dueDate

@@ -25,7 +25,6 @@ import {
 	getPresignedUploadUrlAction,
 } from "@/features/transactions/actions/attachments";
 import { groupAndSortCategories } from "@/features/transactions/lib/category-helpers";
-import { DEFAULT_OPEN_RECURRENCE_COUNT } from "@/features/transactions/lib/constants";
 import {
 	applyFieldDependencies,
 	buildTransactionInitialState,
@@ -545,9 +544,8 @@ export function TransactionDialog({
 					? Number(formState.startInstallment)
 					: undefined,
 			recurrenceCount:
-				formState.condition === "Recorrente"
-					? Number(formState.recurrenceCount) ||
-						DEFAULT_OPEN_RECURRENCE_COUNT
+				formState.condition === "Recorrente" && formState.recurrenceCount
+					? Number(formState.recurrenceCount)
 					: undefined,
 			dueDate:
 				formState.paymentMethod === "Boleto" && formState.dueDate

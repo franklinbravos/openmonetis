@@ -1,5 +1,9 @@
 import type { TransactionItem } from "@/features/transactions/components/types";
-import { getTodayDateString } from "@/shared/utils/date";
+import {
+	compareDateOnly,
+	getBusinessDateString,
+	getTodayDateString,
+} from "@/shared/utils/date";
 import { derivePeriodFromDate, getNextPeriod } from "@/shared/utils/period";
 import {
 	PAYMENT_METHODS,
@@ -59,6 +63,40 @@ export function deriveCreditCardPeriod(
 	}
 
 	return period;
+}
+
+function getPaymentReferenceDate(
+	paymentMethod: string,
+	purchaseDate: string,
+	dueDate: string,
+): string {
+	if (paymentMethod === "Boleto" && dueDate) {
+		return dueDate;
+	}
+
+	return purchaseDate;
+}
+
+/** Pago por padrão só quando a data de referência é hoje ou passado. */
+export function getDefaultIsSettled(
+	paymentMethod: string,
+	purchaseDate: string,
+	dueDate = "",
+): boolean {
+	if (paymentMethod === "Cartão de crédito") {
+		return false;
+	}
+
+	const referenceDate = getPaymentReferenceDate(
+		paymentMethod,
+		purchaseDate,
+		dueDate,
+	);
+	if (!referenceDate) {
+		return true;
+	}
+
+	return compareDateOnly(referenceDate, getBusinessDateString()) <= 0;
 }
 
 /**
@@ -215,7 +253,14 @@ export function buildTransactionInitialState(
 		isSettled:
 			paymentMethod === "Cartão de crédito"
 				? null
-				: (transaction?.isSettled ?? true),
+				: transaction?.isSettled !== null &&
+						transaction?.isSettled !== undefined
+					? transaction.isSettled
+					: getDefaultIsSettled(
+							paymentMethod,
+							purchaseDate,
+							transaction?.dueDate ?? "",
+						),
 	};
 }
 
@@ -243,12 +288,25 @@ export function applyFieldDependencies(
 		} else if (method !== "Boleto") {
 			updates.period = derivePeriodFromDate(value);
 		}
+
+		if (method !== "Cartão de crédito") {
+			updates.isSettled = getDefaultIsSettled(
+				method,
+				value,
+				currentState.dueDate,
+			);
+		}
 	}
 
 	// Auto-derive period from dueDate when payment method is boleto
 	if (key === "dueDate" && typeof value === "string" && value) {
 		if (currentState.paymentMethod === "Boleto") {
 			updates.period = derivePeriodFromDate(value);
+			updates.isSettled = getDefaultIsSettled(
+				"Boleto",
+				currentState.purchaseDate,
+				value,
+			);
 		}
 	}
 
@@ -294,7 +352,11 @@ export function applyFieldDependencies(
 			updates.isSettled = null;
 		} else {
 			updates.cardId = undefined;
-			updates.isSettled = currentState.isSettled ?? true;
+			updates.isSettled = getDefaultIsSettled(
+				value,
+				currentState.purchaseDate,
+				currentState.dueDate,
+			);
 		}
 
 		// Re-derive period based on new payment method

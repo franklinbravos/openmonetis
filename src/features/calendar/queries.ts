@@ -5,6 +5,7 @@ import {
 	buildSluggedFilters,
 	mapTransactionsData,
 } from "@/features/transactions/lib/page-helpers";
+import { ensureOpenRecurrenceInstancesForPeriod } from "@/features/transactions/lib/open-recurrence";
 import {
 	fetchRecentEstablishments,
 	fetchTransactionFilterSources,
@@ -47,6 +48,8 @@ export const fetchCalendarData = async ({
 	const rangeStartKey = formatDateKey(rangeStart);
 	const rangeEndKey = formatDateKey(rangeEnd);
 	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+
+	await ensureOpenRecurrenceInstancesForPeriod(dataOwnerUserId, period);
 
 	const [transactionRows, cardRows, filterSources] = await Promise.all([
 		db.query.transactions.findMany({

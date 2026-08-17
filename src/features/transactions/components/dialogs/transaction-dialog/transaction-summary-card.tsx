@@ -8,7 +8,6 @@ import {
 	RiPriceTag3Line,
 } from "@remixicon/react";
 import type { ReactNode } from "react";
-import { DEFAULT_OPEN_RECURRENCE_COUNT } from "@/features/transactions/lib/constants";
 import { formatCurrency } from "@/shared/utils/currency";
 import { safeToNumber } from "@/shared/utils/number";
 import { MONTH_NAMES, parsePeriod } from "@/shared/utils/period";
@@ -160,21 +159,9 @@ export function TransactionSummaryCard({
 		formState.isSplit && Math.abs(shareTotalCents - totalCents) > 1;
 	const displayedShares = shares.slice(0, 3);
 	const remainingShares = Math.max(0, shares.length - displayedShares.length);
-	const recurrenceCount = Math.max(
-		1,
-		Math.trunc(
-			safeToNumber(formState.recurrenceCount, DEFAULT_OPEN_RECURRENCE_COUNT),
-		),
-	);
 	const operationCount =
-		Math.max(
-			1,
-			isRecurring
-				? recurrenceCount
-				: isInstallment
-					? remainingInstallments
-					: 1,
-		) * Math.max(1, shares.length);
+		Math.max(1, isInstallment ? remainingInstallments : 1) *
+		Math.max(1, shares.length);
 	const statusLabel =
 		formState.paymentMethod === "Cartão de crédito"
 			? `na fatura de ${formatInvoicePeriod(formState.period)}`
@@ -198,12 +185,16 @@ export function TransactionSummaryCard({
 				<span
 					className={cn(
 						"shrink-0 rounded-full px-2 py-0.5 font-medium",
-						formState.transactionType === "Receita"
-							? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-							: "bg-orange-500/10 text-orange-700 dark:text-orange-300",
+						isRecurring
+							? "bg-primary/10 text-primary"
+							: formState.transactionType === "Receita"
+								? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+								: "bg-orange-500/10 text-orange-700 dark:text-orange-300",
 					)}
 				>
-					{operationCount} lançamento{operationCount > 1 ? "s" : ""}
+					{isRecurring
+						? "Recorrente"
+						: `${operationCount} lançamento${operationCount > 1 ? "s" : ""}`}
 				</span>
 			</div>
 
@@ -239,9 +230,6 @@ export function TransactionSummaryCard({
 								? `${remainingInstallments} parcelas restantes de ${installmentCount}`
 								: `${installmentCount} parcelas`}
 					</SummaryChip>
-				) : null}
-				{isRecurring ? (
-					<SummaryChip icon={RiCalendarScheduleLine}>Recorrente</SummaryChip>
 				) : null}
 			</div>
 

@@ -246,6 +246,9 @@ export default async function Page({ params, searchParams }: PageProps) {
 						logo: option.logo ?? null,
 					}))}
 					hasImportHistory={importHistory.length > 0}
+					hasImportAttachment={importHistory.some(
+						(entry) => entry.hasAttachment,
+					)}
 				/>
 			</section>
 

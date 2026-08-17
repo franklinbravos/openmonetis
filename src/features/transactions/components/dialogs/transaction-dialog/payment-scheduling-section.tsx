@@ -8,7 +8,6 @@ import {
 	RiStackLine,
 } from "@remixicon/react";
 import {
-	DEFAULT_OPEN_RECURRENCE_COUNT,
 	type InstallmentAmountMode,
 } from "@/features/transactions/lib/constants";
 import { Button } from "@/shared/components/ui/button";
@@ -173,10 +172,7 @@ export function PaymentSchedulingSection({
 
 		if (mode === "recorrente") {
 			onFieldChange("condition", "Recorrente");
-			onFieldChange(
-				"recurrenceCount",
-				String(DEFAULT_OPEN_RECURRENCE_COUNT),
-			);
+			onFieldChange("recurrenceCount", "");
 			return;
 		}
 

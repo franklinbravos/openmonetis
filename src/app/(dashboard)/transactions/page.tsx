@@ -16,6 +16,7 @@ import {
 	type ResolvedSearchParams,
 	resolveTransactionPagination,
 } from "@/features/transactions/lib/page-helpers";
+import { ensureOpenRecurrenceInstancesForPeriod } from "@/features/transactions/lib/open-recurrence";
 import {
 	fetchRecentEstablishments,
 	fetchTransactionFilterSources,
@@ -76,7 +77,10 @@ export default async function Page({ searchParams }: PageProps) {
 
 	const [transactionsPage, estabelecimentos, monthSummaries] =
 		await Promise.all([
-			fetchTransactionsPage(filters, pagination),
+			ensureOpenRecurrenceInstancesForPeriod(
+				dataOwnerUserId,
+				selectedPeriod,
+			).then(() => fetchTransactionsPage(filters, pagination)),
 			fetchRecentEstablishments(dataOwnerUserId),
 			fetchTransactionsMonthSummaries(userId),
 		]);
