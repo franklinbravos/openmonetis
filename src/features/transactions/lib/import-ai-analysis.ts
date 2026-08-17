@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ReviewRow } from "@/features/transactions/components/import/review-table";
+import { isInvoiceExtraReviewRow } from "@/features/transactions/lib/import-invoice-extra-rows";
 import {
 	buildImportDuplicateValidation,
 	type ImportDuplicateSnapshot,
@@ -81,7 +82,7 @@ export type ImportAiAnalysisRowInput = {
 	amount: number;
 	date: string;
 	transactionType: "income" | "expense";
-	kind: ReviewRow["kind"];
+	kind: Exclude<ReviewRow["kind"], "invoice_extra">;
 	installment: {
 		name: string;
 		currentInstallment: number;
@@ -808,7 +809,7 @@ export function buildImportAiAnalysisPayload(input: {
 }) {
 	const selectedRows = input.rows
 		.map((row, rowIndex) => ({ row, rowIndex }))
-		.filter(({ row }) => row.selected);
+		.filter(({ row }) => row.selected && !isInvoiceExtraReviewRow(row));
 
 	return {
 		modelId: input.modelId?.trim() || undefined,
@@ -851,6 +852,6 @@ export function buildImportAiAnalysisPayload(input: {
 			selected: row.selected,
 			linked: row.linked,
 			reimported: row.reimported,
-		})),
+		})) as ImportAiAnalysisRowInput[],
 	};
 }

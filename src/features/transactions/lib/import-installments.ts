@@ -101,12 +101,15 @@ export function isValidRecurrenceImport(
 
 export function countImportRecords(
 	rows: Array<{
-		kind?: "transaction" | "invoice_payment" | "transfer";
+		kind?: "transaction" | "invoice_payment" | "transfer" | "invoice_extra";
 		installmentImport?: ReviewInstallmentImport | null;
 		recurrenceImport?: ReviewRecurrenceImport | null;
 	}>,
 ) {
 	return rows.reduce((total, row) => {
+		if (row.kind === "invoice_extra") {
+			return total;
+		}
 		if (row.kind === "transfer") {
 			return total + 2;
 		}

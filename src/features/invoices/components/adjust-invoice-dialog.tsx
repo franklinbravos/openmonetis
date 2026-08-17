@@ -23,6 +23,7 @@ type AdjustInvoiceDialogProps = {
 	cardId: string;
 	period: string;
 	currentTotal: number;
+	suggestedTargetAmount?: number | null;
 };
 
 export function AdjustInvoiceDialog({
@@ -30,18 +31,23 @@ export function AdjustInvoiceDialog({
 	cardId,
 	period,
 	currentTotal,
+	suggestedTargetAmount = null,
 }: AdjustInvoiceDialogProps) {
 	const router = useRouter();
 	const [open, setOpen] = useState(false);
 	const [isPending, startTransition] = useTransition();
 	const currentAbs = Math.abs(currentTotal);
-	const [amount, setAmount] = useState<string>(currentAbs.toFixed(2));
+	const initialAmount =
+		suggestedTargetAmount != null && suggestedTargetAmount > 0
+			? suggestedTargetAmount
+			: currentAbs;
+	const [amount, setAmount] = useState<string>(initialAmount.toFixed(2));
 
 	useEffect(() => {
 		if (open) {
-			setAmount(currentAbs.toFixed(2));
+			setAmount(initialAmount.toFixed(2));
 		}
-	}, [open, currentAbs]);
+	}, [open, initialAmount]);
 
 	const targetAmount = Number(amount);
 	const diff = Number.isFinite(targetAmount)

@@ -5,6 +5,7 @@ import {
 	isImportRowResolved,
 	isVerifiedImportDuplicate,
 } from "@/features/transactions/lib/import-duplicate-match";
+import { isInvoiceExtraReviewRow } from "@/features/transactions/lib/import-invoice-extra-rows";
 import {
 	isValidInstallmentImport,
 	isValidRecurrenceImport,
@@ -27,7 +28,8 @@ export type ImportReviewStatusFilter =
 	| "duplicate_mismatch"
 	| "link_suggestion"
 	| "linked"
-	| "ai_suggested";
+	| "ai_suggested"
+	| "invoice_extra";
 
 export interface ImportReviewFilterableRow {
 	selected: boolean;
@@ -36,7 +38,7 @@ export interface ImportReviewFilterableRow {
 	date: string;
 	amount: number;
 	transactionType: "expense" | "income";
-	kind: "transaction" | "invoice_payment" | "transfer";
+	kind: "transaction" | "invoice_payment" | "transfer" | "invoice_extra";
 	categoryId: string | null;
 	payerId: string | null;
 	isDuplicate: boolean;
@@ -71,12 +73,19 @@ export const IMPORT_REVIEW_STATUS_FILTER_OPTIONS: Array<{
 	{ value: "link_suggestion", label: "Vínculo sugerido" },
 	{ value: "linked", label: "Vinculados" },
 	{ value: "ai_suggested", label: "Sugestão da IA" },
+	{ value: "invoice_extra", label: "A mais no cadastro" },
 ];
 
 export function isImportReviewRowImportable(
 	row: ImportReviewFilterableRow,
-): boolean {
-	return !isImportRowResolved(row) && !isImportLinkSuggestion(row);
+): row is ImportReviewFilterableRow & {
+	kind: "transaction" | "invoice_payment" | "transfer";
+} {
+	return (
+		!isInvoiceExtraReviewRow(row) &&
+		!isImportRowResolved(row) &&
+		!isImportLinkSuggestion(row)
+	);
 }
 
 export function isImportReviewRowClassified(
@@ -217,6 +226,8 @@ export function matchesImportReviewStatusFilter(
 			return isImportRowLinked(row);
 		case "ai_suggested":
 			return Boolean(row.aiSuggestion);
+		case "invoice_extra":
+			return isInvoiceExtraReviewRow(row);
 		default:
 			return true;
 	}
@@ -269,6 +280,7 @@ export function countImportReviewRowsByStatus<
 		link_suggestion: rows.filter(isImportLinkSuggestion).length,
 		linked: rows.filter(isImportRowLinked).length,
 		ai_suggested: rows.filter((row) => Boolean(row.aiSuggestion)).length,
+		invoice_extra: rows.filter(isInvoiceExtraReviewRow).length,
 	};
 }
 

@@ -15,6 +15,7 @@ import type {
 	ImportedTransaction,
 	ImportStatement,
 	InvoiceImportMetadata,
+	InvoiceSourceTotalKind,
 } from "./types";
 
 async function openPdfDocument(
@@ -305,8 +306,7 @@ function parseItauCardInvoiceMetadata(
 	return buildInvoiceMetadataFromDueDate(dueDate, {
 		isPaid,
 		paymentDate,
-		totalAmount:
-			parsedTotal ?? (transactionTotal > 0 ? transactionTotal : null),
+		...resolvePdfTotalMetadata(parsedTotal, transactionTotal),
 	});
 }
 
@@ -385,6 +385,7 @@ function buildInvoiceMetadataFromDueDate(
 		isPaid?: boolean;
 		paymentDate?: string | null;
 		totalAmount?: number | null;
+		totalAmountSource?: InvoiceSourceTotalKind | null;
 	},
 ): InvoiceImportMetadata | null {
 	if (!dueDate) return null;
@@ -395,6 +396,31 @@ function buildInvoiceMetadataFromDueDate(
 		isPaid: options.isPaid ?? false,
 		paymentDate: options.paymentDate ?? null,
 		totalAmount: options.totalAmount ?? null,
+		totalAmountSource: options.totalAmountSource ?? null,
+	};
+}
+
+function resolvePdfTotalMetadata(
+	parsedTotal: number | null,
+	transactionTotal: number,
+): Pick<InvoiceImportMetadata, "totalAmount" | "totalAmountSource"> {
+	if (parsedTotal != null) {
+		return {
+			totalAmount: parsedTotal,
+			totalAmountSource: "pdf_header",
+		};
+	}
+
+	if (transactionTotal > 0) {
+		return {
+			totalAmount: transactionTotal,
+			totalAmountSource: "pdf_lines_fallback",
+		};
+	}
+
+	return {
+		totalAmount: null,
+		totalAmountSource: null,
 	};
 }
 
@@ -442,8 +468,7 @@ function parseInterCardInvoiceMetadata(
 	return buildInvoiceMetadataFromDueDate(dueDate, {
 		isPaid,
 		paymentDate,
-		totalAmount:
-			parsedTotal ?? (transactionTotal > 0 ? transactionTotal : null),
+		...resolvePdfTotalMetadata(parsedTotal, transactionTotal),
 	});
 }
 
@@ -594,13 +619,15 @@ function parseNubankInvoiceMetadata(
 
 	if (!dueDate && !period) return null;
 
+	const totalMetadata = resolvePdfTotalMetadata(parsedTotal, transactionTotal);
+
 	return {
 		period,
 		dueDate,
 		isPaid,
 		paymentDate,
-		totalAmount:
-			parsedTotal ?? (transactionTotal > 0 ? transactionTotal : null),
+		totalAmount: totalMetadata.totalAmount,
+		totalAmountSource: totalMetadata.totalAmountSource,
 	};
 }
 

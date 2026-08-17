@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/shared/components/ui/button";
+import { Checkbox } from "@/shared/components/ui/checkbox";
 import {
 	Dialog,
 	DialogContent,
@@ -9,6 +10,8 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/shared/components/ui/dialog";
+import { Label } from "@/shared/components/ui/label";
+import { formatCurrency } from "@/shared/utils/currency";
 import { cn } from "@/shared/utils/ui";
 
 type ImportConfirmDialogProps = {
@@ -18,9 +21,14 @@ type ImportConfirmDialogProps = {
 	verifiedCount: number;
 	replacedCount: number;
 	excludedCount: number;
+	removalCount?: number;
 	installmentBackfillCount: number;
 	isPaidInvoiceImport?: boolean;
 	isPending: boolean;
+	invoiceTotalDelta?: number | null;
+	invoiceTotalOverrideConfirmed?: boolean;
+	onInvoiceTotalOverrideChange?: (confirmed: boolean) => void;
+	canConfirm?: boolean;
 	onConfirm: () => void;
 };
 
@@ -31,12 +39,19 @@ export function ImportConfirmDialog({
 	verifiedCount,
 	replacedCount,
 	excludedCount,
+	removalCount = 0,
 	installmentBackfillCount,
 	isPaidInvoiceImport = false,
 	isPending,
+	invoiceTotalDelta = null,
+	invoiceTotalOverrideConfirmed = false,
+	onInvoiceTotalOverrideChange,
+	canConfirm = true,
 	onConfirm,
 }: ImportConfirmDialogProps) {
 	const editedCount = replacedCount + installmentBackfillCount;
+	const hasInvoiceTotalMismatch =
+		invoiceTotalDelta != null && Math.abs(invoiceTotalDelta) > 0.01;
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -78,8 +93,16 @@ export function ImportConfirmDialog({
 					) : null}
 					{excludedCount > 0 ? (
 						<SummaryRow
-							label="Excluídos"
+							label="Excluídos do arquivo"
 							value={excludedCount}
+							tone="destructive"
+							prefix="-"
+						/>
+					) : null}
+					{removalCount > 0 ? (
+						<SummaryRow
+							label="Serão removidos do cadastro"
+							value={removalCount}
 							tone="destructive"
 							prefix="-"
 						/>
@@ -100,6 +123,31 @@ export function ImportConfirmDialog({
 					) : null}
 				</div>
 
+				{hasInvoiceTotalMismatch && onInvoiceTotalOverrideChange ? (
+					<div className="rounded-md border border-destructive/30 bg-destructive/5 p-3">
+						<p className="text-destructive text-sm">
+							O total projetado difere em{" "}
+							{formatCurrency(Math.abs(invoiceTotalDelta))} do total do arquivo.
+						</p>
+						<div className="mt-3 flex items-start gap-2">
+							<Checkbox
+								id="invoice-total-override"
+								checked={invoiceTotalOverrideConfirmed}
+								onCheckedChange={(checked) =>
+									onInvoiceTotalOverrideChange(checked === true)
+								}
+							/>
+							<Label
+								htmlFor="invoice-total-override"
+								className="text-sm leading-snug font-normal"
+							>
+								Importar mesmo com diferença de{" "}
+								{formatCurrency(Math.abs(invoiceTotalDelta))}
+							</Label>
+						</div>
+					</div>
+				) : null}
+
 				<DialogFooter className="gap-2 sm:gap-0">
 					<Button
 						type="button"
@@ -109,7 +157,11 @@ export function ImportConfirmDialog({
 					>
 						Cancelar
 					</Button>
-					<Button type="button" onClick={onConfirm} disabled={isPending}>
+					<Button
+						type="button"
+						onClick={onConfirm}
+						disabled={isPending || !canConfirm}
+					>
 						{isPending
 							? isPaidInvoiceImport
 								? "Processando…"

@@ -93,6 +93,21 @@ normalize_migration_db_url() {
 	echo "$url"
 }
 
+reload_postgrest_schema() {
+	local db_url="$1"
+
+	if ! command -v psql >/dev/null 2>&1; then
+		warn "psql não encontrado — não foi possível recarregar o schema do PostgREST."
+		return
+	fi
+
+	if psql "$db_url" -v ON_ERROR_STOP=0 -c "NOTIFY pgrst, 'reload schema';" >/dev/null 2>&1; then
+		log "PostgREST: reload do schema solicitado."
+	else
+		warn "Não foi possível enviar NOTIFY pgrst (reload do schema)."
+	fi
+}
+
 resolve_migration_db_url() {
 	local url=""
 
@@ -125,6 +140,11 @@ run_migrations() {
 		migration_count="$(find "$PROJECT_DIR/supabase/migrations" -maxdepth 1 -name '*.sql' 2>/dev/null | wc -l | tr -d ' ')"
 		if (cd "$PROJECT_DIR" && pnpm exec supabase db push --db-url "$db_url" --yes); then
 			log "Migrations Supabase OK (${migration_count} arquivos em supabase/migrations/)."
+			reload_postgrest_schema "$db_url"
+		else
+			warn "supabase db push falhou — migrations NÃO foram aplicadas."
+			warn "Verifique SUPABASE_DB_URL (Postgres, porta 5432) e rode:"
+			warn "  pnpm exec supabase db push --db-url \"\$SUPABASE_DB_URL\" --yes"
 		fi
 		return
 	fi
@@ -133,6 +153,10 @@ run_migrations() {
 	if (cd "$PROJECT_DIR" && pnpm exec supabase db push --yes); then
 		migration_count="$(find "$PROJECT_DIR/supabase/migrations" -maxdepth 1 -name '*.sql' 2>/dev/null | wc -l | tr -d ' ')"
 		log "Migrations Supabase OK (${migration_count} arquivos em supabase/migrations/)."
+		db_url="$(resolve_migration_db_url)"
+		if [[ -n "$db_url" ]]; then
+			reload_postgrest_schema "$db_url"
+		fi
 		return
 	fi
 

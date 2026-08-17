@@ -2,6 +2,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseOfx } from "./ofx-parser";
+import { resolveInvoiceSourceTotal } from "./invoice-source-total";
+import {
+	displayInvoiceTotal,
+	sumSignedAmountsForImportedTransactions,
+} from "./invoice-total";
 
 const ofxBankStatement = `OFXHEADER:100
 DATA:OFXSGML
@@ -180,11 +185,12 @@ describe("parseOfx", () => {
 		expect(result.isCreditCard).toBe(true);
 		expect(result.period).toEqual({ from: "2026-06-05", to: "2026-07-05" });
 		expect(result.invoice).toEqual({
-			period: "2026-06",
+			period: "2026-07",
 			dueDate: "2026-07-12",
 			isPaid: true,
 			paymentDate: "2026-06-10",
 			totalAmount: 2109.5,
+			totalAmountSource: "ofx_ledger",
 		});
 		expect(result.transactions).toHaveLength(4);
 		expect(
@@ -247,7 +253,7 @@ describe("parseOfx", () => {
 
 		expect(result.source).toBe("Nubank");
 		expect(result.isCreditCard).toBe(true);
-		expect(result.invoice?.period).toBe("2026-06");
+		expect(result.invoice?.period).toBe("2026-07");
 		expect(result.invoice?.dueDate).toBe("2026-07-12");
 		expect(result.invoice?.totalAmount).toBe(2109.5);
 		expect(result.transactions.length).toBe(26);
@@ -261,5 +267,19 @@ describe("parseOfx", () => {
 				/^pagamento recebido$/i.test(transaction.description),
 			),
 		).toBe(true);
+	});
+
+	it("usa LEDGERBAL como total da fatura, distinto da soma das linhas", () => {
+		const result = parseOfx(ofxNubankCreditCard, {
+			fileName: "Nubank_2026-07-12.ofx",
+		});
+		const sourceTotal = resolveInvoiceSourceTotal(result);
+		const linesTotal = displayInvoiceTotal(
+			sumSignedAmountsForImportedTransactions(result.transactions),
+		);
+
+		expect(sourceTotal?.source).toBe("ofx_ledger");
+		expect(sourceTotal?.amount).toBe(2109.5);
+		expect(linesTotal).not.toBe(sourceTotal?.amount);
 	});
 });

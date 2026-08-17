@@ -5,6 +5,7 @@ import type {
 	ReviewInstallmentImport,
 	ReviewRecurrenceImport,
 } from "@/features/transactions/lib/import-installments";
+import { buildInvoiceExtraReviewRowKey } from "@/features/transactions/lib/import-invoice-extra-rows";
 import { normalizeDescriptionKey } from "@/features/transactions/lib/import-utils";
 
 const importDuplicateMismatchDraftSchema = z.object({
@@ -44,7 +45,8 @@ const importBatchDraftRowSchema = z.object({
 	selected: z.boolean(),
 	categoryId: z.string().uuid().nullable(),
 	payerId: z.string().uuid().nullable(),
-	kind: z.enum(["transaction", "invoice_payment", "transfer"]),
+	kind: z.enum(["transaction", "invoice_payment", "transfer", "invoice_extra"]),
+	existingTransactionId: z.string().uuid().nullable().optional(),
 	invoicePaymentCardId: z.string().uuid().nullable(),
 	invoicePaymentPeriod: z
 		.string()
@@ -112,11 +114,15 @@ export function buildImportBatchDraft(input: {
 		paymentAccountId: input.paymentAccountId,
 		paymentDate: input.paymentDate,
 		rows: input.rows.map((row) => ({
-			key: buildImportReviewRowKey(row),
+			key:
+				row.kind === "invoice_extra" && row.existingTransactionId
+					? buildInvoiceExtraReviewRowKey(row.existingTransactionId)
+					: buildImportReviewRowKey(row),
 			selected: row.selected,
 			categoryId: row.categoryId,
 			payerId: row.payerId,
 			kind: row.kind,
+			existingTransactionId: row.existingTransactionId ?? null,
 			invoicePaymentCardId: row.invoicePaymentCardId,
 			invoicePaymentPeriod: row.invoicePaymentPeriod,
 			transferPeerAccountId: row.transferPeerAccountId,
@@ -153,6 +159,11 @@ export function applyImportBatchDraftToRows(
 
 	return rows.map((row) => {
 		const draft =
+			draftByKey.get(
+				row.kind === "invoice_extra" && row.existingTransactionId
+					? buildInvoiceExtraReviewRowKey(row.existingTransactionId)
+					: buildImportReviewRowKey(row),
+			) ??
 			draftByKey.get(buildImportReviewRowKey(row)) ??
 			(row.description !== row.sourceDescription
 				? draftByKey.get(

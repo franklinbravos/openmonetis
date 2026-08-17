@@ -1,0 +1,222 @@
+import { describe, expect, it } from "vitest";
+import {
+	computeImportReconciliation,
+	isInvoiceTotalReconciled,
+	sumSignedAmountsForReviewRows,
+} from "./invoice-total";
+import type { InvoiceReconciliationReviewRow } from "./invoice-total";
+
+const baseRow = (
+	overrides: Partial<InvoiceReconciliationReviewRow>,
+): InvoiceReconciliationReviewRow => ({
+	externalId: "fit-1",
+	amount: 100,
+	transactionType: "expense",
+	kind: "transaction",
+	selected: true,
+	isDuplicate: false,
+	description: "Compra",
+	date: "2026-01-10",
+	...overrides,
+});
+
+describe("sumSignedAmountsForReviewRows", () => {
+	it("ignora pagamentos de fatura e transferências", () => {
+		const total = sumSignedAmountsForReviewRows(
+			[
+				baseRow({ amount: 100, kind: "transaction" }),
+				baseRow({
+					kind: "invoice_payment",
+					description: "Pagamento recebido",
+					transactionType: "income",
+				}),
+				baseRow({ kind: "transfer", amount: 200 }),
+			],
+			{ importableOnly: true },
+		);
+
+		expect(total).toBe(-100);
+	});
+
+	it("não soma duplicatas não marcadas para reimportação", () => {
+		const total = sumSignedAmountsForReviewRows(
+			[
+				baseRow({ amount: 100, isDuplicate: true, selected: false }),
+				baseRow({ amount: 50, isDuplicate: true, reimported: true }),
+			],
+			{ importableOnly: true },
+		);
+
+		expect(total).toBe(-50);
+	});
+});
+
+describe("computeImportReconciliation", () => {
+	it("calcula delta entre total projetado e total do arquivo", () => {
+		const result = computeImportReconciliation({
+			sourceTotal: 7301.6,
+			reviewRows: [baseRow({ amount: 100, externalId: "new-1" })],
+			existingRows: [
+				{
+					id: "existing-1",
+					ofxFitId: "old-fit",
+					name: "Manual",
+					amount: "-7201.60",
+					transactionType: "Despesa",
+				},
+			],
+			fileExternalIds: ["new-1"],
+		});
+
+		expect(result.projectedDisplayTotal).toBe(7301.6);
+		expect(result.delta).toBe(0);
+		expect(result.extraExistingRows).toHaveLength(1);
+		expect(result.pendingImportRows).toHaveLength(1);
+		expect(isInvoiceTotalReconciled(result.delta)).toBe(true);
+	});
+
+	it("não trata como extra um cadastro que bate com o arquivo por nome e valor", () => {
+		const result = computeImportReconciliation({
+			sourceTotal: 24.9,
+			reviewRows: [
+				baseRow({
+					externalId: "fit-amazon",
+					amount: 24.9,
+					description: "Amazon Kindle Unltd",
+					isDuplicate: true,
+					selected: false,
+				}),
+			],
+			existingRows: [
+				{
+					id: "registered-1",
+					ofxFitId: null,
+					name: "Amazon Kindle Unltd",
+					amount: "-24.90",
+					transactionType: "Despesa",
+				},
+			],
+			fileExternalIds: ["fit-amazon"],
+		});
+
+		expect(result.extraExistingRows).toHaveLength(0);
+	});
+
+	it("identifica lançamentos extras no período", () => {
+		const result = computeImportReconciliation({
+			sourceTotal: 100,
+			reviewRows: [],
+			existingRows: [
+				{
+					id: "extra-1",
+					ofxFitId: null,
+					name: "Extra manual",
+					amount: "-262.26",
+					transactionType: "Despesa",
+				},
+			],
+			fileExternalIds: [],
+		});
+
+		expect(result.delta).toBe(162.26);
+		expect(result.extraExistingRows[0]?.id).toBe("extra-1");
+	});
+
+	it("identifica divergência de valor para o mesmo FITID", () => {
+		const result = computeImportReconciliation({
+			sourceTotal: 100,
+			reviewRows: [
+				baseRow({
+					externalId: "fit-1",
+					amount: 80,
+					isDuplicate: true,
+					selected: false,
+				}),
+			],
+			existingRows: [
+				{
+					id: "existing-1",
+					ofxFitId: "fit-1",
+					name: "Compra",
+					amount: "-100",
+					transactionType: "Despesa",
+				},
+			],
+			fileExternalIds: ["fit-1"],
+		});
+
+		expect(result.amountMismatchRows).toHaveLength(1);
+		expect(result.amountMismatchRows[0]?.signedDelta).toBe(-20);
+		expect(result.extraExistingRows).toHaveLength(0);
+	});
+
+	it("desconta duplicatas marcadas para remoção do total projetado", () => {
+		const result = computeImportReconciliation({
+			sourceTotal: 7301.59,
+			reviewRows: [
+				baseRow({
+					externalId: "fit-parcela",
+					amount: 260,
+					description: "Fabio C Thomaziello - Parcela 5/10",
+					isDuplicate: true,
+					selected: false,
+				}),
+				baseRow({
+					externalId: null,
+					amount: 292.19,
+					description: "Compra duplicada",
+					kind: "invoice_extra",
+					selected: true,
+					existingTransactionId: "extra-dup",
+				}),
+			],
+			existingRows: [
+				{
+					id: "conferido-1",
+					ofxFitId: "fit-parcela",
+					name: "Fabio C Thomaziello - Parcela 5/10",
+					amount: "-260.00",
+					transactionType: "Despesa",
+				},
+				{
+					id: "extra-dup",
+					ofxFitId: null,
+					name: "Compra duplicada",
+					amount: "-292.19",
+					transactionType: "Despesa",
+				},
+				{
+					id: "resto",
+					ofxFitId: "fit-resto",
+					name: "Demais lançamentos",
+					amount: "-7041.59",
+					transactionType: "Despesa",
+				},
+			],
+			fileExternalIds: ["fit-parcela", "fit-resto"],
+		});
+
+		expect(result.projectedDisplayTotal).toBe(7301.59);
+		expect(result.delta).toBe(0);
+		expect(isInvoiceTotalReconciled(result.delta)).toBe(true);
+	});
+
+	it("lista linhas do arquivo ainda não cadastradas", () => {
+		const result = computeImportReconciliation({
+			sourceTotal: 200,
+			reviewRows: [
+				baseRow({
+					externalId: "new-1",
+					amount: 50,
+					selected: false,
+					isDuplicate: false,
+				}),
+			],
+			existingRows: [],
+			fileExternalIds: ["new-1"],
+		});
+
+		expect(result.missingFileRows).toHaveLength(1);
+		expect(result.missingFileRows[0]?.reason).toBe("not_selected");
+	});
+});

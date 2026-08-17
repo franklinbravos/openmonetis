@@ -4,6 +4,7 @@ import type {
 	ImportedTransaction,
 	ImportStatement,
 	InvoiceImportMetadata,
+	InvoiceSourceTotalKind,
 } from "./types";
 
 export type ParseOfxOptions = {
@@ -85,6 +86,7 @@ function buildNubankCardInvoiceMetadata(
 		isPaid: Boolean(paymentTxn),
 		paymentDate: paymentTxn?.date ?? null,
 		totalAmount: ledgerAmount,
+		totalAmountSource: "ofx_ledger",
 	};
 }
 

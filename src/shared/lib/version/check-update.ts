@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { version as currentVersion } from "@/package.json";
 
 const GITHUB_REPO = "felipegcoutinho/openmonetis";
@@ -21,12 +22,16 @@ function compareVersions(a: string, b: string): number {
 	return 0;
 }
 
-export async function checkForUpdate(): Promise<UpdateCheckResult> {
+export const checkForUpdate = cache(async (): Promise<UpdateCheckResult> => {
 	const fallback: UpdateCheckResult = {
 		hasUpdate: false,
 		latestVersion: currentVersion,
 		releaseUrl: RELEASES_URL,
 	};
+
+	if (process.env.NODE_ENV === "development") {
+		return fallback;
+	}
 
 	try {
 		// GitHub redireciona /releases/latest para a URL com a tag — sem API, sem rate limit
@@ -52,4 +57,5 @@ export async function checkForUpdate(): Promise<UpdateCheckResult> {
 	} catch {
 		return fallback;
 	}
-}
+});
+

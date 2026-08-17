@@ -7,12 +7,19 @@ export type ImportedTransaction = {
 	categoryRaw?: string | null;
 };
 
+export type InvoiceSourceTotalKind =
+	| "ofx_ledger"
+	| "pdf_header"
+	| "pdf_lines_fallback"
+	| "lines_fallback";
+
 export type InvoiceImportMetadata = {
 	period: string | null; // YYYY-MM (mês de vencimento da fatura)
 	dueDate: string | null; // YYYY-MM-DD
 	isPaid: boolean;
 	paymentDate: string | null; // YYYY-MM-DD
 	totalAmount: number | null;
+	totalAmountSource?: InvoiceSourceTotalKind | null;
 };
 
 export type ImportStatement = {

@@ -145,9 +145,15 @@ const importSchema = z
 		sourceFileName: z.string().trim().min(1).optional(),
 		sourceFileSize: z.number().int().positive().optional(),
 		importBatchId: z.string().uuid().optional(),
+		sourceInvoiceTotalOverride: z.boolean().optional(),
+		removeTransactionIds: z.array(z.string().uuid()).optional(),
 	})
 	.superRefine((data, ctx) => {
-		if (data.rows.length === 0 && !data.payInvoice) {
+		if (
+			data.rows.length === 0 &&
+			!data.payInvoice &&
+			!(data.removeTransactionIds?.length ?? 0)
+		) {
 			ctx.addIssue({
 				code: "custom",
 				message: "Selecione ao menos uma transação.",
@@ -531,7 +537,8 @@ export async function importTransactionsAction(
 
 	const { rows, payerId, accountId, cardId, paymentMethod, invoicePeriod } =
 		parsed.data;
-	const { payInvoice, paymentDate, paymentAccountId } = parsed.data;
+	const { payInvoice, paymentDate, paymentAccountId, removeTransactionIds } =
+		parsed.data;
 
 	const payerIdsByRow = rows.map((row) => row.payerId ?? payerId ?? null);
 	const hasInvoicePayments = rows.some((row) => row.kind === "invoice_payment");
@@ -623,6 +630,24 @@ export async function importTransactionsAction(
 		return { success: false, error: "Conta da transferência não encontrada." };
 	}
 
+	const removeIds = [...new Set(removeTransactionIds ?? [])];
+	if (removeIds.length > 0) {
+		const ownedRemovals = await db.query.transactions.findMany({
+			columns: { id: true },
+			where: and(
+				eq(transactions.userId, dataOwnerUserId),
+				inArray(transactions.id, removeIds),
+			),
+		});
+
+		if (ownedRemovals.length !== removeIds.length) {
+			return {
+				success: false,
+				error: "Um ou mais lançamentos marcados para remoção não foram encontrados.",
+			};
+		}
+	}
+
 	const hasInstallmentImports = rows.some(
 		(row) => row.installmentImport?.enabled,
 	);
@@ -667,6 +692,63 @@ export async function importTransactionsAction(
 	}
 
 	if (rows.length === 0) {
+		if (!payInvoice && removeIds.length === 0) {
+			return { success: true, imported: 0, skipped: 0, importBatchId: "" };
+		}
+
+		if (!payInvoice && removeIds.length > 0) {
+			const importBatchId = parsed.data.importBatchId ?? randomUUID();
+
+			if (parsed.data.importBatchId) {
+				const existingUploadBatch = await db.query.importBatches.findFirst({
+					columns: { id: true },
+					where: and(
+						eq(importBatches.userId, dataOwnerUserId),
+						eq(importBatches.id, parsed.data.importBatchId),
+					),
+				});
+
+				if (!existingUploadBatch) {
+					return {
+						success: false,
+						error:
+							"Registro de upload não encontrado. Envie o arquivo novamente.",
+					};
+				}
+			}
+
+			try {
+				await db.transaction(async (tx) => {
+					await tx
+						.delete(transactions)
+						.where(
+							and(
+								eq(transactions.userId, dataOwnerUserId),
+								inArray(transactions.id, removeIds),
+							),
+						);
+				});
+			} catch (error) {
+				console.error("importTransactionsAction remove only", error);
+				return {
+					success: false,
+					error: "Não foi possível remover os lançamentos selecionados.",
+				};
+			}
+
+			await revalidateForEntity("transactions", userId);
+			if (cardId) {
+				await revalidateForEntity("cards", userId);
+			}
+
+			return {
+				success: true,
+				imported: 0,
+				skipped: removeIds.length,
+				importBatchId,
+			};
+		}
+
 		if (!payInvoice) {
 			return { success: true, imported: 0, skipped: 0, importBatchId: "" };
 		}
@@ -705,6 +787,27 @@ export async function importTransactionsAction(
 			}
 		}
 
+		if (removeIds.length > 0) {
+			try {
+				await db
+					.delete(transactions)
+					.where(
+						and(
+							eq(transactions.userId, dataOwnerUserId),
+							inArray(transactions.id, removeIds),
+						),
+					);
+			} catch (error) {
+				console.error("importTransactionsAction payInvoice remove extras", error);
+				return {
+					success: false,
+					error: "Não foi possível remover os lançamentos duplicados.",
+				};
+			}
+
+			await revalidateForEntity("transactions", userId);
+		}
+
 		const payResult = await updateInvoicePaymentStatusAction({
 			cardId,
 			period: invoicePeriod,
@@ -729,7 +832,7 @@ export async function importTransactionsAction(
 			invoicePeriod,
 			accountId: accountId ?? null,
 			importedCount: 0,
-			skippedCount: 0,
+			skippedCount: removeIds.length,
 			status: IMPORT_BATCH_STATUS.IMPORTED,
 			draftData: null,
 		};
@@ -758,7 +861,7 @@ export async function importTransactionsAction(
 		return {
 			success: true,
 			imported: 0,
-			skipped: 0,
+			skipped: removeIds.length,
 			importBatchId,
 		};
 	}
@@ -1111,6 +1214,17 @@ export async function importTransactionsAction(
 
 	try {
 		inserted = await db.transaction(async (tx) => {
+			if (removeIds.length > 0) {
+				await tx
+					.delete(transactions)
+					.where(
+						and(
+							eq(transactions.userId, dataOwnerUserId),
+							inArray(transactions.id, removeIds),
+						),
+					);
+			}
+
 			const allRecords = [
 				...regularRecords,
 				...transferRecords,
@@ -1269,13 +1383,19 @@ export async function importTransactionsAction(
 	if (existingBatch) {
 		await db
 			.update(importBatches)
-			.set(batchPayload)
+			.set({
+				...batchPayload,
+				sourceInvoiceTotalOverride:
+					parsed.data.sourceInvoiceTotalOverride ?? false,
+			})
 			.where(eq(importBatches.id, importBatchId));
 	} else {
 		await db.insert(importBatches).values({
 			id: importBatchId,
-			userId,
+			userId: dataOwnerUserId,
 			...batchPayload,
+			sourceInvoiceTotalOverride:
+				parsed.data.sourceInvoiceTotalOverride ?? false,
 		});
 	}
 

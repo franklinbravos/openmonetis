@@ -219,6 +219,46 @@ function isSameInvoicePeriodCandidate(
 	return options.invoicePeriods.includes(existing.period);
 }
 
+/**
+ * À vista na mesma fatura: nome + valor bastam (data do banco pode mudar).
+ */
+function isSameInvoicePeriodFlatDuplicate(
+	row: ImportRowForMatch,
+	existing: ImportDuplicateSnapshot,
+	options?: ImportDuplicateMatchOptions,
+): boolean {
+	if (!isSameInvoicePeriodCandidate(existing, options)) {
+		return false;
+	}
+
+	if (
+		!amountsMatchForImportDuplicate(
+			row.transactionType,
+			row.amount,
+			existing.transactionType,
+			Number(existing.amount),
+		)
+	) {
+		return false;
+	}
+
+	const importedIdentity = resolveImportMatchIdentity(row);
+	const existingIdentity = resolveExistingMatchIdentity(existing);
+
+	const importedHasParcel =
+		importedIdentity.currentInstallment != null &&
+		importedIdentity.installmentCount != null;
+	const existingHasParcel =
+		existingIdentity.currentInstallment != null &&
+		existingIdentity.installmentCount != null;
+
+	if (importedHasParcel || existingHasParcel) {
+		return false;
+	}
+
+	return importedIdentity.baseName === existingIdentity.baseName;
+}
+
 function isInstallmentParcelDuplicate(
 	row: ImportRowForMatch,
 	existing: ImportDuplicateSnapshot,
@@ -342,7 +382,7 @@ export function countImportMatchScore(score: ImportMatchScore): number {
 	return Number(score.date) + Number(score.amount) + Number(score.description);
 }
 
-/** Score efetivo: parcela N/M + valor conta como match completo (sem exigir data). */
+/** Score efetivo: parcela N/M + valor ou nome+valor na mesma fatura contam como match completo. */
 function effectiveImportMatchScore(
 	row: ImportRowForMatch,
 	existing: ImportDuplicateSnapshot,
@@ -350,6 +390,9 @@ function effectiveImportMatchScore(
 	options?: ImportDuplicateMatchOptions,
 ): number {
 	if (isInstallmentParcelDuplicate(row, existing, options)) {
+		return 3;
+	}
+	if (isSameInvoicePeriodFlatDuplicate(row, existing, options)) {
 		return 3;
 	}
 	return countImportMatchScore(score);
@@ -404,6 +447,11 @@ export function buildImportDuplicateValidation(
 		existing,
 		options,
 	);
+	const sameInvoiceFlatDuplicate = isSameInvoicePeriodFlatDuplicate(
+		row,
+		existing,
+		options,
+	);
 
 	const importedDate = row.date;
 	const existingDate = toDateOnlyString(existing.purchaseDate);
@@ -416,7 +464,8 @@ export function buildImportDuplicateValidation(
 		importedDate &&
 		existingDate &&
 		importedDate !== existingDate &&
-		!installmentParcelDuplicate
+		!installmentParcelDuplicate &&
+		!sameInvoiceFlatDuplicate
 	) {
 		mismatches.push({
 			field: "date",
@@ -487,7 +536,10 @@ export function buildImportDuplicateValidation(
 	let status: ImportDuplicateStatus;
 	if (forcedStatus) {
 		status = forcedStatus;
-	} else if (installmentParcelDuplicate && mismatches.length === 0) {
+	} else if (
+		(installmentParcelDuplicate || sameInvoiceFlatDuplicate) &&
+		mismatches.length === 0
+	) {
 		status = "match";
 	} else if (
 		countImportMatchScore(matchScore) === 3 &&
@@ -496,6 +548,7 @@ export function buildImportDuplicateValidation(
 		status = "match";
 	} else if (
 		installmentParcelDuplicate ||
+		sameInvoiceFlatDuplicate ||
 		countImportMatchScore(matchScore) === 3
 	) {
 		status = "mismatch";

@@ -118,6 +118,35 @@ describe("buildImportDuplicateValidation — parcelamento", () => {
 
 		expect(validation.status).toBe("match");
 	});
+
+	it("reconhece lançamento à vista na mesma fatura por nome+valor", () => {
+		const validation = buildImportDuplicateValidation(
+			{
+				date: "2026-02-12",
+				amount: 21.9,
+				description: "Spotify",
+				transactionType: "expense",
+			},
+			{
+				id: "manual-spotify",
+				ofxFitId: null,
+				name: "Spotify",
+				amount: "-21.90",
+				purchaseDate: new Date(2026, 1, 5),
+				transactionType: "Despesa",
+				currentInstallment: null,
+				installmentCount: null,
+				payerId: null,
+				categoryId: null,
+				period: "2026-02",
+			},
+			undefined,
+			{ invoicePeriods: ["2026-02"] },
+		);
+
+		expect(validation.status).toBe("match");
+		expect(validation.mismatches).toEqual([]);
+	});
 });
 
 describe("mergeImportDuplicateSnapshots", () => {

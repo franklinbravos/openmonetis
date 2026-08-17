@@ -16,6 +16,7 @@ import {
 	updatePaymentDateAction,
 } from "@/features/invoices/actions";
 import { resolveInvoicePaymentTiming } from "@/features/invoices/lib/payment-timing";
+import type { InvoiceReconciliationTransaction } from "@/features/invoices/lib/invoice-reconciliation";
 import { AccountCardSelectContent } from "@/features/transactions/components/select-items";
 import StatusDot from "@/shared/components/feedback/status-dot";
 import MoneyValues from "@/shared/components/money-values";
@@ -47,6 +48,8 @@ import {
 	TooltipTrigger,
 } from "@/shared/components/ui/tooltip";
 import { resolveCardBrandAsset } from "@/shared/lib/cards/brand-assets";
+import { invoiceSourceTotalKindLabel } from "@/shared/lib/import/invoice-source-total";
+import type { InvoiceSourceTotalKind } from "@/shared/lib/import/types";
 import {
 	INVOICE_PAYMENT_STATUS,
 	INVOICE_STATUS_BADGE_VARIANT,
@@ -69,6 +72,14 @@ type PaymentAccountOption = {
 	logo?: string | null;
 };
 
+type InvoiceReconciliationSummary = {
+	sourceTotal: number;
+	sourceKind: InvoiceSourceTotalKind;
+	sourceOverride: boolean;
+	delta: number;
+	extraTransactions: InvoiceReconciliationTransaction[];
+};
+
 type InvoiceSummaryCardProps = {
 	cardId: string;
 	period: string;
@@ -84,6 +95,7 @@ type InvoiceSummaryCardProps = {
 	paymentAccountOptions: PaymentAccountOption[];
 	hasImportHistory?: boolean;
 	hasImportAttachment?: boolean;
+	reconciliation?: InvoiceReconciliationSummary | null;
 };
 
 const actionLabelByStatus: Record<InvoicePaymentStatus, string> = {
@@ -130,6 +142,7 @@ export function InvoiceSummaryCard({
 	paymentAccountOptions,
 	hasImportHistory = false,
 	hasImportAttachment = false,
+	reconciliation = null,
 }: InvoiceSummaryCardProps) {
 	const router = useRouter();
 	const [isPending, startTransition] = useTransition();
@@ -154,6 +167,15 @@ export function InvoiceSummaryCard({
 	const brandAsset = resolveCardBrandAsset(cardBrand);
 	const isPaid = invoiceStatus === INVOICE_PAYMENT_STATUS.PAID;
 	const importHref = `/transactions/import?cartao=${encodeURIComponent(cardId)}&periodo=${encodeURIComponent(period)}`;
+	const registeredAbsTotal = Math.abs(totalAmount);
+	const hasSourceReconciliation = reconciliation?.sourceTotal != null;
+	const reconciliationDelta = reconciliation?.delta ?? null;
+	const hasReconciliationMismatch =
+		reconciliationDelta != null && Math.abs(reconciliationDelta) > 0.01;
+	const extraTransactions =
+		reconciliation?.extraTransactions.filter(
+			(transaction) => transaction.group === "extra",
+		) ?? [];
 	const paymentTiming =
 		isPaid && initialPaymentDate
 			? resolveInvoicePaymentTiming(initialPaymentDate, period, dueDay)
@@ -241,6 +263,7 @@ export function InvoiceSummaryCard({
 								cardId={cardId}
 								period={period}
 								currentTotal={totalAmount}
+								suggestedTargetAmount={reconciliation?.sourceTotal ?? null}
 								trigger={
 									<Button
 										type="button"
@@ -289,6 +312,112 @@ export function InvoiceSummaryCard({
 							) : null}
 						</div>
 					</div>
+
+					{hasSourceReconciliation && reconciliation ? (
+						<div
+							className={cn(
+								"space-y-3 rounded-lg border px-3 py-3 sm:px-4",
+								hasReconciliationMismatch
+									? "border-destructive/30 bg-destructive/5"
+									: "border-emerald-500/30 bg-emerald-500/5",
+							)}
+						>
+							<div className="flex flex-wrap items-center gap-2">
+								<p className="font-medium text-sm">Conferência com o arquivo</p>
+								<Badge variant="outline" className="font-normal text-xs">
+									{invoiceSourceTotalKindLabel(reconciliation.sourceKind)}
+								</Badge>
+								{reconciliation.sourceOverride ? (
+									<Badge variant="secondary" className="font-normal text-xs">
+										Importado com diferença
+									</Badge>
+								) : null}
+							</div>
+							<dl className="grid gap-2 text-sm sm:grid-cols-3">
+								<div>
+									<dt className="text-muted-foreground text-xs">
+										Total do arquivo
+									</dt>
+									<dd className="font-medium tabular-nums">
+										{formatCurrency(reconciliation.sourceTotal)}
+									</dd>
+								</div>
+								<div>
+									<dt className="text-muted-foreground text-xs">
+										Total cadastrado
+									</dt>
+									<dd className="font-medium tabular-nums">
+										{formatCurrency(registeredAbsTotal)}
+									</dd>
+								</div>
+								<div>
+									<dt className="text-muted-foreground text-xs">Diferença</dt>
+									<dd
+										className={cn(
+											"font-semibold tabular-nums",
+											hasReconciliationMismatch
+												? "text-destructive"
+												: "text-emerald-700 dark:text-emerald-300",
+										)}
+									>
+										{reconciliationDelta != null && reconciliationDelta > 0
+											? "+"
+											: reconciliationDelta != null && reconciliationDelta < 0
+												? "−"
+												: ""}
+										{formatCurrency(Math.abs(reconciliationDelta ?? 0))}
+									</dd>
+								</div>
+							</dl>
+
+							{hasReconciliationMismatch && extraTransactions.length > 0 ? (
+								<div className="space-y-2">
+									<p className="text-muted-foreground text-xs">
+										Lançamentos a mais no OpenMonetis ({extraTransactions.length})
+									</p>
+									<p className="text-muted-foreground text-[11px] leading-relaxed">
+										Cadastrados aqui e ausentes do arquivo importado.
+									</p>
+									<ul className="space-y-1">
+										{extraTransactions.slice(0, 6).map((transaction) => (
+											<li
+												key={transaction.id}
+												className="rounded-md border border-border/50 bg-background/70 px-2 py-1 text-xs"
+											>
+												<span className="font-medium">{transaction.name}</span>
+												{" · "}
+												{formatCurrency(Math.abs(transaction.amount))}
+											</li>
+										))}
+									</ul>
+									{extraTransactions.length > 6 ? (
+										<p className="text-muted-foreground text-xs">
+											+{extraTransactions.length - 6} outro(s)
+										</p>
+									) : null}
+								</div>
+							) : null}
+
+							{hasReconciliationMismatch ? (
+								<div className="flex flex-wrap gap-2">
+									<Button type="button" variant="outline" size="sm" asChild>
+										<Link href={importHref}>Retomar revisão</Link>
+									</Button>
+									<AdjustInvoiceDialog
+										cardId={cardId}
+										period={period}
+										currentTotal={totalAmount}
+										suggestedTargetAmount={reconciliation.sourceTotal}
+										trigger={
+											<Button type="button" size="sm" variant="secondary">
+												Ajustar fatura
+											</Button>
+										}
+									/>
+								</div>
+							) : null}
+						</div>
+					) : null}
 
 					{/* Linha 3 — metadados do cartão */}
 					<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

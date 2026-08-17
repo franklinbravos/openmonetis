@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { makeSyntheticExternalId, normalizeImportedText } from "./helpers";
 import type {
 	ImportedTransaction,
 	ImportStatement,
@@ -104,7 +105,11 @@ export async function parseXls(buffer: ArrayBuffer): Promise<ImportStatement> {
 		if (!date || !description || amount === null || amount <= 0) return;
 
 		transactions.push({
-			externalId: null,
+			externalId: makeSyntheticExternalId([
+				date,
+				normalizeImportedText(description),
+				String(amount),
+			]),
 			date,
 			amount,
 			description,

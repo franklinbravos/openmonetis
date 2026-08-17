@@ -53,6 +53,7 @@ import {
 	registerImportUploadAction,
 	saveImportBatchDraftAction,
 	syncImportBatchContextAction,
+	syncImportBatchSourceTotalAction,
 } from "@/features/transactions/actions/import-batch-history-action";
 import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
 import {
@@ -66,6 +67,7 @@ import {
 	type ImportAiAnalysisStatus,
 } from "@/features/transactions/components/import/import-ai-analysis-banner";
 import { ImportConfirmDialog } from "@/features/transactions/components/import/import-confirm-dialog";
+import { InvoiceTotalReconciliationBanner } from "@/features/transactions/components/import/invoice-total-reconciliation-banner";
 import { ImportFileHistory } from "@/features/transactions/components/import/import-file-history";
 import { ImportInvoicePeriodMismatchDialog } from "@/features/transactions/components/import/import-invoice-period-mismatch-dialog";
 import { ImportLinkDialog } from "@/features/transactions/components/import/import-link-dialog";
@@ -132,6 +134,11 @@ import {
 	isValidRecurrenceImport,
 } from "@/features/transactions/lib/import-installments";
 import {
+	collectInvoiceExtraRemovalTransactionIds,
+	isInvoiceExtraReviewRow,
+	mergeInvoiceReviewRowsWithExtras,
+} from "@/features/transactions/lib/import-invoice-extra-rows";
+import {
 	guessInvoicePaymentCardId,
 	guessInvoicePaymentPeriod,
 	isInvoicePaymentDescription,
@@ -142,6 +149,15 @@ import {
 	resolveImportPaymentDate,
 	resolveUploadInvoicePeriodFromStatement,
 } from "@/features/transactions/lib/import-invoice-period";
+import {
+	collectFileExternalIds,
+	getRegisterSourceTotalPayload,
+	mapDuplicateSnapshotToExistingRow,
+	mapReviewRowToReconciliationRow,
+	pickInvoicePeriodExistingSnapshots,
+	shouldFetchInvoiceDuplicateSnapshots,
+} from "@/features/transactions/lib/import-invoice-reconciliation";
+import { isImportReviewRowImportable } from "@/features/transactions/lib/import-review-filters";
 import { guessImportTransfer } from "@/features/transactions/lib/import-transfer-detection";
 import { normalizeDescriptionKey } from "@/features/transactions/lib/import-utils";
 import { parseImportFileClient } from "@/features/transactions/lib/parse-import-file-client";
@@ -174,8 +190,14 @@ import {
 	stripImportExternalIdSuffix,
 	uniquifyImportedExternalIds,
 } from "@/shared/lib/import/helpers";
+import { resolveInvoiceSourceTotal } from "@/shared/lib/import/invoice-source-total";
+import {
+	computeImportReconciliation,
+	isInvoiceTotalReconciled,
+} from "@/shared/lib/import/invoice-total";
 import { mapPdfLoadError } from "@/shared/lib/import/pdf-password";
 import type { ImportStatement } from "@/shared/lib/import/types";
+import { formatCurrency } from "@/shared/utils/currency";
 import { getTodayDateString } from "@/shared/utils/date";
 import { displayPeriod, formatPeriodForUrl } from "@/shared/utils/period";
 
@@ -306,6 +328,7 @@ export function ImportPage({
 	const router = useRouter();
 	const [isPending, startTransition] = useTransition();
 	const [isSavingDraft, startSaveDraftTransition] = useTransition();
+	const [isImporting, setIsImporting] = useState(false);
 	const [isChecking, setIsChecking] = useState(false);
 	const [aiAnalysisStatus, setAiAnalysisStatus] =
 		useState<ImportAiAnalysisStatus>("idle");
@@ -374,6 +397,10 @@ export function ImportPage({
 	const [uploadImportBatchId, setUploadImportBatchId] = useState<string | null>(
 		null,
 	);
+	const [invoicePeriodExistingSnapshots, setInvoicePeriodExistingSnapshots] =
+		useState<ImportDuplicateSnapshot[]>([]);
+	const [invoiceTotalOverrideConfirmed, setInvoiceTotalOverrideConfirmed] =
+		useState(false);
 	const [importSourceStored, setImportSourceStored] = useState(false);
 	const [awaitingResumeBatch, setAwaitingResumeBatch] = useState<{
 		batchId: string;
@@ -467,15 +494,19 @@ export function ImportPage({
 		initialResumeBatchId ?? resumableDraftEntry?.id ?? null;
 
 	const refreshImportHistory = useCallback(async () => {
-		const entries = await fetchImportBatchHistoryAction({
-			cardId: importHistoryFilter.cardId,
-			invoicePeriod: importHistoryFilter.cardId
-				? importHistoryFilter.invoicePeriod
-				: null,
-			accountId: importHistoryFilter.accountId,
-			limit: 50,
-		});
-		setImportHistory(entries);
+		try {
+			const entries = await fetchImportBatchHistoryAction({
+				cardId: importHistoryFilter.cardId,
+				invoicePeriod: importHistoryFilter.cardId
+					? importHistoryFilter.invoicePeriod
+					: null,
+				accountId: importHistoryFilter.accountId,
+				limit: 50,
+			});
+			setImportHistory(entries);
+		} catch {
+			// Restart do dev server ou abort da Server Action.
+		}
 	}, [importHistoryFilter]);
 	const [editTransaction, setEditTransaction] =
 		useState<TransactionItem | null>(null);
@@ -523,6 +554,8 @@ export function ImportPage({
 		setAiAnalysisError(null);
 		setAiAnalysisErrorLog(null);
 		setAiAnalysisProgress(null);
+		setInvoicePeriodExistingSnapshots([]);
+		setInvoiceTotalOverrideConfirmed(false);
 		duplicateMatchingContextRef.current = null;
 		aiAnalysisRunIdRef.current += 1;
 	}, [
@@ -557,6 +590,7 @@ export function ImportPage({
 				activeInvoiceContext?.invoicePeriod ??
 				null,
 			accountId: decoded?.type === "account" ? decoded.id : null,
+			...(statement ? getRegisterSourceTotalPayload(statement) : {}),
 		});
 
 		if (!registerResult.success) {
@@ -576,6 +610,7 @@ export function ImportPage({
 		initialInvoicePeriod,
 		invoicePeriod,
 		sourceFile,
+		statement,
 		uploadImportBatchId,
 	]);
 
@@ -663,48 +698,48 @@ export function ImportPage({
 				startedAt,
 			});
 
-			const categories = mergedCategoryOptions.map((option) => ({
-				id: option.value,
-				name: option.label,
-				transactionType:
-					option.group === "receita"
-						? ("income" as const)
-						: ("expense" as const),
-			}));
-
-			const categoryCompatibility = mergedCategoryOptions.flatMap((option) =>
-				(["income", "expense"] as const).map((transactionType) => ({
-					categoryId: option.value,
-					transactionType,
-					compatible: isCategoryCompatible(option.value, transactionType),
-				})),
-			);
-
-			const payload = buildImportAiAnalysisPayload({
-				modelId: aiDefaultModelId,
-				rows: reviewRows,
-				isCreditCard: context.isCreditCard,
-				cardId: context.cardId,
-				invoicePeriods: context.invoicePeriods,
-				accountId: context.accountId,
-				statementPeriod: context.statementPeriod,
-				cardName: context.cardName,
-				accountName: context.accountName,
-				categories,
-				categoryCompatibility,
-			});
-
-			const partitioned = partitionImportAiRows(payload.rows);
-			const batchJobs = buildImportAiBatchJobs(partitioned);
-			const rowEditSnapshots = buildImportAiRowEditSnapshots(reviewRows);
-
-			if (batchJobs.length === 0) {
-				setAiAnalysisStatus("skipped");
-				setAiAnalysisProgress(null);
-				return;
-			}
-
 			try {
+				const categories = mergedCategoryOptions.map((option) => ({
+					id: option.value,
+					name: option.label,
+					transactionType:
+						option.group === "receita"
+							? ("income" as const)
+							: ("expense" as const),
+				}));
+
+				const categoryCompatibility = mergedCategoryOptions.flatMap((option) =>
+					(["income", "expense"] as const).map((transactionType) => ({
+						categoryId: option.value,
+						transactionType,
+						compatible: isCategoryCompatible(option.value, transactionType),
+					})),
+				);
+
+				const payload = buildImportAiAnalysisPayload({
+					modelId: aiDefaultModelId,
+					rows: reviewRows,
+					isCreditCard: context.isCreditCard,
+					cardId: context.cardId,
+					invoicePeriods: context.invoicePeriods,
+					accountId: context.accountId,
+					statementPeriod: context.statementPeriod,
+					cardName: context.cardName,
+					accountName: context.accountName,
+					categories,
+					categoryCompatibility,
+				});
+
+				const partitioned = partitionImportAiRows(payload.rows);
+				const batchJobs = buildImportAiBatchJobs(partitioned);
+				const rowEditSnapshots = buildImportAiRowEditSnapshots(reviewRows);
+
+				if (batchJobs.length === 0) {
+					setAiAnalysisStatus("skipped");
+					setAiAnalysisProgress(null);
+					return;
+				}
+
 				if (runId !== aiAnalysisRunIdRef.current) return;
 
 				setAiAnalysisProgress({
@@ -859,6 +894,8 @@ export function ImportPage({
 				setAiAnalysisProgress(null);
 			} catch (error) {
 				if (runId !== aiAnalysisRunIdRef.current) return;
+
+				console.error("Erro na análise de importação com IA:", error);
 
 				if (
 					typeof error === "object" &&
@@ -1069,11 +1106,21 @@ export function ImportPage({
 					.map((t) => t.externalId)
 					.filter((id): id is string => id !== null);
 
-				const shouldFetchInvoiceSnapshots =
-					stmt.isCreditCard && Boolean(resolvedCardId);
+				const shouldFetchInvoiceSnapshots = shouldFetchInvoiceDuplicateSnapshots(
+					{
+						statementIsCreditCard: stmt.isCreditCard,
+						resolvedCardId,
+						accountCardValue,
+						activeInvoiceContextCardId:
+							activeInvoiceContext?.cardId ?? null,
+						initialCardId: initialCardId ?? null,
+					},
+				);
 
 				const shouldFetchAccountSnapshots =
-					!stmt.isCreditCard && resolvedAccountId && statementPeriod;
+					!shouldFetchInvoiceSnapshots &&
+					resolvedAccountId &&
+					statementPeriod;
 
 				const invoicePeriodsForSnapshots = [
 					...new Set(
@@ -1120,6 +1167,17 @@ export function ImportPage({
 				const invoicePeriodSnapshots = mergeImportDuplicateSnapshots(
 					...invoicePeriodSnapshotGroups,
 				);
+
+				const activePeriodForReconciliation =
+					resolvedInvoicePeriod ?? invoicePeriodsForSnapshots[0] ?? null;
+				setInvoicePeriodExistingSnapshots(
+					pickInvoicePeriodExistingSnapshots(
+						invoicePeriodsForSnapshots,
+						invoicePeriodSnapshotGroups,
+						activePeriodForReconciliation,
+					),
+				);
+				setInvoiceTotalOverrideConfirmed(false);
 
 				const duplicateSnapshotByFitId = buildDuplicateSnapshotByFitId(
 					duplicateSnapshots,
@@ -1279,6 +1337,7 @@ export function ImportPage({
 						installmentImport: transferGuess ? null : installmentImport,
 						recurrenceImport: null,
 						categoryId: resolvedCategoryId,
+						existingTransactionId: null,
 					};
 				});
 
@@ -1286,9 +1345,31 @@ export function ImportPage({
 					? applyImportBatchDraftToRows(builtRows, draftData)
 					: builtRows;
 
-				setRows(rowsWithDraft);
+				const periodSnapshots = pickInvoicePeriodExistingSnapshots(
+					invoicePeriodsForSnapshots,
+					invoicePeriodSnapshotGroups,
+					activePeriodForReconciliation,
+				);
 
-				void triggerImportAiAnalysis(rowsWithDraft, {
+				const mergedRows =
+					shouldFetchInvoiceSnapshots && activePeriodForReconciliation
+						? mergeInvoiceReviewRowsWithExtras({
+								fileRows: rowsWithDraft,
+								snapshots: periodSnapshots,
+								fileExternalIds: collectFileExternalIds(rowsWithDraft, fitIds),
+								previousRows: rowsWithDraft,
+							})
+						: rowsWithDraft.filter((row) => !isInvoiceExtraReviewRow(row));
+
+				const finalRows = draftData
+					? applyImportBatchDraftToRows(mergedRows, draftData)
+					: mergedRows;
+
+				setRows(finalRows);
+
+				void triggerImportAiAnalysis(
+					finalRows.filter((row) => !isInvoiceExtraReviewRow(row)),
+					{
 					isCreditCard: stmt.isCreditCard,
 					cardId: resolvedCardId,
 					accountId: resolvedAccountId,
@@ -1312,6 +1393,16 @@ export function ImportPage({
 					}
 					if (globals.paymentDate) setPaymentDate(globals.paymentDate);
 				}
+			} catch (error) {
+				console.error("Erro ao processar extrato para revisão:", error);
+				const message =
+					error instanceof Error && error.message
+						? error.message
+						: "Não foi possível preparar a revisão do arquivo importado.";
+				setFileError(message);
+				toast.error(message);
+				setStatement(null);
+				setRows([]);
 			} finally {
 				setIsChecking(false);
 			}
@@ -1372,16 +1463,24 @@ export function ImportPage({
 			),
 		];
 
-		const shouldFetchInvoiceSnapshots =
-			statement.isCreditCard && Boolean(resolvedCardId);
+		const shouldFetchInvoiceSnapshots = shouldFetchInvoiceDuplicateSnapshots({
+			statementIsCreditCard: statement.isCreditCard,
+			resolvedCardId,
+			accountCardValue,
+			activeInvoiceContextCardId: activeInvoiceContext?.cardId ?? null,
+			initialCardId: initialCardId ?? null,
+		});
 		const shouldFetchAccountSnapshots =
-			!statement.isCreditCard && resolvedAccountId && statementPeriod;
+			!shouldFetchInvoiceSnapshots &&
+			resolvedAccountId &&
+			statementPeriod;
 
 		if (!shouldFetchInvoiceSnapshots && !shouldFetchAccountSnapshots) {
 			return;
 		}
 
 		const fitIds = rows
+			.filter((row) => !isInvoiceExtraReviewRow(row))
 			.map((row) => row.externalId)
 			.filter((id): id is string => id !== null);
 
@@ -1418,6 +1517,14 @@ export function ImportPage({
 				...invoicePeriodSnapshotGroups,
 			);
 
+			setInvoicePeriodExistingSnapshots(
+				pickInvoicePeriodExistingSnapshots(
+					invoicePeriodsForSnapshots,
+					invoicePeriodSnapshotGroups,
+					invoicePeriod ?? invoicePeriodsForSnapshots[0] ?? null,
+				),
+			);
+
 			const duplicateSnapshotByFitId = buildDuplicateSnapshotByFitId(
 				duplicateSnapshots,
 			);
@@ -1430,16 +1537,18 @@ export function ImportPage({
 				: accountImportSnapshots;
 
 			const duplicateStates = resolveImportDuplicateMatches(
-				rows.map((row) => ({
-					date: row.date,
-					amount: row.amount,
-					description: row.description,
-					transactionType: row.transactionType,
-					installmentImport: row.installmentImport,
-					externalId: row.externalId,
-					linked: row.linked,
-					linkedTransactionId: row.linkedTransactionId,
-				})),
+				rows
+					.filter((row) => !isInvoiceExtraReviewRow(row))
+					.map((row) => ({
+						date: row.date,
+						amount: row.amount,
+						description: row.description,
+						transactionType: row.transactionType,
+						installmentImport: row.installmentImport,
+						externalId: row.externalId,
+						linked: row.linked,
+						linkedTransactionId: row.linkedTransactionId,
+					})),
 				{
 					candidates: semanticCandidates,
 					fitIdDuplicateIds: duplicates,
@@ -1450,8 +1559,11 @@ export function ImportPage({
 				},
 			);
 
-			setRows((previousRows) =>
-				previousRows.map((row, index) => {
+			setRows((previousRows) => {
+				const fileRows = previousRows.filter(
+					(row) => !isInvoiceExtraReviewRow(row),
+				);
+				const updatedFileRows = fileRows.map((row, index) => {
 					if (row.linked || row.reimported || row.linkedTransactionId) {
 						return row;
 					}
@@ -1493,8 +1605,25 @@ export function ImportPage({
 						payerId: resolvedPayerId,
 						categoryId: resolvedCategoryId,
 					};
-				}),
-			);
+				});
+
+				if (!shouldFetchInvoiceSnapshots) {
+					return updatedFileRows;
+				}
+
+				const periodSnapshots = pickInvoicePeriodExistingSnapshots(
+					invoicePeriodsForSnapshots,
+					invoicePeriodSnapshotGroups,
+					invoicePeriod ?? invoicePeriodsForSnapshots[0] ?? null,
+				);
+
+				return mergeInvoiceReviewRowsWithExtras({
+					fileRows: updatedFileRows,
+					snapshots: periodSnapshots,
+					fileExternalIds: collectFileExternalIds(updatedFileRows, fitIds),
+					previousRows,
+				});
+			});
 		} catch (error) {
 			console.error("Erro ao atualizar duplicatas da importação:", error);
 		}
@@ -1649,6 +1778,7 @@ export function ImportPage({
 			setFileError(null);
 			setSourceFile(file);
 
+			try {
 			const fallbackInvoicePeriod =
 				invoicePeriod ??
 				activeInvoiceContext?.invoicePeriod ??
@@ -1689,6 +1819,7 @@ export function ImportPage({
 							cardId: batchCardId,
 							invoicePeriod: batchInvoicePeriod,
 							accountId: batchAccountId,
+							...getRegisterSourceTotalPayload(stmt),
 						});
 						if (registerResult.success) {
 							batchId = registerResult.importBatchId;
@@ -1758,6 +1889,7 @@ export function ImportPage({
 					cardId: uploadCardId,
 					invoicePeriod: uploadInvoicePeriod,
 					accountId: uploadAccountId,
+					...getRegisterSourceTotalPayload(stmt),
 				});
 
 				if (!registerResult.success) {
@@ -1772,6 +1904,20 @@ export function ImportPage({
 
 			if (batchId) {
 				setUploadImportBatchId(batchId);
+
+				const sourceTotalPayload = getRegisterSourceTotalPayload(stmt);
+				if (
+					sourceTotalPayload.sourceInvoiceTotal != null ||
+					(sourceTotalPayload.sourceFileRows?.length ?? 0) > 0
+				) {
+					await syncImportBatchSourceTotalAction({
+						batchId,
+						sourceInvoiceTotal: sourceTotalPayload.sourceInvoiceTotal ?? null,
+						sourceInvoiceTotalKind:
+							sourceTotalPayload.sourceInvoiceTotalKind ?? null,
+						sourceFileRows: sourceTotalPayload.sourceFileRows,
+					});
+				}
 
 				const shouldUploadFile =
 					!options?.existingBatchId || !reusedBatch?.hasAttachment;
@@ -1793,6 +1939,15 @@ export function ImportPage({
 			await processParsedStatement(stmt, {
 				draftData,
 			});
+		} catch (error) {
+			console.error("Erro ao processar arquivo importado:", error);
+			const message =
+				error instanceof Error && error.message
+					? error.message
+					: "Não foi possível processar o arquivo importado.";
+			setFileError(message);
+			toast.error(message);
+		}
 		},
 		[
 			activeInvoiceContext,
@@ -1959,6 +2114,7 @@ export function ImportPage({
 				cardId: decoded?.type === "card" ? decoded.id : (initialCardId ?? null),
 				invoicePeriod: filePeriod,
 				accountId: decoded?.type === "account" ? decoded.id : null,
+				...getRegisterSourceTotalPayload(statement),
 			});
 
 			if (registerResult.success) {
@@ -2639,8 +2795,16 @@ export function ImportPage({
 		unresolvedTransfers,
 		hasInvoicePayments,
 	} = useMemo(() => {
-		const selected = rows.filter((r) => r.selected);
-		const duplicateRows = rows.filter((r) => r.isDuplicate);
+		const selected = rows.filter(
+			(
+				row,
+			): row is ReviewRow & {
+				kind: "transaction" | "invoice_payment" | "transfer";
+			} => row.selected && isImportReviewRowImportable(row),
+		);
+		const duplicateRows = rows.filter(
+			(row) => row.isDuplicate && !isInvoiceExtraReviewRow(row),
+		);
 		return {
 			selectedRows: selected,
 			duplicateCount: duplicateRows.length,
@@ -2679,6 +2843,11 @@ export function ImportPage({
 			!isValidRecurrenceImport(row.recurrenceImport),
 	).length;
 
+	const rowsMarkedForRemoval = useMemo(
+		() => collectInvoiceExtraRemovalTransactionIds(rows),
+		[rows],
+	);
+
 	const importRecordCount = countImportRecords(selectedRows);
 	const importableRows = rows.filter(
 		(row) => !isImportRowResolved(row) && !isImportLinkSuggestion(row),
@@ -2698,8 +2867,11 @@ export function ImportPage({
 		const excludedCount = rows.filter(
 			(row) =>
 				!row.selected &&
-				!isImportRowResolved(row) &&
-				!isImportLinkSuggestion(row),
+				isImportReviewRowImportable(row) &&
+				!isInvoiceExtraReviewRow(row),
+		).length;
+		const removalCount = rows.filter(
+			(row) => isInvoiceExtraReviewRow(row) && row.selected,
 		).length;
 		const replacedCount = selectedRows.filter((row) => row.reimported).length;
 		const installmentBackfillCount = selectedRows.reduce((total, row) => {
@@ -2711,6 +2883,7 @@ export function ImportPage({
 			verifiedCount,
 			linkedCount,
 			excludedCount,
+			removalCount,
 			replacedCount,
 			installmentBackfillCount,
 		};
@@ -2789,7 +2962,9 @@ export function ImportPage({
 	]);
 
 	const canImport =
-		(selectedRows.length > 0 || canPayImportedInvoiceOnly) &&
+		(selectedRows.length > 0 ||
+			rowsMarkedForRemoval.length > 0 ||
+			canPayImportedInvoiceOnly) &&
 		!!accountCardValue &&
 		uncategorizedCount === 0 &&
 		withoutPayerCount === 0 &&
@@ -2800,10 +2975,52 @@ export function ImportPage({
 		(!isCard || !!invoicePeriod) &&
 		(!hasInvoicePayments || accountCardValue.startsWith("account:")) &&
 		(!isPaidInvoiceImport || !!paymentAccountId) &&
-		!isPending;
+		!isPending &&
+		!isImporting;
+
+	const invoiceSourceTotal = useMemo(
+		() => (statement ? resolveInvoiceSourceTotal(statement) : null),
+		[statement],
+	);
+
+	const invoiceExtraReviewStats = useMemo(() => {
+		const extraRows = rows.filter(isInvoiceExtraReviewRow);
+		return {
+			count: extraRows.length,
+			markedForRemovalCount: extraRows.filter((row) => row.selected).length,
+		};
+	}, [rows]);
+
+	const importInvoiceReconciliation = useMemo(() => {
+		if (!statement?.isCreditCard || !invoiceSourceTotal) return null;
+
+		return computeImportReconciliation({
+			sourceTotal: invoiceSourceTotal.amount,
+			reviewRows: rows.map(mapReviewRowToReconciliationRow),
+			existingRows: invoicePeriodExistingSnapshots.map(
+				mapDuplicateSnapshotToExistingRow,
+			),
+			fileExternalIds: collectFileExternalIds(
+				rows,
+				statement.transactions
+					.map((transaction) => transaction.externalId)
+					.filter((id): id is string => Boolean(id)),
+			),
+		});
+	}, [statement, rows, invoicePeriodExistingSnapshots, invoiceSourceTotal]);
+
+	const invoiceTotalBalanced =
+		!importInvoiceReconciliation ||
+		isInvoiceTotalReconciled(importInvoiceReconciliation.delta);
+
+	const canProceedToImport = canImport;
+
+	const canConfirmImport =
+		canProceedToImport &&
+		(invoiceTotalBalanced || invoiceTotalOverrideConfirmed);
 
 	const canSaveDraft =
-		!!statement && rows.length > 0 && !isPending && !isSavingDraft;
+		!!statement && rows.length > 0 && !isPending && !isImporting && !isSavingDraft;
 
 	const handleSaveDraft = () => {
 		if (!statement || rows.length === 0) {
@@ -2931,8 +3148,8 @@ export function ImportPage({
 		}
 	};
 
-	const handleImport = () => {
-		if (!statement || !canImport) return;
+	const handleImport = async () => {
+		if (!statement || !canConfirmImport || isImporting) return;
 
 		const decoded = accountCardValue
 			? decodeAccountCard(accountCardValue)
@@ -2953,7 +3170,8 @@ export function ImportPage({
 					? buildAccountStatementHref(initialAccountId, importedInvoicePeriod)
 					: null;
 
-		startTransition(async () => {
+		setIsImporting(true);
+		try {
 			const result = await importTransactionsAction({
 				rows: selectedRows.map((r) => ({
 					externalId: r.externalId,
@@ -2997,9 +3215,13 @@ export function ImportPage({
 				sourceFileName: sourceFile?.name,
 				sourceFileSize: sourceFile?.size,
 				importBatchId: uploadImportBatchId ?? undefined,
+				sourceInvoiceTotalOverride: invoiceTotalOverrideConfirmed,
+				removeTransactionIds:
+					rowsMarkedForRemoval.length > 0 ? rowsMarkedForRemoval : undefined,
 			});
 
 			if (!result.success) {
+				console.error("Falha ao importar lançamentos:", result.error);
 				toast.error(result.error);
 				return;
 			}
@@ -3075,15 +3297,21 @@ export function ImportPage({
 
 			resetImportState();
 			router.replace("/transactions");
-		});
+		} catch (error) {
+			console.error("Erro inesperado ao importar lançamentos:", error);
+			toast.error("Algo deu errado ao importar. Tente novamente.");
+		} finally {
+			setIsImporting(false);
+		}
 	};
 
 	const handleRequestImport = () => {
-		if (!canImport) return;
+		if (!canProceedToImport) return;
+		setInvoiceTotalOverrideConfirmed(false);
 		setConfirmOpen(true);
 	};
 
-	const currentStep = !statement ? "upload" : isPending ? "done" : "review";
+	const currentStep = !statement ? "upload" : isImporting ? "done" : "review";
 
 	const uploadStepComplete = useMemo(() => {
 		if (importSourceStored) return true;
@@ -3272,6 +3500,18 @@ export function ImportPage({
 								withoutPayer={withoutPayerCount}
 							/>
 
+							{importInvoiceReconciliation && invoiceSourceTotal ? (
+								<InvoiceTotalReconciliationBanner
+									reconciliation={importInvoiceReconciliation}
+									sourceKind={invoiceSourceTotal.source}
+									confidence={invoiceSourceTotal.confidence}
+									invoiceExtraCount={invoiceExtraReviewStats.count}
+									invoiceExtraMarkedForRemovalCount={
+										invoiceExtraReviewStats.markedForRemovalCount
+									}
+								/>
+							) : null}
+
 							<GlobalFields
 								accountOptions={accountOptions}
 								cardOptions={cardOptions}
@@ -3437,13 +3677,24 @@ export function ImportPage({
 												Lançamentos já importados. Confirme para marcar a fatura
 												como paga.
 											</p>
+										) : canProceedToImport &&
+											importInvoiceReconciliation &&
+											!invoiceTotalBalanced ? (
+											<p className="text-muted-foreground text-sm">
+												Diferença de{" "}
+												{formatCurrency(
+													Math.abs(importInvoiceReconciliation.delta),
+												)}{" "}
+												em relação ao total do arquivo. Revise os lançamentos ou
+												confirme a importação mesmo assim.
+											</p>
 										) : null}
 										<Button
 											onClick={handleRequestImport}
-											disabled={!canImport}
+											disabled={!canProceedToImport}
 											className="w-full sm:w-auto"
 										>
-											{isPending
+											{isImporting
 												? isPaidInvoiceImport
 													? "Processando…"
 													: "Importando…"
@@ -3476,10 +3727,15 @@ export function ImportPage({
 				verifiedCount={importSummary.verifiedCount}
 				replacedCount={importSummary.replacedCount}
 				excludedCount={importSummary.excludedCount}
+				removalCount={importSummary.removalCount}
 				installmentBackfillCount={importSummary.installmentBackfillCount}
 				isPaidInvoiceImport={isPaidInvoiceImport}
-				isPending={isPending}
-				onConfirm={handleImport}
+				isPending={isImporting}
+				invoiceTotalDelta={importInvoiceReconciliation?.delta ?? null}
+				invoiceTotalOverrideConfirmed={invoiceTotalOverrideConfirmed}
+				onInvoiceTotalOverrideChange={setInvoiceTotalOverrideConfirmed}
+				canConfirm={canConfirmImport}
+				onConfirm={() => void handleImport()}
 			/>
 			{periodMismatch ? (
 				<ImportInvoicePeriodMismatchDialog

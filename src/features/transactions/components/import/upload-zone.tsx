@@ -200,12 +200,16 @@ export function UploadZone({
 
 		void fetchCardImportPdfPasswordAttemptsAction({
 			cardId: linkedCardId,
-		}).then((result) => {
-			if (cancelled) return;
-			if (result.success) {
-				setAutoPdfPasswordAttempts(result.attempts);
-			}
-		});
+		})
+			.then((result) => {
+				if (cancelled) return;
+				if (result.success) {
+					setAutoPdfPasswordAttempts(result.attempts);
+				}
+			})
+			.catch(() => {
+				// Navegação/restart pode abortar a Server Action.
+			});
 
 		return () => {
 			cancelled = true;

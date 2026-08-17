@@ -19,6 +19,7 @@ import { db } from "@/shared/lib/db";
 import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { uuidSchema } from "@/shared/lib/schemas/common";
+import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 import {
 	canInlineDownloadS3Object,
 	createPresignedGetUrl,
@@ -58,6 +59,14 @@ const historySchema = z.object({
 	limit: z.number().int().min(1).max(100).optional(),
 });
 
+const sourceFileRowSchema = z.object({
+	externalId: z.string().nullable(),
+	date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+	amount: z.number().positive(),
+	transactionType: z.enum(["income", "expense"]),
+	description: z.string().min(1),
+});
+
 const registerUploadSchema = z.object({
 	sourceFileName: z.string().trim().min(1),
 	sourceFileSize: z.number().int().positive(),
@@ -68,6 +77,21 @@ const registerUploadSchema = z.object({
 		.nullable()
 		.optional(),
 	accountId: uuidSchema("Conta").nullable().optional(),
+	sourceInvoiceTotal: z.number().positive().nullable().optional(),
+	sourceInvoiceTotalKind: z
+		.enum(["ofx_ledger", "pdf_header", "pdf_lines_fallback", "lines_fallback"])
+		.nullable()
+		.optional(),
+	sourceFileRows: z.array(sourceFileRowSchema).max(2000).optional(),
+});
+
+const syncSourceTotalSchema = z.object({
+	batchId: z.string().uuid(),
+	sourceInvoiceTotal: z.number().positive().nullable(),
+	sourceInvoiceTotalKind: z
+		.enum(["ofx_ledger", "pdf_header", "pdf_lines_fallback", "lines_fallback"])
+		.nullable(),
+	sourceFileRows: z.array(sourceFileRowSchema).max(2000).optional(),
 });
 
 const downloadSchema = z.object({
@@ -93,6 +117,12 @@ export async function registerImportUploadAction(
 			cardId: data.cardId ?? null,
 			invoicePeriod: data.invoicePeriod ?? null,
 			accountId: data.accountId ?? null,
+			sourceInvoiceTotal:
+				data.sourceInvoiceTotal != null
+					? formatDecimalForDbRequired(data.sourceInvoiceTotal)
+					: null,
+			sourceInvoiceTotalKind: data.sourceInvoiceTotalKind ?? null,
+			sourceFileRows: data.sourceFileRows ?? null,
 			importedCount: 0,
 			skippedCount: 0,
 			status: IMPORT_BATCH_STATUS.UPLOADED,
@@ -102,6 +132,46 @@ export async function registerImportUploadAction(
 		revalidatePath("/transactions/import/history");
 
 		return { success: true, importBatchId };
+	} catch (error) {
+		const result = handleActionError(error);
+		if (!result.success) return { success: false, error: result.error };
+		return { success: false, error: "Erro inesperado." };
+	}
+}
+
+export async function syncImportBatchSourceTotalAction(
+	input: z.infer<typeof syncSourceTotalSchema>,
+): Promise<{ success: boolean; error?: string }> {
+	try {
+		const userId = await getUserId();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
+		const data = syncSourceTotalSchema.parse(input);
+
+		const updated = await db
+			.update(importBatches)
+			.set({
+				sourceInvoiceTotal:
+					data.sourceInvoiceTotal != null
+						? formatDecimalForDbRequired(data.sourceInvoiceTotal)
+						: null,
+				sourceInvoiceTotalKind: data.sourceInvoiceTotalKind,
+				...(data.sourceFileRows
+					? { sourceFileRows: data.sourceFileRows }
+					: {}),
+			})
+			.where(
+				and(
+					eq(importBatches.userId, dataOwnerUserId),
+					eq(importBatches.id, data.batchId),
+				),
+			)
+			.returning({ id: importBatches.id });
+
+		if (updated.length === 0) {
+			return { success: false, error: "Importação não encontrada." };
+		}
+
+		return { success: true };
 	} catch (error) {
 		const result = handleActionError(error);
 		if (!result.success) return { success: false, error: result.error };

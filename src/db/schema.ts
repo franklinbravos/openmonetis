@@ -1104,6 +1104,15 @@ export const importBatches = pgTable(
 		importedCount: integer("importados").notNull().default(0),
 		skippedCount: integer("ignorados").notNull().default(0),
 		status: text("status").notNull().default("uploaded"),
+		sourceInvoiceTotal: numeric("total_fatura_origem", {
+			precision: 12,
+			scale: 2,
+		}),
+		sourceInvoiceTotalKind: text("tipo_total_fatura_origem"),
+		sourceInvoiceTotalOverride: boolean("override_total_fatura_origem")
+			.notNull()
+			.default(false),
+		sourceFileRows: jsonb("linhas_arquivo_origem"),
 		draftData: jsonb("dados_rascunho"),
 		createdAt: timestamp("created_at", {
 			mode: "date",

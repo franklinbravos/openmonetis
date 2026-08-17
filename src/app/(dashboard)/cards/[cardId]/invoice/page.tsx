@@ -7,6 +7,7 @@ import type { Card as CreditCard } from "@/features/cards/components/types";
 import { CardInvoiceContextHeader } from "@/features/invoices/components/card-invoice-context-header";
 import { CardInvoiceNavigationShell } from "@/features/invoices/components/card-invoice-navigation-shell";
 import { InvoiceSummaryCard } from "@/features/invoices/components/invoice-summary-card";
+import { fetchInvoiceReconciliation } from "@/features/invoices/lib/invoice-reconciliation";
 import {
 	fetchCardData,
 	fetchCardInvoiceMonthSummaries,
@@ -78,6 +79,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 		filterSources,
 		logoOptions,
 		invoiceData,
+		invoiceReconciliation,
 		estabelecimentos,
 		userPreferences,
 		importHistory,
@@ -86,6 +88,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 		fetchTransactionFilterSources(userId),
 		loadLogoOptions(),
 		fetchInvoiceData(userId, cardId, selectedPeriod),
+		fetchInvoiceReconciliation(userId, cardId, selectedPeriod),
 		fetchRecentEstablishments(userId),
 		fetchUserPreferences(userId),
 		fetchImportBatchHistory({
@@ -249,6 +252,18 @@ export default async function Page({ params, searchParams }: PageProps) {
 					hasImportAttachment={importHistory.some(
 						(entry) => entry.hasAttachment,
 					)}
+					reconciliation={
+						invoiceReconciliation.sourceTotal != null &&
+						invoiceReconciliation.sourceKind
+							? {
+									sourceTotal: invoiceReconciliation.sourceTotal,
+									sourceKind: invoiceReconciliation.sourceKind,
+									sourceOverride: invoiceReconciliation.sourceOverride,
+									delta: invoiceReconciliation.delta ?? 0,
+									extraTransactions: invoiceReconciliation.transactions,
+								}
+							: null
+					}
 				/>
 			</section>
 

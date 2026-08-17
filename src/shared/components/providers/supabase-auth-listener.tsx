@@ -12,7 +12,9 @@ export function SupabaseAuthListener() {
 	const router = useRouter();
 
 	useEffect(() => {
-		void supabase.auth.getSession();
+		void supabase.auth.getSession().catch(() => {
+			// Sessão indisponível (servidor reiniciando ou rede). O listener abaixo reconecta.
+		});
 
 		const {
 			data: { subscription },

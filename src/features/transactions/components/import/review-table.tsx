@@ -29,6 +29,7 @@ import {
 	isImportRowResolved,
 	isVerifiedImportDuplicate,
 } from "@/features/transactions/lib/import-duplicate-match";
+import { isInvoiceExtraReviewRow } from "@/features/transactions/lib/import-invoice-extra-rows";
 import {
 	buildInstallmentImportPreview,
 	createManualInstallmentImport,
@@ -92,7 +93,18 @@ import { formatDate } from "@/shared/utils/date";
 import { getConditionIcon } from "@/shared/utils/icons";
 import { cn } from "@/shared/utils/ui";
 
+function getInvoiceExtraRowClassName(row: ReviewRow) {
+	if (!isInvoiceExtraReviewRow(row)) return "";
+	return row.selected
+		? "border-destructive/40 bg-destructive/5"
+		: "border-amber-500/40 bg-amber-500/5";
+}
+
 function getDuplicateRowClassName(row: ReviewRow) {
+	if (isInvoiceExtraReviewRow(row)) {
+		return getInvoiceExtraRowClassName(row);
+	}
+
 	if (isVerifiedImportDuplicate(row) || isImportRowLinked(row)) {
 		return "border-emerald-500/40 bg-emerald-500/8";
 	}
@@ -115,7 +127,11 @@ function getDuplicateRowClassName(row: ReviewRow) {
 }
 
 function isReviewRowClassified(row: ReviewRow): boolean {
-	if (isVerifiedImportDuplicate(row) || isImportRowLinked(row)) {
+	if (
+		isVerifiedImportDuplicate(row) ||
+		isImportRowLinked(row) ||
+		isInvoiceExtraReviewRow(row)
+	) {
 		return false;
 	}
 
@@ -568,6 +584,48 @@ function ReviewLinkedStatus({ row }: { row: ReviewRow }) {
 	);
 }
 
+function ReviewInvoiceExtraStatus({ row }: { row: ReviewRow }) {
+	if (!isInvoiceExtraReviewRow(row)) return null;
+
+	const isDuplicateExtra = row.invoiceExtraReason === "duplicate";
+	const badgeLabel = row.selected
+		? isDuplicateExtra
+			? "Duplicata — será removida"
+			: "Será removido"
+		: isDuplicateExtra
+			? "Duplicata no cadastro"
+			: "Fora do arquivo";
+
+	const message = row.selected
+		? isDuplicateExtra
+			? "Este lançamento está duplicado no cadastro em relação ao arquivo e será excluído ao confirmar a importação."
+			: "Este lançamento cadastrado não aparece no arquivo e será excluído ao confirmar a importação."
+		: isDuplicateExtra
+			? "Duplicata do item do arquivo. Marque para excluir a cópia extra ao confirmar."
+			: "Este lançamento cadastrado não aparece no arquivo. Marque para excluí-lo ao confirmar.";
+
+	return (
+		<div className="flex flex-wrap items-center gap-1.5">
+			<Badge
+				variant={row.selected ? "destructive" : "outline"}
+				className="text-[10px]"
+			>
+				{badgeLabel}
+			</Badge>
+			<p
+				className={cn(
+					"text-xs leading-relaxed",
+					row.selected
+						? "text-destructive"
+						: "text-muted-foreground",
+				)}
+			>
+				{message}
+			</p>
+		</div>
+	);
+}
+
 const categoryGroupByTransactionType: Record<
 	ImportedTransaction["transactionType"],
 	string
@@ -576,7 +634,11 @@ const categoryGroupByTransactionType: Record<
 	income: "receita",
 };
 
-export type ReviewRowKind = "transaction" | "invoice_payment" | "transfer";
+export type ReviewRowKind =
+	| "transaction"
+	| "invoice_payment"
+	| "transfer"
+	| "invoice_extra";
 
 export type ReviewRow = ImportedTransaction & {
 	/** Identidade estável para React keys; externalId pode repetir no mesmo extrato. */
@@ -587,6 +649,9 @@ export type ReviewRow = ImportedTransaction & {
 	categoryId: string | null;
 	payerId: string | null;
 	kind: ReviewRowKind;
+	/** Lançamento já cadastrado na fatura, ausente do arquivo importado. */
+	existingTransactionId?: string | null;
+	invoiceExtraReason?: "duplicate" | "not_in_file" | null;
 	invoicePaymentCardId: string | null;
 	invoicePaymentPeriod: string | null;
 	transferPeerAccountId: string | null;
@@ -822,6 +887,67 @@ export function ReviewTable({
 											option.group ===
 											categoryGroupByTransactionType[row.transactionType],
 									);
+
+									if (isInvoiceExtraReviewRow(row)) {
+										return (
+											<TableRow
+												key={getReviewRowKey(row)}
+												className={getInvoiceExtraRowClassName(row)}
+											>
+												<TableCell>
+													<Checkbox
+														checked={row.selected}
+														onCheckedChange={() => onToggle(index)}
+														aria-label={`Marcar remoção de ${row.description}`}
+														tabIndex={-1}
+													/>
+												</TableCell>
+												<TableCell className="text-muted-foreground text-sm">
+													{formatDate(row.date)}
+												</TableCell>
+												<TableCell className="max-w-[280px] min-w-0 whitespace-normal text-sm">
+													<div className="space-y-1">
+														<p className="font-medium">{row.description}</p>
+														<ReviewInvoiceExtraStatus row={row} />
+													</div>
+												</TableCell>
+												<TableCell className="w-12 text-center">
+													<div className="flex justify-center">
+														<ReviewVerifiedExistingPayer
+															payerId={row.payerId}
+															payerOptions={payerOptions}
+														/>
+													</div>
+												</TableCell>
+												<TableCell>
+													<ReviewVerifiedExistingCategory
+														categoryId={row.categoryId}
+														categoryOptions={categoryOptions}
+													/>
+												</TableCell>
+												<TableCell>
+													<ReviewVerifiedExistingType
+														transactionType={row.transactionType}
+													/>
+												</TableCell>
+												<TableCell className="text-right text-sm">
+													<MoneyValues
+														amount={
+															row.transactionType === "expense"
+																? -row.amount
+																: row.amount
+														}
+														showPositiveSign={row.transactionType === "income"}
+														className={
+															row.transactionType === "income"
+																? "text-success"
+																: "text-foreground"
+														}
+													/>
+												</TableCell>
+											</TableRow>
+										);
+									}
 
 									if (
 										isVerifiedImportDuplicate(row) ||
@@ -1298,6 +1424,63 @@ function ReviewMobileCard({
 		(option) =>
 			option.group === categoryGroupByTransactionType[row.transactionType],
 	);
+
+	if (isInvoiceExtraReviewRow(row)) {
+		return (
+			<article
+				className={cn(
+					"rounded-lg border p-3 shadow-xs transition-colors",
+					getInvoiceExtraRowClassName(row),
+				)}
+			>
+				<div className="space-y-2">
+					<div className="flex items-center gap-2">
+						<Checkbox
+							checked={row.selected}
+							onCheckedChange={() => onToggle(index)}
+							aria-label={`Marcar remoção de ${row.description}`}
+						/>
+						<p className="min-w-0 flex-1 text-muted-foreground text-xs">
+							{formatDate(row.date)}
+						</p>
+						<MoneyValues
+							amount={
+								row.transactionType === "expense" ? -row.amount : row.amount
+							}
+							showPositiveSign={row.transactionType === "income"}
+							className={cn(
+								"shrink-0 text-sm font-medium",
+								row.transactionType === "income"
+									? "text-success"
+									: "text-foreground",
+							)}
+						/>
+					</div>
+					<div className="space-y-1">
+						<p className="min-w-0 font-medium">{row.description}</p>
+						<ReviewInvoiceExtraStatus row={row} />
+					</div>
+					<div className="flex items-center gap-1.5">
+						<ReviewVerifiedExistingType
+							transactionType={row.transactionType}
+							rowKind={row.kind}
+							compact
+						/>
+						<ReviewVerifiedExistingPayer
+							payerId={row.payerId}
+							payerOptions={payerOptions}
+							compact
+						/>
+						<ReviewVerifiedExistingCategory
+							categoryId={row.categoryId}
+							categoryOptions={categoryOptions}
+							compact
+						/>
+					</div>
+				</div>
+			</article>
+		);
+	}
 
 	if (isVerifiedImportDuplicate(row) || isImportRowLinked(row)) {
 		const existingPayerId = resolveReviewExistingPayerId(row, defaultPayerId);

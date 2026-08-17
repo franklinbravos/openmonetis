@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { parsePdfText } from "./pdf-parser";
+import {
+	displayInvoiceTotal,
+	sumSignedAmountsForImportedTransactions,
+} from "./invoice-total";
 
 const NUBANK_JAN_2026_FIXTURE = `
 Nu Pagamentos S.A.
@@ -74,5 +78,22 @@ Total a pagar R$ 150,00
 
 		expect(result.invoice?.period).toBe("2026-01");
 		expect(result.invoice?.dueDate).toBe("2026-01-12");
+	});
+
+	it("persiste total do cabeçalho com origem pdf_header", () => {
+		const result = parsePdfText(NUBANK_JAN_2026_FIXTURE);
+
+		expect(result.invoice?.totalAmount).toBe(150);
+		expect(result.invoice?.totalAmountSource).toBe("pdf_header");
+	});
+
+	it("total do cabeçalho pode diferir da soma das linhas importáveis", () => {
+		const result = parsePdfText(NUBANK_JAN_2026_FIXTURE);
+		const linesTotal = displayInvoiceTotal(
+			sumSignedAmountsForImportedTransactions(result.transactions),
+		);
+
+		expect(result.invoice?.totalAmount).toBe(150);
+		expect(linesTotal).toBe(101.9);
 	});
 });

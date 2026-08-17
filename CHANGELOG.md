@@ -5,6 +5,25 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [Unreleased]
+
+Esta versão adiciona conferência do total da fatura na importação de cartão (OFX/PDF), bloqueando a conclusão quando o total projetado diverge do arquivo — com override explícito — e exibindo a diferença na página da fatura após a importação.
+
+### Adicionado
+- Importação de fatura (OFX/PDF/planilha): na revisão, todos os lançamentos já cadastrados no período aparecem na tabela; os ausentes do arquivo vêm marcados em vermelho como **Será removido** e são excluídos ao confirmar a importação (com opção de desmarcar).
+- Importação de fatura (OFX/PDF): banner de reconciliação na revisão com total do arquivo, cadastrado, selecionado, projetado e diferença; listas de lançamentos extras e linhas não selecionadas.
+- Importação de fatura: bloqueio da confirmação quando o total projetado ≠ total do arquivo; checkbox para importar mesmo com diferença.
+- Importação: persistência de `total_fatura_origem` e tipo no lote (`import_batches`).
+- Fatura do cartão: seção de conferência com total do arquivo vs cadastrado, diferença, extras e atalhos para retomar revisão ou ajustar fatura.
+
+### Alterado
+- Importação de fatura: cadastros a mais que batem com o arquivo (mesmo nome/parcela e valor) são rotulados como **duplicata**, não como item ausente; o total projetado desconta essas duplicatas marcadas para remoção.
+- Fatura do cartão: a lista de extras compara o cadastro com o arquivo importado (FITID ou nome+valor), em vez de marcar lançamentos já conferidos.
+- Parsers OFX/PDF passam a registrar a origem do total parseado (`ofx_ledger`, `pdf_header`, `pdf_lines_fallback`).
+
+### Removido
+- Login: aviso técnico de configuração do Google OAuth em desenvolvimento.
+
 ## [2.8.0] - 2026-08-12
 
 Esta versão fortalece a importação de dados — a entrada inicial do sistema — com análise de IA com progresso em tempo real, filtros de busca e status na revisão, e detecção de duplicatas mais precisa em faturas de cartão. Também endurece a segurança (erros acionáveis em vez de mensagens genéricas, whitelist de domínios de imagem, CSP, validação de ownership e 401 nas APIs) e traz ganhos de performance no caminho mais quente do app.
