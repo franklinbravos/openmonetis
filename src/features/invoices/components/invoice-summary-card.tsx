@@ -56,6 +56,7 @@ import {
 import { formatCurrency } from "@/shared/utils/currency";
 import { formatDateOnly, formatDateOnlyLabel } from "@/shared/utils/date";
 import { formatFinancialDateLabel } from "@/shared/utils/financial-dates";
+import { displayPeriod } from "@/shared/utils/period";
 import { cn } from "@/shared/utils/ui";
 import { AdjustInvoiceDialog } from "./adjust-invoice-dialog";
 import { EditPaymentDateDialog } from "./edit-payment-date-dialog";
@@ -225,7 +226,9 @@ export function InvoiceSummaryCard({
 				<div className="flex flex-col gap-4">
 					{/* Valor da fatura (hero) */}
 					<div className="space-y-3">
-						<p className="text-sm text-muted-foreground">Valor da fatura</p>
+						<p className="text-sm text-muted-foreground">
+							Valor da fatura: {displayPeriod(period)}
+						</p>
 						<div className="flex items-center gap-2">
 							<MoneyValues
 								amount={Math.abs(totalAmount)}

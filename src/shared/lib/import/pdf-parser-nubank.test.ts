@@ -23,7 +23,7 @@ describe("parseNubankPdf", () => {
 		const result = parsePdfText(NUBANK_JAN_2026_FIXTURE);
 
 		expect(result.source).toBe("Nubank");
-		expect(result.invoice?.period).toBe("2026-01");
+		expect(result.invoice?.period).toBe("2026-02");
 		expect(result.invoice?.dueDate).toBe("2026-02-05");
 	});
 
@@ -35,7 +35,7 @@ describe("parseNubankPdf", () => {
 		);
 	});
 
-	it("identifica janeiro/2026 quando só há vencimento em fevereiro", () => {
+	it("identifica fevereiro/2026 quando o vencimento é em fevereiro", () => {
 		const result = parsePdfText(`
 Nu Pagamentos S.A.
 Vencimento 08 FEV 2026
@@ -44,7 +44,7 @@ TRANSAÇÕES DE 10 DEZ A 08 JAN
 10 DEZ LOJA TESTE R$ 50,00
 `);
 
-		expect(result.invoice?.period).toBe("2026-01");
+		expect(result.invoice?.period).toBe("2026-02");
 	});
 
 	it("não confunde data de vencimento no cabeçalho FATURA com o mês da fatura", () => {
@@ -57,7 +57,7 @@ TRANSAÇÕES DE 06 DEZ A 05 JAN
 05 JAN •••• 1234 SPOTIFY R$ 21,90
 `);
 
-		expect(result.invoice?.period).toBe("2026-01");
+		expect(result.invoice?.period).toBe("2026-02");
 		expect(result.invoice?.dueDate).toBe("2026-02-05");
 	});
 

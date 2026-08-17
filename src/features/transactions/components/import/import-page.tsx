@@ -137,9 +137,9 @@ import {
 	isInvoicePaymentDescription,
 } from "@/features/transactions/lib/import-invoice-payment";
 import {
+	resolveAccountStatementDateRange,
+	resolveCreditCardInvoicePeriodFromStatement,
 	resolveImportPaymentDate,
-	resolveInvoicePeriodFromMetadata,
-	resolveInvoicePeriodFromStatement,
 	resolveUploadInvoicePeriodFromStatement,
 } from "@/features/transactions/lib/import-invoice-period";
 import { guessImportTransfer } from "@/features/transactions/lib/import-transfer-detection";
@@ -169,7 +169,6 @@ import { AI_STORED_KEY_UNREADABLE_MESSAGE } from "@/shared/lib/ai/provider-messa
 import type { CategoryType } from "@/shared/lib/categories/constants";
 import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants";
 import {
-	buildPeriodFromTransactions,
 	dedupeImportedTransactionsByFingerprint,
 	normalizeImportedText,
 	stripImportExternalIdSuffix,
@@ -948,8 +947,7 @@ export function ImportPage({
 			return initialAccountId ?? null;
 		})();
 
-		const statementPeriod =
-			statement.period ?? buildPeriodFromTransactions(statement.transactions);
+		const statementPeriod = resolveAccountStatementDateRange(statement);
 
 		const shouldFetchAccountSnapshots =
 			!statement.isCreditCard && resolvedAccountId && statementPeriod;
@@ -994,9 +992,8 @@ export function ImportPage({
 		(stmt: ImportStatement) => {
 			if (!stmt.isCreditCard) return;
 
-			const period = resolveInvoicePeriodFromStatement(
-				stmt.invoice,
-				stmt.transactions,
+			const period = resolveCreditCardInvoicePeriodFromStatement(
+				stmt,
 				selectedCardOption,
 			);
 
@@ -1015,18 +1012,22 @@ export function ImportPage({
 			const normalizedStatement = withNormalizedDescriptions(stmt);
 			setStatement(normalizedStatement);
 
-			const periodFromFile =
-				resolveInvoicePeriodFromMetadata(normalizedStatement.invoice) ??
-				resolveInvoicePeriodFromStatement(
-					normalizedStatement.invoice,
-					normalizedStatement.transactions,
+			let periodFromFile: string | null = null;
+			if (normalizedStatement.isCreditCard) {
+				periodFromFile = resolveCreditCardInvoicePeriodFromStatement(
+					normalizedStatement,
 					selectedCardOption,
 				);
-			if (periodFromFile) {
-				setInvoicePeriod(periodFromFile);
-			}
+				if (periodFromFile) {
+					setInvoicePeriod(periodFromFile);
+				}
 
-			setPaymentDate(resolveImportPaymentDate(normalizedStatement.invoice));
+				if (normalizedStatement.invoice) {
+					setPaymentDate(
+						resolveImportPaymentDate(normalizedStatement.invoice),
+					);
+				}
+			}
 
 			const resolvedCardId = (() => {
 				const decoded = accountCardValue
@@ -1058,8 +1059,7 @@ export function ImportPage({
 			})();
 
 			const statementPeriod =
-				normalizedStatement.period ??
-				buildPeriodFromTransactions(normalizedStatement.transactions);
+				resolveAccountStatementDateRange(normalizedStatement);
 
 			setIsChecking(true);
 			duplicateMatchingContextRef.current = null;
@@ -1360,8 +1360,7 @@ export function ImportPage({
 			return initialAccountId ?? null;
 		})();
 
-		const statementPeriod =
-			statement.period ?? buildPeriodFromTransactions(statement.transactions);
+		const statementPeriod = resolveAccountStatementDateRange(statement);
 
 		const invoicePeriodsForSnapshots = [
 			...new Set(

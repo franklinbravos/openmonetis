@@ -1,7 +1,6 @@
 import type { SelectOption } from "@/features/transactions/components/types";
 import {
-	resolveInvoicePeriodFromMetadata,
-	resolveInvoicePeriodFromStatement,
+	resolveCreditCardInvoicePeriodFromImportStatement,
 } from "@/features/transactions/lib/import-invoice-period";
 import type { ImportStatement } from "@/shared/lib/import/types";
 import { displayPeriod } from "@/shared/utils/period";
@@ -27,25 +26,6 @@ export type InvoiceImportValidationResult =
 			cardName: string;
 	  };
 
-export function resolveInvoicePeriodFromImportStatement(
-	statement: ImportStatement,
-	cardOptions: SelectOption[],
-	cardId?: string | null,
-): string | null {
-	const cardOption = cardId
-		? (cardOptions.find((option) => option.value === cardId) ?? null)
-		: null;
-
-	return (
-		resolveInvoicePeriodFromMetadata(statement.invoice) ??
-		resolveInvoicePeriodFromStatement(
-			statement.invoice,
-			statement.transactions,
-			cardOption,
-		)
-	);
-}
-
 export function validateInvoiceImportContext(
 	statement: ImportStatement,
 	context: InvoiceImportContext | null,
@@ -62,7 +42,7 @@ export function validateInvoiceImportContext(
 		};
 	}
 
-	const periodFromFile = resolveInvoicePeriodFromImportStatement(
+	const periodFromFile = resolveCreditCardInvoicePeriodFromImportStatement(
 		statement,
 		cardOptions,
 		context.cardId,

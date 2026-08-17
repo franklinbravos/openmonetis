@@ -1,28 +1,21 @@
-import {
-	derivePeriodFromDate,
-	formatPeriod,
-	parsePeriod,
-} from "@/shared/utils/period";
+import { derivePeriodFromDate } from "@/shared/utils/period";
 
-/** Vencimento em fev → fatura de jan (referência Nubank). */
+/** Período da fatura no OpenMonetis = mês de vencimento (igual à página /cards/.../invoice). */
 export function deriveNubankInvoicePeriodFromDueDate(dueDate: string): string {
-	const { year, month } = parsePeriod(derivePeriodFromDate(dueDate));
-	const invoiceMonth = month === 1 ? 12 : month - 1;
-	const invoiceYear = month === 1 ? year - 1 : year;
-	return formatPeriod(invoiceYear, invoiceMonth);
+	return derivePeriodFromDate(dueDate);
 }
 
-/** Período de referência: fim do ciclo (Período vigente / TRANSAÇÕES … A DD MMM). */
+/** Período de fatura de cartão Nubank (PDF/OFX). Não usar para extrato de conta. */
 export function resolveNubankInvoicePeriod(input: {
 	billingWindowEndDate?: string | null;
 	dueDate?: string | null;
 }): string | null {
-	if (input.billingWindowEndDate) {
-		return derivePeriodFromDate(input.billingWindowEndDate);
+	if (input.dueDate) {
+		return derivePeriodFromDate(input.dueDate);
 	}
 
-	if (input.dueDate) {
-		return deriveNubankInvoicePeriodFromDueDate(input.dueDate);
+	if (input.billingWindowEndDate) {
+		return derivePeriodFromDate(input.billingWindowEndDate);
 	}
 
 	return null;
