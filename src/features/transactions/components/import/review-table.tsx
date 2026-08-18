@@ -22,6 +22,8 @@ import {
 } from "@/features/transactions/components/select-items";
 import type { SelectOption } from "@/features/transactions/components/types";
 import { groupAndSortCategories } from "@/features/transactions/lib/category-helpers";
+import type { ReviewExistingAmountCorrection } from "@/features/transactions/lib/import-amount-edit";
+import { resolveExistingTransactionIdForAmountEdit } from "@/features/transactions/lib/import-amount-edit";
 import type { ImportDuplicateValidation } from "@/features/transactions/lib/import-duplicate-match";
 import {
 	isImportLinkSuggestion,
@@ -29,7 +31,6 @@ import {
 	isImportRowResolved,
 	isVerifiedImportDuplicate,
 } from "@/features/transactions/lib/import-duplicate-match";
-import { isInvoiceExtraReviewRow } from "@/features/transactions/lib/import-invoice-extra-rows";
 import {
 	buildInstallmentImportPreview,
 	createManualInstallmentImport,
@@ -37,6 +38,8 @@ import {
 	type ReviewInstallmentImport,
 	type ReviewRecurrenceImport,
 } from "@/features/transactions/lib/import-installments";
+import { isInvoiceExtraReviewRow } from "@/features/transactions/lib/import-invoice-extra-rows";
+import { isImportRowCrossPeriod } from "@/features/transactions/lib/import-invoice-reconciliation";
 import {
 	buildImportReviewFilteredEntries,
 	countImportReviewRowsByStatus,
@@ -584,6 +587,29 @@ function ReviewLinkedStatus({ row }: { row: ReviewRow }) {
 	);
 }
 
+function ReviewCrossPeriodStatus({
+	row,
+	invoicePeriodExistingIdSet,
+}: {
+	row: ReviewRow;
+	invoicePeriodExistingIdSet?: Set<string>;
+}) {
+	if (!invoicePeriodExistingIdSet) return null;
+	if (!isImportRowCrossPeriod(row, invoicePeriodExistingIdSet)) return null;
+
+	return (
+		<div className="flex flex-wrap items-center gap-1.5">
+			<Badge variant="secondary" className="text-[10px]">
+				Outro período
+			</Badge>
+			<p className="text-muted-foreground text-xs leading-relaxed">
+				O lançamento existente está cadastrado em outro período e não conta para
+				o total desta fatura.
+			</p>
+		</div>
+	);
+}
+
 function ReviewInvoiceExtraStatus({ row }: { row: ReviewRow }) {
 	if (!isInvoiceExtraReviewRow(row)) return null;
 
@@ -615,9 +641,7 @@ function ReviewInvoiceExtraStatus({ row }: { row: ReviewRow }) {
 			<p
 				className={cn(
 					"text-xs leading-relaxed",
-					row.selected
-						? "text-destructive"
-						: "text-muted-foreground",
+					row.selected ? "text-destructive" : "text-muted-foreground",
 				)}
 			>
 				{message}
@@ -660,6 +684,12 @@ export type ReviewRow = ImportedTransaction & {
 	reimported?: boolean;
 	linked?: boolean;
 	linkedTransactionId?: string | null;
+	/** Valor cadastrado do período reconciliado, quando o lançamento existe. */
+	existingAmount?: number | null;
+	/** Correção de valor do lançamento existente, aplicada na confirmação. */
+	existingAmountCorrection?: ReviewExistingAmountCorrection | null;
+	/** Chave estável do rascunho, capturada antes de qualquer edição. */
+	originalDraftKey?: string;
 	/** Nome exatamente como veio do extrato/fatura; não muda ao editar na revisão. */
 	sourceDescription: string;
 	aiSuggestion?: {
@@ -692,6 +722,7 @@ interface ReviewTableProps {
 	transferAccountOptions: SelectOption[];
 	isCard: boolean;
 	invoicePeriod: string | null;
+	invoicePeriodExistingIdSet?: Set<string>;
 	onToggle: (index: number) => void;
 	onToggleAll: (selected: boolean) => void;
 	onToggleAllFiltered: (indices: number[], selected: boolean) => void;
@@ -725,6 +756,7 @@ interface ReviewTableProps {
 	onConvertToRecurrence: (index: number) => void;
 	onRecurrenceToggle: (index: number, enabled: boolean) => void;
 	onRecurrenceCountChange: (index: number, recurrenceCount: number) => void;
+	onAmountChange: (index: number, amount: number) => void;
 }
 
 export function ReviewTable({
@@ -736,6 +768,7 @@ export function ReviewTable({
 	transferAccountOptions,
 	isCard,
 	invoicePeriod,
+	invoicePeriodExistingIdSet,
 	onToggle,
 	onToggleAll,
 	onToggleAllFiltered,
@@ -760,6 +793,7 @@ export function ReviewTable({
 	onConvertToRecurrence,
 	onRecurrenceToggle,
 	onRecurrenceCountChange,
+	onAmountChange,
 }: ReviewTableProps) {
 	const [searchQuery, setSearchQuery] = useState("");
 	const [statusFilter, setStatusFilter] =
@@ -826,6 +860,7 @@ export function ReviewTable({
 							transferAccountOptions={transferAccountOptions}
 							isCard={isCard}
 							invoicePeriod={invoicePeriod}
+							invoicePeriodExistingIdSet={invoicePeriodExistingIdSet}
 							onToggle={onToggle}
 							onToggleAll={handleToggleAll}
 							filtersActive={filtersActive}
@@ -851,6 +886,7 @@ export function ReviewTable({
 							onConvertToRecurrence={onConvertToRecurrence}
 							onRecurrenceToggle={onRecurrenceToggle}
 							onRecurrenceCountChange={onRecurrenceCountChange}
+							onAmountChange={onAmountChange}
 						/>
 
 						<Table className="hidden md:table">
@@ -931,18 +967,11 @@ export function ReviewTable({
 													/>
 												</TableCell>
 												<TableCell className="text-right text-sm">
-													<MoneyValues
-														amount={
-															row.transactionType === "expense"
-																? -row.amount
-																: row.amount
-														}
-														showPositiveSign={row.transactionType === "income"}
-														className={
-															row.transactionType === "income"
-																? "text-success"
-																: "text-foreground"
-														}
+													<ReviewAmountField
+														row={row}
+														index={index}
+														onAmountChange={onAmountChange}
+														alignRight
 													/>
 												</TableCell>
 											</TableRow>
@@ -992,6 +1021,12 @@ export function ReviewTable({
 															onUndoDuplicate={onUndoDuplicate}
 														/>
 													)}
+													<ReviewCrossPeriodStatus
+														row={row}
+														invoicePeriodExistingIdSet={
+															invoicePeriodExistingIdSet
+														}
+													/>
 												</TableCell>
 												<TableCell className="w-12 text-center">
 													<div className="flex justify-center">
@@ -1013,18 +1048,11 @@ export function ReviewTable({
 													/>
 												</TableCell>
 												<TableCell className="text-right text-sm">
-													<MoneyValues
-														amount={
-															row.transactionType === "expense"
-																? -row.amount
-																: row.amount
-														}
-														showPositiveSign={row.transactionType === "income"}
-														className={
-															row.transactionType === "income"
-																? "text-success"
-																: "text-foreground"
-														}
+													<ReviewAmountField
+														row={row}
+														index={index}
+														onAmountChange={onAmountChange}
+														alignRight
 													/>
 												</TableCell>
 											</TableRow>
@@ -1146,18 +1174,11 @@ export function ReviewTable({
 												/>
 											</TableCell>
 											<TableCell className="text-right text-sm">
-												<MoneyValues
-													amount={
-														row.transactionType === "expense"
-															? -row.amount
-															: row.amount
-													}
-													showPositiveSign={row.transactionType === "income"}
-													className={
-														row.transactionType === "income"
-															? "text-success"
-															: "text-foreground"
-													}
+												<ReviewAmountField
+													row={row}
+													index={index}
+													onAmountChange={onAmountChange}
+													alignRight
 												/>
 											</TableCell>
 										</TableRow>
@@ -1309,8 +1330,10 @@ type ReviewRowHandlers = Pick<
 	| "onConvertToRecurrence"
 	| "onRecurrenceToggle"
 	| "onRecurrenceCountChange"
+	| "onAmountChange"
 	| "isCard"
 	| "invoicePeriod"
+	| "invoicePeriodExistingIdSet"
 >;
 
 type ReviewRowSharedProps = ReviewRowHandlers & {
@@ -1417,8 +1440,10 @@ function ReviewMobileCard({
 	onConvertToRecurrence,
 	onRecurrenceToggle,
 	onRecurrenceCountChange,
+	onAmountChange,
 	isCard,
 	invoicePeriod,
+	invoicePeriodExistingIdSet,
 }: ReviewRowSharedProps & { onToggle: (index: number) => void }) {
 	const categoryOptionsForRow = categoryOptions.filter(
 		(option) =>
@@ -1443,17 +1468,11 @@ function ReviewMobileCard({
 						<p className="min-w-0 flex-1 text-muted-foreground text-xs">
 							{formatDate(row.date)}
 						</p>
-						<MoneyValues
-							amount={
-								row.transactionType === "expense" ? -row.amount : row.amount
-							}
-							showPositiveSign={row.transactionType === "income"}
-							className={cn(
-								"shrink-0 text-sm font-medium",
-								row.transactionType === "income"
-									? "text-success"
-									: "text-foreground",
-							)}
+						<ReviewAmountField
+							row={row}
+							index={index}
+							onAmountChange={onAmountChange}
+							mobile
 						/>
 					</div>
 					<div className="space-y-1">
@@ -1503,17 +1522,11 @@ function ReviewMobileCard({
 						<p className="min-w-0 flex-1 text-muted-foreground text-xs">
 							{formatDate(row.date)}
 						</p>
-						<MoneyValues
-							amount={
-								row.transactionType === "expense" ? -row.amount : row.amount
-							}
-							showPositiveSign={row.transactionType === "income"}
-							className={cn(
-								"shrink-0 text-sm font-medium",
-								row.transactionType === "income"
-									? "text-success"
-									: "text-foreground",
-							)}
+						<ReviewAmountField
+							row={row}
+							index={index}
+							onAmountChange={onAmountChange}
+							mobile
 						/>
 					</div>
 					{isImportRowLinked(row) ? (
@@ -1529,6 +1542,10 @@ function ReviewMobileCard({
 							onUndoDuplicate={onUndoDuplicate}
 						/>
 					)}
+					<ReviewCrossPeriodStatus
+						row={row}
+						invoicePeriodExistingIdSet={invoicePeriodExistingIdSet}
+					/>
 					<div className="flex items-center gap-1.5">
 						<ReviewVerifiedExistingType
 							transactionType={row.transactionType}
@@ -1586,17 +1603,11 @@ function ReviewMobileCard({
 								<p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
 									{formatDate(row.date)}
 								</p>
-								<MoneyValues
-									amount={
-										row.transactionType === "expense" ? -row.amount : row.amount
-									}
-									showPositiveSign={row.transactionType === "income"}
-									className={cn(
-										"shrink-0 text-sm font-medium",
-										row.transactionType === "income"
-											? "text-success"
-											: "text-foreground",
-									)}
+								<ReviewAmountField
+									row={row}
+									index={index}
+									onAmountChange={onAmountChange}
+									mobile
 								/>
 							</div>
 							<ReviewDescriptionField
@@ -1631,17 +1642,11 @@ function ReviewMobileCard({
 							<p className="min-w-0 flex-1 text-muted-foreground text-xs">
 								{formatDate(row.date)}
 							</p>
-							<MoneyValues
-								amount={
-									row.transactionType === "expense" ? -row.amount : row.amount
-								}
-								showPositiveSign={row.transactionType === "income"}
-								className={cn(
-									"shrink-0 text-sm font-medium",
-									row.transactionType === "income"
-										? "text-success"
-										: "text-foreground",
-								)}
+							<ReviewAmountField
+								row={row}
+								index={index}
+								onAmountChange={onAmountChange}
+								mobile
 							/>
 						</div>
 
@@ -2031,6 +2036,105 @@ function ReviewRecurrenceFields({
 				)}
 			</CollapsibleContent>
 		</Collapsible>
+	);
+}
+
+function formatAmountEditInputValue(value: number): string {
+	if (!Number.isFinite(value)) return "";
+	return Math.max(0, Math.round(value * 100) / 100).toFixed(2);
+}
+
+function ReviewAmountField({
+	row,
+	index,
+	onAmountChange,
+	alignRight = false,
+	mobile = false,
+}: {
+	row: ReviewRow;
+	index: number;
+	onAmountChange: (index: number, amount: number) => void;
+	alignRight?: boolean;
+	mobile?: boolean;
+}) {
+	const registeredTransactionId =
+		resolveExistingTransactionIdForAmountEdit(row);
+
+	const isRegistered = registeredTransactionId !== null;
+	const fileEditable =
+		row.kind === "transaction" &&
+		!row.reimported &&
+		!row.linked &&
+		!row.duplicateValidation &&
+		!row.existingTransactionId;
+	const isEditable = isRegistered || fileEditable;
+
+	const initialAmount = isRegistered
+		? (row.existingAmountCorrection?.amount ?? row.existingAmount ?? row.amount)
+		: row.amount;
+
+	const hintText = isRegistered
+		? row.existingAmount != null
+			? `Cadastro: ${formatCurrency(row.existingAmount)}`
+			: null
+		: `Arquivo: ${formatCurrency(row.amount)}`;
+
+	const [draftValue, setDraftValue] = useState<string>(() =>
+		formatAmountEditInputValue(initialAmount),
+	);
+
+	useEffect(() => {
+		setDraftValue(formatAmountEditInputValue(initialAmount));
+	}, [initialAmount]);
+
+	const commitDraft = () => {
+		const parsed = Number.parseFloat(draftValue);
+		if (!Number.isFinite(parsed) || parsed < 0) {
+			setDraftValue(formatAmountEditInputValue(initialAmount));
+			return;
+		}
+		const rounded = Math.round(parsed * 100) / 100;
+		setDraftValue(formatAmountEditInputValue(rounded));
+		onAmountChange(index, rounded);
+	};
+
+	return (
+		<div
+			className={cn(
+				"flex flex-col gap-0.5",
+				alignRight && "items-end",
+				mobile && "shrink-0 items-end",
+			)}
+		>
+			<Input
+				type="number"
+				inputMode="decimal"
+				min="0"
+				step="0.01"
+				value={draftValue}
+				onChange={(event) => setDraftValue(event.target.value)}
+				onBlur={commitDraft}
+				onKeyDown={(event) => {
+					if (event.key === "Enter") {
+						event.currentTarget.blur();
+					}
+				}}
+				disabled={!isEditable}
+				aria-label={
+					isRegistered
+						? "Valor do lançamento (correção do cadastro)"
+						: "Valor do lançamento"
+				}
+				className={cn(
+					"h-8 tabular-nums",
+					mobile ? "w-24 text-xs" : "w-28 text-sm",
+					alignRight && "text-right",
+				)}
+			/>
+			{hintText ? (
+				<span className="text-[10px] text-muted-foreground">{hintText}</span>
+			) : null}
+		</div>
 	);
 }
 

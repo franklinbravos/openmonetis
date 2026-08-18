@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parsePdfText } from "./pdf-parser";
 import {
 	displayInvoiceTotal,
 	sumSignedAmountsForImportedTransactions,
 } from "./invoice-total";
+import { parsePdfText } from "./pdf-parser";
 
 const NUBANK_JAN_2026_FIXTURE = `
 Nu Pagamentos S.A.
@@ -34,9 +34,10 @@ describe("parseNubankPdf", () => {
 	it("ajusta o ano das compras de dezembro no ciclo dez–jan", () => {
 		const result = parsePdfText(NUBANK_JAN_2026_FIXTURE);
 
-		expect(result.transactions.map((transaction) => transaction.date)).toEqual(
-			["2025-12-06", "2026-01-05"],
-		);
+		expect(result.transactions.map((transaction) => transaction.date)).toEqual([
+			"2025-12-06",
+			"2026-01-05",
+		]);
 	});
 
 	it("identifica fevereiro/2026 quando o vencimento é em fevereiro", () => {
@@ -85,6 +86,7 @@ Total a pagar R$ 150,00
 
 		expect(result.invoice?.totalAmount).toBe(150);
 		expect(result.invoice?.totalAmountSource).toBe("pdf_header");
+		expect(result.invoice?.isPaid).toBe(false);
 	});
 
 	it("total do cabeçalho pode diferir da soma das linhas importáveis", () => {

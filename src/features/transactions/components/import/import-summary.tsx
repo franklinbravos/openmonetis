@@ -32,6 +32,7 @@ interface ImportSummaryProps {
 	linkSuggestions?: number;
 	uncategorized: number;
 	withoutPayer: number;
+	amountCorrectionCount?: number;
 }
 
 function AccountCardIdentity({ label, logo, isCard }: AccountCardSummary) {
@@ -139,6 +140,7 @@ export function ImportSummary({
 	linkSuggestions = 0,
 	uncategorized,
 	withoutPayer,
+	amountCorrectionCount = 0,
 }: ImportSummaryProps) {
 	const displayName = accountCard?.label ?? statement.source;
 	const isCardImport = accountCard?.isCard ?? statement.isCreditCard;
@@ -253,6 +255,15 @@ export function ImportSummary({
 						{linkSuggestions} possível{linkSuggestions !== 1 ? "is" : ""}{" "}
 						vínculo
 						{linkSuggestions !== 1 ? "s" : ""}
+					</span>
+				)}
+
+				{amountCorrectionCount > 0 && (
+					<span className="text-violet-700 dark:text-violet-300">
+						{amountCorrectionCount}{" "}
+						{amountCorrectionCount !== 1
+							? "valores corrigidos"
+							: "valor corrigido"}
 					</span>
 				)}
 

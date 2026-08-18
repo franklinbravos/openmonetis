@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseOfx } from "./ofx-parser";
 import { resolveInvoiceSourceTotal } from "./invoice-source-total";
 import {
 	displayInvoiceTotal,
 	sumSignedAmountsForImportedTransactions,
 } from "./invoice-total";
+import { parseOfx } from "./ofx-parser";
 
 const ofxBankStatement = `OFXHEADER:100
 DATA:OFXSGML
@@ -187,8 +187,8 @@ describe("parseOfx", () => {
 		expect(result.invoice).toEqual({
 			period: "2026-07",
 			dueDate: "2026-07-12",
-			isPaid: true,
-			paymentDate: "2026-06-10",
+			isPaid: false,
+			paymentDate: null,
 			totalAmount: 2109.5,
 			totalAmountSource: "ofx_ledger",
 		});

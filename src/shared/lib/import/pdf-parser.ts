@@ -299,9 +299,7 @@ function parseItauCardInvoiceMetadata(
 	);
 	const paymentDate = paymentMatch ? parseSlashDateDMY(paymentMatch[1]) : null;
 
-	const isPaid =
-		Boolean(paymentDate) ||
-		/pagamento\s+efetuado|pagamento\s+recebido/i.test(text);
+	const isPaid = Boolean(paymentDate) || /pagamento\s+efetuado/i.test(text);
 
 	return buildInvoiceMetadataFromDueDate(dueDate, {
 		isPaid,
@@ -480,8 +478,7 @@ function parseNubankFaturaHeader(text: string): { invoiceYear: number } | null {
 	const headerMatches =
 		cycleIdx >= 0
 			? allMatches.filter(
-					(match) =>
-						match.index !== undefined && match.index < cycleIdx,
+					(match) => match.index !== undefined && match.index < cycleIdx,
 				)
 			: allMatches;
 
@@ -607,10 +604,7 @@ function parseNubankInvoiceMetadata(
 				)
 			: null;
 
-	const isPaid =
-		Boolean(paymentMatch) ||
-		/Total a pagar\s+R\$\s*0,00/i.test(text) ||
-		/Pagamento recebido/i.test(text);
+	const isPaid = /Total a pagar\s+R\$\s*0,00/i.test(text);
 
 	const period = resolveNubankInvoicePeriod({
 		billingWindowEndDate: billingWindow?.to ?? null,
@@ -720,7 +714,9 @@ function parseNubankPdf(text: string): ImportStatement {
 	const faturaHeader = parseNubankFaturaHeader(text);
 	const invoiceYear =
 		faturaHeader?.invoiceYear ??
-		(dueDate ? Number.parseInt(dueDate.slice(0, 4), 10) : new Date().getFullYear());
+		(dueDate
+			? Number.parseInt(dueDate.slice(0, 4), 10)
+			: new Date().getFullYear());
 	const billingWindow = parseNubankBillingWindow(text, invoiceYear);
 	const period = billingWindow
 		? { from: billingWindow.from, to: billingWindow.to }

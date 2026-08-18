@@ -14,6 +14,44 @@ export function isInvoicePaymentDescription(description: string): boolean {
 	return INVOICE_PAYMENT_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
+export function shouldExcludeInvoicePaymentFromCardImport(input: {
+	description: string;
+	isCreditCardStatement: boolean;
+}): boolean {
+	return (
+		input.isCreditCardStatement &&
+		isInvoicePaymentDescription(input.description)
+	);
+}
+
+export function sanitizeExcludedCardInvoicePaymentRow<
+	T extends {
+		description: string;
+		kind: string;
+		selected: boolean;
+		invoicePaymentCardId: string | null;
+		invoicePaymentPeriod: string | null;
+	},
+>(row: T, isCreditCardStatement: boolean): T {
+	if (
+		row.kind === "invoice_extra" ||
+		!shouldExcludeInvoicePaymentFromCardImport({
+			description: row.description,
+			isCreditCardStatement,
+		})
+	) {
+		return row;
+	}
+
+	return {
+		...row,
+		selected: false,
+		kind: "transaction",
+		invoicePaymentCardId: null,
+		invoicePaymentPeriod: null,
+	};
+}
+
 export function guessInvoicePaymentCardId(
 	description: string,
 	cardOptions: SelectOption[],

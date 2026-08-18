@@ -61,6 +61,15 @@ const importBatchDraftRowSchema = z.object({
 	reimported: z.boolean().optional(),
 	linked: z.boolean().optional(),
 	linkedTransactionId: z.string().uuid().nullable().optional(),
+	amount: z.number().optional(),
+	existingAmountCorrection: z
+		.object({
+			transactionId: z.string().uuid(),
+			amount: z.number(),
+		})
+		.nullable()
+		.optional(),
+	originalKey: z.string().optional(),
 	duplicateValidation: importDuplicateValidationDraftSchema
 		.nullable()
 		.optional(),
@@ -113,34 +122,41 @@ export function buildImportBatchDraft(input: {
 		invoicePeriod: input.invoicePeriod,
 		paymentAccountId: input.paymentAccountId,
 		paymentDate: input.paymentDate,
-		rows: input.rows.map((row) => ({
-			key:
-				row.kind === "invoice_extra" && row.existingTransactionId
+		rows: input.rows.map((row) => {
+			const key =
+				row.originalDraftKey ??
+				(row.kind === "invoice_extra" && row.existingTransactionId
 					? buildInvoiceExtraReviewRowKey(row.existingTransactionId)
-					: buildImportReviewRowKey(row),
-			selected: row.selected,
-			categoryId: row.categoryId,
-			payerId: row.payerId,
-			kind: row.kind,
-			existingTransactionId: row.existingTransactionId ?? null,
-			invoicePaymentCardId: row.invoicePaymentCardId,
-			invoicePaymentPeriod: row.invoicePaymentPeriod,
-			transferPeerAccountId: row.transferPeerAccountId,
-			installmentImport: row.installmentImport,
-			recurrenceImport: row.recurrenceImport,
-			description:
-				row.description.trim().length > 0 ? row.description : undefined,
-			transactionType: row.transactionType,
-			isDuplicate: row.isDuplicate,
-			reimported: row.reimported,
-			linked: row.linked ?? false,
-			linkedTransactionId: row.linked
-				? (row.linkedTransactionId ??
-					row.duplicateValidation?.existingTransactionId ??
-					null)
-				: null,
-			duplicateValidation: row.linked ? null : row.duplicateValidation,
-		})),
+					: buildImportReviewRowKey(row));
+			return {
+				key,
+				originalKey: key,
+				amount: row.amount,
+				existingAmountCorrection: row.existingAmountCorrection ?? null,
+				selected: row.selected,
+				categoryId: row.categoryId,
+				payerId: row.payerId,
+				kind: row.kind,
+				existingTransactionId: row.existingTransactionId ?? null,
+				invoicePaymentCardId: row.invoicePaymentCardId,
+				invoicePaymentPeriod: row.invoicePaymentPeriod,
+				transferPeerAccountId: row.transferPeerAccountId,
+				installmentImport: row.installmentImport,
+				recurrenceImport: row.recurrenceImport,
+				description:
+					row.description.trim().length > 0 ? row.description : undefined,
+				transactionType: row.transactionType,
+				isDuplicate: row.isDuplicate,
+				reimported: row.reimported,
+				linked: row.linked ?? false,
+				linkedTransactionId: row.linked
+					? (row.linkedTransactionId ??
+						row.duplicateValidation?.existingTransactionId ??
+						null)
+					: null,
+				duplicateValidation: row.linked ? null : row.duplicateValidation,
+			};
+		}),
 	};
 }
 
@@ -155,10 +171,13 @@ export function applyImportBatchDraftToRows(
 	rows: ReviewRow[],
 	draftData: ImportBatchDraftData,
 ): ReviewRow[] {
-	const draftByKey = new Map(draftData.rows.map((row) => [row.key, row]));
+	const draftByKey = new Map(
+		draftData.rows.map((row) => [row.originalKey ?? row.key, row]),
+	);
 
 	return rows.map((row) => {
 		const draft =
+			(row.originalDraftKey ? draftByKey.get(row.originalDraftKey) : null) ??
 			draftByKey.get(
 				row.kind === "invoice_extra" && row.existingTransactionId
 					? buildInvoiceExtraReviewRowKey(row.existingTransactionId)
@@ -199,6 +218,10 @@ export function applyImportBatchDraftToRows(
 
 		return {
 			...row,
+			amount: draft.amount ?? row.amount,
+			existingAmountCorrection:
+				draft.existingAmountCorrection ?? row.existingAmountCorrection ?? null,
+			originalDraftKey: draft.originalKey ?? row.originalDraftKey,
 			selected: linked ? false : draft.selected,
 			categoryId: draft.categoryId,
 			payerId: draft.payerId,

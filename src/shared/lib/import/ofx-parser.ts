@@ -79,12 +79,18 @@ function buildNubankCardInvoiceMetadata(
 	const paymentTxn = transactions.find((transaction) =>
 		/^pagamento\s+recebido$/i.test(transaction.description.trim()),
 	);
+	const remainingTotal =
+		ledgerAmount == null
+			? null
+			: Math.abs(ledgerAmount) < 0.005
+				? 0
+				: ledgerAmount;
 
 	return {
 		period: deriveNubankInvoicePeriodFromDueDate(dueDate),
 		dueDate,
-		isPaid: Boolean(paymentTxn),
-		paymentDate: paymentTxn?.date ?? null,
+		isPaid: remainingTotal === 0,
+		paymentDate: remainingTotal === 0 ? (paymentTxn?.date ?? null) : null,
 		totalAmount: ledgerAmount,
 		totalAmountSource: "ofx_ledger",
 	};

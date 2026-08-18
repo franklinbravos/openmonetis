@@ -21,10 +21,18 @@ import {
 	validateCartaoOwnership,
 	validateContaOwnership,
 } from "@/features/transactions/actions/core";
+import {
+	type ExistingAmountEdit,
+	amountEditToSignedStored,
+	dedupeExistingAmountEdits,
+} from "@/features/transactions/lib/import-amount-edit";
 import { IMPORT_BATCH_STATUS } from "@/features/transactions/lib/import-batch-status";
 import type { ImportDuplicateSnapshot } from "@/features/transactions/lib/import-duplicate-match";
 import { getInstallmentBasePeriod } from "@/features/transactions/lib/import-installments";
-import { buildInvoicePaymentNote } from "@/shared/lib/accounts/constants";
+import {
+	buildInvoicePaymentNote,
+	INVOICE_ADJUSTMENT_NAME,
+} from "@/shared/lib/accounts/constants";
 import { revalidateForEntity } from "@/shared/lib/actions/helpers";
 import { getUserId } from "@/shared/lib/auth/server";
 import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants";
@@ -48,6 +56,7 @@ import {
 	expandImportExternalIdsForLookup,
 	importExternalIdCollidesWithStored,
 } from "@/shared/lib/import/helpers";
+import { isInvoicePaymentDescription } from "@/shared/lib/import/invoice-total";
 
 const installmentImportSchema = z
 	.object({
@@ -124,6 +133,11 @@ const importRowSchema = z
 		}
 	});
 
+const existingAmountEditSchema = z.object({
+	transactionId: uuidSchema("Lançamento"),
+	amount: z.number().positive(),
+});
+
 const importSchema = z
 	.object({
 		rows: z.array(importRowSchema),
@@ -147,12 +161,14 @@ const importSchema = z
 		importBatchId: z.string().uuid().optional(),
 		sourceInvoiceTotalOverride: z.boolean().optional(),
 		removeTransactionIds: z.array(z.string().uuid()).optional(),
+		existingAmountEdits: z.array(existingAmountEditSchema).optional(),
 	})
 	.superRefine((data, ctx) => {
 		if (
 			data.rows.length === 0 &&
 			!data.payInvoice &&
-			!(data.removeTransactionIds?.length ?? 0)
+			!(data.removeTransactionIds?.length ?? 0) &&
+			!(data.existingAmountEdits?.length ?? 0)
 		) {
 			ctx.addIssue({
 				code: "custom",
@@ -521,6 +537,88 @@ export async function deleteImportDuplicateTransaction(
 	return { success: true };
 }
 
+type ValidatedAmountEdit = ExistingAmountEdit & {
+	transactionType: string;
+};
+
+type AmountEditValidationResult =
+	| { success: true; edits: ValidatedAmountEdit[] }
+	| { success: false; error: string };
+
+async function validateExistingAmountEdits(
+	client: Pick<typeof db, "query">,
+	dataOwnerUserId: string,
+	edits: ExistingAmountEdit[],
+): Promise<AmountEditValidationResult> {
+	const ownedTransactions = await client.query.transactions.findMany({
+		columns: { id: true, name: true, transactionType: true },
+		where: and(
+			eq(transactions.userId, dataOwnerUserId),
+			inArray(
+				transactions.id,
+				edits.map((edit) => edit.transactionId),
+			),
+		),
+	});
+
+	if (ownedTransactions.length !== edits.length) {
+		return {
+			success: false,
+			error: "Um ou mais lançamentos a corrigir não foram encontrados.",
+		};
+	}
+
+	const transactionById = new Map(
+		ownedTransactions.map((transaction) => [transaction.id, transaction]),
+	);
+
+	for (const edit of edits) {
+		const transaction = transactionById.get(edit.transactionId);
+		if (!transaction) continue;
+		if (
+			isInvoicePaymentDescription(transaction.name) ||
+			transaction.name === INVOICE_ADJUSTMENT_NAME
+		) {
+			return {
+				success: false,
+				error:
+					"Não é possível corrigir o valor de 'Pagamento fatura' ou 'Ajuste de fatura'.",
+			};
+		}
+	}
+
+	return {
+		success: true,
+		edits: edits.map((edit) => ({
+			...edit,
+			transactionType:
+				transactionById.get(edit.transactionId)?.transactionType ?? "",
+		})),
+	};
+}
+
+async function applyExistingAmountCorrectionsT(
+	client: Pick<typeof db, "update">,
+	dataOwnerUserId: string,
+	validatedEdits: ValidatedAmountEdit[],
+): Promise<void> {
+	for (const edit of validatedEdits) {
+		await client
+			.update(transactions)
+			.set({
+				amount: formatDecimalForDbRequired(
+					amountEditToSignedStored(edit.amount, edit.transactionType),
+				),
+			})
+			.where(
+				and(
+					eq(transactions.userId, dataOwnerUserId),
+					eq(transactions.id, edit.transactionId),
+				),
+			);
+	}
+}
+
 export async function importTransactionsAction(
 	input: ImportInput,
 ): Promise<ImportResult> {
@@ -648,6 +746,23 @@ export async function importTransactionsAction(
 		}
 	}
 
+	const existingAmountEdits = dedupeExistingAmountEdits(
+		parsed.data.existingAmountEdits ?? [],
+	);
+
+	let validatedAmountEdits: ValidatedAmountEdit[] = [];
+	if (existingAmountEdits.length > 0) {
+		const amountEditValidation = await validateExistingAmountEdits(
+			db,
+			dataOwnerUserId,
+			existingAmountEdits,
+		);
+		if (!amountEditValidation.success) {
+			return amountEditValidation;
+		}
+		validatedAmountEdits = amountEditValidation.edits;
+	}
+
 	const hasInstallmentImports = rows.some(
 		(row) => row.installmentImport?.enabled,
 	);
@@ -692,6 +807,93 @@ export async function importTransactionsAction(
 	}
 
 	if (rows.length === 0) {
+		if (
+			!payInvoice &&
+			removeIds.length === 0 &&
+			existingAmountEdits.length > 0
+		) {
+			const importBatchId = parsed.data.importBatchId ?? randomUUID();
+
+			if (parsed.data.importBatchId) {
+				const existingUploadBatch = await db.query.importBatches.findFirst({
+					columns: { id: true },
+					where: and(
+						eq(importBatches.userId, dataOwnerUserId),
+						eq(importBatches.id, parsed.data.importBatchId),
+					),
+				});
+
+				if (!existingUploadBatch) {
+					return {
+						success: false,
+						error:
+							"Registro de upload não encontrado. Envie o arquivo novamente.",
+					};
+				}
+			}
+
+			try {
+				await db.transaction(async (tx) => {
+					await applyExistingAmountCorrectionsT(
+						tx,
+						dataOwnerUserId,
+						validatedAmountEdits,
+					);
+				});
+			} catch (error) {
+				console.error("importTransactionsAction amount edits only", error);
+				return {
+					success: false,
+					error: "Não foi possível aplicar as correções de valor.",
+				};
+			}
+
+			const batchPayload = {
+				sourceFileName: parsed.data.sourceFileName ?? "Importação sem arquivo",
+				sourceFileSize: parsed.data.sourceFileSize ?? null,
+				cardId: cardId ?? null,
+				invoicePeriod: invoicePeriod ?? null,
+				accountId: accountId ?? null,
+				importedCount: 0,
+				skippedCount: removeIds.length,
+				status: IMPORT_BATCH_STATUS.IMPORTED,
+				draftData: null,
+			};
+
+			const existingBatch = await db.query.importBatches.findFirst({
+				columns: { id: true },
+				where: and(
+					eq(importBatches.userId, dataOwnerUserId),
+					eq(importBatches.id, importBatchId),
+				),
+			});
+
+			if (existingBatch) {
+				await db
+					.update(importBatches)
+					.set(batchPayload)
+					.where(eq(importBatches.id, importBatchId));
+			} else {
+				await db.insert(importBatches).values({
+					id: importBatchId,
+					userId: dataOwnerUserId,
+					...batchPayload,
+				});
+			}
+
+			await revalidateForEntity("transactions", userId);
+			if (cardId) {
+				await revalidateForEntity("cards", userId);
+			}
+
+			return {
+				success: true,
+				imported: 0,
+				skipped: removeIds.length,
+				importBatchId,
+			};
+		}
+
 		if (!payInvoice && removeIds.length === 0) {
 			return { success: true, imported: 0, skipped: 0, importBatchId: "" };
 		}
@@ -727,6 +929,14 @@ export async function importTransactionsAction(
 								inArray(transactions.id, removeIds),
 							),
 						);
+
+					if (validatedAmountEdits.length > 0) {
+						await applyExistingAmountCorrectionsT(
+							tx,
+							dataOwnerUserId,
+							validatedAmountEdits,
+						);
+					}
 				});
 			} catch (error) {
 				console.error("importTransactionsAction remove only", error);
@@ -1225,6 +1435,14 @@ export async function importTransactionsAction(
 					);
 			}
 
+			if (validatedAmountEdits.length > 0) {
+				await applyExistingAmountCorrectionsT(
+					tx,
+					dataOwnerUserId,
+					validatedAmountEdits,
+				);
+			}
+
 			const allRecords = [
 				...regularRecords,
 				...transferRecords,
@@ -1319,7 +1537,11 @@ export async function importTransactionsAction(
 	}
 
 	await revalidateForEntity("transactions", userId);
-	if (hasInvoicePayments || payInvoice) {
+	if (
+		hasInvoicePayments ||
+		payInvoice ||
+		(cardId && validatedAmountEdits.length > 0)
+	) {
 		await revalidateForEntity("cards", userId);
 	}
 	if (hasTransferRows) {

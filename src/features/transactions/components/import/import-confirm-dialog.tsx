@@ -23,6 +23,7 @@ type ImportConfirmDialogProps = {
 	excludedCount: number;
 	removalCount?: number;
 	installmentBackfillCount: number;
+	amountCorrectionCount?: number;
 	isPaidInvoiceImport?: boolean;
 	isPending: boolean;
 	invoiceTotalDelta?: number | null;
@@ -41,6 +42,7 @@ export function ImportConfirmDialog({
 	excludedCount,
 	removalCount = 0,
 	installmentBackfillCount,
+	amountCorrectionCount = 0,
 	isPaidInvoiceImport = false,
 	isPending,
 	invoiceTotalDelta = null,
@@ -90,6 +92,13 @@ export function ImportConfirmDialog({
 					) : null}
 					{editedCount > 0 ? (
 						<SummaryRow label="Serão editados" value={editedCount} />
+					) : null}
+					{amountCorrectionCount > 0 ? (
+						<SummaryRow
+							label="Valores corrigidos"
+							value={amountCorrectionCount}
+							tone="info"
+						/>
 					) : null}
 					{excludedCount > 0 ? (
 						<SummaryRow

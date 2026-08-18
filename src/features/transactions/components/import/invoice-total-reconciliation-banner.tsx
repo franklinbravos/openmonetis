@@ -1,7 +1,11 @@
 "use client";
 
 import { RiAlertLine, RiCheckboxCircleLine } from "@remixicon/react";
-import { Alert, AlertDescription, AlertTitle } from "@/shared/components/ui/alert";
+import {
+	Alert,
+	AlertDescription,
+	AlertTitle,
+} from "@/shared/components/ui/alert";
 import { Badge } from "@/shared/components/ui/badge";
 import { invoiceSourceTotalKindLabel } from "@/shared/lib/import/invoice-source-total";
 import type { ImportInvoiceReconciliation } from "@/shared/lib/import/invoice-total";
@@ -15,6 +19,8 @@ type InvoiceTotalReconciliationBannerProps = {
 	confidence: "high" | "inferred";
 	invoiceExtraCount?: number;
 	invoiceExtraMarkedForRemovalCount?: number;
+	crossPeriodCount?: number;
+	crossPeriodDisplayTotal?: number;
 };
 
 function formatSignedDelta(delta: number): string {
@@ -52,6 +58,8 @@ export function InvoiceTotalReconciliationBanner({
 	confidence,
 	invoiceExtraCount = 0,
 	invoiceExtraMarkedForRemovalCount = 0,
+	crossPeriodCount = 0,
+	crossPeriodDisplayTotal = 0,
 }: InvoiceTotalReconciliationBannerProps) {
 	const isBalanced = Math.abs(reconciliation.delta) <= 0.01;
 	const mismatchCount = reconciliation.amountMismatchRows.length;
@@ -67,6 +75,12 @@ export function InvoiceTotalReconciliationBanner({
 					? ` (${invoiceExtraMarkedForRemovalCount} para remover)`
 					: ""
 			}`,
+		);
+	}
+
+	if (crossPeriodCount > 0) {
+		statusParts.push(
+			`${crossPeriodCount} cadastrados em outro período (${formatCurrency(crossPeriodDisplayTotal)})`,
 		);
 	}
 
@@ -142,10 +156,7 @@ export function InvoiceTotalReconciliationBanner({
 				>
 					Diferença em relação ao arquivo:{" "}
 					<span
-						className={cn(
-							"font-medium",
-							!isBalanced && "text-destructive",
-						)}
+						className={cn("font-medium", !isBalanced && "text-destructive")}
 					>
 						{formatSignedDelta(reconciliation.delta)}
 					</span>
@@ -162,7 +173,9 @@ export function InvoiceTotalReconciliationBanner({
 						? "O total projetado confere com o arquivo. Você pode confirmar a importação."
 						: invoiceExtraCount > 0
 							? "Revise a tabela abaixo: itens em vermelho serão removidos ao confirmar. Desmarque o que quiser manter."
-							: "Revise a tabela abaixo para categorizar, vincular duplicatas ou selecionar lançamentos do arquivo."}
+							: crossPeriodCount > 0
+								? `A diferença vem de ${crossPeriodCount} lançamento${crossPeriodCount !== 1 ? "s" : ""} já cadastrado${crossPeriodCount !== 1 ? "s" : ""} em outro período (${formatCurrency(crossPeriodDisplayTotal)}). Eles não entram no total desta fatura — confira o período desses lançamentos no cadastro.`
+								: "Revise a tabela abaixo para categorizar, vincular duplicatas ou selecionar lançamentos do arquivo."}
 				</p>
 			</AlertDescription>
 		</Alert>
