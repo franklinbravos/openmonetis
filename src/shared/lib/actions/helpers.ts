@@ -1,4 +1,5 @@
 import { revalidatePath, revalidateTag } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 import { ActionError } from "@/shared/lib/actions/action-error";
 import { FinancialAccessError } from "@/shared/lib/payers/financial-access";
@@ -15,6 +16,10 @@ import { errorResult } from "@/shared/lib/types/actions";
  * @returns ActionResult with error message
  */
 export function handleActionError(error: unknown): ActionResult {
+	// redirect()/notFound() sinalizam por exceção: engolir aqui transformaria
+	// sessão expirada em toast genérico em vez de levar ao login.
+	unstable_rethrow(error);
+
 	if (error instanceof z.ZodError) {
 		return errorResult(error.issues[0]?.message ?? "Dados inválidos.");
 	}
