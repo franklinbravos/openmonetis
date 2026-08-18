@@ -144,7 +144,6 @@ yarn.lock          # Se usa pnpm, não precisa do yarn lock
 local/
 scratch/
 playground/
-/docs
 
 # Playwright artifacts
 /test-results/
@@ -153,3 +152,4 @@ playground/
 # Amostras financeiras locais (podem conter dados sensíveis)
 /samples/
 /.ignore
+.ignore
