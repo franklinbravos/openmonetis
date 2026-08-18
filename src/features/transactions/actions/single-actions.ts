@@ -343,6 +343,7 @@ export async function updateTransactionAction(
 				note: data.note ?? null,
 				isSettled: normalizedSettled,
 				installmentCount: data.installmentCount ?? null,
+				...(data.condition !== "Parcelado" && { currentInstallment: null }),
 				recurrenceCount: data.recurrenceCount ?? null,
 				dueDate: data.dueDate ? parseLocalDateString(data.dueDate) : null,
 				boletoPaymentDate: boletoPaymentDateValue,
@@ -949,6 +950,7 @@ export async function updateTransactionSplitPairAction(
 					amount: normalizedAmount,
 					payerId: data.payerId ?? null,
 					installmentCount: data.installmentCount ?? null,
+					...(data.condition !== "Parcelado" && { currentInstallment: null }),
 					recurrenceCount: data.recurrenceCount ?? null,
 				})
 				.where(
