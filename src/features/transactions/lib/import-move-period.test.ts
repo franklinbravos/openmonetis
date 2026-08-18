@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	collectPeriodLockedTransactionIds,
 	isPeriodLockedTransaction,
 	type MovableTransactionSnapshot,
 } from "./import-move-period";
@@ -73,5 +74,23 @@ describe("import-move-period", () => {
 		expect(isPeriodLockedTransaction(buildSnapshot({ condition: "" }))).toBe(
 			false,
 		);
+	});
+});
+
+describe("collectPeriodLockedTransactionIds", () => {
+	it("coleta apenas os cadastros presos ao período", () => {
+		const ids = collectPeriodLockedTransactionIds([
+			{ id: "avista", condition: "À vista", installmentCount: null },
+			{ id: "parcelado", condition: "Parcelado", installmentCount: 10 },
+			{
+				id: "recorrente",
+				condition: "Recorrente",
+				installmentCount: null,
+				recurrenceCount: 12,
+			},
+			{ id: "sem-condicao", installmentCount: null },
+		]);
+
+		expect(ids).toEqual(new Set(["parcelado", "recorrente"]));
 	});
 });

@@ -171,6 +171,7 @@ import {
 	pickInvoicePeriodExistingSnapshots,
 	shouldFetchInvoiceDuplicateSnapshots,
 } from "@/features/transactions/lib/import-invoice-reconciliation";
+import { collectPeriodLockedTransactionIds } from "@/features/transactions/lib/import-move-period";
 import { isImportReviewRowImportable } from "@/features/transactions/lib/import-review-filters";
 import { guessImportTransfer } from "@/features/transactions/lib/import-transfer-detection";
 import { normalizeDescriptionKey } from "@/features/transactions/lib/import-utils";
@@ -413,6 +414,9 @@ export function ImportPage({
 	);
 	const [invoicePeriodExistingSnapshots, setInvoicePeriodExistingSnapshots] =
 		useState<ImportDuplicateSnapshot[]>([]);
+	const [periodLockedExistingIds, setPeriodLockedExistingIds] = useState<
+		Set<string>
+	>(() => new Set());
 	const [invoiceTotalOverrideConfirmed, setInvoiceTotalOverrideConfirmed] =
 		useState(false);
 	const [importSourceStored, setImportSourceStored] = useState(false);
@@ -569,6 +573,7 @@ export function ImportPage({
 		setAiAnalysisErrorLog(null);
 		setAiAnalysisProgress(null);
 		setInvoicePeriodExistingSnapshots([]);
+		setPeriodLockedExistingIds(new Set());
 		setInvoiceTotalOverrideConfirmed(false);
 		duplicateMatchingContextRef.current = null;
 		aiAnalysisRunIdRef.current += 1;
@@ -1197,6 +1202,10 @@ export function ImportPage({
 						)
 					: accountImportSnapshots;
 
+				setPeriodLockedExistingIds(
+					collectPeriodLockedTransactionIds(semanticCandidates),
+				);
+
 				const duplicateMatchOptions = {
 					invoicePeriods: invoicePeriodsForSnapshots,
 				};
@@ -1569,6 +1578,10 @@ export function ImportPage({
 						cardInstallmentSnapshots,
 					)
 				: accountImportSnapshots;
+
+			setPeriodLockedExistingIds(
+				collectPeriodLockedTransactionIds(semanticCandidates),
+			);
 
 			const duplicateStates = resolveImportDuplicateMatches(
 				rows
@@ -3669,6 +3682,7 @@ export function ImportPage({
 								isCard={isCard}
 								invoicePeriod={invoicePeriod}
 								invoicePeriodExistingIdSet={invoicePeriodExistingIdSet}
+								periodLockedExistingIds={periodLockedExistingIds}
 								onToggle={toggleRow}
 								onToggleAll={toggleAll}
 								onToggleAllFiltered={toggleAllFiltered}

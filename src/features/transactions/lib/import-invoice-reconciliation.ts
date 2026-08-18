@@ -98,7 +98,9 @@ export function buildInvoicePeriodExistingIdSet(
 	return ids;
 }
 
-function resolveReviewExistingTransactionId(row: ReviewRow): string | null {
+export function resolveReviewExistingTransactionId(
+	row: ReviewRow,
+): string | null {
 	return (
 		row.linkedTransactionId ??
 		row.duplicateValidation?.existingTransactionId ??

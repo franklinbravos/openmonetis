@@ -39,7 +39,10 @@ import {
 	type ReviewRecurrenceImport,
 } from "@/features/transactions/lib/import-installments";
 import { isInvoiceExtraReviewRow } from "@/features/transactions/lib/import-invoice-extra-rows";
-import { isImportRowCrossPeriod } from "@/features/transactions/lib/import-invoice-reconciliation";
+import {
+	isImportRowCrossPeriod,
+	resolveReviewExistingTransactionId,
+} from "@/features/transactions/lib/import-invoice-reconciliation";
 import {
 	buildImportReviewFilteredEntries,
 	countImportReviewRowsByStatus,
@@ -591,15 +594,23 @@ function ReviewCrossPeriodStatus({
 	row,
 	index,
 	invoicePeriodExistingIdSet,
+	periodLockedExistingIds,
 	onMoveToInvoicePeriod,
 }: {
 	row: ReviewRow;
 	index: number;
 	invoicePeriodExistingIdSet?: Set<string>;
+	periodLockedExistingIds?: Set<string>;
 	onMoveToInvoicePeriod: (index: number) => void;
 }) {
 	if (!invoicePeriodExistingIdSet) return null;
 	if (!isImportRowCrossPeriod(row, invoicePeriodExistingIdSet)) return null;
+
+	const existingTransactionId = resolveReviewExistingTransactionId(row);
+	const isPeriodLocked = Boolean(
+		existingTransactionId &&
+			periodLockedExistingIds?.has(existingTransactionId),
+	);
 
 	return (
 		<div className="space-y-1.5">
@@ -612,16 +623,24 @@ function ReviewCrossPeriodStatus({
 					para o total desta fatura.
 				</p>
 			</div>
-			<Button
-				type="button"
-				variant="outline"
-				size="sm"
-				className="h-7 gap-1.5 px-2 text-xs"
-				onClick={() => onMoveToInvoicePeriod(index)}
-			>
-				<RiArrowRightUpLine className="size-3.5 shrink-0" aria-hidden />
-				Mover para esta fatura
-			</Button>
+			{isPeriodLocked ? (
+				<p className="text-muted-foreground text-xs leading-relaxed">
+					É uma parcela ou lançamento recorrente: cada ocorrência pertence ao
+					mês em que cai. Se o período estiver errado, corrija na tela de
+					lançamentos.
+				</p>
+			) : (
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					className="h-7 gap-1.5 px-2 text-xs"
+					onClick={() => onMoveToInvoicePeriod(index)}
+				>
+					<RiArrowRightUpLine className="size-3.5 shrink-0" aria-hidden />
+					Mover para esta fatura
+				</Button>
+			)}
 		</div>
 	);
 }
@@ -739,6 +758,7 @@ interface ReviewTableProps {
 	isCard: boolean;
 	invoicePeriod: string | null;
 	invoicePeriodExistingIdSet?: Set<string>;
+	periodLockedExistingIds?: Set<string>;
 	onToggle: (index: number) => void;
 	onToggleAll: (selected: boolean) => void;
 	onToggleAllFiltered: (indices: number[], selected: boolean) => void;
@@ -786,6 +806,7 @@ export function ReviewTable({
 	isCard,
 	invoicePeriod,
 	invoicePeriodExistingIdSet,
+	periodLockedExistingIds,
 	onToggle,
 	onToggleAll,
 	onToggleAllFiltered,
@@ -879,6 +900,7 @@ export function ReviewTable({
 							isCard={isCard}
 							invoicePeriod={invoicePeriod}
 							invoicePeriodExistingIdSet={invoicePeriodExistingIdSet}
+							periodLockedExistingIds={periodLockedExistingIds}
 							onMoveToInvoicePeriod={onMoveToInvoicePeriod}
 							onToggle={onToggle}
 							onToggleAll={handleToggleAll}
@@ -1046,6 +1068,7 @@ export function ReviewTable({
 														invoicePeriodExistingIdSet={
 															invoicePeriodExistingIdSet
 														}
+														periodLockedExistingIds={periodLockedExistingIds}
 														onMoveToInvoicePeriod={onMoveToInvoicePeriod}
 													/>
 												</TableCell>
@@ -1356,6 +1379,7 @@ type ReviewRowHandlers = Pick<
 	| "isCard"
 	| "invoicePeriod"
 	| "invoicePeriodExistingIdSet"
+	| "periodLockedExistingIds"
 >;
 
 type ReviewRowSharedProps = ReviewRowHandlers & {
@@ -1467,6 +1491,7 @@ function ReviewMobileCard({
 	isCard,
 	invoicePeriod,
 	invoicePeriodExistingIdSet,
+	periodLockedExistingIds,
 }: ReviewRowSharedProps & { onToggle: (index: number) => void }) {
 	const categoryOptionsForRow = categoryOptions.filter(
 		(option) =>
@@ -1569,6 +1594,7 @@ function ReviewMobileCard({
 						row={row}
 						index={index}
 						invoicePeriodExistingIdSet={invoicePeriodExistingIdSet}
+						periodLockedExistingIds={periodLockedExistingIds}
 						onMoveToInvoicePeriod={onMoveToInvoicePeriod}
 					/>
 					<div className="flex items-center gap-1.5">
