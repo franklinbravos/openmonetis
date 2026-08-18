@@ -39,6 +39,7 @@ import {
 	fetchInvoicePeriodDuplicateSnapshots,
 	importTransactionsAction,
 	linkImportToExistingAction,
+	moveImportTransactionToPeriodAction,
 	undoImportAction,
 } from "@/features/transactions/actions/import-action";
 import {
@@ -2500,6 +2501,41 @@ export function ImportPage({
 		}
 	}, [statement, processParsedStatement]);
 
+	const handleMoveToInvoicePeriod = useCallback(
+		async (index: number) => {
+			const row = rows[index];
+			if (!row) return;
+			if (!invoicePeriod) {
+				toast.error("Defina o período da fatura antes de mover o lançamento.");
+				return;
+			}
+
+			const transactionId =
+				row.linkedTransactionId ??
+				row.duplicateValidation?.existingTransactionId ??
+				row.existingTransactionId;
+			if (!transactionId) {
+				toast.error("Lançamento existente não identificado.");
+				return;
+			}
+
+			const result = await moveImportTransactionToPeriodAction({
+				transactionId,
+				period: invoicePeriod,
+			});
+			if (!result.success) {
+				toast.error(result.error ?? "Não foi possível mover o lançamento.");
+				return;
+			}
+
+			toast.success("Lançamento movido para esta fatura.");
+			if (statement) {
+				await processParsedStatement(statement);
+			}
+		},
+		[rows, invoicePeriod, statement, processParsedStatement],
+	);
+
 	const handleOpenLinkDuplicate = useCallback((index: number) => {
 		setLinkDialogIndex(index);
 	}, []);
@@ -3667,6 +3703,7 @@ export function ImportPage({
 								onRecurrenceToggle={handleRecurrenceToggle}
 								onRecurrenceCountChange={handleRecurrenceCountChange}
 								onAmountChange={handleAmountChange}
+								onMoveToInvoicePeriod={handleMoveToInvoicePeriod}
 							/>
 
 							{/* Sticky footer */}

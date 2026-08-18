@@ -589,23 +589,39 @@ function ReviewLinkedStatus({ row }: { row: ReviewRow }) {
 
 function ReviewCrossPeriodStatus({
 	row,
+	index,
 	invoicePeriodExistingIdSet,
+	onMoveToInvoicePeriod,
 }: {
 	row: ReviewRow;
+	index: number;
 	invoicePeriodExistingIdSet?: Set<string>;
+	onMoveToInvoicePeriod: (index: number) => void;
 }) {
 	if (!invoicePeriodExistingIdSet) return null;
 	if (!isImportRowCrossPeriod(row, invoicePeriodExistingIdSet)) return null;
 
 	return (
-		<div className="flex flex-wrap items-center gap-1.5">
-			<Badge variant="secondary" className="text-[10px]">
-				Outro período
-			</Badge>
-			<p className="text-muted-foreground text-xs leading-relaxed">
-				O lançamento existente está cadastrado em outro período e não conta para
-				o total desta fatura.
-			</p>
+		<div className="space-y-1.5">
+			<div className="flex flex-wrap items-center gap-1.5">
+				<Badge variant="secondary" className="text-[10px]">
+					Outro período
+				</Badge>
+				<p className="text-muted-foreground text-xs leading-relaxed">
+					O lançamento existente está cadastrado em outro período e não conta
+					para o total desta fatura.
+				</p>
+			</div>
+			<Button
+				type="button"
+				variant="outline"
+				size="sm"
+				className="h-7 gap-1.5 px-2 text-xs"
+				onClick={() => onMoveToInvoicePeriod(index)}
+			>
+				<RiArrowRightUpLine className="size-3.5 shrink-0" aria-hidden />
+				Mover para esta fatura
+			</Button>
 		</div>
 	);
 }
@@ -757,6 +773,7 @@ interface ReviewTableProps {
 	onRecurrenceToggle: (index: number, enabled: boolean) => void;
 	onRecurrenceCountChange: (index: number, recurrenceCount: number) => void;
 	onAmountChange: (index: number, amount: number) => void;
+	onMoveToInvoicePeriod: (index: number) => void;
 }
 
 export function ReviewTable({
@@ -794,6 +811,7 @@ export function ReviewTable({
 	onRecurrenceToggle,
 	onRecurrenceCountChange,
 	onAmountChange,
+	onMoveToInvoicePeriod,
 }: ReviewTableProps) {
 	const [searchQuery, setSearchQuery] = useState("");
 	const [statusFilter, setStatusFilter] =
@@ -861,6 +879,7 @@ export function ReviewTable({
 							isCard={isCard}
 							invoicePeriod={invoicePeriod}
 							invoicePeriodExistingIdSet={invoicePeriodExistingIdSet}
+							onMoveToInvoicePeriod={onMoveToInvoicePeriod}
 							onToggle={onToggle}
 							onToggleAll={handleToggleAll}
 							filtersActive={filtersActive}
@@ -1023,9 +1042,11 @@ export function ReviewTable({
 													)}
 													<ReviewCrossPeriodStatus
 														row={row}
+														index={index}
 														invoicePeriodExistingIdSet={
 															invoicePeriodExistingIdSet
 														}
+														onMoveToInvoicePeriod={onMoveToInvoicePeriod}
 													/>
 												</TableCell>
 												<TableCell className="w-12 text-center">
@@ -1331,6 +1352,7 @@ type ReviewRowHandlers = Pick<
 	| "onRecurrenceToggle"
 	| "onRecurrenceCountChange"
 	| "onAmountChange"
+	| "onMoveToInvoicePeriod"
 	| "isCard"
 	| "invoicePeriod"
 	| "invoicePeriodExistingIdSet"
@@ -1441,6 +1463,7 @@ function ReviewMobileCard({
 	onRecurrenceToggle,
 	onRecurrenceCountChange,
 	onAmountChange,
+	onMoveToInvoicePeriod,
 	isCard,
 	invoicePeriod,
 	invoicePeriodExistingIdSet,
@@ -1544,7 +1567,9 @@ function ReviewMobileCard({
 					)}
 					<ReviewCrossPeriodStatus
 						row={row}
+						index={index}
 						invoicePeriodExistingIdSet={invoicePeriodExistingIdSet}
+						onMoveToInvoicePeriod={onMoveToInvoicePeriod}
 					/>
 					<div className="flex items-center gap-1.5">
 						<ReviewVerifiedExistingType

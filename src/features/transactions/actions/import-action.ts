@@ -1,7 +1,17 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { and, eq, gte, ilike, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
+import {
+	and,
+	eq,
+	gte,
+	ilike,
+	inArray,
+	isNotNull,
+	isNull,
+	lte,
+	or,
+} from "drizzle-orm";
 import { z } from "zod";
 import {
 	attachments,
@@ -22,9 +32,9 @@ import {
 	validateContaOwnership,
 } from "@/features/transactions/actions/core";
 import {
-	type ExistingAmountEdit,
 	amountEditToSignedStored,
 	dedupeExistingAmountEdits,
+	type ExistingAmountEdit,
 } from "@/features/transactions/lib/import-amount-edit";
 import { IMPORT_BATCH_STATUS } from "@/features/transactions/lib/import-batch-status";
 import type { ImportDuplicateSnapshot } from "@/features/transactions/lib/import-duplicate-match";
@@ -37,11 +47,16 @@ import { revalidateForEntity } from "@/shared/lib/actions/helpers";
 import { getUserId } from "@/shared/lib/auth/server";
 import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants";
 import { db } from "@/shared/lib/db";
+import {
+	expandImportExternalIdsForLookup,
+	importExternalIdCollidesWithStored,
+} from "@/shared/lib/import/helpers";
+import { isInvoicePaymentDescription } from "@/shared/lib/import/invoice-total";
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
-import { uuidSchema } from "@/shared/lib/schemas/common";
+import { periodSchema, uuidSchema } from "@/shared/lib/schemas/common";
 import { deleteS3Object } from "@/shared/lib/storage/presign";
 import {
 	TRANSFER_CATEGORY_NAME,
@@ -52,11 +67,6 @@ import {
 } from "@/shared/lib/transfers/constants";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 import { parseLocalDateString } from "@/shared/utils/date";
-import {
-	expandImportExternalIdsForLookup,
-	importExternalIdCollidesWithStored,
-} from "@/shared/lib/import/helpers";
-import { isInvoicePaymentDescription } from "@/shared/lib/import/invoice-total";
 
 const installmentImportSchema = z
 	.object({
@@ -510,6 +520,68 @@ export async function linkImportToExistingAction(
 	}
 }
 
+const moveImportTransactionToPeriodSchema = z.object({
+	transactionId: uuidSchema("Lançamento"),
+	period: periodSchema,
+});
+
+export async function moveImportTransactionToPeriodAction(input: {
+	transactionId: string;
+	period: string;
+}): Promise<{ success: boolean; error?: string }> {
+	try {
+		const userId = await getUserId();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
+		const data = moveImportTransactionToPeriodSchema.parse(input);
+
+		const existing = await db.query.transactions.findFirst({
+			columns: {
+				id: true,
+				name: true,
+				period: true,
+				transactionType: true,
+				condition: true,
+				paymentMethod: true,
+			},
+			where: and(
+				eq(transactions.userId, dataOwnerUserId),
+				eq(transactions.id, data.transactionId),
+			),
+		});
+
+		if (!existing) {
+			return { success: false, error: "Lançamento não encontrado." };
+		}
+
+		if (
+			isInvoicePaymentDescription(existing.name) ||
+			existing.name === INVOICE_ADJUSTMENT_NAME
+		) {
+			return {
+				success: false,
+				error: "Não é possível mover 'Pagamento fatura' ou 'Ajuste de fatura'.",
+			};
+		}
+
+		await db
+			.update(transactions)
+			.set({ period: data.period })
+			.where(
+				and(
+					eq(transactions.userId, dataOwnerUserId),
+					eq(transactions.id, data.transactionId),
+				),
+			);
+
+		await revalidateForEntity("transactions", userId);
+
+		return { success: true };
+	} catch (error) {
+		console.error("moveImportTransactionToPeriodAction", error);
+		return { success: false, error: "Não foi possível mover o lançamento." };
+	}
+}
+
 export async function deleteImportDuplicateTransaction(
 	transactionId: string,
 ): Promise<{ success: boolean; error?: string }> {
@@ -741,7 +813,8 @@ export async function importTransactionsAction(
 		if (ownedRemovals.length !== removeIds.length) {
 			return {
 				success: false,
-				error: "Um ou mais lançamentos marcados para remoção não foram encontrados.",
+				error:
+					"Um ou mais lançamentos marcados para remoção não foram encontrados.",
 			};
 		}
 	}
@@ -1008,7 +1081,10 @@ export async function importTransactionsAction(
 						),
 					);
 			} catch (error) {
-				console.error("importTransactionsAction payInvoice remove extras", error);
+				console.error(
+					"importTransactionsAction payInvoice remove extras",
+					error,
+				);
 				return {
 					success: false,
 					error: "Não foi possível remover os lançamentos duplicados.",
@@ -1481,10 +1557,14 @@ export async function importTransactionsAction(
 			const seenFitIdsInBatch = new Set<string>();
 			const recordsToInsert = allRecords.filter((record) => {
 				if (!record.ofxFitId) return true;
-				if (importExternalIdCollidesWithStored(record.ofxFitId, existingFitIds)) {
+				if (
+					importExternalIdCollidesWithStored(record.ofxFitId, existingFitIds)
+				) {
 					return false;
 				}
-				if (importExternalIdCollidesWithStored(record.ofxFitId, seenFitIdsInBatch)) {
+				if (
+					importExternalIdCollidesWithStored(record.ofxFitId, seenFitIdsInBatch)
+				) {
 					return false;
 				}
 				seenFitIdsInBatch.add(record.ofxFitId);
