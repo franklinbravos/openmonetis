@@ -32,6 +32,7 @@ Esta versão adiciona conferência do total da fatura na importação de cartão
 - Importação de fatura: uma parcela do arquivo não é mais conciliada com outra parcela da mesma série cadastrada em fatura de outro mês — parcelas repetem nome e valor, e o casamento por nome+valor passou a valer só dentro da fatura importada. Era essa a origem de lançamentos movidos para o mês errado.
 - Importação de fatura: linhas conciliadas com parcelas ou recorrentes de outro período deixam de exibir o botão **Mover para esta fatura** e passam a orientar a correção na tela de lançamentos, em vez de só falhar depois do clique.
 - Importação de fatura: ao remover a importação anterior de uma linha na revisão, o lançamento excluído deixa de somar no total projetado da conferência.
+- Senha automática de PDF do cartão: passa a considerar os cartões do ambiente familiar, e não só os do próprio usuário — membros não administradores voltam a abrir faturas protegidas. Falha ao ler o segredo agora é registrada no servidor com o motivo.
 
 ### Removido
 - Login: aviso técnico de configuração do Google OAuth em desenvolvimento.

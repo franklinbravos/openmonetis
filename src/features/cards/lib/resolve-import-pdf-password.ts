@@ -1,6 +1,9 @@
 import { and, eq } from "drizzle-orm";
 import { cards } from "@/db/schema";
-import { tryDecryptSecret } from "@/shared/lib/ai/secret-encryption";
+import {
+	diagnoseSecretReadFailure,
+	tryDecryptSecret,
+} from "@/shared/lib/ai/secret-encryption";
 import {
 	buildImportPdfPasswordAttempts,
 	type CardImportPdfPasswordRule,
@@ -8,17 +11,19 @@ import {
 	isCardImportPdfPasswordRule,
 } from "@/shared/lib/cards/import-pdf-password";
 import { db } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 
 export async function resolveCardImportPdfPassword(
 	userId: string,
 	cardId: string,
 ): Promise<string | null> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const card = await db.query.cards.findFirst({
 		columns: {
 			importPdfPasswordRule: true,
 			importPdfPasswordSecret: true,
 		},
-		where: and(eq(cards.userId, userId), eq(cards.id, cardId)),
+		where: and(eq(cards.userId, dataOwnerUserId), eq(cards.id, cardId)),
 	});
 
 	if (!card?.importPdfPasswordRule || !card.importPdfPasswordSecret) {
@@ -30,7 +35,13 @@ export async function resolveCardImportPdfPassword(
 	}
 
 	const secret = tryDecryptSecret(card.importPdfPasswordSecret);
-	if (!secret) return null;
+	if (!secret) {
+		console.error(
+			"resolveCardImportPdfPassword: segredo ilegível",
+			diagnoseSecretReadFailure(card.importPdfPasswordSecret),
+		);
+		return null;
+	}
 
 	return deriveImportPdfPassword(card.importPdfPasswordRule, secret);
 }
@@ -39,12 +50,13 @@ export async function resolveCardImportPdfPasswordAttempts(
 	userId: string,
 	cardId: string,
 ): Promise<string[]> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const card = await db.query.cards.findFirst({
 		columns: {
 			importPdfPasswordRule: true,
 			importPdfPasswordSecret: true,
 		},
-		where: and(eq(cards.userId, userId), eq(cards.id, cardId)),
+		where: and(eq(cards.userId, dataOwnerUserId), eq(cards.id, cardId)),
 	});
 
 	if (!card?.importPdfPasswordRule || !card.importPdfPasswordSecret) {
@@ -56,7 +68,13 @@ export async function resolveCardImportPdfPasswordAttempts(
 	}
 
 	const secret = tryDecryptSecret(card.importPdfPasswordSecret);
-	if (!secret) return [];
+	if (!secret) {
+		console.error(
+			"resolveCardImportPdfPasswordAttempts: segredo ilegível",
+			diagnoseSecretReadFailure(card.importPdfPasswordSecret),
+		);
+		return [];
+	}
 
 	return buildImportPdfPasswordAttempts(card.importPdfPasswordRule, secret);
 }
@@ -70,12 +88,13 @@ export async function fetchCardImportPdfPasswordSettings(
 	userId: string,
 	cardId: string,
 ): Promise<CardImportPdfPasswordSettings | null> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const card = await db.query.cards.findFirst({
 		columns: {
 			importPdfPasswordRule: true,
 			importPdfPasswordSecret: true,
 		},
-		where: and(eq(cards.userId, userId), eq(cards.id, cardId)),
+		where: and(eq(cards.userId, dataOwnerUserId), eq(cards.id, cardId)),
 	});
 
 	if (!card) return null;
