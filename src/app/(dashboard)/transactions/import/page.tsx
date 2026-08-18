@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { resolveCardImportPdfPasswordAttempts } from "@/features/cards/lib/resolve-import-pdf-password";
 import { ImportPage } from "@/features/transactions/components/import/import-page";
+import { buildImportMountKey } from "@/features/transactions/lib/import-flow-entry";
 import {
 	buildOptionSets,
 	buildSluggedFilters,
@@ -48,33 +49,8 @@ function resolveImportPrefill(searchParams: ResolvedSearchParams | undefined) {
 		initialAccountId: accountId,
 		initialInvoicePeriod: invoicePeriod,
 		initialResumeBatchId: getSingleParam(searchParams ?? {}, "lote"),
-		initialResumeNonce: getSingleParam(searchParams ?? {}, "retomar"),
+		remountNonce: getSingleParam(searchParams ?? {}, "retomar"),
 	};
-}
-
-function buildImportMountKey({
-	resumeBatchId,
-	resumeNonce,
-	cardId,
-	accountId,
-	invoicePeriod,
-}: {
-	resumeBatchId: string | null;
-	resumeNonce: string | null;
-	cardId: string | null;
-	accountId: string | null;
-	invoicePeriod: string | null;
-}) {
-	if (resumeBatchId) {
-		return `resume:${resumeBatchId}:${resumeNonce ?? "0"}`;
-	}
-
-	return [
-		"import",
-		cardId ?? "no-card",
-		accountId ?? "no-account",
-		invoicePeriod ?? "no-period",
-	].join(":");
 }
 
 export async function generateMetadata({
@@ -110,7 +86,7 @@ export default async function Page({ searchParams }: PageProps) {
 		initialAccountId,
 		initialInvoicePeriod,
 		initialResumeBatchId,
-		initialResumeNonce,
+		remountNonce,
 	} = resolveImportPrefill(resolvedSearchParams);
 	const [optionSets, aiSettings] = await Promise.all([
 		(async () => {
@@ -187,7 +163,7 @@ export default async function Page({ searchParams }: PageProps) {
 
 	const importMountKey = buildImportMountKey({
 		resumeBatchId: initialResumeBatchId,
-		resumeNonce: initialResumeNonce,
+		remountNonce,
 		cardId: validCardId,
 		accountId: validAccountId,
 		invoicePeriod: validCardId || validAccountId ? initialInvoicePeriod : null,

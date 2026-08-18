@@ -117,6 +117,7 @@ import {
 import {
 	buildAccountImportHistoryHref,
 	buildAccountStatementHref,
+	buildImportHrefWithoutFlowParams,
 	buildImportLandingHref,
 	buildInvoiceImportHistoryHref,
 } from "@/features/transactions/lib/import-continue-href";
@@ -3250,15 +3251,7 @@ export function ImportPage({
 		resumeAttemptedRef.current = true;
 
 		if (initialResumeBatchId) {
-			const params = new URLSearchParams(window.location.search);
-			params.delete("lote");
-			params.delete("retomar");
-			const query = params.toString();
-			router.replace(
-				query
-					? `${window.location.pathname}?${query}`
-					: window.location.pathname,
-			);
+			router.replace(buildImportHrefWithoutFlowParams(window.location));
 		}
 
 		await refreshImportHistory();

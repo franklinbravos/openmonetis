@@ -27,15 +27,42 @@ export function buildImportContinueHref(
 	return query ? `/transactions/import?${query}` : "/transactions/import";
 }
 
-/** Navegação ao retomar rascunho — `retomar` força remount mesmo com o mesmo `lote`. */
+let remountNonceSequence = 0;
+
+/** Sequência evita nonce repetido em dois cliques no mesmo milissegundo. */
+function createRemountNonce(): string {
+	remountNonceSequence += 1;
+	return `${Date.now()}-${remountNonceSequence}`;
+}
+
+/** `retomar` muda a URL para forçar remount mesmo quando o resto é igual. */
+function withRemountNonce(href: string): string {
+	const [pathname, search] = href.split("?");
+	const params = new URLSearchParams(search ?? "");
+	params.set("retomar", createRemountNonce());
+	return `${pathname}?${params.toString()}`;
+}
+
 export function buildImportResumeHref(
 	entry: Parameters<typeof buildImportContinueHref>[0],
 ): string {
-	const params = new URLSearchParams(
-		buildImportContinueHref(entry).split("?")[1] ?? "",
-	);
-	params.set("retomar", String(Date.now()));
-	return `/transactions/import?${params.toString()}`;
+	return withRemountNonce(buildImportContinueHref(entry));
+}
+
+/**
+ * Um mount que ainda vê `lote` tenta retomar de novo — um refresh na revisão
+ * recarregaria o rascunho por cima do trabalho em andamento.
+ */
+export function buildImportHrefWithoutFlowParams(location: {
+	pathname: string;
+	search: string;
+}): string {
+	const params = new URLSearchParams(location.search);
+	params.delete("lote");
+	params.delete("retomar");
+
+	const query = params.toString();
+	return query ? `${location.pathname}?${query}` : location.pathname;
 }
 
 export function buildInvoiceImportHistoryHref(

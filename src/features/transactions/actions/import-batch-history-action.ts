@@ -19,7 +19,6 @@ import { db } from "@/shared/lib/db";
 import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { uuidSchema } from "@/shared/lib/schemas/common";
-import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 import {
 	canInlineDownloadS3Object,
 	createPresignedGetUrl,
@@ -27,6 +26,7 @@ import {
 	getS3ObjectBuffer,
 	headS3Object,
 } from "@/shared/lib/storage/presign";
+import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 
 async function resolveImportBatchFileKey(batch: {
 	attachment?: { fileKey?: string | null } | null;
@@ -155,9 +155,7 @@ export async function syncImportBatchSourceTotalAction(
 						? formatDecimalForDbRequired(data.sourceInvoiceTotal)
 						: null,
 				sourceInvoiceTotalKind: data.sourceInvoiceTotalKind,
-				...(data.sourceFileRows
-					? { sourceFileRows: data.sourceFileRows }
-					: {}),
+				...(data.sourceFileRows ? { sourceFileRows: data.sourceFileRows } : {}),
 			})
 			.where(
 				and(
