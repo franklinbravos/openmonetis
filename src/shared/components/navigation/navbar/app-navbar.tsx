@@ -1,5 +1,5 @@
-import { AnimatedThemeToggler } from "@/shared/components/animated-theme-toggler";
 import type { Payer } from "@/features/payers/components/types";
+import { AnimatedThemeToggler } from "@/shared/components/animated-theme-toggler";
 import { NotificationBell } from "@/shared/components/navigation/navbar/notification-bell";
 import { RefreshPageButton } from "@/shared/components/refresh-page-button";
 import type { DashboardNotificationsSnapshot } from "@/shared/lib/types/notifications";

@@ -449,8 +449,7 @@ export function TransactionDialog({
 		const sanitizedAmount = Math.abs(amountValue);
 		if (
 			formState.condition === "Parcelado" &&
-			(!formState.installmentCount ||
-				Number(formState.installmentCount) < 2)
+			(!formState.installmentCount || Number(formState.installmentCount) < 2)
 		) {
 			const message = "Selecione a quantidade de parcelas.";
 			setErrorMessage(message);

@@ -1,11 +1,11 @@
 import { z } from "zod";
 import type { ReviewRow } from "@/features/transactions/components/import/review-table";
-import { isInvoiceExtraReviewRow } from "@/features/transactions/lib/import-invoice-extra-rows";
 import {
 	buildImportDuplicateValidation,
 	type ImportDuplicateSnapshot,
 	type ImportDuplicateValidation,
 } from "@/features/transactions/lib/import-duplicate-match";
+import { isInvoiceExtraReviewRow } from "@/features/transactions/lib/import-invoice-extra-rows";
 import { toDateOnlyString } from "@/shared/utils/date";
 
 export const IMPORT_AI_FIRST_BATCH_SIZE = 12;

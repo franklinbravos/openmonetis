@@ -6,10 +6,10 @@ import {
 } from "@/shared/utils/date";
 import { derivePeriodFromDate, getNextPeriod } from "@/shared/utils/period";
 import {
+	type InstallmentAmountMode,
 	PAYMENT_METHODS,
 	TRANSACTION_CONDITIONS,
 	TRANSACTION_TYPES,
-	type InstallmentAmountMode,
 } from "./constants";
 
 /**

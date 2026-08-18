@@ -53,7 +53,6 @@ import {
 } from "@/shared/components/ui/tabs";
 import { ExpandableWidgetCard } from "@/shared/components/widgets/expandable-widget-card";
 import { getUserId } from "@/shared/lib/auth/server";
-import { resolveFinancialDataContext } from "@/shared/lib/payers/financial-context";
 import { prefetchLogoMappings } from "@/shared/lib/logo/prefetch-server";
 import { getPayerAccess } from "@/shared/lib/payers/access";
 import {
@@ -65,6 +64,7 @@ import {
 	fetchPayerPaymentStatus,
 	type PayerCardUsageItem,
 } from "@/shared/lib/payers/details";
+import { resolveFinancialDataContext } from "@/shared/lib/payers/financial-context";
 import { parsePeriodParam } from "@/shared/utils/period";
 
 type PageSearchParams = Promise<ResolvedSearchParams>;

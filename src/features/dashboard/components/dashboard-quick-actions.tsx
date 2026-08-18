@@ -1,10 +1,10 @@
 "use client";
 
 import {
+	type RemixiconComponentType,
 	RiArrowLeftRightLine,
 	RiArrowRightDownLine,
 	RiArrowRightUpLine,
-	type RemixiconComponentType,
 } from "@remixicon/react";
 import type { ComponentProps } from "react";
 import { TransferDialog } from "@/features/accounts/components/transfer-dialog";

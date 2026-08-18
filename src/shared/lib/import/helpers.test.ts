@@ -195,8 +195,8 @@ describe("dedupeImportedTransactionsByFingerprint", () => {
 
 describe("expandImportExternalIdsForLookup", () => {
 	it("inclui id base e com sufixo", () => {
-		expect(
-			expandImportExternalIdsForLookup(["abc#2", "def"]).sort(),
-		).toEqual(["abc", "abc#2", "def"].sort());
+		expect(expandImportExternalIdsForLookup(["abc#2", "def"]).sort()).toEqual(
+			["abc", "abc#2", "def"].sort(),
+		);
 	});
 });

@@ -6,7 +6,10 @@ import {
 	signedAmountFromReviewValues,
 	signedAmountFromStoredValue,
 } from "@/shared/lib/import/invoice-total";
-import type { ImportedTransaction, ImportStatement } from "@/shared/lib/import/types";
+import type {
+	ImportedTransaction,
+	ImportStatement,
+} from "@/shared/lib/import/types";
 
 export type InvoiceFileRowFingerprint = {
 	externalId: string | null;
@@ -28,7 +31,9 @@ export function sourceFileRowsFromTransactions(
 	transactions: ImportedTransaction[],
 ): InvoiceFileRowFingerprint[] {
 	return transactions
-		.filter((transaction) => !isInvoicePaymentDescription(transaction.description))
+		.filter(
+			(transaction) => !isInvoicePaymentDescription(transaction.description),
+		)
 		.map((transaction) => ({
 			externalId: transaction.externalId,
 			date: transaction.date,

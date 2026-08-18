@@ -9,8 +9,8 @@ import {
 	mergeStoredProviderSettings,
 } from "@/shared/lib/ai/user-provider-config";
 import { getUser } from "@/shared/lib/auth/server";
-import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import { db, schema } from "@/shared/lib/db";
+import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 
 type ActionResponse<T = void> = {
 	success: boolean;

@@ -979,10 +979,7 @@ export function TransactionsFilters({
 								aria-hidden
 							/>
 						) : (
-							<RiFilterLine
-								className={monthToolbarIconClassName}
-								aria-hidden
-							/>
+							<RiFilterLine className={monthToolbarIconClassName} aria-hidden />
 						)}
 						<span className={monthToolbarMobileLabelClassName}>
 							{isPending ? "Aplicando…" : "Filtros"}
@@ -1015,56 +1012,53 @@ export function TransactionsFilters({
 	const monthToolbar =
 		useMonthToolbar && !monthToolbarMobileActionsSlot && monthToolbarSlot ? (
 			<MonthToolbarPortal container={monthToolbarSlot}>
-						<Button
-							type="button"
-							variant="outline"
-							size="icon-sm"
-							className={cn(
-								monthToolbarIconButtonClassName,
-								searchExpanded && "bg-accent text-accent-foreground",
-							)}
-							aria-label="Buscar lançamentos"
-							aria-expanded={searchExpanded}
-							onClick={() => setSearchExpanded((prev) => !prev)}
-						>
-							<RiSearchLine className={monthToolbarIconClassName} aria-hidden />
-							{hasSearchQuery ? (
-								<span
-									className="absolute top-1 right-1 size-2 rounded-full bg-primary"
-									aria-hidden
-								/>
-							) : null}
-						</Button>
+				<Button
+					type="button"
+					variant="outline"
+					size="icon-sm"
+					className={cn(
+						monthToolbarIconButtonClassName,
+						searchExpanded && "bg-accent text-accent-foreground",
+					)}
+					aria-label="Buscar lançamentos"
+					aria-expanded={searchExpanded}
+					onClick={() => setSearchExpanded((prev) => !prev)}
+				>
+					<RiSearchLine className={monthToolbarIconClassName} aria-hidden />
+					{hasSearchQuery ? (
+						<span
+							className="absolute top-1 right-1 size-2 rounded-full bg-primary"
+							aria-hidden
+						/>
+					) : null}
+				</Button>
 
-						{!hideAdvancedFilters ? (
-							<Button
-								type="button"
-								variant="outline"
-								size="icon-sm"
-								className={monthToolbarIconButtonClassName}
-								aria-label={isPending ? "Aplicando filtros" : "Abrir filtros"}
-								onClick={() => setDrawerOpen(true)}
-							>
-								{isPending ? (
-									<Spinner
-										className={monthToolbarIconClassName}
-										role="presentation"
-										aria-hidden
-									/>
-								) : (
-									<RiFilterLine
-										className={monthToolbarIconClassName}
-										aria-hidden
-									/>
-								)}
-								{hasActiveFilters ? (
-									<span
-										className="absolute top-1 right-1 size-2 rounded-full bg-primary"
-										aria-hidden
-									/>
-								) : null}
-							</Button>
+				{!hideAdvancedFilters ? (
+					<Button
+						type="button"
+						variant="outline"
+						size="icon-sm"
+						className={monthToolbarIconButtonClassName}
+						aria-label={isPending ? "Aplicando filtros" : "Abrir filtros"}
+						onClick={() => setDrawerOpen(true)}
+					>
+						{isPending ? (
+							<Spinner
+								className={monthToolbarIconClassName}
+								role="presentation"
+								aria-hidden
+							/>
+						) : (
+							<RiFilterLine className={monthToolbarIconClassName} aria-hidden />
+						)}
+						{hasActiveFilters ? (
+							<span
+								className="absolute top-1 right-1 size-2 rounded-full bg-primary"
+								aria-hidden
+							/>
 						) : null}
+					</Button>
+				) : null}
 			</MonthToolbarPortal>
 		) : null;
 

@@ -606,61 +606,61 @@ export const mapTransactionsData = (
 		const categoryId = item.categoryId ?? null;
 
 		return {
-		id: item.id ?? "",
-		userId: item.userId ?? "",
-		name: item.name ?? "",
-		purchaseDate: toDateOnlyString(item.purchaseDate) ?? "",
-		period: item.period ?? "",
-		transactionType: item.transactionType ?? "",
-		amount: Number(item.amount ?? 0),
-		condition: item.condition ?? "",
-		paymentMethod: item.paymentMethod ?? "",
-		payerId: item.payerId ?? null,
-		pagadorName: item.payer?.name ?? null,
-		pagadorAvatar: item.payer?.avatarUrl ?? null,
-		pagadorRole: item.payer?.role ?? null,
-		accountId: item.accountId ?? null,
-		contaName: item.financialAccount?.name ?? null,
-		contaLogo: item.financialAccount?.logo ?? null,
-		cardId: item.cardId ?? null,
-		cartaoName: item.card?.name ?? null,
-		cartaoLogo: item.card?.logo ?? null,
-		categoryId,
-		categoriaName: item.category?.name ?? null,
-		categoriaParentName:
-			categoryId && categoriesById
-				? getCategoryAncestorPathLabel(categoryId, categoriesById)
+			id: item.id ?? "",
+			userId: item.userId ?? "",
+			name: item.name ?? "",
+			purchaseDate: toDateOnlyString(item.purchaseDate) ?? "",
+			period: item.period ?? "",
+			transactionType: item.transactionType ?? "",
+			amount: Number(item.amount ?? 0),
+			condition: item.condition ?? "",
+			paymentMethod: item.paymentMethod ?? "",
+			payerId: item.payerId ?? null,
+			pagadorName: item.payer?.name ?? null,
+			pagadorAvatar: item.payer?.avatarUrl ?? null,
+			pagadorRole: item.payer?.role ?? null,
+			accountId: item.accountId ?? null,
+			contaName: item.financialAccount?.name ?? null,
+			contaLogo: item.financialAccount?.logo ?? null,
+			cardId: item.cardId ?? null,
+			cartaoName: item.card?.name ?? null,
+			cartaoLogo: item.card?.logo ?? null,
+			categoryId,
+			categoriaName: item.category?.name ?? null,
+			categoriaParentName:
+				categoryId && categoriesById
+					? getCategoryAncestorPathLabel(categoryId, categoriesById)
+					: null,
+			categoriaType: item.category?.type ?? null,
+			categoriaIcon: item.category?.icon ?? null,
+			installmentCount: item.installmentCount ?? null,
+			recurrenceCount: item.recurrenceCount ?? null,
+			currentInstallment: item.currentInstallment ?? null,
+			dueDate: item.dueDate ? item.dueDate.toISOString().slice(0, 10) : null,
+			boletoPaymentDate: item.boletoPaymentDate
+				? item.boletoPaymentDate.toISOString().slice(0, 10)
 				: null,
-		categoriaType: item.category?.type ?? null,
-		categoriaIcon: item.category?.icon ?? null,
-		installmentCount: item.installmentCount ?? null,
-		recurrenceCount: item.recurrenceCount ?? null,
-		currentInstallment: item.currentInstallment ?? null,
-		dueDate: item.dueDate ? item.dueDate.toISOString().slice(0, 10) : null,
-		boletoPaymentDate: item.boletoPaymentDate
-			? item.boletoPaymentDate.toISOString().slice(0, 10)
-			: null,
-		note: item.note ?? null,
-		isSettled: item.isSettled ?? null,
-		isDivided: item.isDivided ?? false,
-		isAnticipated: item.isAnticipated ?? false,
-		anticipationId: item.anticipationId ?? null,
-		seriesId: item.seriesId ?? null,
-		splitGroupId: item.splitGroupId ?? null,
-		transferFromAccountId: item.transferFromAccountId ?? null,
-		transferFromAccountName: item.transferFromAccountName ?? null,
-		transferFromAccountLogo: item.transferFromAccountLogo ?? null,
-		transferToAccountId: item.transferToAccountId ?? null,
-		transferToAccountName: item.transferToAccountName ?? null,
-		transferToAccountLogo: item.transferToAccountLogo ?? null,
-		hasAttachments: item.hasAttachments ?? false,
-		readonly:
-			Boolean(item.note?.startsWith(ACCOUNT_AUTO_INVOICE_NOTE_PREFIX)) ||
-			(item.note === INITIAL_BALANCE_NOTE &&
-				item.transactionType === INITIAL_BALANCE_TRANSACTION_TYPE &&
-				item.condition === INITIAL_BALANCE_CONDITION &&
-				item.paymentMethod === INITIAL_BALANCE_PAYMENT_METHOD),
-	};
+			note: item.note ?? null,
+			isSettled: item.isSettled ?? null,
+			isDivided: item.isDivided ?? false,
+			isAnticipated: item.isAnticipated ?? false,
+			anticipationId: item.anticipationId ?? null,
+			seriesId: item.seriesId ?? null,
+			splitGroupId: item.splitGroupId ?? null,
+			transferFromAccountId: item.transferFromAccountId ?? null,
+			transferFromAccountName: item.transferFromAccountName ?? null,
+			transferFromAccountLogo: item.transferFromAccountLogo ?? null,
+			transferToAccountId: item.transferToAccountId ?? null,
+			transferToAccountName: item.transferToAccountName ?? null,
+			transferToAccountLogo: item.transferToAccountLogo ?? null,
+			hasAttachments: item.hasAttachments ?? false,
+			readonly:
+				Boolean(item.note?.startsWith(ACCOUNT_AUTO_INVOICE_NOTE_PREFIX)) ||
+				(item.note === INITIAL_BALANCE_NOTE &&
+					item.transactionType === INITIAL_BALANCE_TRANSACTION_TYPE &&
+					item.condition === INITIAL_BALANCE_CONDITION &&
+					item.paymentMethod === INITIAL_BALANCE_PAYMENT_METHOD),
+		};
 	});
 };
 

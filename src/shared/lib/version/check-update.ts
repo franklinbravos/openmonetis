@@ -58,4 +58,3 @@ export const checkForUpdate = cache(async (): Promise<UpdateCheckResult> => {
 		return fallback;
 	}
 });
-

@@ -1,11 +1,11 @@
 import type { ReviewInstallmentImport } from "@/features/transactions/lib/import-installments";
 import { detectInstallmentFromName } from "@/features/transactions/lib/installment-detection";
-import type { ImportedTransaction } from "@/shared/lib/import/types";
 import {
 	buildImportTransactionFingerprint,
 	importExternalIdCollidesWithStored,
 	stripImportExternalIdSuffix,
 } from "@/shared/lib/import/helpers";
+import type { ImportedTransaction } from "@/shared/lib/import/types";
 import { formatCurrency } from "@/shared/utils/currency";
 import { formatDateOnly, toDateOnlyString } from "@/shared/utils/date";
 

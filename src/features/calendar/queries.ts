@@ -1,11 +1,11 @@
 import { and, eq, gte, lte, ne, or } from "drizzle-orm";
 import { cards, transactions } from "@/db/schema";
+import { ensureOpenRecurrenceInstancesForPeriod } from "@/features/transactions/lib/open-recurrence";
 import {
 	buildOptionSets,
 	buildSluggedFilters,
 	mapTransactionsData,
 } from "@/features/transactions/lib/page-helpers";
-import { ensureOpenRecurrenceInstancesForPeriod } from "@/features/transactions/lib/open-recurrence";
 import {
 	fetchRecentEstablishments,
 	fetchTransactionFilterSources,

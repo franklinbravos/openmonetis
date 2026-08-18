@@ -41,7 +41,9 @@ export function TransactionQuickActionButton({
 			<span className={cn(monthToolbarMobileLabelClassName, "md:hidden")}>
 				{shortLabel}
 			</span>
-			<span className={cn(monthToolbarMobileLabelClassName, "hidden md:inline")}>
+			<span
+				className={cn(monthToolbarMobileLabelClassName, "hidden md:inline")}
+			>
 				{label}
 			</span>
 		</Button>

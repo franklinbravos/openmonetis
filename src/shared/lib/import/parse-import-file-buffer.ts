@@ -44,13 +44,19 @@ export async function parseImportFileFromBuffer(
 			);
 		case "xlsx":
 		case "xls":
-			return normalizeImportStatement(await parseXls(bufferToArrayBuffer(buffer)));
+			return normalizeImportStatement(
+				await parseXls(bufferToArrayBuffer(buffer)),
+			);
 		case "csv":
-			return normalizeImportStatement(parseInterCsv(decodeText(buffer, "utf-8")));
+			return normalizeImportStatement(
+				parseInterCsv(decodeText(buffer, "utf-8")),
+			);
 		case "txt":
 			return normalizeImportStatement(parseCnab(decodeText(buffer, "utf-8")));
 		case "pdf":
-			return normalizeImportStatement(await parsePdf(bufferToArrayBuffer(buffer)));
+			return normalizeImportStatement(
+				await parsePdf(bufferToArrayBuffer(buffer)),
+			);
 		default:
 			throw new Error(
 				"Formato não suportado. Use .ofx, .qfx, .csv, .txt, .pdf, .xlsx ou .xls.",

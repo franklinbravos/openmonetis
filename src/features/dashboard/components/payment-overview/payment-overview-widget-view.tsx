@@ -46,10 +46,7 @@ export function PaymentOverviewWidgetView({
 			</TabsList>
 
 			<TabsContent value="conditions" className="mt-2">
-				<PaymentConditionsWidget
-					data={paymentConditionsData}
-					period={period}
-				/>
+				<PaymentConditionsWidget data={paymentConditionsData} period={period} />
 			</TabsContent>
 
 			<TabsContent value="methods" className="mt-2">

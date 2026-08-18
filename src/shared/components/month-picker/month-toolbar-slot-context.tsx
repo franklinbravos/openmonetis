@@ -44,8 +44,9 @@ export function MonthToolbarSlotProvider({
 	mobileColumns = 4,
 }: MonthToolbarSlotProviderProps) {
 	const [create, setCreateSlot] = useState<HTMLDivElement | null>(null);
-	const [mobileActions, setMobileActionsSlot] =
-		useState<HTMLDivElement | null>(null);
+	const [mobileActions, setMobileActionsSlot] = useState<HTMLDivElement | null>(
+		null,
+	);
 	const [filters, setFiltersSlot] = useState<HTMLDivElement | null>(null);
 	const [expand, setExpandSlot] = useState<HTMLDivElement | null>(null);
 	const [end, setEndSlot] = useState<HTMLDivElement | null>(null);
@@ -124,9 +125,7 @@ export function useResolvedMonthToolbarSlot(
 	contextKey: keyof MonthToolbarSlotElements,
 ): HTMLDivElement | null {
 	const contextSlot = useMonthToolbarSlot(contextKey);
-	const [fallbackSlot, setFallbackSlot] = useState<HTMLDivElement | null>(
-		null,
-	);
+	const [fallbackSlot, setFallbackSlot] = useState<HTMLDivElement | null>(null);
 
 	useLayoutEffect(() => {
 		if (contextSlot || !elementId) {

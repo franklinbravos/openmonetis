@@ -25,7 +25,10 @@ export function DashboardWelcome({ name }: DashboardWelcomeProps) {
 					className="shrink-0 text-right text-xs text-muted-foreground sm:text-left sm:text-sm"
 					aria-label={`Data atual: ${formattedDate}`}
 				>
-					<span className="hidden text-muted-foreground/40 sm:inline" aria-hidden>
+					<span
+						className="hidden text-muted-foreground/40 sm:inline"
+						aria-hidden
+					>
 						·{" "}
 					</span>
 					{formattedDate}

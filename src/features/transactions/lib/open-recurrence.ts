@@ -89,14 +89,11 @@ export async function ensureOpenRecurrenceInstancesForPeriod(
 			}
 
 			const offset = getPeriodOffset(anchorPeriod, period);
-			const splitGroupId =
-				isSplitSeries && offset > 0 ? randomUUID() : null;
+			const splitGroupId = isSplitSeries && offset > 0 ? randomUUID() : null;
 			const rowsToInsert = [];
 
 			for (const template of anchorTemplates) {
-				if (
-					existingAtPeriod.some((row) => row.payerId === template.payerId)
-				) {
+				if (existingAtPeriod.some((row) => row.payerId === template.payerId)) {
 					continue;
 				}
 
@@ -134,8 +131,7 @@ export async function ensureOpenRecurrenceInstancesForPeriod(
 							: null,
 					isDivided: template.isDivided ?? false,
 					isAnticipated: false,
-					splitGroupId:
-						offset === 0 ? template.splitGroupId : splitGroupId,
+					splitGroupId: offset === 0 ? template.splitGroupId : splitGroupId,
 				});
 			}
 

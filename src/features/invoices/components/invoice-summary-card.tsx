@@ -15,8 +15,8 @@ import {
 	updateInvoicePaymentStatusAction,
 	updatePaymentDateAction,
 } from "@/features/invoices/actions";
-import { resolveInvoicePaymentTiming } from "@/features/invoices/lib/payment-timing";
 import type { InvoiceReconciliationTransaction } from "@/features/invoices/lib/invoice-reconciliation";
+import { resolveInvoicePaymentTiming } from "@/features/invoices/lib/payment-timing";
 import { AccountCardSelectContent } from "@/features/transactions/components/select-items";
 import StatusDot from "@/shared/components/feedback/status-dot";
 import MoneyValues from "@/shared/components/money-values";
@@ -373,7 +373,8 @@ export function InvoiceSummaryCard({
 							{hasReconciliationMismatch && extraTransactions.length > 0 ? (
 								<div className="space-y-2">
 									<p className="text-muted-foreground text-xs">
-										Lançamentos a mais no OpenMonetis ({extraTransactions.length})
+										Lançamentos a mais no OpenMonetis (
+										{extraTransactions.length})
 									</p>
 									<p className="text-muted-foreground text-[11px] leading-relaxed">
 										Cadastrados aqui e ausentes do arquivo importado.

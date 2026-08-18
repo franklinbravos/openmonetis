@@ -8,7 +8,8 @@ import {
 } from "@/features/transactions/lib/import-invoice-extra-rows";
 
 function snapshot(
-	overrides: Partial<ImportDuplicateSnapshot> & Pick<ImportDuplicateSnapshot, "id">,
+	overrides: Partial<ImportDuplicateSnapshot> &
+		Pick<ImportDuplicateSnapshot, "id">,
 ): ImportDuplicateSnapshot {
 	return {
 		ofxFitId: null,

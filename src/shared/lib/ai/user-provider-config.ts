@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { type AIProvider, PROVIDERS } from "@/features/insights/constants";
-import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { db, schema } from "@/shared/lib/db";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getEnvProviderCredential } from "./env-credentials";
 import { resolveOpenCodePlanBaseUrl } from "./opencode-plans";
 import {

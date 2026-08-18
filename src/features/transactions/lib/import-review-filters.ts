@@ -5,13 +5,13 @@ import {
 	isImportRowResolved,
 	isVerifiedImportDuplicate,
 } from "@/features/transactions/lib/import-duplicate-match";
-import { isInvoiceExtraReviewRow } from "@/features/transactions/lib/import-invoice-extra-rows";
 import {
 	isValidInstallmentImport,
 	isValidRecurrenceImport,
 	type ReviewInstallmentImport,
 	type ReviewRecurrenceImport,
 } from "@/features/transactions/lib/import-installments";
+import { isInvoiceExtraReviewRow } from "@/features/transactions/lib/import-invoice-extra-rows";
 import { normalizeImportedText } from "@/shared/lib/import/helpers";
 import { formatCurrency } from "@/shared/utils/currency";
 import { formatDate } from "@/shared/utils/date";

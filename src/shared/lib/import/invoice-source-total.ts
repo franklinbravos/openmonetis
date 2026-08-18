@@ -26,9 +26,10 @@ export function resolveInvoiceSourceTotal(
 		return {
 			amount: Math.round(metadata.totalAmount * 100) / 100,
 			source,
-			confidence: source === "pdf_lines_fallback" || source === "lines_fallback"
-				? "inferred"
-				: "high",
+			confidence:
+				source === "pdf_lines_fallback" || source === "lines_fallback"
+					? "inferred"
+					: "high",
 		};
 	}
 
@@ -45,7 +46,9 @@ export function resolveInvoiceSourceTotal(
 	};
 }
 
-function inferMetadataSource(statement: ImportStatement): InvoiceSourceTotalKind {
+function inferMetadataSource(
+	statement: ImportStatement,
+): InvoiceSourceTotalKind {
 	if (statement.invoice?.totalAmountSource) {
 		return statement.invoice.totalAmountSource;
 	}
@@ -66,7 +69,9 @@ function inferMetadataSource(statement: ImportStatement): InvoiceSourceTotalKind
 	return "ofx_ledger";
 }
 
-export function invoiceSourceTotalKindLabel(source: InvoiceSourceTotalKind): string {
+export function invoiceSourceTotalKindLabel(
+	source: InvoiceSourceTotalKind,
+): string {
 	switch (source) {
 		case "ofx_ledger":
 			return "OFX";

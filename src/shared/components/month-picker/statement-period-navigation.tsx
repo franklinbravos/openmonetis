@@ -19,8 +19,8 @@ import {
 	getMonthToolbarEndSlotId,
 	getMonthToolbarExpandSlotId,
 	getMonthToolbarFiltersSlotId,
-	getMonthToolbarMobileActionsSlotId,
 	getMonthToolbarMobileActionsClassName,
+	getMonthToolbarMobileActionsSlotId,
 	monthToolbarPanelClassName,
 } from "@/features/transactions/lib/month-toolbar";
 import LoadingSpinner from "@/shared/components/month-picker/loading-spinner";

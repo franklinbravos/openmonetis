@@ -67,9 +67,8 @@ export async function generateInsightsAction(
 			};
 		}
 
-		const { credentials, storedSettings } = await fetchInstanceAiProviderSettings(
-			user.id,
-		);
+		const { credentials, storedSettings } =
+			await fetchInstanceAiProviderSettings(user.id);
 
 		if (hasInvalidStoredAiKeys(storedSettings)) {
 			return {

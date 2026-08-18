@@ -19,7 +19,6 @@ import {
 	revalidateForEntity,
 } from "@/shared/lib/actions/helpers";
 import { getUser } from "@/shared/lib/auth/server";
-import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { CATEGORY_TYPES } from "@/shared/lib/categories/constants";
 import {
 	getCategoryDescendantIds,
@@ -27,6 +26,7 @@ import {
 } from "@/shared/lib/categories/tree";
 import { db } from "@/shared/lib/db";
 import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
+import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { uuidSchema } from "@/shared/lib/schemas/common";
 import { normalizeIconInput } from "@/shared/utils/string";
 

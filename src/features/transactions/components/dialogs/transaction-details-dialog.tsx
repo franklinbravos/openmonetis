@@ -158,9 +158,7 @@ export function TransactionDetailsDialog({
 								<Badge
 									variant={details.isSettled ? "secondary" : "info"}
 									className={
-										details.isSettled
-											? "text-success bg-success/10"
-											: undefined
+										details.isSettled ? "text-success bg-success/10" : undefined
 									}
 								>
 									{details.isSettled ? "Pago" : "Em aberto"}
@@ -295,7 +293,9 @@ export function TransactionDetailsDialog({
 										if (label === "—") {
 											return <span className="min-w-0 truncate">—</span>;
 										}
-										const displayName = getPayerDisplayName(details.pagadorName);
+										const displayName = getPayerDisplayName(
+											details.pagadorName,
+										);
 										const avatarSrc = getAvatarSrc(details.pagadorAvatar);
 										const initial = displayName.charAt(0).toUpperCase() || "?";
 										return (
@@ -339,9 +339,7 @@ export function TransactionDetailsDialog({
 								{isInstallment && (
 									<li className="mb-1">
 										<InstallmentTimeline
-											purchaseDate={parseLocalDateString(
-												details.purchaseDate,
-											)}
+											purchaseDate={parseLocalDateString(details.purchaseDate)}
 											currentInstallment={parcelaAtual}
 											totalInstallments={totalParcelas}
 											period={details.period}

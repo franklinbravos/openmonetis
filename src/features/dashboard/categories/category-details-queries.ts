@@ -68,32 +68,29 @@ export async function fetchCategoryDetails(
 	);
 
 	const currentRows = await db.query.transactions.findMany({
-				where: and(
-					eq(transactions.userId, dataOwnerUserId),
-					eq(transactions.categoryId, categoryId),
-					eq(transactions.transactionType, transactionType),
-					eq(transactions.period, period),
-					...(hideAnticipatedInstallments
-						? [
-								or(
-									isNull(transactions.isAnticipated),
-									eq(transactions.isAnticipated, false),
-								),
-							]
-						: []),
-					...(isInvoiceCategory ? [] : [sanitizedNote]),
-				),
-				with: {
-					payer: true,
-					financialAccount: true,
-					card: true,
-					category: true,
-				},
-				orderBy: [
-					desc(transactions.purchaseDate),
-					desc(transactions.createdAt),
-				],
-			});
+		where: and(
+			eq(transactions.userId, dataOwnerUserId),
+			eq(transactions.categoryId, categoryId),
+			eq(transactions.transactionType, transactionType),
+			eq(transactions.period, period),
+			...(hideAnticipatedInstallments
+				? [
+						or(
+							isNull(transactions.isAnticipated),
+							eq(transactions.isAnticipated, false),
+						),
+					]
+				: []),
+			...(isInvoiceCategory ? [] : [sanitizedNote]),
+		),
+		with: {
+			payer: true,
+			financialAccount: true,
+			card: true,
+			category: true,
+		},
+		orderBy: [desc(transactions.purchaseDate), desc(transactions.createdAt)],
+	});
 
 	const filteredRows = currentRows.filter((row) => {
 		if (

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { InvoiceReconciliationReviewRow } from "./invoice-total";
 import {
 	computeImportReconciliation,
 	isInvoiceTotalReconciled,
 	sumSignedAmountsForReviewRows,
 } from "./invoice-total";
-import type { InvoiceReconciliationReviewRow } from "./invoice-total";
 
 const baseRow = (
 	overrides: Partial<InvoiceReconciliationReviewRow>,

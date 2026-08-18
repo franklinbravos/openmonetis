@@ -66,7 +66,10 @@ export function resolveAiModelIdForCredentials(
 	}
 
 	for (const provider of AI_PROVIDER_IDS) {
-		if (credentials[provider]?.source === "none" || !credentials[provider]?.apiKey) {
+		if (
+			credentials[provider]?.source === "none" ||
+			!credentials[provider]?.apiKey
+		) {
 			continue;
 		}
 

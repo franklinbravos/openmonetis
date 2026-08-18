@@ -5,6 +5,7 @@ import { fetchAllAccountsForUser } from "@/features/accounts/queries";
 import { fetchUserPreferences } from "@/features/settings/queries";
 import { TransactionsPage } from "@/features/transactions/components/page/transactions-page";
 import { TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID } from "@/features/transactions/lib/month-toolbar";
+import { ensureOpenRecurrenceInstancesForPeriod } from "@/features/transactions/lib/open-recurrence";
 import {
 	buildOptionSets,
 	buildSluggedFilters,
@@ -16,7 +17,6 @@ import {
 	type ResolvedSearchParams,
 	resolveTransactionPagination,
 } from "@/features/transactions/lib/page-helpers";
-import { ensureOpenRecurrenceInstancesForPeriod } from "@/features/transactions/lib/open-recurrence";
 import {
 	fetchRecentEstablishments,
 	fetchTransactionFilterSources,

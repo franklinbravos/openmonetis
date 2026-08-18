@@ -108,7 +108,9 @@ export function stripImportExternalIdSuffix(externalId: string): string {
 }
 
 /** Inclui variantes com/sem sufixo `#2` gerado por `uniquifyImportedExternalIds`. */
-export function expandImportExternalIdsForLookup(externalIds: string[]): string[] {
+export function expandImportExternalIdsForLookup(
+	externalIds: string[],
+): string[] {
 	const expanded = new Set<string>();
 
 	for (const externalId of externalIds) {

@@ -2,8 +2,8 @@ import type { SelectOption } from "@/features/transactions/components/types";
 import { deriveCreditCardPeriod } from "@/features/transactions/lib/form-helpers";
 import { buildPeriodFromTransactions } from "@/shared/lib/import/helpers";
 import type {
-	ImportStatement,
 	ImportedTransaction,
+	ImportStatement,
 	InvoiceImportMetadata,
 } from "@/shared/lib/import/types";
 import { getTodayDateString } from "@/shared/utils/date";

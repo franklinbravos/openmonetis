@@ -1,7 +1,5 @@
 import type { SelectOption } from "@/features/transactions/components/types";
-import {
-	resolveCreditCardInvoicePeriodFromImportStatement,
-} from "@/features/transactions/lib/import-invoice-period";
+import { resolveCreditCardInvoicePeriodFromImportStatement } from "@/features/transactions/lib/import-invoice-period";
 import type { ImportStatement } from "@/shared/lib/import/types";
 import { displayPeriod } from "@/shared/utils/period";
 

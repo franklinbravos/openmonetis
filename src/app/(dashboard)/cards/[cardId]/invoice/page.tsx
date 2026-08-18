@@ -32,18 +32,18 @@ import {
 	fetchTransactionFilterSources,
 } from "@/features/transactions/queries";
 import { fetchImportBatchHistory } from "@/features/transactions/queries/import-batch-history";
-import { StatementPeriodNavigation } from "@/shared/components/month-picker/statement-period-navigation";
 import { MonthToolbarSlotProvider } from "@/shared/components/month-picker/month-toolbar-slot-context";
+import { StatementPeriodNavigation } from "@/shared/components/month-picker/statement-period-navigation";
 import { PageBreadcrumb } from "@/shared/components/navigation/page-breadcrumb";
 import { Button } from "@/shared/components/ui/button";
 import { Card as UiCard } from "@/shared/components/ui/card";
 import { getUserId } from "@/shared/lib/auth/server";
-import { resolveFinancialDataContext } from "@/shared/lib/payers/financial-context";
 import {
 	CARD_IMPORT_PDF_PASSWORD_RULES,
 	isCardImportPdfPasswordRule,
 } from "@/shared/lib/cards/import-pdf-password";
 import { loadLogoOptions } from "@/shared/lib/logo/options";
+import { resolveFinancialDataContext } from "@/shared/lib/payers/financial-context";
 import { parsePeriodParam } from "@/shared/utils/period";
 
 type PageSearchParams = Promise<ResolvedSearchParams>;
@@ -278,39 +278,39 @@ export default async function Page({ params, searchParams }: PageProps) {
 
 				<section className="flex flex-col gap-4">
 					<LancamentosSection
-					financialDataOwnerId={financialContext.dataOwnerUserId}
-					canEditFinancial={financialContext.canEditFinancial}
-					transactions={transactionData}
-					payerOptions={payerOptions}
-					splitPayerOptions={splitPayerOptions}
-					defaultPayerId={defaultPayerId}
-					accountOptions={accountOptions}
-					cardOptions={cardOptions}
-					categoryOptions={categoryOptions}
-					payerFilterOptions={payerFilterOptions}
-					categoryFilterOptions={categoryFilterOptions}
-					accountCardFilterOptions={accountCardFilterOptions}
-					selectedPeriod={selectedPeriod}
-					estabelecimentos={estabelecimentos}
-					allowCreate
-					noteAsColumn={userPreferences?.statementNoteAsColumn ?? false}
-					columnOrder={userPreferences?.transactionsColumnOrder ?? null}
-					groupTransactionsByDate={
-						userPreferences?.groupTransactionsByDate ?? true
-					}
-					attachmentMaxSizeMb={userPreferences?.attachmentMaxSizeMb ?? 50}
-					defaultCardId={card.id}
-					defaultPaymentMethod="Cartão de crédito"
-					lockCardSelection
-					lockPaymentMethod
-					showImportButton={false}
-					exportContext={{
-						source: "transactions",
-						period: selectedPeriod,
-						filters: searchFilters,
-						cardId: card.id,
-					}}
-				/>
+						financialDataOwnerId={financialContext.dataOwnerUserId}
+						canEditFinancial={financialContext.canEditFinancial}
+						transactions={transactionData}
+						payerOptions={payerOptions}
+						splitPayerOptions={splitPayerOptions}
+						defaultPayerId={defaultPayerId}
+						accountOptions={accountOptions}
+						cardOptions={cardOptions}
+						categoryOptions={categoryOptions}
+						payerFilterOptions={payerFilterOptions}
+						categoryFilterOptions={categoryFilterOptions}
+						accountCardFilterOptions={accountCardFilterOptions}
+						selectedPeriod={selectedPeriod}
+						estabelecimentos={estabelecimentos}
+						allowCreate
+						noteAsColumn={userPreferences?.statementNoteAsColumn ?? false}
+						columnOrder={userPreferences?.transactionsColumnOrder ?? null}
+						groupTransactionsByDate={
+							userPreferences?.groupTransactionsByDate ?? true
+						}
+						attachmentMaxSizeMb={userPreferences?.attachmentMaxSizeMb ?? 50}
+						defaultCardId={card.id}
+						defaultPaymentMethod="Cartão de crédito"
+						lockCardSelection
+						lockPaymentMethod
+						showImportButton={false}
+						exportContext={{
+							source: "transactions",
+							period: selectedPeriod,
+							filters: searchFilters,
+							cardId: card.id,
+						}}
+					/>
 				</section>
 			</MonthToolbarSlotProvider>
 		</main>

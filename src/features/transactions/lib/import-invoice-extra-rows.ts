@@ -153,7 +153,9 @@ export function buildInvoiceExtraReviewRows(input: {
 	fileExternalIds: string[];
 	previousRows?: ReviewRow[];
 }): ReviewRow[] {
-	const fileRows = input.fileRows.filter((row) => !isInvoiceExtraReviewRow(row));
+	const fileRows = input.fileRows.filter(
+		(row) => !isInvoiceExtraReviewRow(row),
+	);
 	const matchedExistingIds =
 		collectMatchedExistingTransactionIdsFromReviewRows(fileRows);
 	const fileExternalIdSet = new Set(
@@ -201,7 +203,9 @@ export function mergeInvoiceReviewRowsWithExtras(input: {
 	fileExternalIds: string[];
 	previousRows?: ReviewRow[];
 }): ReviewRow[] {
-	const fileRows = input.fileRows.filter((row) => !isInvoiceExtraReviewRow(row));
+	const fileRows = input.fileRows.filter(
+		(row) => !isInvoiceExtraReviewRow(row),
+	);
 	const extras = buildInvoiceExtraReviewRows({
 		snapshots: input.snapshots,
 		fileRows,
@@ -225,7 +229,9 @@ export function collectInvoiceExtraRemovalTransactionIds(
 		.map((row) => row.existingTransactionId);
 }
 
-export function sumSignedAmountForInvoiceExtraRemovals(rows: ReviewRow[]): number {
+export function sumSignedAmountForInvoiceExtraRemovals(
+	rows: ReviewRow[],
+): number {
 	return rows
 		.filter(
 			(row): row is ReviewRow & { existingTransactionId: string } =>

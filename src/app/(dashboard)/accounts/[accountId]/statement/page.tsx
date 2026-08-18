@@ -30,8 +30,8 @@ import {
 	fetchRecentEstablishments,
 	fetchTransactionFilterSources,
 } from "@/features/transactions/queries";
-import { StatementPeriodNavigation } from "@/shared/components/month-picker/statement-period-navigation";
 import { MonthToolbarSlotProvider } from "@/shared/components/month-picker/month-toolbar-slot-context";
+import { StatementPeriodNavigation } from "@/shared/components/month-picker/statement-period-navigation";
 import { PageBreadcrumb } from "@/shared/components/navigation/page-breadcrumb";
 import { Card } from "@/shared/components/ui/card";
 import { getUserId } from "@/shared/lib/auth/server";
@@ -225,46 +225,46 @@ export default async function Page({ params, searchParams }: PageProps) {
 
 				<section className="flex flex-col gap-4">
 					<LancamentosSection
-					financialDataOwnerId={financialContext.dataOwnerUserId}
-					canEditFinancial={financialContext.canEditFinancial}
-					transactions={transactionData}
-					payerOptions={payerOptions}
-					splitPayerOptions={splitPayerOptions}
-					defaultPayerId={defaultPayerId}
-					accountOptions={accountOptions}
-					cardOptions={cardOptions}
-					categoryOptions={categoryOptions}
-					payerFilterOptions={payerFilterOptions}
-					categoryFilterOptions={categoryFilterOptions}
-					accountCardFilterOptions={accountCardFilterOptions}
-					selectedPeriod={selectedPeriod}
-					estabelecimentos={estabelecimentos}
-					pagination={{
-						page: transactionsPage.page,
-						pageSize: transactionsPage.pageSize,
-						totalItems: transactionsPage.totalItems,
-						totalPages: transactionsPage.totalPages,
-					}}
-					exportContext={{
-						source: "account-statement",
-						period: selectedPeriod,
-						filters: searchFilters,
-						accountId: account.id,
-						settledOnly: true,
-					}}
-					allowCreate
-					defaultAccountId={account.id}
-					defaultPaymentMethod={resolveDefaultPaymentMethod(
-						account.accountType,
-					)}
-					noteAsColumn={userPreferences?.statementNoteAsColumn ?? false}
-					columnOrder={userPreferences?.transactionsColumnOrder ?? null}
-					groupTransactionsByDate={
-						userPreferences?.groupTransactionsByDate ?? true
-					}
-					attachmentMaxSizeMb={userPreferences?.attachmentMaxSizeMb ?? 50}
-					showImportButton={false}
-				/>
+						financialDataOwnerId={financialContext.dataOwnerUserId}
+						canEditFinancial={financialContext.canEditFinancial}
+						transactions={transactionData}
+						payerOptions={payerOptions}
+						splitPayerOptions={splitPayerOptions}
+						defaultPayerId={defaultPayerId}
+						accountOptions={accountOptions}
+						cardOptions={cardOptions}
+						categoryOptions={categoryOptions}
+						payerFilterOptions={payerFilterOptions}
+						categoryFilterOptions={categoryFilterOptions}
+						accountCardFilterOptions={accountCardFilterOptions}
+						selectedPeriod={selectedPeriod}
+						estabelecimentos={estabelecimentos}
+						pagination={{
+							page: transactionsPage.page,
+							pageSize: transactionsPage.pageSize,
+							totalItems: transactionsPage.totalItems,
+							totalPages: transactionsPage.totalPages,
+						}}
+						exportContext={{
+							source: "account-statement",
+							period: selectedPeriod,
+							filters: searchFilters,
+							accountId: account.id,
+							settledOnly: true,
+						}}
+						allowCreate
+						defaultAccountId={account.id}
+						defaultPaymentMethod={resolveDefaultPaymentMethod(
+							account.accountType,
+						)}
+						noteAsColumn={userPreferences?.statementNoteAsColumn ?? false}
+						columnOrder={userPreferences?.transactionsColumnOrder ?? null}
+						groupTransactionsByDate={
+							userPreferences?.groupTransactionsByDate ?? true
+						}
+						attachmentMaxSizeMb={userPreferences?.attachmentMaxSizeMb ?? 50}
+						showImportButton={false}
+					/>
 				</section>
 			</MonthToolbarSlotProvider>
 		</main>

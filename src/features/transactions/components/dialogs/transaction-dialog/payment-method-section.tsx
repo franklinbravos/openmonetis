@@ -33,8 +33,8 @@ import {
 	AccountCardSelectContent,
 	PaymentMethodSelectContent,
 } from "../../select-items";
-import type { PaymentMethodSectionProps } from "./transaction-dialog-types";
 import { PaymentSchedulingSection } from "./payment-scheduling-section";
+import type { PaymentMethodSectionProps } from "./transaction-dialog-types";
 
 function InlinePeriodPicker({
 	period,

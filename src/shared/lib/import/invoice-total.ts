@@ -48,9 +48,10 @@ export type InvoiceReconciliationAmountMismatch = {
 	signedDelta: number;
 };
 
-export type InvoiceReconciliationMissingFileRow = InvoiceReconciliationReviewRow & {
-	reason: "not_registered" | "not_selected";
-};
+export type InvoiceReconciliationMissingFileRow =
+	InvoiceReconciliationReviewRow & {
+		reason: "not_registered" | "not_selected";
+	};
 
 export function isInvoicePaymentDescription(description: string): boolean {
 	const normalized = description.trim();
@@ -77,7 +78,9 @@ export function signedAmountFromStoredValue(
 	return transactionType === "Receita" ? Math.abs(numeric) : -Math.abs(numeric);
 }
 
-export function shouldIncludeInCardInvoiceTotal(kind: InvoiceReconciliationRowKind): boolean {
+export function shouldIncludeInCardInvoiceTotal(
+	kind: InvoiceReconciliationRowKind,
+): boolean {
 	return kind === "transaction";
 }
 
@@ -199,8 +202,7 @@ export function sumSignedAmountsForReviewRows(
 		}
 
 		return (
-			total +
-			signedAmountFromReviewValues(row.amount, row.transactionType)
+			total + signedAmountFromReviewValues(row.amount, row.transactionType)
 		);
 	}, 0);
 }
@@ -256,7 +258,9 @@ export function computeImportReconciliation(input: {
 	const invoiceExistingRows = filterExistingInvoiceRows(input.existingRows);
 	const invoiceReviewRows = filterReviewInvoiceRows(input.reviewRows);
 
-	const existingSignedTotal = sumSignedAmountsForExistingRows(input.existingRows);
+	const existingSignedTotal = sumSignedAmountsForExistingRows(
+		input.existingRows,
+	);
 	const selectedImportSignedTotal = sumSignedAmountsForReviewRows(
 		input.reviewRows,
 		{ importableOnly: true },
@@ -278,8 +282,9 @@ export function computeImportReconciliation(input: {
 
 	const fileRowByExternalId = new Map(
 		invoiceReviewRows
-			.filter((row): row is InvoiceReconciliationReviewRow & { externalId: string } =>
-				Boolean(row.externalId),
+			.filter(
+				(row): row is InvoiceReconciliationReviewRow & { externalId: string } =>
+					Boolean(row.externalId),
 			)
 			.map((row) => [row.externalId, row]),
 	);

@@ -1,15 +1,13 @@
 "use client";
 
-import type { ReactNode } from "react";
 import {
 	RiCheckboxBlankCircleLine,
 	RiCheckboxCircleFill,
 	RiRepeatLine,
 	RiStackLine,
 } from "@remixicon/react";
-import {
-	type InstallmentAmountMode,
-} from "@/features/transactions/lib/constants";
+import type { ReactNode } from "react";
+import type { InstallmentAmountMode } from "@/features/transactions/lib/constants";
 import { Button } from "@/shared/components/ui/button";
 import { Label } from "@/shared/components/ui/label";
 import {
@@ -129,7 +127,9 @@ function InstallmentModeOption({
 			/>
 			<span className="min-w-0">
 				<span className="block text-sm text-foreground">{label}</span>
-				<span className="block text-xs text-muted-foreground">{description}</span>
+				<span className="block text-xs text-muted-foreground">
+					{description}
+				</span>
 			</span>
 		</button>
 	);
@@ -192,9 +192,7 @@ export function PaymentSchedulingSection({
 				title="Pagamento recorrente"
 				description="Repete mensalmente. Você não precisa definir prazo agora."
 				active={isRecurring}
-				onToggle={() =>
-					setSchedulingMode(isRecurring ? "none" : "recorrente")
-				}
+				onToggle={() => setSchedulingMode(isRecurring ? "none" : "recorrente")}
 				ariaLabel={
 					isRecurring
 						? "Desativar pagamento recorrente"
@@ -208,9 +206,7 @@ export function PaymentSchedulingSection({
 				title="Parcelamento"
 				description="Divide o valor em parcelas ou repete o mesmo valor por parcela."
 				active={isInstallment}
-				onToggle={() =>
-					setSchedulingMode(isInstallment ? "none" : "parcelado")
-				}
+				onToggle={() => setSchedulingMode(isInstallment ? "none" : "parcelado")}
 				ariaLabel={
 					isInstallment ? "Desativar parcelamento" : "Ativar parcelamento"
 				}
@@ -242,7 +238,9 @@ export function PaymentSchedulingSection({
 				</div>
 
 				<div className="space-y-2">
-					<p className="text-xs font-medium text-foreground">Como usar o valor</p>
+					<p className="text-xs font-medium text-foreground">
+						Como usar o valor
+					</p>
 					<InstallmentModeOption
 						label="Dividir o valor total"
 						description="O valor informado acima será repartido entre as parcelas."

@@ -33,7 +33,10 @@ import { resolveTransferAccountsPreview } from "@/shared/lib/transfers/utils";
 import { formatDate, formatDateGroupLabel } from "@/shared/utils/date";
 import { getConditionIcon, getPaymentMethodIcon } from "@/shared/utils/icons";
 import { cn } from "@/shared/utils/ui";
-import { getPayerDisplayName, resolvePayerLabel } from "../../lib/formatting-helpers";
+import {
+	getPayerDisplayName,
+	resolvePayerLabel,
+} from "../../lib/formatting-helpers";
 import type { TransactionItem } from "../types";
 import { TransactionActionsMenu } from "./transaction-actions-menu";
 import { TransactionSettlementButton } from "./transaction-settlement-button";
@@ -140,7 +143,7 @@ export function TransactionsMobileList({
 								key={item.id}
 								item={item}
 								financialDataOwnerId={financialDataOwnerId}
-						canEditFinancial={canEditFinancial}
+								canEditFinancial={canEditFinancial}
 								onEdit={onEdit}
 								onCopy={onCopy}
 								onImport={onImport}
@@ -422,7 +425,7 @@ function TransactionMobileCard({
 								<TransactionActionsMenu
 									item={item}
 									financialDataOwnerId={financialDataOwnerId}
-						canEditFinancial={canEditFinancial}
+									canEditFinancial={canEditFinancial}
 									onEdit={onEdit}
 									onCopy={onCopy}
 									onImport={onImport}
@@ -478,9 +481,7 @@ function AccountMiniAvatar({
 }) {
 	return (
 		<Avatar className={cn("size-full", className)}>
-			{logo ? (
-				<AvatarImage src={logo} alt="" className="object-cover" />
-			) : null}
+			{logo ? <AvatarImage src={logo} alt="" className="object-cover" /> : null}
 			<AvatarFallback className="bg-muted font-semibold text-[9px] uppercase">
 				{name.slice(0, 2)}
 			</AvatarFallback>

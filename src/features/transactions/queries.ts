@@ -169,7 +169,8 @@ async function enrichMissingTransactionRelations(
 
 	return rows.map((row) => ({
 		...row,
-		payer: row.payer ?? (row.payerId ? (payerById.get(row.payerId) ?? null) : null),
+		payer:
+			row.payer ?? (row.payerId ? (payerById.get(row.payerId) ?? null) : null),
 		category:
 			row.category ??
 			(row.categoryId ? (categoryById.get(row.categoryId) ?? null) : null),
@@ -242,10 +243,7 @@ export async function fetchTransactionFilterSources(userId: string) {
 			),
 		}),
 		db.query.cards.findMany({
-			where: and(
-				eq(cards.userId, dataOwnerUserId),
-				eq(cards.status, "Ativo"),
-			),
+			where: and(eq(cards.userId, dataOwnerUserId), eq(cards.status, "Ativo")),
 		}),
 		db.query.categories.findMany({
 			where: eq(categories.userId, dataOwnerUserId),

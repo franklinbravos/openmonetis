@@ -1,9 +1,9 @@
 import ExcelJS from "exceljs";
-import { makeSyntheticExternalId, normalizeImportedText } from "./helpers";
 import type {
 	ImportedTransaction,
 	ImportStatement,
 } from "@/shared/lib/import/types";
+import { makeSyntheticExternalId, normalizeImportedText } from "./helpers";
 
 /**
  * Converte serial number do Excel (1900 date system) para ano/mês/dia.
