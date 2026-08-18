@@ -21,6 +21,10 @@ import {
 } from "@/features/transactions/lib/import-batch-status";
 import { buildImportResumeHref } from "@/features/transactions/lib/import-continue-href";
 import type { ImportFileHistoryEntry } from "@/features/transactions/lib/import-file-duplicate";
+import {
+	formatImportEntryContext,
+	resolveImportEntryActionLabel,
+} from "@/features/transactions/lib/import-file-history-entry";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
@@ -33,7 +37,6 @@ import {
 	TableRow,
 } from "@/shared/components/ui/table";
 import { formatDateTime } from "@/shared/utils/date";
-import { displayPeriod } from "@/shared/utils/period";
 import { cn } from "@/shared/utils/ui";
 
 type ImportFileHistoryProps = {
@@ -92,18 +95,32 @@ function ImportFileHistoryContextLine({
 }: {
 	entry: ImportFileHistoryEntry;
 }) {
+	const context = formatImportEntryContext(entry);
+	const fileSize = formatFileSize(entry.sourceFileSize);
+
 	return (
 		<>
 			{formatDateTime(entry.createdAt)}
-			{entry.cardName && entry.invoicePeriod
-				? ` · ${entry.cardName} · ${displayPeriod(entry.invoicePeriod)}`
-				: entry.accountName
-					? ` · ${entry.accountName}`
-					: null}
-			{formatFileSize(entry.sourceFileSize)
-				? ` · ${formatFileSize(entry.sourceFileSize)}`
-				: null}
+			{context ? ` · ${context}` : null}
+			{fileSize ? ` · ${fileSize}` : null}
 		</>
+	);
+}
+
+function ImportFileHistoryContextStack({
+	entry,
+}: {
+	entry: ImportFileHistoryEntry;
+}) {
+	const context = formatImportEntryContext(entry);
+	const fileSize = formatFileSize(entry.sourceFileSize);
+
+	return (
+		<div className="space-y-0.5">
+			<p>{formatDateTime(entry.createdAt)}</p>
+			{context ? <p className="break-words">{context}</p> : null}
+			{fileSize ? <p>{fileSize}</p> : null}
+		</div>
 	);
 }
 
@@ -144,11 +161,7 @@ function ImportFileHistoryActions({
 	onRequestDelete?: (entry: ImportFileHistoryEntry) => void;
 }) {
 	const [isPending, startTransition] = useTransition();
-	const continueLabel = isImportBatchDraft(entry.status)
-		? "Continuar"
-		: entry.hasAttachment
-			? "Reprocessar"
-			: "Reenviar arquivo";
+	const primaryActionLabel = resolveImportEntryActionLabel(entry);
 	const isResumingThisEntry = resumingBatchId === entry.id;
 	const isResumingOtherEntry =
 		resumingBatchId != null && resumingBatchId !== entry.id;
@@ -174,7 +187,7 @@ function ImportFileHistoryActions({
 					}}
 				>
 					<RiPlayLine className="size-3.5" aria-hidden />
-					{isResumingThisEntry ? "Carregando…" : continueLabel}
+					{isResumingThisEntry ? "Carregando…" : primaryActionLabel}
 				</Button>
 			) : null}
 			{entry.hasAttachment ? (
@@ -273,10 +286,10 @@ function ImportFileHistoryTableRow({
 }) {
 	return (
 		<TableRow>
-			<TableCell className="max-w-[280px]">
+			<TableCell className="align-top whitespace-normal">
 				<div className="flex min-w-0 flex-wrap items-center gap-2">
 					<p
-						className="truncate font-medium text-sm"
+						className="min-w-0 break-words font-medium text-sm"
 						title={entry.sourceFileName}
 					>
 						{entry.sourceFileName}
@@ -284,13 +297,13 @@ function ImportFileHistoryTableRow({
 					<ImportFileHistoryBadges entry={entry} />
 				</div>
 			</TableCell>
-			<TableCell className="text-muted-foreground text-xs whitespace-nowrap">
-				<ImportFileHistoryContextLine entry={entry} />
+			<TableCell className="align-top text-muted-foreground text-xs whitespace-normal">
+				<ImportFileHistoryContextStack entry={entry} />
 			</TableCell>
-			<TableCell className="text-muted-foreground text-xs">
+			<TableCell className="align-top break-words text-muted-foreground text-xs whitespace-normal">
 				<ImportFileHistoryStatusText entry={entry} />
 			</TableCell>
-			<TableCell className="text-right">
+			<TableCell className="align-top text-right whitespace-normal">
 				<ImportFileHistoryActions
 					entry={entry}
 					layout="row"
@@ -385,13 +398,13 @@ export function ImportFileHistory({
 				</div>
 
 				<div className="hidden rounded-lg border md:block">
-					<Table>
+					<Table className="table-fixed">
 						<TableHeader>
 							<TableRow>
-								<TableHead>Arquivo</TableHead>
-								<TableHead>Enviado em</TableHead>
-								<TableHead>Status</TableHead>
-								<TableHead className="text-right">Ações</TableHead>
+								<TableHead className="w-[30%]">Arquivo</TableHead>
+								<TableHead className="w-[18%]">Enviado em</TableHead>
+								<TableHead className="w-[22%]">Status</TableHead>
+								<TableHead className="w-[30%] text-right">Ações</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
