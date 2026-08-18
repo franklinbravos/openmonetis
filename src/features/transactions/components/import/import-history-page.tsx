@@ -1,7 +1,9 @@
+import { RiUploadCloud2Line } from "@remixicon/react";
 import Link from "next/link";
 import { ImportFileHistory } from "@/features/transactions/components/import/import-file-history";
 import { ImportHistoryFilters } from "@/features/transactions/components/import/import-history-filters";
 import type { SelectOption } from "@/features/transactions/components/types";
+import { buildImportLandingHref } from "@/features/transactions/lib/import-continue-href";
 import type { ImportFileHistoryEntry } from "@/features/transactions/lib/import-file-duplicate";
 import { Button } from "@/shared/components/ui/button";
 import {
@@ -16,6 +18,7 @@ type ImportHistoryPageProps = {
 	entries: ImportFileHistoryEntry[];
 	cardOptions: SelectOption[];
 	cardId: string | null;
+	accountId?: string | null;
 	invoicePeriod: string | null;
 	backHref?: string;
 	backLabel?: string;
@@ -28,6 +31,7 @@ export function ImportHistoryPage({
 	entries,
 	cardOptions,
 	cardId,
+	accountId = null,
 	invoicePeriod,
 	backHref = "/transactions/import",
 	backLabel = "Voltar para importação",
@@ -53,7 +57,19 @@ export function ImportHistoryPage({
 					emptyMessage={emptyMessage}
 					allowDelete
 				/>
-				<div>
+				<div className="flex flex-col gap-2 sm:flex-row">
+					<Button asChild>
+						<Link
+							href={buildImportLandingHref({
+								cardId,
+								accountId,
+								invoicePeriod,
+							})}
+						>
+							<RiUploadCloud2Line className="size-4" aria-hidden />
+							Nova importação
+						</Link>
+					</Button>
 					<Button variant="outline" asChild>
 						<Link href={backHref}>{backLabel}</Link>
 					</Button>

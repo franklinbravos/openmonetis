@@ -16,6 +16,7 @@ Esta versão adiciona conferência do total da fatura na importação de cartão
 - Importação: persistência de `total_fatura_origem` e tipo no lote (`import_batches`).
 - Fatura do cartão: seção de conferência com total do arquivo vs cadastrado, diferença, extras e atalhos para retomar revisão ou ajustar fatura.
 - Conferência de fatura na importação: edição de valor por linha, corrigindo lançamentos cadastrados do período para bater com o total do arquivo sem override (inclusive quando só há correções a aplicar).
+- Histórico de importações: botão **Nova importação** que abre a tela de importação já com o cartão, a conta e o período da fatura filtrados na tela de histórico.
 
 ### Alterado
 - Importação de fatura: cadastros a mais que batem com o arquivo (mesmo nome/parcela e valor) são rotulados como **duplicata**, não como item ausente; o total projetado desconta essas duplicatas marcadas para remoção.

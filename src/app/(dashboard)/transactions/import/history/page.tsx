@@ -93,6 +93,7 @@ export default async function Page({ searchParams }: PageProps) {
 				entries={entries}
 				cardOptions={cardOptions}
 				cardId={cardId}
+				accountId={validAccountId}
 				invoicePeriod={invoicePeriod}
 				backHref={backHref}
 				backLabel={
