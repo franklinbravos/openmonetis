@@ -5,6 +5,7 @@ import {
 	buildInvoicePeriodExistingIdSet,
 	collectCrossPeriodReviewRows,
 	collectCrossPeriodReviewStats,
+	dropExistingSnapshotAfterDelete,
 	isImportRowCrossPeriod,
 	sumSignedAmountForCrossPeriodRows,
 } from "@/features/transactions/lib/import-invoice-reconciliation";
@@ -220,5 +221,34 @@ describe("collectCrossPeriodReviewStats", () => {
 
 		expect(stats.count).toBe(2);
 		expect(stats.displayTotal).toBe(292.19);
+	});
+});
+
+describe("dropExistingSnapshotAfterDelete", () => {
+	it("remove o cadastro excluído pelo id", () => {
+		const remaining = dropExistingSnapshotAfterDelete(
+			[snapshot("a", "2026-07"), snapshot("b", "2026-07")],
+			{ transactionId: "a" },
+		);
+
+		expect(remaining.map((item) => item.id)).toEqual(["b"]);
+	});
+
+	it("remove pelo FITID mesmo com sufixo de repetição", () => {
+		const remaining = dropExistingSnapshotAfterDelete(
+			[
+				{ ...snapshot("a", "2026-07"), ofxFitId: "FIT-1#2" },
+				{ ...snapshot("b", "2026-07"), ofxFitId: "FIT-9" },
+			],
+			{ externalId: "FIT-1" },
+		);
+
+		expect(remaining.map((item) => item.id)).toEqual(["b"]);
+	});
+
+	it("mantém a lista quando não há alvo", () => {
+		const snapshots = [snapshot("a", "2026-07")];
+
+		expect(dropExistingSnapshotAfterDelete(snapshots, {})).toEqual(snapshots);
 	});
 });

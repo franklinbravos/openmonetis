@@ -31,6 +31,7 @@ Esta versão adiciona conferência do total da fatura na importação de cartão
 - Edição de lançamento: ao deixar de ser parcelado, a parcela atual (`parcela_atual`) é limpa junto com a quantidade de parcelas, em vez de ficar com o número antigo.
 - Importação de fatura: uma parcela do arquivo não é mais conciliada com outra parcela da mesma série cadastrada em fatura de outro mês — parcelas repetem nome e valor, e o casamento por nome+valor passou a valer só dentro da fatura importada. Era essa a origem de lançamentos movidos para o mês errado.
 - Importação de fatura: linhas conciliadas com parcelas ou recorrentes de outro período deixam de exibir o botão **Mover para esta fatura** e passam a orientar a correção na tela de lançamentos, em vez de só falhar depois do clique.
+- Importação de fatura: ao remover a importação anterior de uma linha na revisão, o lançamento excluído deixa de somar no total projetado da conferência.
 
 ### Removido
 - Login: aviso técnico de configuração do Google OAuth em desenvolvimento.

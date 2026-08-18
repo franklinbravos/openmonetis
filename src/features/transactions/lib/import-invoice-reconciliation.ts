@@ -4,6 +4,7 @@ import {
 	isImportRowLinked,
 	isVerifiedImportDuplicate,
 } from "@/features/transactions/lib/import-duplicate-match";
+import { importExternalIdCollidesWithStored } from "@/shared/lib/import/helpers";
 import { sourceFileRowsFromStatement } from "@/shared/lib/import/invoice-file-match";
 import { invoiceSourceTotalFromStatement } from "@/shared/lib/import/invoice-source-total";
 import {
@@ -182,4 +183,29 @@ export function shouldFetchInvoiceDuplicateSnapshots(input: {
 		return true;
 	}
 	return false;
+}
+
+/**
+ * Remove da conferência o cadastro que a revisão acabou de excluir: sem isso o
+ * lançamento apagado continua somando no total projetado da fatura.
+ */
+export function dropExistingSnapshotAfterDelete(
+	snapshots: ImportDuplicateSnapshot[],
+	target: { transactionId?: string | null; externalId?: string | null },
+): ImportDuplicateSnapshot[] {
+	return snapshots.filter((snapshot) => {
+		if (target.transactionId && snapshot.id === target.transactionId) {
+			return false;
+		}
+
+		if (
+			target.externalId &&
+			snapshot.ofxFitId &&
+			importExternalIdCollidesWithStored(target.externalId, [snapshot.ofxFitId])
+		) {
+			return false;
+		}
+
+		return true;
+	});
 }

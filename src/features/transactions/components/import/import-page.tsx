@@ -165,6 +165,7 @@ import {
 	buildInvoicePeriodExistingIdSet,
 	collectCrossPeriodReviewStats,
 	collectFileExternalIds,
+	dropExistingSnapshotAfterDelete,
 	getRegisterSourceTotalPayload,
 	mapDuplicateSnapshotToExistingRow,
 	mapReviewRowToReconciliationRow,
@@ -2464,6 +2465,12 @@ export function ImportPage({
 			return;
 		}
 
+		setInvoicePeriodExistingSnapshots((prev) =>
+			dropExistingSnapshotAfterDelete(prev, {
+				transactionId: existingTransactionId,
+				externalId: row.externalId,
+			}),
+		);
 		setRows((prev) =>
 			prev.map((r, i) =>
 				i === index
