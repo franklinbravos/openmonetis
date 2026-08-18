@@ -21,6 +21,8 @@ export type ImportDuplicateSnapshot = {
 	payerId: string | null;
 	categoryId: string | null;
 	period?: string | null;
+	condition?: string | null;
+	recurrenceCount?: number | null;
 };
 
 export type ImportDuplicateMatchOptions = {
@@ -219,6 +221,18 @@ function isSameInvoicePeriodCandidate(
 	return options.invoicePeriods.includes(existing.period);
 }
 
+/** Cadastro que sabidamente pertence a outra fatura (período conhecido e fora do importado). */
+function isKnownOtherInvoicePeriodCandidate(
+	existing: ImportDuplicateSnapshot,
+	options?: ImportDuplicateMatchOptions,
+): boolean {
+	if (!existing.period || !options?.invoicePeriods?.length) {
+		return false;
+	}
+
+	return !options.invoicePeriods.includes(existing.period);
+}
+
 /**
  * À vista na mesma fatura: nome + valor bastam (data do banco pode mudar).
  */
@@ -290,8 +304,14 @@ function isInstallmentParcelDuplicate(
 		existingIdentity.installmentCount != null;
 
 	// Cadastro à vista na fatura (sem N/M no banco): mesmo nome + valor.
+	// Parcelas da mesma compra repetem nome base e valor, então esse par só vale
+	// dentro da fatura importada: cruzar períodos casaria a parcela de fevereiro
+	// com a de junho da mesma série.
 	if (importedHasParcel && !existingHasParcel) {
-		return importedIdentity.baseName === existingIdentity.baseName;
+		return (
+			importedIdentity.baseName === existingIdentity.baseName &&
+			!isKnownOtherInvoicePeriodCandidate(existing, options)
+		);
 	}
 
 	// Lançamento anotado manualmente na fatura importada: aceita nome + valor

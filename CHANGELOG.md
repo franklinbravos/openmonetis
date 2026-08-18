@@ -29,6 +29,7 @@ Esta versão adiciona conferência do total da fatura na importação de cartão
 - Histórico de importações: a tabela de "Importações desta fatura" cabe na largura do container e não corta mais a coluna **Ações** — arquivos com nome longo quebram a linha em vez de forçar rolagem horizontal.
 - Importação de fatura: "Mover para esta fatura" recusa parcelas e lançamentos recorrentes — reescrever o período dessas ocorrências duplicava a série no mês de destino e abria furo no mês de origem; a correção agora é feita na tela de lançamentos.
 - Edição de lançamento: ao deixar de ser parcelado, a parcela atual (`parcela_atual`) é limpa junto com a quantidade de parcelas, em vez de ficar com o número antigo.
+- Importação de fatura: uma parcela do arquivo não é mais conciliada com outra parcela da mesma série cadastrada em fatura de outro mês — parcelas repetem nome e valor, e o casamento por nome+valor passou a valer só dentro da fatura importada. Era essa a origem de lançamentos movidos para o mês errado.
 
 ### Removido
 - Login: aviso técnico de configuração do Google OAuth em desenvolvimento.

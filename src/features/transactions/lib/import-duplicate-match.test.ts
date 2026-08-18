@@ -211,6 +211,61 @@ describe("findInstallmentDuplicateSnapshot", () => {
 			)?.id,
 		).toBe("existing-manual");
 	});
+
+	it("não casa parcela do arquivo com outra parcela da série em fatura anterior", () => {
+		const row = {
+			date: "2026-02-05",
+			amount: 260,
+			description: "Fabio C Thomaziello - Parcela 3/10",
+			transactionType: "expense" as const,
+			installmentImport: {
+				enabled: true as const,
+				name: "Fabio C Thomaziello",
+				currentInstallment: 3,
+				installmentCount: 10,
+			},
+		};
+
+		expect(
+			findInstallmentDuplicateSnapshot(
+				row,
+				[
+					{
+						...existingInstallment,
+						id: "existing-junho",
+						name: "Fabio C Thomaziello",
+						currentInstallment: null,
+						installmentCount: null,
+						period: "2026-06",
+					},
+				],
+				{ invoicePeriods: ["2026-02"] },
+			),
+		).toBeNull();
+	});
+
+	it("mantém o casamento da mesma parcela N/M cadastrada em outro período", () => {
+		const row = {
+			date: "2026-02-05",
+			amount: 260,
+			description: "Fabio C Thomaziello - Parcela 4/10",
+			transactionType: "expense" as const,
+			installmentImport: {
+				enabled: true as const,
+				name: "Fabio C Thomaziello",
+				currentInstallment: 4,
+				installmentCount: 10,
+			},
+		};
+
+		expect(
+			findInstallmentDuplicateSnapshot(
+				row,
+				[{ ...existingInstallment, period: "2026-06" }],
+				{ invoicePeriods: ["2026-02"] },
+			)?.id,
+		).toBe("existing-4");
+	});
 });
 
 describe("resolveSemanticImportMatches — parcelamento", () => {
@@ -402,10 +457,7 @@ describe("resolveImportDuplicateMatches — vínculo e FITID", () => {
 		};
 
 		const states = resolveImportDuplicateMatches(
-			[
-				row,
-				{ ...row, externalId: "line-1#2" },
-			],
+			[row, { ...row, externalId: "line-1#2" }],
 			{
 				candidates: [],
 				fitIdDuplicateIds: new Set(),
