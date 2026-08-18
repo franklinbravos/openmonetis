@@ -39,6 +39,7 @@ import {
 import { IMPORT_BATCH_STATUS } from "@/features/transactions/lib/import-batch-status";
 import type { ImportDuplicateSnapshot } from "@/features/transactions/lib/import-duplicate-match";
 import { getInstallmentBasePeriod } from "@/features/transactions/lib/import-installments";
+import { isPeriodLockedTransaction } from "@/features/transactions/lib/import-move-period";
 import {
 	buildInvoicePaymentNote,
 	INVOICE_ADJUSTMENT_NAME,
@@ -542,6 +543,8 @@ export async function moveImportTransactionToPeriodAction(input: {
 				transactionType: true,
 				condition: true,
 				paymentMethod: true,
+				installmentCount: true,
+				recurrenceCount: true,
 			},
 			where: and(
 				eq(transactions.userId, dataOwnerUserId),
@@ -563,6 +566,14 @@ export async function moveImportTransactionToPeriodAction(input: {
 			};
 		}
 
+		if (isPeriodLockedTransaction(existing)) {
+			return {
+				success: false,
+				error:
+					"Não é possível mover parcelas nem lançamentos recorrentes por aqui. Cada ocorrência pertence ao mês em que cai — se o período estiver errado, corrija o lançamento na tela de lançamentos.",
+			};
+		}
+
 		await db
 			.update(transactions)
 			.set({ period: data.period })
@@ -572,6 +583,12 @@ export async function moveImportTransactionToPeriodAction(input: {
 					eq(transactions.id, data.transactionId),
 				),
 			);
+
+		console.info("moveImportTransactionToPeriodAction:moved", {
+			transactionId: existing.id,
+			fromPeriod: existing.period,
+			toPeriod: data.period,
+		});
 
 		await revalidateForEntity("transactions", userId);
 

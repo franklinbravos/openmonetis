@@ -27,6 +27,7 @@ Esta versão adiciona conferência do total da fatura na importação de cartão
 - Importação de fatura de cartão: linhas de pagamento recebido (fatura do mês anterior) entram desmarcadas e não são tratadas como pagamento de fatura a cadastrar.
 - Importação de fatura: o botão conclui o processamento do arquivo e não marca a fatura como paga; pagamento recebido no OFX/PDF não é mais tratado como fatura já quitada.
 - Histórico de importações: a tabela de "Importações desta fatura" cabe na largura do container e não corta mais a coluna **Ações** — arquivos com nome longo quebram a linha em vez de forçar rolagem horizontal.
+- Importação de fatura: "Mover para esta fatura" recusa parcelas e lançamentos recorrentes — reescrever o período dessas ocorrências duplicava a série no mês de destino e abria furo no mês de origem; a correção agora é feita na tela de lançamentos.
 
 ### Removido
 - Login: aviso técnico de configuração do Google OAuth em desenvolvimento.
