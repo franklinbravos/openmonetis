@@ -1,5 +1,6 @@
 import { RiUploadCloud2Line } from "@remixicon/react";
 import type { Metadata } from "next";
+import Image from "next/image";
 import { connection } from "next/server";
 import { resolveCardImportPdfPasswordAttempts } from "@/features/cards/lib/resolve-import-pdf-password";
 import { fetchCardDueDays } from "@/features/cards/queries";
@@ -26,6 +27,7 @@ import {
 	isAnyAiProviderConfigured,
 } from "@/shared/lib/ai/user-provider-config";
 import { getUserId } from "@/shared/lib/auth/server";
+import { resolveLogoSrc } from "@/shared/lib/logo";
 import {
 	displayPeriod,
 	formatPeriodForUrl,
@@ -179,6 +181,13 @@ export default async function Page({ searchParams }: PageProps) {
 		invoicePeriod: validCardId || validAccountId ? initialInvoicePeriod : null,
 	});
 
+	const invoiceCardLogoSrc = invoiceContext
+		? resolveLogoSrc(
+				cardOptions.find((option) => option.value === invoiceContext.cardId)
+					?.logo ?? null,
+			)
+		: null;
+
 	// A importação é sempre alcançada de algum lugar — fatura, extrato ou
 	// lançamentos. O breadcrumb devolve o caminho de volta.
 	const breadcrumbItems: PageBreadcrumbItem[] = invoiceContext
@@ -207,8 +216,20 @@ export default async function Page({ searchParams }: PageProps) {
 
 			{invoiceContext ? (
 				<PageDescription
-					icon={<RiUploadCloud2Line />}
-					title="Importar fatura"
+					icon={
+						invoiceCardLogoSrc ? (
+							<Image
+								src={invoiceCardLogoSrc}
+								alt={`Logo do ${invoiceContext.cardName}`}
+								width={28}
+								height={28}
+								className="rounded-full"
+							/>
+						) : (
+							<RiUploadCloud2Line />
+						)
+					}
+					title={`Importar fatura ${invoiceContext.cardName} · ${displayPeriod(invoiceContext.invoicePeriod)}`}
 				/>
 			) : validAccountId ? (
 				<PageDescription

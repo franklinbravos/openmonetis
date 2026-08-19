@@ -30,6 +30,7 @@ Esta versão adiciona conferência do total da fatura na importação de cartão
 - Pagamento da fatura: a baixa na conta corrente passa a fechar pelo total declarado no arquivo quando ele difere da soma dos lançamentos em no máximo R$ 0,02 — arredondamento de parcela com fração de centavo, que é o valor que o banco realmente cobra. Diferença maior mantém a cota calculada pelos lançamentos, para não esconder linha faltando ou valor errado atrás de um arredondamento.
 - Total da fatura: o valor exibido — no destaque da fatura e no carrossel de meses — passa a ser o total declarado no arquivo quando a soma dos lançamentos só diverge por arredondamento (até R$ 0,02). É o valor que o banco cobra e que sai da conta. Diferença maior continua mostrando a soma dos lançamentos, para não esconder lançamento faltando.
 - Confirmação da importação: o seletor da conta de pagamento passa a mostrar o ícone do banco ao lado do nome, como já acontece na tela da fatura.
+- Importação de fatura: o título da tela passa a nomear o cartão e o mês (**Importar fatura Nubank · Março de 2026**) com o logo do banco no lugar do ícone genérico, deixando claro qual fatura está sendo importada.
 
 ### Corrigido
 - Importação de fatura de cartão: linhas de pagamento recebido (fatura do mês anterior) entram desmarcadas e não são tratadas como pagamento de fatura a cadastrar.
