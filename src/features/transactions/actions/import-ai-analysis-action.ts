@@ -36,6 +36,10 @@ import {
 	mergeImportDuplicateSnapshots,
 } from "@/features/transactions/lib/import-duplicate-match";
 import {
+	resolveFallbackModelId,
+	shouldRetryWithFallbackModel,
+} from "@/shared/lib/ai/fallback-model";
+import {
 	formatAiActionError,
 	serializeAiActionErrorLog,
 } from "@/shared/lib/ai/format-ai-action-error";
@@ -188,6 +192,8 @@ export type AnalyzeImportAiBatchResult =
 			success: true;
 			data: {
 				rows: ImportAiRowResult[];
+				/** Preenchido quando o lote só passou no modelo de reserva. */
+				usedFallbackModelLabel?: string | null;
 			};
 	  }
 	| {
@@ -291,8 +297,12 @@ async function resolveImportAiExecutionContext(
 	},
 ) {
 	const userId = await getUserId();
-	const { credentials, insightsDefaultModelId, storedSettings } =
-		await fetchInstanceAiProviderSettings(userId);
+	const {
+		credentials,
+		insightsDefaultModelId,
+		aiFallbackModelId,
+		storedSettings,
+	} = await fetchInstanceAiProviderSettings(userId);
 
 	if (hasInvalidStoredAiKeys(storedSettings)) {
 		return {
@@ -354,6 +364,15 @@ async function resolveImportAiExecutionContext(
 			)
 		: [];
 
+	// Reserva resolvida junto: se o principal cair por cota, o lote repete aqui.
+	const fallbackModelId = resolveFallbackModelId({
+		primaryModelId: modelId,
+		fallbackModelId: aiFallbackModelId,
+	});
+	const resolvedFallback = fallbackModelId
+		? resolveInsightsModel(fallbackModelId, credentials)
+		: null;
+
 	return {
 		success: true as const,
 		context: {
@@ -362,6 +381,12 @@ async function resolveImportAiExecutionContext(
 			modelId,
 			modelLabel,
 			resolvedModel,
+			fallbackModelId,
+			fallbackModelLabel: fallbackModelId
+				? buildImportAiModelLabel(fallbackModelId, credentials)
+				: null,
+			fallbackModel:
+				resolvedFallback?.success === true ? resolvedFallback.model : null,
 			existingSnapshots,
 			existingCandidates,
 		},
@@ -585,6 +610,8 @@ export async function analyzeImportAiBatchAction(
 			modelId,
 			modelLabel: resolvedModelLabel,
 			resolvedModel,
+			fallbackModel,
+			fallbackModelLabel,
 		} = resolved.context;
 		modelLabel = resolvedModelLabel;
 
@@ -608,10 +635,10 @@ export async function analyzeImportAiBatchAction(
 			accountName: input.accountName,
 		};
 
-		const validated =
+		const runBatch = (model: LanguageModel) =>
 			input.analysisMode === "category"
-				? await generateImportAiBatchResult({
-						model: resolvedModel.model,
+				? generateImportAiBatchResult({
+						model,
 						analysisMode: "category",
 						promptPayload: {
 							context: promptContext,
@@ -621,8 +648,8 @@ export async function analyzeImportAiBatchAction(
 							totalBatches: input.totalBatches,
 						},
 					})
-				: await generateImportAiBatchResult({
-						model: resolvedModel.model,
+				: generateImportAiBatchResult({
+						model,
 						analysisMode: "duplicate",
 						promptPayload: {
 							context: promptContext,
@@ -636,10 +663,32 @@ export async function analyzeImportAiBatchAction(
 						},
 					});
 
+		let usedFallbackModelLabel: string | null = null;
+		let validated: Awaited<ReturnType<typeof runBatch>>;
+
+		try {
+			validated = await runBatch(resolvedModel.model);
+		} catch (primaryError) {
+			// Cota estourada e indisponibilidade não passam esperando: repete no
+			// modelo de reserva, se houver, em vez de derrubar a análise inteira.
+			if (!fallbackModel || !shouldRetryWithFallbackModel(primaryError)) {
+				throw primaryError;
+			}
+
+			console.warn(
+				`Lote ${input.batchIndex + 1}/${input.totalBatches} falhou em ${resolvedModelLabel}, repetindo no modelo de reserva ${fallbackModelLabel}:`,
+				primaryError,
+			);
+
+			validated = await runBatch(fallbackModel);
+			usedFallbackModelLabel = fallbackModelLabel;
+		}
+
 		return {
 			success: true,
 			data: {
 				rows: validated.rows,
+				usedFallbackModelLabel,
 			},
 		};
 	} catch (error) {

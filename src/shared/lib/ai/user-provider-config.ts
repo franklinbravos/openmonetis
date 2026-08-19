@@ -152,24 +152,68 @@ export async function fetchInstanceAiProviderSettings(
 	return fetchUserAiProviderSettings(settingsOwnerUserId);
 }
 
+/** Postgres: coluna inexistente. */
+function isUndefinedColumnError(error: unknown): boolean {
+	if (!error || typeof error !== "object") return false;
+	const record = error as { code?: string; cause?: { code?: string } };
+	return record.code === "42703" || record.cause?.code === "42703";
+}
+
+/**
+ * Instância que ainda não rodou a migration do modelo de reserva continua
+ * funcionando sem ele: é app auto-hospedado, o dono decide quando migrar, e
+ * quebrar a tela de IA inteira por causa de uma coluna nova seria desproporcional.
+ */
+async function selectAiPreferencesRow(userId: string): Promise<
+	Array<{
+		insightsDefaultModelId: string | null;
+		aiFallbackModelId: string | null;
+		aiProviderSettings: StoredAiProviderSettings | null;
+	}>
+> {
+	try {
+		return await db
+			.select({
+				insightsDefaultModelId: schema.userPreferences.insightsDefaultModelId,
+				aiFallbackModelId: schema.userPreferences.aiFallbackModelId,
+				aiProviderSettings: schema.userPreferences.aiProviderSettings,
+			})
+			.from(schema.userPreferences)
+			.where(eq(schema.userPreferences.userId, userId))
+			.limit(1);
+	} catch (error) {
+		if (!isUndefinedColumnError(error)) throw error;
+
+		console.warn(
+			"preferencias_usuario.ai_fallback_model_id ausente: rode as migrations para habilitar o modelo de reserva.",
+		);
+
+		const rows = await db
+			.select({
+				insightsDefaultModelId: schema.userPreferences.insightsDefaultModelId,
+				aiProviderSettings: schema.userPreferences.aiProviderSettings,
+			})
+			.from(schema.userPreferences)
+			.where(eq(schema.userPreferences.userId, userId))
+			.limit(1);
+
+		return rows.map((row) => ({ ...row, aiFallbackModelId: null }));
+	}
+}
+
 export async function fetchUserAiProviderSettings(userId: string): Promise<{
 	insightsDefaultModelId: string | null;
+	aiFallbackModelId: string | null;
 	storedSettings: StoredAiProviderSettings | null;
 	view: AiProviderSettingsView;
 	credentials: ResolvedAiCredentials;
 }> {
-	const result = await db
-		.select({
-			insightsDefaultModelId: schema.userPreferences.insightsDefaultModelId,
-			aiProviderSettings: schema.userPreferences.aiProviderSettings,
-		})
-		.from(schema.userPreferences)
-		.where(eq(schema.userPreferences.userId, userId))
-		.limit(1);
+	const result = await selectAiPreferencesRow(userId);
 
 	const row = result[0];
 	const storedSettings = row?.aiProviderSettings ?? null;
 	const insightsDefaultModelId = row?.insightsDefaultModelId ?? null;
+	const aiFallbackModelId = row?.aiFallbackModelId ?? null;
 
 	const providers = AI_PROVIDER_IDS.reduce(
 		(view, provider) => {
@@ -181,9 +225,11 @@ export async function fetchUserAiProviderSettings(userId: string): Promise<{
 
 	return {
 		insightsDefaultModelId,
+		aiFallbackModelId,
 		storedSettings,
 		view: {
 			insightsDefaultModelId,
+			aiFallbackModelId,
 			providers,
 		},
 		credentials: resolveAllProviderCredentials(storedSettings),

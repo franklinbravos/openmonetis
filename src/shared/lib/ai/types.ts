@@ -35,5 +35,7 @@ export type AiProviderSettingsViewEntry = {
 
 export type AiProviderSettingsView = {
 	insightsDefaultModelId: string | null;
+	/** Modelo de reserva, usado quando o principal falha por cota ou indisponibilidade. */
+	aiFallbackModelId: string | null;
 	providers: Record<AIProvider, AiProviderSettingsViewEntry>;
 };

@@ -21,6 +21,7 @@ Esta versão adiciona conferência do total da fatura na importação de cartão
 - Fechamento da fatura: além do valor, a conciliação corrige a numeração da parcela do lançamento já cadastrado quando ela diverge do arquivo (ex.: "10 de 10" gravado onde a fatura diz "5 de 10"). Só vale para lançamento que já é parcelado, e a revisão mostra quantas parcelas serão renumeradas antes de confirmar.
 - Importação de fatura: ao processar o arquivo, o sistema pergunta se a fatura já foi paga. A data vem preenchida com o vencimento e é gravada como data do pagamento; escolhendo "ainda não foi paga", a fatura segue em aberto.
 - Importação: breadcrumb no topo da tela, devolvendo o caminho de onde a importação foi aberta — **Cartões › cartão · mês › Importar fatura** para fatura de cartão, **Contas › conta › Importar extrato** para extrato, e **Lançamentos › Importar lançamentos** na entrada direta.
+- Análise com IA: **modelo de reserva** configurável em Ajustes → Inteligência artificial. Quando o modelo principal falha por cota esgotada, indisponibilidade do provedor ou por não suportar a análise, o lote é repetido no modelo de reserva em vez de derrubar a análise inteira. Chave rejeitada não cai para a reserva, de propósito — erro de configuração precisa aparecer. Requer a migration `20260819130000_preferencias_ai_fallback_model.sql`; instância que ainda não migrou continua funcionando sem o recurso.
 
 ### Alterado
 - Importação de fatura: cadastros a mais que batem com o arquivo (mesmo nome/parcela e valor) são rotulados como **duplicata**, não como item ausente; o total projetado desconta essas duplicatas marcadas para remoção.
@@ -46,6 +47,7 @@ Esta versão adiciona conferência do total da fatura na importação de cartão
 - Importação de fatura: quando o arquivo já está todo conferido — nada a importar, remover ou corrigir — o botão de processar deixa de ficar travado. Ele abre a confirmação para registrar o pagamento e fechar o mês, explicando que não há lançamentos a alterar.
 - Criar categoria ou conta a partir de um select: a tela não fica mais sem responder a cliques depois de fechar o diálogo. O travamento que o Radix aplica no `body` ficava órfão quando a lista mudava no fechamento, e nenhum elemento visível indicava o motivo.
 - Revisão da importação: a caixa de divergências deixa de acusar diferença de data em parcela — a série guarda uma única data de compra em todas as ocorrências, e a comparação com a data da linha da fatura dava a impressão de que o casamento havia buscado outro mês. A caixa agora diz **com qual cadastro a linha casou** (nome, parcela e fatura de origem).
+- Erro de IA: cota do provedor esgotada deixa de ser anunciada como "aguarde alguns minutos e tente novamente". Um 429 por cota semanal ou mensal só volta na virada do período, e a mensagem agora orienta a trocar de modelo ou configurar o modelo de reserva.
 
 ### Removido
 - Login: aviso técnico de configuração do Google OAuth em desenvolvimento.

@@ -57,7 +57,9 @@ function formatAiActionErrorCore(
 		}
 
 		if (error.statusCode === 429) {
-			return "Limite de uso da API atingido. Aguarde alguns minutos e tente novamente.";
+			return isProviderQuotaExhausted(error)
+				? "A cota do provedor para este modelo acabou — esperar alguns minutos não resolve. Escolha outro modelo, ou configure um modelo de reserva, em Ajustes → Inteligência artificial."
+				: "Limite de uso da API atingido. Aguarde alguns minutos e tente novamente.";
 		}
 
 		if (error.statusCode === 404) {
@@ -81,6 +83,28 @@ function formatAiActionErrorCore(
 	return context === "import"
 		? "Não foi possível concluir a análise com IA."
 		: GENERIC_AI_ERROR;
+}
+
+/**
+ * Um 429 pode ser dois bichos diferentes: excesso de chamadas por minuto, que
+ * passa sozinho, ou cota do plano esgotada, que só volta na virada do período.
+ * Mandar o usuário "aguardar alguns minutos" no segundo caso é enganá-lo.
+ */
+const QUOTA_EXHAUSTED_PATTERNS = [
+	/weekly|monthly|daily/i,
+	/usage limit/i,
+	/quota/i,
+	/resets? in/i,
+	/limite (semanal|mensal|di[áa]rio)/i,
+	/insufficient_quota/i,
+];
+
+export function isProviderQuotaExhausted(error: {
+	message?: string;
+	responseBody?: string | null;
+}): boolean {
+	const haystack = `${error.message ?? ""} ${error.responseBody ?? ""}`;
+	return QUOTA_EXHAUSTED_PATTERNS.some((pattern) => pattern.test(haystack));
 }
 
 const SECRET_PATTERNS = [

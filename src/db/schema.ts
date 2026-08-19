@@ -170,6 +170,8 @@ export const userPreferences = pgTable("preferencias_usuario", {
 		myAccountsShowExcluded?: boolean;
 	}>(),
 	insightsDefaultModelId: text("insights_default_model_id"),
+	/** Modelo usado quando o principal falha por cota ou indisponibilidade. */
+	aiFallbackModelId: text("ai_fallback_model_id"),
 	aiProviderSettings: jsonb("ai_provider_settings").$type<
 		import("@/shared/lib/ai/types").StoredAiProviderSettings | null
 	>(),

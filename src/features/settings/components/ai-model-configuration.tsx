@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ModelSelectionCard } from "@/features/insights/components/model-selection-card";
 import { ProviderSelectionCard } from "@/features/insights/components/provider-selection-card";
 import { DEFAULT_MODEL } from "@/features/insights/constants";
+import { AiFallbackModelCard } from "@/features/settings/components/ai-fallback-model-card";
 import { Alert, AlertDescription } from "@/shared/components/ui/alert";
 import { AI_STORED_KEY_UNREADABLE_MESSAGE } from "@/shared/lib/ai/provider-messages";
 import type { AiProviderSettingsView } from "@/shared/lib/ai/types";
@@ -103,6 +104,12 @@ export function AiModelConfiguration({ settings }: AiModelConfigurationProps) {
 					canSave={canSave}
 					isSavedInDatabase={isSavedInDatabase}
 					hasUnsavedChanges={hasUnsavedChanges}
+				/>
+
+				<AiFallbackModelCard
+					savedFallbackModelId={settings.aiFallbackModelId}
+					availableModels={fetchedModels}
+					primaryModelId={selectedModelId}
 				/>
 			</div>
 		</div>

@@ -36,8 +36,17 @@ const aiProviderEnum = z.enum([
 	"ollama",
 ]);
 
+/** Postgres: coluna inexistente. */
+function isUndefinedColumnError(error: unknown): boolean {
+	if (!error || typeof error !== "object") return false;
+	const record = error as { code?: string; cause?: { code?: string } };
+	return record.code === "42703" || record.cause?.code === "42703";
+}
+
 const updateAiProviderSettingsSchema = z.object({
 	insightsDefaultModelId: z.string().trim().min(1).nullable().optional(),
+	/** Modelo de reserva; null limpa a configuração. */
+	aiFallbackModelId: z.string().trim().min(1).nullable().optional(),
 	providers: z.partialRecord(aiProviderEnum, providerUpdateSchema).optional(),
 });
 
@@ -76,6 +85,7 @@ export async function updateAiProviderSettingsAction(
 
 		const preferencesPayload: {
 			insightsDefaultModelId?: string | null;
+			aiFallbackModelId?: string | null;
 			aiProviderSettings?: typeof nextSettings;
 			updatedAt: Date;
 		} = {
@@ -85,6 +95,10 @@ export async function updateAiProviderSettingsAction(
 		if (validated.insightsDefaultModelId !== undefined) {
 			preferencesPayload.insightsDefaultModelId =
 				validated.insightsDefaultModelId;
+		}
+
+		if (validated.aiFallbackModelId !== undefined) {
+			preferencesPayload.aiFallbackModelId = validated.aiFallbackModelId;
 		}
 
 		if (validated.providers) {
@@ -115,6 +129,16 @@ export async function updateAiProviderSettingsAction(
 			return {
 				success: false,
 				error: error.issues[0]?.message || "Dados inválidos",
+			};
+		}
+
+		// Coluna do modelo de reserva ainda não migrada nesta instância.
+		if (isUndefinedColumnError(error)) {
+			console.error("Coluna ausente ao salvar configurações de IA:", error);
+			return {
+				success: false,
+				error:
+					"O banco desta instância ainda não tem a coluna do modelo de reserva. Rode as migrations e tente novamente.",
 			};
 		}
 
