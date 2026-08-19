@@ -428,6 +428,92 @@ describe("resolveImportDuplicateMatches — vínculo e FITID", () => {
 		expect(states[1]?.duplicateValidation).toBeNull();
 	});
 
+	it("não trata FITID reaproveitado entre parcelas como reimportação", () => {
+		// Nubank repete o mesmo FITID em toda parcela de uma compra parcelada — o
+		// identificador é da compra, não da cobrança do mês. A parcela 1/5 do
+		// arquivo não pode ser tratada como "já importada" só porque a parcela
+		// 5/5 (outro mês, nunca a mesma ocorrência) foi cadastrada com esse FITID.
+		const installmentRow = {
+			date: "2026-03-04",
+			amount: 35.51,
+			description: "Mercado*Mercadolivre - Parcela 1/5",
+			transactionType: "expense" as const,
+			externalId: "fit-parcelado",
+			installmentImport: {
+				enabled: true as const,
+				name: "Mercado*Mercadolivre",
+				currentInstallment: 1,
+				installmentCount: 5,
+			},
+		};
+		const existingOutraParcela = {
+			id: "existing-parcela-5",
+			ofxFitId: "fit-parcelado",
+			name: "Mercado*Mercadolivre",
+			amount: "-35.50",
+			purchaseDate: new Date(2026, 5, 5),
+			transactionType: "Despesa",
+			currentInstallment: 5,
+			installmentCount: 5,
+			payerId: null,
+			categoryId: null,
+			period: "2026-07",
+		};
+
+		const [state] = resolveImportDuplicateMatches([installmentRow], {
+			candidates: [existingOutraParcela],
+			fitIdDuplicateIds: new Set(["fit-parcelado"]),
+			duplicateSnapshotByFitId: new Map([
+				["fit-parcelado", existingOutraParcela],
+			]),
+			options: { invoicePeriods: ["2026-03"] },
+		});
+
+		expect(state.isDuplicate).toBe(false);
+		expect(state.duplicateValidation).toBeNull();
+	});
+
+	it("mantém a reimportação real da mesma parcela como duplicata", () => {
+		const installmentRow = {
+			date: "2026-07-05",
+			amount: 35.5,
+			description: "Mercado*Mercadolivre - Parcela 5/5",
+			transactionType: "expense" as const,
+			externalId: "fit-parcelado",
+			installmentImport: {
+				enabled: true as const,
+				name: "Mercado*Mercadolivre",
+				currentInstallment: 5,
+				installmentCount: 5,
+			},
+		};
+		const existingMesmaParcela = {
+			id: "existing-parcela-5",
+			ofxFitId: "fit-parcelado",
+			name: "Mercado*Mercadolivre",
+			amount: "-35.50",
+			purchaseDate: new Date(2026, 5, 5),
+			transactionType: "Despesa",
+			currentInstallment: 5,
+			installmentCount: 5,
+			payerId: null,
+			categoryId: null,
+			period: "2026-07",
+		};
+
+		const [state] = resolveImportDuplicateMatches([installmentRow], {
+			candidates: [existingMesmaParcela],
+			fitIdDuplicateIds: new Set(["fit-parcelado"]),
+			duplicateSnapshotByFitId: new Map([
+				["fit-parcelado", existingMesmaParcela],
+			]),
+			options: { invoicePeriods: ["2026-07"] },
+		});
+
+		expect(state.isDuplicate).toBe(true);
+		expect(state.duplicateValidation?.status).toBe("match");
+	});
+
 	it("reconhece FITID com sufixo #2 como já importado", () => {
 		const [state] = resolveImportDuplicateMatches(
 			[
@@ -467,6 +553,30 @@ describe("resolveImportDuplicateMatches — vínculo e FITID", () => {
 
 		expect(states[0]?.isDuplicate).toBe(false);
 		expect(states[1]?.isDuplicate).toBe(true);
+	});
+
+	it("não colapsa duas cobranças reais com o mesmo fingerprint mas FITID diferente", () => {
+		// Pedágio recarregado duas vezes no mesmo dia pelo mesmo valor: mesma
+		// data+valor+descrição, mas cada linha do OFX tem seu próprio FITID real.
+		const row = {
+			date: "2026-03-04",
+			amount: 13.6,
+			description: "Ec *Ec*Conectcar",
+			transactionType: "expense" as const,
+			externalId: "fitid-manha",
+		};
+
+		const states = resolveImportDuplicateMatches(
+			[row, { ...row, externalId: "fitid-tarde" }],
+			{
+				candidates: [],
+				fitIdDuplicateIds: new Set(),
+				duplicateSnapshotByFitId: new Map(),
+			},
+		);
+
+		expect(states[0]?.isDuplicate).toBe(false);
+		expect(states[1]?.isDuplicate).toBe(false);
 	});
 });
 

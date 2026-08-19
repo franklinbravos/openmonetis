@@ -623,9 +623,44 @@ function resolveExistingSnapshotForExternalId(
 	);
 }
 
+/**
+ * Nubank (e possivelmente outros bancos) reaproveita o mesmo FITID em todas as
+ * parcelas de uma compra parcelada — o identificador é da COMPRA, não da
+ * cobrança do mês. Um FITID batendo com o cadastro não garante que seja a MESMA
+ * ocorrência: pode ser outra parcela da mesma série, de um mês que nunca foi
+ * importado. Só confia no FITID quando nenhum dos dois lados é parcela, ou
+ * quando os dois lados concordam no N/M — senão a checagem cai para o matching
+ * por período, que sabe separar as ocorrências corretamente.
+ */
+function fitIdMatchIsReliable(
+	row: ImportRowForMatch,
+	existing: ImportDuplicateSnapshot,
+): boolean {
+	const importedIdentity = resolveImportMatchIdentity(row);
+	const existingIdentity = resolveExistingMatchIdentity(existing);
+
+	const importedHasParcel =
+		importedIdentity.currentInstallment != null &&
+		importedIdentity.installmentCount != null;
+	const existingHasParcel =
+		existingIdentity.currentInstallment != null &&
+		existingIdentity.installmentCount != null;
+
+	if (!importedHasParcel || !existingHasParcel) {
+		return true;
+	}
+
+	return (
+		importedIdentity.currentInstallment ===
+			existingIdentity.currentInstallment &&
+		importedIdentity.installmentCount === existingIdentity.installmentCount
+	);
+}
+
 function resolveWithinFileDuplicateStates(
 	rows: Array<
 		ImportRowForMatch & {
+			externalId?: string | null;
 			linked?: boolean;
 			linkedTransactionId?: string | null;
 		}
@@ -638,7 +673,10 @@ function resolveWithinFileDuplicateStates(
 	isDuplicate: boolean;
 	duplicateValidation: ImportDuplicateValidation | null;
 }> {
-	const firstIndexByFingerprint = new Map<string, number>();
+	const firstByFingerprint = new Map<
+		string,
+		{ index: number; externalIdBase: string | null }
+	>();
 
 	return states.map((state, index) => {
 		const row = rows[index];
@@ -652,14 +690,33 @@ function resolveWithinFileDuplicateStates(
 			description: row.description,
 			transactionType: row.transactionType,
 		});
+		const externalIdBase = row.externalId
+			? stripImportExternalIdSuffix(row.externalId)
+			: null;
 
-		const firstIndex = firstIndexByFingerprint.get(fingerprint);
-		if (firstIndex === undefined) {
-			firstIndexByFingerprint.set(fingerprint, index);
+		const first = firstByFingerprint.get(fingerprint);
+		if (!first) {
+			firstByFingerprint.set(fingerprint, { index, externalIdBase });
 			return state;
 		}
 
-		const firstState = states[firstIndex];
+		// Duas linhas com o mesmo fingerprint mas FITID de base diferente são
+		// transações distintas do banco — pedágio recarregado duas vezes no
+		// mesmo dia pelo mesmo valor, por exemplo, gera exatamente esse
+		// fingerprint e as duas cobranças são reais. O fingerprint só decide
+		// quando falta identificador confiável por linha (PDF/CSV) ou quando o
+		// identificador é o MESMO — repetição sintética já tratada por
+		// uniquifyImportedExternalIds, que sufixa "#2", "#3" para linhas
+		// idênticas sem FITID próprio.
+		if (
+			externalIdBase &&
+			first.externalIdBase &&
+			externalIdBase !== first.externalIdBase
+		) {
+			return state;
+		}
+
+		const firstState = states[first.index];
 		if (firstState.isDuplicate && firstState.duplicateValidation) {
 			return {
 				isDuplicate: true,
@@ -728,11 +785,13 @@ export function resolveImportDuplicateMatches(
 					input.fitIdDuplicateIds,
 				)
 			: false;
-		let isDuplicate = isDuplicateByFitId;
 		const existingSnapshot = resolveExistingSnapshotForExternalId(
 			row.externalId,
 			input.duplicateSnapshotByFitId,
 		);
+		let isDuplicate =
+			isDuplicateByFitId &&
+			(!existingSnapshot || fitIdMatchIsReliable(row, existingSnapshot));
 		let duplicateValidation: ImportDuplicateValidation | null = null;
 
 		if (isDuplicate && existingSnapshot) {
