@@ -17,6 +17,7 @@ import { db } from "@/shared/lib/db";
 import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { normalizeOptionalUuid } from "@/shared/lib/schemas/common";
+import { callRpc } from "@/shared/lib/supabase/rpc";
 
 export type ImportDescriptionMemory = {
 	categoryId: string | null;
@@ -214,6 +215,44 @@ function getKeysMissingCategory(
 	return keys.filter((key) => !memory[key]?.categoryId);
 }
 
+type DescriptionMemoryRow = {
+	description_key: string | null;
+	categoria_id: string | null;
+	pagador_id: string | null;
+};
+
+/**
+ * Memória vinda da RPC, que normaliza e casa prefixo no próprio banco.
+ *
+ * Devolve `null` quando a função ainda não existe — instalação sem a migration
+ * aplicada continua funcionando pelo caminho antigo, só sem o histórico.
+ */
+async function fetchDescriptionMemoryFromRpc(
+	userId: string,
+	keys: string[],
+): Promise<Record<string, ImportDescriptionMemory> | null> {
+	try {
+		const rows = await callRpc<DescriptionMemoryRow>(
+			"get_import_description_memory",
+			{ p_user_id: userId, p_keys: keys },
+		);
+
+		const memory: Record<string, ImportDescriptionMemory> = {};
+		for (const row of rows) {
+			if (!row.description_key) continue;
+			memory[row.description_key] = {
+				categoryId: row.categoria_id,
+				payerId: row.pagador_id,
+			};
+		}
+
+		return memory;
+	} catch (error) {
+		console.error("fetchDescriptionMemoryFromRpc", error);
+		return null;
+	}
+}
+
 export async function fetchImportDescriptionMemory(
 	descriptions: string[],
 ): Promise<Record<string, ImportDescriptionMemory>> {
@@ -223,6 +262,11 @@ export async function fetchImportDescriptionMemory(
 		...new Set(descriptions.map(normalizeDescriptionKey).filter(Boolean)),
 	];
 	if (keys.length === 0) return {};
+
+	const rpcMemory = await fetchDescriptionMemoryFromRpc(dataOwnerUserId, keys);
+	if (rpcMemory) {
+		return mergeDescriptionMemory(keys, rpcMemory);
+	}
 
 	const [savedMemory, transactionMemory] = await Promise.all([
 		fetchSavedDescriptionMemory(dataOwnerUserId, keys),
