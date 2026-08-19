@@ -10,9 +10,22 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/shared/components/ui/dialog";
+import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
 import { formatCurrency } from "@/shared/utils/currency";
 import { cn } from "@/shared/utils/ui";
+
+export type ImportInvoicePaymentPrompt = {
+	/** Vencimento da fatura, sugerido como data do pagamento. */
+	dueDate: string | null;
+	paid: boolean;
+	onPaidChange: (paid: boolean) => void;
+	paymentDate: string;
+	onPaymentDateChange: (date: string) => void;
+	accountOptions: Array<{ value: string; label: string }>;
+	accountId: string | null;
+	onAccountChange: (accountId: string) => void;
+};
 
 type ImportConfirmDialogProps = {
 	open: boolean;
@@ -30,6 +43,7 @@ type ImportConfirmDialogProps = {
 	invoiceTotalOverrideConfirmed?: boolean;
 	onInvoiceTotalOverrideChange?: (confirmed: boolean) => void;
 	canConfirm?: boolean;
+	invoicePayment?: ImportInvoicePaymentPrompt | null;
 	onConfirm: () => void;
 };
 
@@ -49,6 +63,7 @@ export function ImportConfirmDialog({
 	invoiceTotalOverrideConfirmed = false,
 	onInvoiceTotalOverrideChange,
 	canConfirm = true,
+	invoicePayment = null,
 	onConfirm,
 }: ImportConfirmDialogProps) {
 	const editedCount = replacedCount + installmentBackfillCount;
@@ -154,6 +169,84 @@ export function ImportConfirmDialog({
 								{formatCurrency(Math.abs(invoiceTotalDelta))}
 							</Label>
 						</div>
+					</div>
+				) : null}
+
+				{invoicePayment ? (
+					<div className="space-y-3 rounded-md border p-3">
+						<p className="font-medium text-sm">Esta fatura já foi paga?</p>
+						<div className="grid grid-cols-2 gap-2">
+							<Button
+								type="button"
+								variant={invoicePayment.paid ? "outline" : "default"}
+								onClick={() => invoicePayment.onPaidChange(false)}
+								disabled={isPending}
+							>
+								Ainda não foi paga
+							</Button>
+							<Button
+								type="button"
+								variant={invoicePayment.paid ? "default" : "outline"}
+								onClick={() => invoicePayment.onPaidChange(true)}
+								disabled={isPending}
+							>
+								Já foi paga
+							</Button>
+						</div>
+
+						{invoicePayment.paid ? (
+							<div className="space-y-3">
+								<div className="space-y-1.5">
+									<Label htmlFor="import-invoice-payment-date">
+										Data do pagamento
+									</Label>
+									<Input
+										id="import-invoice-payment-date"
+										type="date"
+										value={invoicePayment.paymentDate}
+										onChange={(event) =>
+											invoicePayment.onPaymentDateChange(event.target.value)
+										}
+										disabled={isPending}
+									/>
+									<p className="text-muted-foreground text-xs leading-relaxed">
+										Esta data será gravada como a data em que a fatura foi paga
+										{invoicePayment.dueDate
+											? " — vem preenchida com o vencimento."
+											: "."}
+									</p>
+								</div>
+
+								<div className="space-y-1.5">
+									<Label htmlFor="import-invoice-payment-account">
+										Conta de onde saiu o pagamento
+									</Label>
+									<select
+										id="import-invoice-payment-account"
+										className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+										value={invoicePayment.accountId ?? ""}
+										onChange={(event) =>
+											invoicePayment.onAccountChange(event.target.value)
+										}
+										disabled={isPending}
+									>
+										<option value="" disabled>
+											Selecione a conta
+										</option>
+										{invoicePayment.accountOptions.map((option) => (
+											<option key={option.value} value={option.value}>
+												{option.label}
+											</option>
+										))}
+									</select>
+								</div>
+							</div>
+						) : (
+							<p className="text-muted-foreground text-xs leading-relaxed">
+								A fatura fica em aberto. Você pode marcar como paga depois, na
+								tela da fatura.
+							</p>
+						)}
 					</div>
 				) : null}
 

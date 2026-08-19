@@ -2,6 +2,7 @@ import { RiUploadCloud2Line } from "@remixicon/react";
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { resolveCardImportPdfPasswordAttempts } from "@/features/cards/lib/resolve-import-pdf-password";
+import { fetchCardDueDays } from "@/features/cards/queries";
 import { ImportPage } from "@/features/transactions/components/import/import-page";
 import { buildImportMountKey } from "@/features/transactions/lib/import-flow-entry";
 import {
@@ -88,7 +89,7 @@ export default async function Page({ searchParams }: PageProps) {
 		initialResumeBatchId,
 		remountNonce,
 	} = resolveImportPrefill(resolvedSearchParams);
-	const [optionSets, aiSettings] = await Promise.all([
+	const [optionSets, aiSettings, cardDueDays] = await Promise.all([
 		(async () => {
 			const sources = await fetchTransactionFilterSources(userId);
 			const sluggedFilters = buildSluggedFilters(sources);
@@ -101,6 +102,7 @@ export default async function Page({ searchParams }: PageProps) {
 			};
 		})(),
 		fetchInstanceAiProviderSettings(userId),
+		fetchCardDueDays(userId),
 	]);
 	const filterSources = optionSets.sources;
 	const {
@@ -196,6 +198,7 @@ export default async function Page({ searchParams }: PageProps) {
 				payerOptions={payerOptions}
 				accountOptions={accountOptions}
 				cardOptions={cardOptions}
+				cardDueDays={cardDueDays}
 				categoryOptions={categoryOptions}
 				defaultPayerId={defaultPayerId}
 				aiAnalysisEnabled={aiAnalysisEnabled}

@@ -19,6 +19,7 @@ Esta versão adiciona conferência do total da fatura na importação de cartão
 - Histórico de importações: botão **Nova importação** que abre a tela de importação já com o cartão, a conta e o período da fatura filtrados na tela de histórico.
 - Importação de fatura de cartão: fechamento automático do mês. A revisão passa a conciliar o arquivo com o que já está cadastrado — confere o que bate (mesmo com descrição humanizada diferente do nome da maquininha), propõe o ajuste de valor no próprio lançamento em vez de apagar e recadastrar, marca para remoção só o que sobra e deixa entrar só o que falta — de modo que o total projetado feche com o total do arquivo.
 - Fechamento da fatura: além do valor, a conciliação corrige a numeração da parcela do lançamento já cadastrado quando ela diverge do arquivo (ex.: "10 de 10" gravado onde a fatura diz "5 de 10"). Só vale para lançamento que já é parcelado, e a revisão mostra quantas parcelas serão renumeradas antes de confirmar.
+- Importação de fatura: ao processar o arquivo, o sistema pergunta se a fatura já foi paga. A data vem preenchida com o vencimento e é gravada como data do pagamento; escolhendo "ainda não foi paga", a fatura segue em aberto.
 
 ### Alterado
 - Importação de fatura: cadastros a mais que batem com o arquivo (mesmo nome/parcela e valor) são rotulados como **duplicata**, não como item ausente; o total projetado desconta essas duplicatas marcadas para remoção.

@@ -228,3 +228,16 @@ export async function fetchAllCardsForUser(userId: string): Promise<{
 		currentInvoicePeriod,
 	};
 }
+
+/** Dia de vencimento por cartão, para sugerir a data do pagamento na importação. */
+export async function fetchCardDueDays(
+	userId: string,
+): Promise<Record<string, string>> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+	const rows = await db.query.cards.findMany({
+		columns: { id: true, dueDay: true },
+		where: eq(cards.userId, dataOwnerUserId),
+	});
+
+	return Object.fromEntries(rows.map((row) => [row.id, row.dueDay]));
+}

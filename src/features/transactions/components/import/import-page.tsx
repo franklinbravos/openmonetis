@@ -217,7 +217,10 @@ import {
 import { mapPdfLoadError } from "@/shared/lib/import/pdf-password";
 import type { ImportStatement } from "@/shared/lib/import/types";
 import { formatCurrency } from "@/shared/utils/currency";
-import { getTodayDateString } from "@/shared/utils/date";
+import {
+	buildDateOnlyStringFromPeriodDay,
+	getTodayDateString,
+} from "@/shared/utils/date";
 import { displayPeriod, formatPeriodForUrl } from "@/shared/utils/period";
 
 function fileFromBase64(
@@ -305,6 +308,8 @@ interface ImportPageProps {
 	payerOptions: SelectOption[];
 	accountOptions: SelectOption[];
 	cardOptions: SelectOption[];
+	/** Dia de vencimento por cartão, para sugerir a data do pagamento da fatura. */
+	cardDueDays?: Record<string, string>;
 	categoryOptions: SelectOption[];
 	defaultPayerId: string | null;
 	aiAnalysisEnabled?: boolean;
@@ -327,6 +332,7 @@ export function ImportPage({
 	payerOptions,
 	accountOptions,
 	cardOptions,
+	cardDueDays = {},
 	categoryOptions,
 	defaultPayerId,
 	aiAnalysisEnabled = false,
@@ -402,6 +408,7 @@ export function ImportPage({
 		number | null
 	>(null);
 	const [confirmOpen, setConfirmOpen] = useState(false);
+	const [payInvoiceOnImport, setPayInvoiceOnImport] = useState(false);
 	const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 	const [fileError, setFileError] = useState<string | null>(null);
 	const [activeInvoiceContext, setActiveInvoiceContext] =
@@ -3059,6 +3066,44 @@ export function ImportPage({
 		linkedCardId,
 	]);
 
+	/** Cartão em jogo nesta importação, para a pergunta de pagamento da fatura. */
+	const invoiceCardIdForPayment = useMemo(() => {
+		const decoded = accountCardValue
+			? decodeAccountCard(accountCardValue)
+			: null;
+		return decoded?.type === "card"
+			? decoded.id
+			: (initialCardId ?? linkedCardId ?? activeInvoiceContext?.cardId ?? null);
+	}, [
+		accountCardValue,
+		activeInvoiceContext?.cardId,
+		initialCardId,
+		linkedCardId,
+	]);
+
+	const invoicePeriodForPayment =
+		invoicePeriod ??
+		initialInvoicePeriod ??
+		activeInvoiceContext?.invoicePeriod ??
+		null;
+
+	/** Vencimento da fatura, sugerido como data do pagamento. */
+	const invoiceDueDate = useMemo(() => {
+		if (!invoiceCardIdForPayment || !invoicePeriodForPayment) return null;
+		const dueDay = cardDueDays[invoiceCardIdForPayment];
+		if (!dueDay) return null;
+		return buildDateOnlyStringFromPeriodDay(invoicePeriodForPayment, dueDay);
+	}, [cardDueDays, invoiceCardIdForPayment, invoicePeriodForPayment]);
+
+	const canAskInvoicePayment = Boolean(
+		invoiceCardIdForPayment &&
+			invoicePeriodForPayment &&
+			statement?.isCreditCard,
+	);
+
+	const shouldPayInvoiceOnImport =
+		canAskInvoicePayment && payInvoiceOnImport && Boolean(paymentAccountId);
+
 	const returnToAccountStatementHref = useMemo(() => {
 		const decoded = accountCardValue
 			? decodeAccountCard(accountCardValue)
@@ -3178,6 +3223,10 @@ export function ImportPage({
 		isInvoiceTotalReconciled(importInvoiceReconciliation.delta);
 
 	const canProceedToImport = canImport;
+
+	/** Marcou "já foi paga" mas não escolheu a conta: a action recusaria. */
+	const invoicePaymentBlocked =
+		canAskInvoicePayment && payInvoiceOnImport && !paymentAccountId;
 
 	const canConfirmImport =
 		canProceedToImport &&
@@ -3369,7 +3418,11 @@ export function ImportPage({
 				cardId,
 				paymentMethod,
 				invoicePeriod,
-				payInvoice: false,
+				payInvoice: shouldPayInvoiceOnImport,
+				paymentDate: shouldPayInvoiceOnImport ? paymentDate : undefined,
+				paymentAccountId: shouldPayInvoiceOnImport
+					? (paymentAccountId ?? undefined)
+					: undefined,
 				sourceFileName: sourceFile?.name,
 				sourceFileSize: sourceFile?.size,
 				importBatchId: uploadImportBatchId ?? undefined,
@@ -3463,6 +3516,8 @@ export function ImportPage({
 	const handleRequestImport = () => {
 		if (!canProceedToImport) return;
 		setInvoiceTotalOverrideConfirmed(false);
+		setPayInvoiceOnImport(false);
+		if (invoiceDueDate) setPaymentDate(invoiceDueDate);
 		setConfirmOpen(true);
 	};
 
@@ -3875,7 +3930,24 @@ export function ImportPage({
 				invoiceTotalDelta={importInvoiceReconciliation?.delta ?? null}
 				invoiceTotalOverrideConfirmed={invoiceTotalOverrideConfirmed}
 				onInvoiceTotalOverrideChange={setInvoiceTotalOverrideConfirmed}
-				canConfirm={canConfirmImport}
+				canConfirm={canConfirmImport && !invoicePaymentBlocked}
+				invoicePayment={
+					canAskInvoicePayment
+						? {
+								dueDate: invoiceDueDate,
+								paid: payInvoiceOnImport,
+								onPaidChange: setPayInvoiceOnImport,
+								paymentDate,
+								onPaymentDateChange: setPaymentDate,
+								accountOptions: accountOptions.map((option) => ({
+									value: option.value,
+									label: option.label,
+								})),
+								accountId: paymentAccountId,
+								onAccountChange: setPaymentAccountId,
+							}
+						: null
+				}
 				onConfirm={() => void handleImport()}
 			/>
 			{periodMismatch ? (
