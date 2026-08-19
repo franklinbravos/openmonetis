@@ -51,6 +51,7 @@ Esta versão adiciona conferência do total da fatura na importação de cartão
 - Criar categoria ou conta a partir de um select: a tela não fica mais sem responder a cliques depois de fechar o diálogo. O travamento que o Radix aplica no `body` ficava órfão quando a lista mudava no fechamento, e nenhum elemento visível indicava o motivo.
 - Revisão da importação: a caixa de divergências deixa de acusar diferença de data em parcela — a série guarda uma única data de compra em todas as ocorrências, e a comparação com a data da linha da fatura dava a impressão de que o casamento havia buscado outro mês. A caixa agora diz **com qual cadastro a linha casou** (nome, parcela e fatura de origem).
 - Erro de IA: cota do provedor esgotada deixa de ser anunciada como "aguarde alguns minutos e tente novamente". Um 429 por cota semanal ou mensal só volta na virada do período, e a mensagem agora orienta a trocar de modelo ou configurar o modelo de reserva.
+- Barra de navegação: em telas entre 768px e 1100px o menu horizontal aparecia sem caber e empurrava o avatar do usuário para fora da tela. O menu compacto passa a valer até 1100px, largura medida como o mínimo para todos os itens caberem.
 
 ### Removido
 - Login: aviso técnico de configuração do Google OAuth em desenvolvimento.

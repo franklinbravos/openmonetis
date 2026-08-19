@@ -51,10 +51,12 @@ export function NavMenu({
 
 	return (
 		<>
-			{/* Desktop */}
+			{/* Desktop: logo (146) + itens (703) + ações (112) + avatar (36) e os
+			    espaçamentos pedem ~1093px, então abaixo de 1100 vale o menu compacto —
+			    em md: o avatar do usuário saía da tela. */}
 			<nav
 				aria-label="Navegação principal"
-				className="hidden md:flex items-center justify-center flex-1 gap-4"
+				className="hidden min-[1100px]:flex items-center justify-center flex-1 gap-4"
 			>
 				<NavigationMenu viewport={false}>
 					<NavigationMenuList className="gap-2">
@@ -117,7 +119,7 @@ export function NavMenu({
 					<Button
 						variant="navbar"
 						size="icon-sm"
-						className="-order-1 md:hidden"
+						className="-order-1 min-[1100px]:hidden"
 					>
 						<RiMenuLine className="size-5" aria-hidden />
 						<span className="sr-only">Abrir menu</span>
