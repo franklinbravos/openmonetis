@@ -34,7 +34,9 @@ import {
 import {
 	amountEditToSignedStored,
 	dedupeExistingAmountEdits,
+	dedupeExistingInstallmentEdits,
 	type ExistingAmountEdit,
+	type ExistingInstallmentEdit,
 } from "@/features/transactions/lib/import-amount-edit";
 import { IMPORT_BATCH_STATUS } from "@/features/transactions/lib/import-batch-status";
 import type { ImportDuplicateSnapshot } from "@/features/transactions/lib/import-duplicate-match";
@@ -149,6 +151,12 @@ const existingAmountEditSchema = z.object({
 	amount: z.number().positive(),
 });
 
+const existingInstallmentEditSchema = z.object({
+	transactionId: uuidSchema("Lançamento"),
+	currentInstallment: z.number().int().positive(),
+	installmentCount: z.number().int().positive(),
+});
+
 const importSchema = z
 	.object({
 		rows: z.array(importRowSchema),
@@ -173,13 +181,15 @@ const importSchema = z
 		sourceInvoiceTotalOverride: z.boolean().optional(),
 		removeTransactionIds: z.array(z.string().uuid()).optional(),
 		existingAmountEdits: z.array(existingAmountEditSchema).optional(),
+		existingInstallmentEdits: z.array(existingInstallmentEditSchema).optional(),
 	})
 	.superRefine((data, ctx) => {
 		if (
 			data.rows.length === 0 &&
 			!data.payInvoice &&
 			!(data.removeTransactionIds?.length ?? 0) &&
-			!(data.existingAmountEdits?.length ?? 0)
+			!(data.existingAmountEdits?.length ?? 0) &&
+			!(data.existingInstallmentEdits?.length ?? 0)
 		) {
 			ctx.addIssue({
 				code: "custom",
@@ -716,6 +726,71 @@ async function applyExistingAmountCorrectionsT(
 	}
 }
 
+type InstallmentEditValidationResult =
+	| { success: true; edits: ExistingInstallmentEdit[] }
+	| { success: false; error: string };
+
+/**
+ * Só reescreve a numeração de parcela de lançamento que já é parcelado: gravar
+ * N/M em lançamento à vista sujaria os relatórios de parcelas.
+ */
+async function validateExistingInstallmentEdits(
+	client: Pick<typeof db, "query">,
+	dataOwnerUserId: string,
+	edits: ExistingInstallmentEdit[],
+): Promise<InstallmentEditValidationResult> {
+	const ownedTransactions = await client.query.transactions.findMany({
+		columns: { id: true, installmentCount: true },
+		where: and(
+			eq(transactions.userId, dataOwnerUserId),
+			inArray(
+				transactions.id,
+				edits.map((edit) => edit.transactionId),
+			),
+		),
+	});
+
+	if (ownedTransactions.length !== edits.length) {
+		return {
+			success: false,
+			error: "Um ou mais lançamentos a corrigir não foram encontrados.",
+		};
+	}
+
+	const isInstallmentById = new Map(
+		ownedTransactions.map((transaction) => [
+			transaction.id,
+			transaction.installmentCount != null,
+		]),
+	);
+
+	return {
+		success: true,
+		edits: edits.filter((edit) => isInstallmentById.get(edit.transactionId)),
+	};
+}
+
+async function applyExistingInstallmentCorrectionsT(
+	client: Pick<typeof db, "update">,
+	dataOwnerUserId: string,
+	edits: ExistingInstallmentEdit[],
+): Promise<void> {
+	for (const edit of edits) {
+		await client
+			.update(transactions)
+			.set({
+				currentInstallment: edit.currentInstallment,
+				installmentCount: edit.installmentCount,
+			})
+			.where(
+				and(
+					eq(transactions.userId, dataOwnerUserId),
+					eq(transactions.id, edit.transactionId),
+				),
+			);
+	}
+}
+
 export async function importTransactionsAction(
 	input: ImportInput,
 ): Promise<ImportResult> {
@@ -861,6 +936,23 @@ export async function importTransactionsAction(
 		validatedAmountEdits = amountEditValidation.edits;
 	}
 
+	const existingInstallmentEdits = dedupeExistingInstallmentEdits(
+		parsed.data.existingInstallmentEdits ?? [],
+	);
+
+	let validatedInstallmentEdits: ExistingInstallmentEdit[] = [];
+	if (existingInstallmentEdits.length > 0) {
+		const installmentEditValidation = await validateExistingInstallmentEdits(
+			db,
+			dataOwnerUserId,
+			existingInstallmentEdits,
+		);
+		if (!installmentEditValidation.success) {
+			return installmentEditValidation;
+		}
+		validatedInstallmentEdits = installmentEditValidation.edits;
+	}
+
 	const hasInstallmentImports = rows.some(
 		(row) => row.installmentImport?.enabled,
 	);
@@ -908,7 +1000,7 @@ export async function importTransactionsAction(
 		if (
 			!payInvoice &&
 			removeIds.length === 0 &&
-			existingAmountEdits.length > 0
+			(existingAmountEdits.length > 0 || existingInstallmentEdits.length > 0)
 		) {
 			const importBatchId = parsed.data.importBatchId ?? randomUUID();
 
@@ -936,6 +1028,11 @@ export async function importTransactionsAction(
 						tx,
 						dataOwnerUserId,
 						validatedAmountEdits,
+					);
+					await applyExistingInstallmentCorrectionsT(
+						tx,
+						dataOwnerUserId,
+						validatedInstallmentEdits,
 					);
 				});
 			} catch (error) {
@@ -1033,6 +1130,14 @@ export async function importTransactionsAction(
 							tx,
 							dataOwnerUserId,
 							validatedAmountEdits,
+						);
+					}
+
+					if (validatedInstallmentEdits.length > 0) {
+						await applyExistingInstallmentCorrectionsT(
+							tx,
+							dataOwnerUserId,
+							validatedInstallmentEdits,
 						);
 					}
 				});
@@ -1541,6 +1646,14 @@ export async function importTransactionsAction(
 					tx,
 					dataOwnerUserId,
 					validatedAmountEdits,
+				);
+			}
+
+			if (validatedInstallmentEdits.length > 0) {
+				await applyExistingInstallmentCorrectionsT(
+					tx,
+					dataOwnerUserId,
+					validatedInstallmentEdits,
 				);
 			}
 

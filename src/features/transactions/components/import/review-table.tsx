@@ -22,7 +22,10 @@ import {
 } from "@/features/transactions/components/select-items";
 import type { SelectOption } from "@/features/transactions/components/types";
 import { groupAndSortCategories } from "@/features/transactions/lib/category-helpers";
-import type { ReviewExistingAmountCorrection } from "@/features/transactions/lib/import-amount-edit";
+import type {
+	ReviewExistingAmountCorrection,
+	ReviewExistingInstallmentCorrection,
+} from "@/features/transactions/lib/import-amount-edit";
 import { resolveExistingTransactionIdForAmountEdit } from "@/features/transactions/lib/import-amount-edit";
 import type { ImportDuplicateValidation } from "@/features/transactions/lib/import-duplicate-match";
 import {
@@ -723,6 +726,8 @@ export type ReviewRow = ImportedTransaction & {
 	existingAmount?: number | null;
 	/** Correção de valor do lançamento existente, aplicada na confirmação. */
 	existingAmountCorrection?: ReviewExistingAmountCorrection | null;
+	/** Correção da parcela (N/M) do lançamento existente, aplicada na confirmação. */
+	existingInstallmentCorrection?: ReviewExistingInstallmentCorrection | null;
 	/** Chave estável do rascunho, capturada antes de qualquer edição. */
 	originalDraftKey?: string;
 	/** Nome exatamente como veio do extrato/fatura; não muda ao editar na revisão. */

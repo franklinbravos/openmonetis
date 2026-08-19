@@ -5,6 +5,7 @@ import {
 	applyExistingAmountEdits,
 	buildExistingAmountSnapshotMap,
 	collectExistingAmountEdits,
+	collectExistingInstallmentEdits,
 	countExistingAmountEdits,
 	dedupeExistingAmountEdits,
 	enrichReviewRowsWithExistingAmount,
@@ -464,5 +465,58 @@ describe("applyExistingAmountEdits", () => {
 		]);
 
 		expect(applied[0]?.amount).toBe(14.85);
+	});
+});
+
+describe("collectExistingInstallmentEdits", () => {
+	it("coleta a correção de parcela da linha conferida", () => {
+		const edits = collectExistingInstallmentEdits([
+			fileRow({
+				reviewKey: "a",
+				isDuplicate: true,
+				existingAmount: 260,
+				duplicateValidation: matchedValidation(EXISTING_ID),
+				existingInstallmentCorrection: {
+					transactionId: EXISTING_ID,
+					currentInstallment: 5,
+					installmentCount: 10,
+				},
+			}),
+		]);
+
+		expect(edits).toEqual([
+			{
+				transactionId: EXISTING_ID,
+				currentInstallment: 5,
+				installmentCount: 10,
+			},
+		]);
+	});
+
+	it("ignora linha vinculada à mão", () => {
+		const edits = collectExistingInstallmentEdits([
+			fileRow({
+				reviewKey: "a",
+				linked: true,
+				linkedTransactionId: EXISTING_ID,
+				existingAmount: 260,
+				duplicateValidation: matchedValidation(EXISTING_ID),
+				existingInstallmentCorrection: {
+					transactionId: EXISTING_ID,
+					currentInstallment: 5,
+					installmentCount: 10,
+				},
+			}),
+		]);
+
+		expect(edits).toEqual([]);
+	});
+
+	it("ignora linha sem correção", () => {
+		expect(
+			collectExistingInstallmentEdits([
+				fileRow({ reviewKey: "a", existingAmount: 260 }),
+			]),
+		).toEqual([]);
 	});
 });

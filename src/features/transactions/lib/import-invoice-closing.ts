@@ -1,4 +1,5 @@
 import type { ReviewRow } from "@/features/transactions/components/import/review-table";
+import type { ReviewExistingInstallmentCorrection } from "@/features/transactions/lib/import-amount-edit";
 import {
 	buildImportDuplicateValidation,
 	type ImportDuplicateMatchOptions,
@@ -6,6 +7,7 @@ import {
 } from "@/features/transactions/lib/import-duplicate-match";
 import { isInvoiceExtraReviewRow } from "@/features/transactions/lib/import-invoice-extra-rows";
 import { mapDuplicateSnapshotToExistingRow } from "@/features/transactions/lib/import-invoice-reconciliation";
+import { detectInstallmentFromName } from "@/features/transactions/lib/installment-detection";
 import type { InvoiceFileRowFingerprint } from "@/shared/lib/import/invoice-file-match";
 import { pairInvoiceAgainstFile } from "@/shared/lib/import/invoice-pairing";
 
@@ -31,6 +33,57 @@ function fingerprintFromReviewRow(row: ReviewRow): InvoiceFileRowFingerprint {
 		transactionType: row.transactionType,
 		description: row.sourceDescription || row.description,
 	};
+}
+
+/** N/M que a fatura declara para a linha, do parcelamento detectado ou do nome. */
+function fileInstallment(
+	row: ReviewRow,
+): { currentInstallment: number; installmentCount: number } | null {
+	if (
+		row.installmentImport?.enabled &&
+		row.installmentImport.currentInstallment &&
+		row.installmentImport.installmentCount
+	) {
+		return {
+			currentInstallment: row.installmentImport.currentInstallment,
+			installmentCount: row.installmentImport.installmentCount,
+		};
+	}
+
+	const detected = detectInstallmentFromName(
+		row.sourceDescription || row.description,
+	);
+	if (!detected?.currentInstallment || !detected.installmentCount) return null;
+
+	return {
+		currentInstallment: detected.currentInstallment,
+		installmentCount: detected.installmentCount,
+	};
+}
+
+/**
+ * Parcela cadastrada com o número errado: todas as ocorrências da série valem o
+ * mesmo, então o par fecha pelo valor e o rótulo errado sobreviveria sozinho.
+ * Só corrige o que já é série no cadastro — pôr número de parcela em lançamento
+ * à vista sujaria o relatório de parcelas.
+ */
+function resolveInstallmentCorrection(
+	row: ReviewRow,
+	snapshot: ImportDuplicateSnapshot,
+): ReviewExistingInstallmentCorrection | null {
+	if (snapshot.installmentCount == null) return null;
+
+	const fromFile = fileInstallment(row);
+	if (!fromFile) return null;
+
+	if (
+		snapshot.currentInstallment === fromFile.currentInstallment &&
+		snapshot.installmentCount === fromFile.installmentCount
+	) {
+		return null;
+	}
+
+	return { transactionId: snapshot.id, ...fromFile };
 }
 
 function snapshotAmount(snapshot: ImportDuplicateSnapshot): number {
@@ -95,6 +148,7 @@ export function applyInvoiceClosingToReviewRows(input: {
 					duplicateValidation: null,
 					existingAmount: null,
 					existingAmountCorrection: null,
+					existingInstallmentCorrection: null,
 					selected: true,
 				};
 			}
@@ -124,6 +178,10 @@ export function applyInvoiceClosingToReviewRows(input: {
 			existingAmountCorrection: needsAmountFix
 				? { transactionId: snapshot.id, amount: Math.abs(row.amount) }
 				: null,
+			existingInstallmentCorrection: resolveInstallmentCorrection(
+				row,
+				snapshot,
+			),
 			selected: false,
 			categoryId: row.categoryId ?? snapshot.categoryId,
 			payerId: row.payerId ?? snapshot.payerId,

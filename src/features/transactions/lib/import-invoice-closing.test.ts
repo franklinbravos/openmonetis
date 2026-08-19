@@ -173,6 +173,81 @@ describe("applyInvoiceClosingToReviewRows", () => {
 		expect(rows[1]).toBe(extra);
 	});
 
+	it("corrige a numeração da parcela cadastrada no mês errado", () => {
+		const rows = applyInvoiceClosingToReviewRows({
+			rows: [
+				fileRow({
+					amount: 260,
+					description: "Fabio C Thomaziello - Parcela 5/10",
+					sourceDescription: "Fabio C Thomaziello - Parcela 5/10",
+				}),
+			],
+			snapshots: [
+				snapshot({
+					id: "parcela-errada",
+					name: "Fabio C Thomaziello",
+					amount: "-260.00",
+					currentInstallment: 10,
+					installmentCount: 10,
+				}),
+			],
+		});
+
+		expect(rows[0].existingInstallmentCorrection).toEqual({
+			transactionId: "parcela-errada",
+			currentInstallment: 5,
+			installmentCount: 10,
+		});
+		// o dinheiro já batia: nada a corrigir de valor
+		expect(rows[0].existingAmountCorrection).toBeNull();
+	});
+
+	it("não propõe correção quando a parcela já está certa", () => {
+		const rows = applyInvoiceClosingToReviewRows({
+			rows: [
+				fileRow({
+					amount: 260,
+					description: "Fabio C Thomaziello - Parcela 5/10",
+					sourceDescription: "Fabio C Thomaziello - Parcela 5/10",
+				}),
+			],
+			snapshots: [
+				snapshot({
+					id: "ok",
+					name: "Fabio C Thomaziello",
+					amount: "-260.00",
+					currentInstallment: 5,
+					installmentCount: 10,
+				}),
+			],
+		});
+
+		expect(rows[0].existingInstallmentCorrection).toBeNull();
+	});
+
+	it("não põe número de parcela em lançamento à vista", () => {
+		const rows = applyInvoiceClosingToReviewRows({
+			rows: [
+				fileRow({
+					amount: 260,
+					description: "Fabio C Thomaziello - Parcela 5/10",
+					sourceDescription: "Fabio C Thomaziello - Parcela 5/10",
+				}),
+			],
+			snapshots: [
+				snapshot({
+					id: "avista",
+					name: "Fabio C Thomaziello",
+					amount: "-260.00",
+					currentInstallment: null,
+					installmentCount: null,
+				}),
+			],
+		});
+
+		expect(rows[0].existingInstallmentCorrection).toBeNull();
+	});
+
 	it("herda categoria e pessoa do cadastro conferido", () => {
 		const rows = applyInvoiceClosingToReviewRows({
 			rows: [fileRow()],

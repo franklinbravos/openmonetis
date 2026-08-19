@@ -15,6 +15,21 @@ export type ReviewExistingAmountCorrection = {
 /** Alias: mesmo contrato de correção usado no rascunho e na action. */
 export type ExistingAmountEdit = ReviewExistingAmountCorrection;
 
+/**
+ * Correção da numeração da parcela do lançamento já cadastrado.
+ *
+ * Todas as ocorrências de uma série valem o mesmo, então uma parcela cadastrada
+ * no mês errado é conciliada pelo valor e o total fecha com o número errado
+ * intacto ("10 de 10" onde a fatura diz "5 de 10"). Isso conserta o rótulo.
+ */
+export type ReviewExistingInstallmentCorrection = {
+	transactionId: string;
+	currentInstallment: number;
+	installmentCount: number;
+};
+
+export type ExistingInstallmentEdit = ReviewExistingInstallmentCorrection;
+
 export function buildExistingAmountSnapshotMap(
 	snapshots: ImportDuplicateSnapshot[],
 ): Map<string, number> {
@@ -101,6 +116,36 @@ export function collectExistingAmountEdits(
 
 export function countExistingAmountEdits(rows: ReviewRow[]): number {
 	return collectExistingAmountEdits(rows).length;
+}
+
+export function collectExistingInstallmentEdits(
+	rows: ReviewRow[],
+): ExistingInstallmentEdit[] {
+	const edits: ExistingInstallmentEdit[] = [];
+	for (const row of rows) {
+		const correction = row.existingInstallmentCorrection;
+		if (!correction) continue;
+		// Mesma elegibilidade da correção de valor: linha vinculada, reimportada
+		// ou de pagamento não corrige cadastro.
+		const transactionId = resolveExistingTransactionIdForAmountEdit(row);
+		if (!transactionId) continue;
+		edits.push({ ...correction, transactionId });
+	}
+	return edits;
+}
+
+export function countExistingInstallmentEdits(rows: ReviewRow[]): number {
+	return collectExistingInstallmentEdits(rows).length;
+}
+
+export function dedupeExistingInstallmentEdits(
+	edits: ExistingInstallmentEdit[],
+): ExistingInstallmentEdit[] {
+	const byTransactionId = new Map<string, ExistingInstallmentEdit>();
+	for (const edit of edits) {
+		byTransactionId.set(edit.transactionId, edit);
+	}
+	return [...byTransactionId.values()];
 }
 
 export function dedupeExistingAmountEdits(

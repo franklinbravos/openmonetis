@@ -99,7 +99,9 @@ import {
 	applyExistingAmountEdits,
 	buildExistingAmountSnapshotMap,
 	collectExistingAmountEdits,
+	collectExistingInstallmentEdits,
 	countExistingAmountEdits,
+	countExistingInstallmentEdits,
 	enrichReviewRowsWithExistingAmount,
 	resolveExistingTransactionIdForAmountEdit,
 } from "@/features/transactions/lib/import-amount-edit";
@@ -3105,10 +3107,16 @@ export function ImportPage({
 		[rows],
 	);
 
+	const installmentCorrectionCount = useMemo(
+		() => countExistingInstallmentEdits(rows),
+		[rows],
+	);
+
 	const canImport =
 		(selectedRows.length > 0 ||
 			rowsMarkedForRemoval.length > 0 ||
-			amountCorrectionCount > 0) &&
+			amountCorrectionCount > 0 ||
+			installmentCorrectionCount > 0) &&
 		!!accountCardValue &&
 		uncategorizedCount === 0 &&
 		withoutPayerCount === 0 &&
@@ -3369,6 +3377,7 @@ export function ImportPage({
 				removeTransactionIds:
 					rowsMarkedForRemoval.length > 0 ? rowsMarkedForRemoval : undefined,
 				existingAmountEdits: collectExistingAmountEdits(rows),
+				existingInstallmentEdits: collectExistingInstallmentEdits(rows),
 			});
 
 			if (!result.success) {
@@ -3641,6 +3650,7 @@ export function ImportPage({
 								uncategorized={uncategorizedCount}
 								withoutPayer={withoutPayerCount}
 								amountCorrectionCount={amountCorrectionCount}
+								installmentCorrectionCount={installmentCorrectionCount}
 							/>
 
 							{importInvoiceReconciliation && invoiceSourceTotal ? (
