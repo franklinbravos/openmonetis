@@ -601,3 +601,50 @@ describe("collectImportLinkedExistingTransactionIds", () => {
 		expect([...ids]).toEqual(["tx-1", "tx-2"]);
 	});
 });
+
+describe("duas linhas idênticas no mesmo arquivo", () => {
+	const conectcar = (externalId: string) => ({
+		externalId,
+		date: "2026-04-13",
+		amount: 13.7,
+		description: "Ec *Ec*Conectcar",
+		transactionType: "expense" as const,
+	});
+
+	it("mantém as duas cobranças, distinguidas pelo sufixo do id", () => {
+		// Caso real da fatura de maio: dois pedágios no mesmo dia pelo mesmo
+		// valor. O id sintético do PDF é igual nas duas linhas e
+		// `uniquifyImportedExternalIds` sufixa a segunda com "#2". Comparar a base
+		// fazia a segunda parecer repetição do parser: ela era colapsada como
+		// duplicata e o total projetado ficava R$ 13,70 abaixo do arquivo.
+		const states = resolveImportDuplicateMatches(
+			[
+				conectcar("2026-04-13|ec *ec*conectcar|13.7"),
+				conectcar("2026-04-13|ec *ec*conectcar|13.7#2"),
+			],
+			{
+				candidates: [],
+				fitIdDuplicateIds: new Set(),
+				duplicateSnapshotByFitId: new Map(),
+			},
+		);
+
+		expect(states.map((state) => state.isDuplicate)).toEqual([false, false]);
+	});
+
+	it("ainda colapsa repetição do parser, quando não há id por linha", () => {
+		const states = resolveImportDuplicateMatches(
+			[
+				{ ...conectcar(""), externalId: null },
+				{ ...conectcar(""), externalId: null },
+			],
+			{
+				candidates: [],
+				fitIdDuplicateIds: new Set(),
+				duplicateSnapshotByFitId: new Map(),
+			},
+		);
+
+		expect(states.map((state) => state.isDuplicate)).toEqual([false, true]);
+	});
+});

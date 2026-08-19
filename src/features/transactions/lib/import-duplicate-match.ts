@@ -2,6 +2,7 @@ import type { ReviewInstallmentImport } from "@/features/transactions/lib/import
 import {
 	buildImportTransactionFingerprint,
 	importExternalIdCollidesWithStored,
+	importExternalIdsPointToSameCharge,
 	stripImportExternalIdSuffix,
 } from "@/shared/lib/import/helpers";
 import type { ImportedTransaction } from "@/shared/lib/import/types";
@@ -675,7 +676,7 @@ function resolveWithinFileDuplicateStates(
 }> {
 	const firstByFingerprint = new Map<
 		string,
-		{ index: number; externalIdBase: string | null }
+		{ index: number; externalId: string | null }
 	>();
 
 	return states.map((state, index) => {
@@ -690,28 +691,29 @@ function resolveWithinFileDuplicateStates(
 			description: row.description,
 			transactionType: row.transactionType,
 		});
-		const externalIdBase = row.externalId
-			? stripImportExternalIdSuffix(row.externalId)
-			: null;
+		const externalId = row.externalId ?? null;
 
 		const first = firstByFingerprint.get(fingerprint);
 		if (!first) {
-			firstByFingerprint.set(fingerprint, { index, externalIdBase });
+			firstByFingerprint.set(fingerprint, { index, externalId });
 			return state;
 		}
 
-		// Duas linhas com o mesmo fingerprint mas FITID de base diferente são
-		// transações distintas do banco — pedágio recarregado duas vezes no
-		// mesmo dia pelo mesmo valor, por exemplo, gera exatamente esse
-		// fingerprint e as duas cobranças são reais. O fingerprint só decide
-		// quando falta identificador confiável por linha (PDF/CSV) ou quando o
-		// identificador é o MESMO — repetição sintética já tratada por
-		// uniquifyImportedExternalIds, que sufixa "#2", "#3" para linhas
-		// idênticas sem FITID próprio.
+		// Duas linhas com o mesmo fingerprint são cobranças distintas quando os
+		// identificadores apontam para cobranças diferentes — inclusive quando
+		// diferem só no sufixo de um id sintético, que é o caso de dois pedágios
+		// no mesmo dia pelo mesmo valor. Comparar apenas a base colapsava a
+		// segunda e abria no total projetado um furo do valor dela.
+		//
+		// O fingerprint decide quando falta identificador por linha, ou quando o
+		// id do arquivo vem repetido — aí é o parser emitindo a mesma transação
+		// duas vezes.
 		if (
-			externalIdBase &&
-			first.externalIdBase &&
-			externalIdBase !== first.externalIdBase
+			externalId &&
+			first.externalId &&
+			!importExternalIdsPointToSameCharge(externalId, first.externalId, {
+				sameFile: true,
+			})
 		) {
 			return state;
 		}

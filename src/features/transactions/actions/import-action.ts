@@ -59,6 +59,7 @@ import {
 	expandImportExternalIdsForLookup,
 	type ImportOccurrenceIdentity,
 	importExternalIdCollidesWithStored,
+	importOccurrenceCollidesWithStored,
 	planImportRecordInsertion,
 } from "@/shared/lib/import/helpers";
 import { isInvoicePaymentDescription } from "@/shared/lib/import/invoice-total";
@@ -1846,18 +1847,35 @@ export async function importTransactionsAction(
 							: null,
 				};
 
-				// O lote conta como já gravado: duas linhas do mesmo arquivo não
-				// podem disputar a mesma cobrança nem o mesmo identificador.
+				// Contra o banco vale a base do id: reimportar o mesmo arquivo com a
+				// numeração do sufixo trocada não deve duplicar.
 				const plan = planImportRecordInsertion(identity, {
-					storedOccurrences: [...storedOccurrences, ...seenOccurrencesInBatch],
-					storedExternalIds: [...storedFitIds, ...seenFitIdsInBatch],
+					storedOccurrences,
+					storedExternalIds: storedFitIds,
 				});
 
 				if (plan === "skip") return [];
 
+				// Dentro do lote o id é comparado inteiro: o sufixo "#2" existe
+				// porque as duas linhas são idênticas e são duas cobranças reais —
+				// dois pedágios no mesmo dia pelo mesmo valor, por exemplo.
+				if (
+					importOccurrenceCollidesWithStored(identity, seenOccurrencesInBatch, {
+						sameFile: true,
+					})
+				) {
+					return [];
+				}
+
 				seenOccurrencesInBatch.push(identity);
 
-				if (plan === "insert_without_external_id") {
+				// O id já tem dono: no banco, ou numa linha anterior deste mesmo
+				// lote. A cobrança é distinta e precisa existir, então entra sem o
+				// id — o índice único admite um só dono por (usuário, id).
+				if (
+					plan === "insert_without_external_id" ||
+					seenFitIdsInBatch.has(record.ofxFitId)
+				) {
 					return [{ ...record, ofxFitId: null }];
 				}
 

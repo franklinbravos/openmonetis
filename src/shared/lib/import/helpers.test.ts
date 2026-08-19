@@ -394,3 +394,52 @@ describe("planImportRecordInsertion", () => {
 		expect(plan).toBe("skip");
 	});
 });
+
+describe("importOccurrenceCollidesWithStored: sufixo dentro do mesmo arquivo", () => {
+	const avulso = (externalId: string) => ({
+		externalId,
+		installmentCount: null,
+		currentInstallment: null,
+	});
+
+	it("com sameFile, o sufixo de id sintético distingue duas cobranças", () => {
+		// Caso real da fatura de maio: duas linhas "Ec *Ec*Conectcar | 13,70 |
+		// 2026-04-13" — dois pedágios no mesmo dia pelo mesmo valor. O id
+		// sintético é igual, e `uniquifyImportedExternalIds` sufixa a segunda.
+		// Comparar a base fazia a segunda parecer repetição e abria um furo de
+		// R$ 13,70 no total projetado.
+		expect(
+			importOccurrenceCollidesWithStored(
+				avulso("2026-04-13|ec *ec*conectcar|13.7#2"),
+				[avulso("2026-04-13|ec *ec*conectcar|13.7")],
+				{ sameFile: true },
+			),
+		).toBe(false);
+	});
+
+	it("com sameFile, id igual continua colidindo", () => {
+		expect(
+			importOccurrenceCollidesWithStored(avulso("fit-1"), [avulso("fit-1")], {
+				sameFile: true,
+			}),
+		).toBe(true);
+	});
+
+	it("com sameFile, FITID repetido segue sendo repetição do parser", () => {
+		// FITID não tem "|": é id do banco. O mesmo id em duas linhas é o parser
+		// emitindo a transação duas vezes, não duas cobranças.
+		expect(
+			importOccurrenceCollidesWithStored(
+				avulso("pix-fitid#2"),
+				[avulso("pix-fitid")],
+				{ sameFile: true },
+			),
+		).toBe(true);
+	});
+
+	it("sem a opção, a base decide — reimportar o arquivo não duplica", () => {
+		expect(
+			importOccurrenceCollidesWithStored(avulso("fit-1#2"), [avulso("fit-1")]),
+		).toBe(true);
+	});
+});

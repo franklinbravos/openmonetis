@@ -178,6 +178,52 @@ export function planImportRecordInsertion(
 	return "insert";
 }
 
+/**
+ * Id derivado do conteúdo da própria linha, não vindo do arquivo.
+ *
+ * `makeSyntheticExternalId` junta as partes com `|`; FITID de banco não tem
+ * esse separador. A origem do id muda o que um sufixo `#2` significa.
+ */
+export function isSyntheticImportExternalId(externalId: string): boolean {
+	return stripImportExternalIdSuffix(externalId).includes("|");
+}
+
+/**
+ * Os dois ids apontam para a mesma cobrança?
+ *
+ * Com `sameFile`, o sufixo `#2`/`#3` passa a ser levado em conta, e o que ele
+ * significa depende da origem do id:
+ *
+ * - **Id sintético** (PDF/CSV, derivado de data/descrição/valor): duas
+ *   cobranças idênticas colidem por natureza — dois pedágios no mesmo dia pelo
+ *   mesmo valor — e o sufixo é justamente o que separa uma da outra. São
+ *   cobranças distintas.
+ * - **Id do arquivo** (FITID) repetido: é o parser emitindo a mesma transação
+ *   duas vezes. É a mesma cobrança.
+ *
+ * Sem `sameFile` — comparando contra o que já está gravado — a base decide, para
+ * reimportar o mesmo arquivo não duplicar quando a numeração do sufixo muda.
+ */
+export function importExternalIdsPointToSameCharge(
+	left: string,
+	right: string,
+	options?: { sameFile?: boolean },
+): boolean {
+	if (left === right) return true;
+
+	if (
+		stripImportExternalIdSuffix(left) !== stripImportExternalIdSuffix(right)
+	) {
+		return false;
+	}
+
+	if (!options?.sameFile) return true;
+
+	return !(
+		isSyntheticImportExternalId(left) && isSyntheticImportExternalId(right)
+	);
+}
+
 /** Identidade de uma cobrança na hora de decidir se ela já está gravada. */
 export type ImportOccurrenceIdentity = {
 	externalId: string;
@@ -200,14 +246,19 @@ export type ImportOccurrenceIdentity = {
 export function importOccurrenceCollidesWithStored(
 	candidate: ImportOccurrenceIdentity,
 	storedOccurrences: Iterable<ImportOccurrenceIdentity>,
+	options?: {
+		/** Comparando linhas do mesmo arquivo — ver `importExternalIdsPointToSameCharge`. */
+		sameFile?: boolean;
+	},
 ): boolean {
-	const baseId = stripImportExternalIdSuffix(candidate.externalId);
 	const candidateIsSeries = candidate.installmentCount != null;
 
 	for (const stored of storedOccurrences) {
-		const sameId =
-			stored.externalId === candidate.externalId ||
-			stripImportExternalIdSuffix(stored.externalId) === baseId;
+		const sameId = importExternalIdsPointToSameCharge(
+			stored.externalId,
+			candidate.externalId,
+			options,
+		);
 		if (!sameId) continue;
 
 		const storedIsSeries = stored.installmentCount != null;
