@@ -1,6 +1,7 @@
 "use client";
 
 import {
+	RiCheckboxCircleLine,
 	RiEditLine,
 	RiEqualizerLine,
 	RiFileExcel2Line,
@@ -78,6 +79,7 @@ type InvoiceReconciliationSummary = {
 	sourceOverride: boolean;
 	delta: number;
 	sourceRounding?: number;
+	sourceFileName?: string | null;
 	extraTransactions: InvoiceReconciliationTransaction[];
 };
 
@@ -182,6 +184,19 @@ export function InvoiceSummaryCard({
 	const sourceRounding = reconciliation?.sourceRounding ?? 0;
 	const hasReconciliationMismatch =
 		reconciliationDelta != null && Math.abs(reconciliationDelta) > 0.01;
+	/**
+	 * Fatura conferida: existe arquivo atrelado e o cadastro fecha com ele. É o
+	 * sinal que diz ao usuário que o fechamento está fechado de verdade, em vez
+	 * de ele precisar abrir a conferência e comparar os números na mão.
+	 */
+	const isReconciled = hasSourceReconciliation && !hasReconciliationMismatch;
+	/**
+	 * Valor efetivamente cobrado pelo banco. Só vale mostrar em separado quando
+	 * difere do que a fatura exibe — senão é a mesma informação duas vezes.
+	 */
+	const chargedTotal = reconciliation?.sourceTotal ?? null;
+	const showChargedTotal =
+		chargedTotal != null && Math.abs(chargedTotal - heroTotal) > 0.001;
 	const extraTransactions =
 		reconciliation?.extraTransactions.filter(
 			(transaction) => transaction.group === "extra",
@@ -287,6 +302,14 @@ export function InvoiceSummaryCard({
 								}
 							/>
 						</div>
+						{showChargedTotal ? (
+							<p className="text-muted-foreground text-xs">
+								Cobrado pelo banco no arquivo:{" "}
+								<span className="font-medium tabular-nums text-foreground">
+									{formatCurrency(chargedTotal)}
+								</span>
+							</p>
+						) : null}
 						<div className="flex flex-wrap items-center gap-2">
 							<Badge
 								variant={INVOICE_STATUS_BADGE_VARIANT[invoiceStatus]}
@@ -294,6 +317,16 @@ export function InvoiceSummaryCard({
 							>
 								{INVOICE_STATUS_LABEL[invoiceStatus]}
 							</Badge>
+							{isReconciled ? (
+								<Badge
+									variant="outline"
+									className="gap-1 border-emerald-500/40 text-emerald-700 text-xs dark:text-emerald-400"
+									title={`Confere com ${reconciliation?.sourceFileName ?? "o arquivo importado"}`}
+								>
+									<RiCheckboxCircleLine className="size-3.5" aria-hidden />
+									Conferida com o arquivo
+								</Badge>
+							) : null}
 							{cardStatus ? (
 								<div className="flex items-center gap-1.5 text-xs text-muted-foreground">
 									<StatusDot color={getCardStatusDotColor(cardStatus)} />
