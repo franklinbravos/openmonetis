@@ -77,6 +77,7 @@ type InvoiceReconciliationSummary = {
 	sourceKind: InvoiceSourceTotalKind;
 	sourceOverride: boolean;
 	delta: number;
+	sourceRounding?: number;
 	extraTransactions: InvoiceReconciliationTransaction[];
 };
 
@@ -170,6 +171,7 @@ export function InvoiceSummaryCard({
 	const registeredAbsTotal = Math.abs(totalAmount);
 	const hasSourceReconciliation = reconciliation?.sourceTotal != null;
 	const reconciliationDelta = reconciliation?.delta ?? null;
+	const sourceRounding = reconciliation?.sourceRounding ?? 0;
 	const hasReconciliationMismatch =
 		reconciliationDelta != null && Math.abs(reconciliationDelta) > 0.01;
 	const extraTransactions =
@@ -369,6 +371,16 @@ export function InvoiceSummaryCard({
 									</dd>
 								</div>
 							</dl>
+
+							{sourceRounding !== 0 ? (
+								<p className="text-muted-foreground text-xs leading-relaxed">
+									O arquivo declara {formatCurrency(reconciliation.sourceTotal)}{" "}
+									e suas próprias linhas somam{" "}
+									{formatCurrency(reconciliation.sourceTotal - sourceRounding)}{" "}
+									— o banco arredonda parcelas com fração de centavo. A
+									conferência usa a soma das linhas.
+								</p>
+							) : null}
 
 							{hasReconciliationMismatch && extraTransactions.length > 0 ? (
 								<div className="space-y-2">

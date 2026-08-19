@@ -260,6 +260,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 									sourceKind: invoiceReconciliation.sourceKind,
 									sourceOverride: invoiceReconciliation.sourceOverride,
 									delta: invoiceReconciliation.delta ?? 0,
+									sourceRounding: invoiceReconciliation.sourceRounding,
 									extraTransactions: invoiceReconciliation.transactions,
 								}
 							: null

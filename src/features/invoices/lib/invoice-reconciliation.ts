@@ -7,6 +7,10 @@ import {
 	parseStoredSourceFileRows,
 	sourceFileRowsFromStatement,
 } from "@/shared/lib/import/invoice-file-match";
+import {
+	resolveInvoiceClosingTarget,
+	roundMoney,
+} from "@/shared/lib/import/invoice-total";
 import { parseImportFileFromBuffer } from "@/shared/lib/import/parse-import-file-buffer";
 import type { InvoiceSourceTotalKind } from "@/shared/lib/import/types";
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
@@ -34,6 +38,8 @@ export type InvoiceReconciliationData = {
 	sourceOverride: boolean;
 	lastImportBatchId: string | null;
 	delta: number | null;
+	/** Total declarado − soma das linhas do arquivo, quando o banco arredonda. */
+	sourceRounding: number;
 	transactions: InvoiceReconciliationTransaction[];
 };
 
@@ -165,10 +171,22 @@ export async function fetchInvoiceReconciliation(
 			};
 		});
 
-	const delta =
-		sourceTotal != null
-			? Math.round((registeredTotal - sourceTotal) * 100) / 100
+	// O cadastro é montado a partir das linhas do arquivo, então é contra a soma
+	// delas que ele fecha. O total declarado pelo banco pode arredondar centavos.
+	const fileRowsTotal =
+		fileRows.length > 0
+			? roundMoney(
+					fileRows.reduce((total, row) => total + Math.abs(row.amount), 0),
+				)
 			: null;
+	const closingTarget =
+		sourceTotal != null
+			? resolveInvoiceClosingTarget({ sourceTotal, fileRowsTotal })
+			: null;
+
+	const delta = closingTarget
+		? roundMoney(registeredTotal - closingTarget.target)
+		: null;
 
 	return {
 		registeredTotal,
@@ -177,6 +195,7 @@ export async function fetchInvoiceReconciliation(
 		sourceOverride: lastBatch?.sourceInvoiceTotalOverride ?? false,
 		lastImportBatchId: lastBatch?.id ?? null,
 		delta,
+		sourceRounding: closingTarget?.rounding ?? 0,
 		transactions: mappedTransactions,
 	};
 }

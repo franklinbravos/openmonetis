@@ -3,6 +3,7 @@ import type { InvoiceReconciliationReviewRow } from "./invoice-total";
 import {
 	computeImportReconciliation,
 	isInvoiceTotalReconciled,
+	resolveInvoiceClosingTarget,
 	sumSignedAmountsForReviewRows,
 } from "./invoice-total";
 
@@ -218,5 +219,31 @@ describe("computeImportReconciliation", () => {
 
 		expect(result.missingFileRows).toHaveLength(1);
 		expect(result.missingFileRows[0]?.reason).toBe("not_selected");
+	});
+});
+
+describe("resolveInvoiceClosingTarget", () => {
+	it("mira na soma das linhas quando o arquivo arredonda um centavo", () => {
+		expect(
+			resolveInvoiceClosingTarget({
+				sourceTotal: 7301.59,
+				fileRowsTotal: 7301.6,
+			}),
+		).toEqual({ target: 7301.6, rounding: -0.01, unexplained: 0 });
+	});
+
+	it("mantém o total declarado quando faltam linhas no arquivo", () => {
+		expect(
+			resolveInvoiceClosingTarget({
+				sourceTotal: 6003.17,
+				fileRowsTotal: 5946.89,
+			}),
+		).toEqual({ target: 6003.17, rounding: 0, unexplained: 56.28 });
+	});
+
+	it("usa o total declarado quando não há linhas para comparar", () => {
+		expect(
+			resolveInvoiceClosingTarget({ sourceTotal: 100, fileRowsTotal: null }),
+		).toEqual({ target: 100, rounding: 0, unexplained: 0 });
 	});
 });

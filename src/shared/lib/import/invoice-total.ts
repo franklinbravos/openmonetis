@@ -225,6 +225,49 @@ export function roundMoney(value: number): number {
 	return Math.round(value * 100) / 100;
 }
 
+/** Acima disso a divergência do arquivo deixa de ser arredondamento e vira linha faltando. */
+const SOURCE_ROUNDING_TOLERANCE = 0.02;
+
+export type InvoiceClosingTarget = {
+	/** Valor que o cadastro precisa alcançar para a fatura fechar. */
+	target: number;
+	/** Quanto o total declarado difere da soma das linhas por arredondamento do banco. */
+	rounding: number;
+	/** Divergência grande demais para ser arredondamento — provável linha faltando no arquivo. */
+	unexplained: number;
+};
+
+/**
+ * O total declarado pelo banco nem sempre é a soma das linhas do próprio
+ * arquivo: parcelas com fração de centavo fazem o Nubank fechar a fatura um
+ * centavo abaixo. O cadastro é montado a partir das linhas, então cobrar dele o
+ * total declarado deixaria uma diferença impossível de resolver.
+ *
+ * Diferença grande é outra história: significa que faltam linhas no arquivo
+ * (parser perdendo lançamento, por exemplo) e aí o total declarado continua
+ * sendo a referência, para a falha aparecer.
+ */
+export function resolveInvoiceClosingTarget(input: {
+	sourceTotal: number;
+	fileRowsTotal: number | null;
+}): InvoiceClosingTarget {
+	if (input.fileRowsTotal == null) {
+		return { target: input.sourceTotal, rounding: 0, unexplained: 0 };
+	}
+
+	const difference = roundMoney(input.sourceTotal - input.fileRowsTotal);
+
+	if (Math.abs(difference) <= SOURCE_ROUNDING_TOLERANCE) {
+		return {
+			target: input.fileRowsTotal,
+			rounding: difference,
+			unexplained: 0,
+		};
+	}
+
+	return { target: input.sourceTotal, rounding: 0, unexplained: difference };
+}
+
 export type ImportInvoiceReconciliation = {
 	sourceTotal: number;
 	existingSignedTotal: number;
@@ -234,6 +277,10 @@ export type ImportInvoiceReconciliation = {
 	projectedSignedTotal: number;
 	projectedDisplayTotal: number;
 	delta: number;
+	/** Arredondamento do próprio arquivo: total declarado − soma das linhas. */
+	sourceRounding: number;
+	/** Divergência do arquivo grande demais para ser arredondamento. */
+	sourceUnexplained: number;
 	extraExistingRows: InvoiceReconciliationExistingRow[];
 	unselectedFileRows: InvoiceReconciliationReviewRow[];
 	missingFileRows: InvoiceReconciliationMissingFileRow[];
@@ -373,6 +420,18 @@ export function computeImportReconciliation(input: {
 
 	const projectedDisplayTotal = displayInvoiceTotal(projectedSignedTotal);
 
+	const fileRowsDisplayTotal = displayInvoiceTotal(
+		invoiceReviewRows.reduce(
+			(total, row) =>
+				total + signedAmountFromReviewValues(row.amount, row.transactionType),
+			0,
+		),
+	);
+	const closingTarget = resolveInvoiceClosingTarget({
+		sourceTotal: roundMoney(input.sourceTotal),
+		fileRowsTotal: fileRowsDisplayTotal,
+	});
+
 	return {
 		sourceTotal: roundMoney(input.sourceTotal),
 		existingSignedTotal,
@@ -381,7 +440,9 @@ export function computeImportReconciliation(input: {
 		selectedImportDisplayTotal: displayInvoiceTotal(selectedImportSignedTotal),
 		projectedSignedTotal,
 		projectedDisplayTotal,
-		delta: roundMoney(projectedDisplayTotal - input.sourceTotal),
+		delta: roundMoney(projectedDisplayTotal - closingTarget.target),
+		sourceRounding: closingTarget.rounding,
+		sourceUnexplained: closingTarget.unexplained,
 		extraExistingRows,
 		unselectedFileRows,
 		missingFileRows,
