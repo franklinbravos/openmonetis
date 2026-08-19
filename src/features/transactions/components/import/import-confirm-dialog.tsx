@@ -1,5 +1,6 @@
 "use client";
 
+import { AccountCardSelectContent } from "@/features/transactions/components/select-items";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
 import {
@@ -12,6 +13,13 @@ import {
 } from "@/shared/components/ui/dialog";
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/shared/components/ui/select";
 import { formatCurrency } from "@/shared/utils/currency";
 import { cn } from "@/shared/utils/ui";
 
@@ -22,7 +30,7 @@ export type ImportInvoicePaymentPrompt = {
 	onPaidChange: (paid: boolean) => void;
 	paymentDate: string;
 	onPaymentDateChange: (date: string) => void;
-	accountOptions: Array<{ value: string; label: string }>;
+	accountOptions: Array<{ value: string; label: string; logo?: string | null }>;
 	accountId: string | null;
 	onAccountChange: (accountId: string) => void;
 };
@@ -70,6 +78,9 @@ export function ImportConfirmDialog({
 	onConfirm,
 }: ImportConfirmDialogProps) {
 	const editedCount = replacedCount + installmentBackfillCount;
+	const selectedPaymentAccount = invoicePayment?.accountOptions.find(
+		(option) => option.value === invoicePayment.accountId,
+	);
 	const hasInvoiceTotalMismatch =
 		invoiceTotalDelta != null && Math.abs(invoiceTotalDelta) > 0.01;
 
@@ -230,24 +241,35 @@ export function ImportConfirmDialog({
 									<Label htmlFor="import-invoice-payment-account">
 										Conta de onde saiu o pagamento
 									</Label>
-									<select
-										id="import-invoice-payment-account"
-										className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+									<Select
 										value={invoicePayment.accountId ?? ""}
-										onChange={(event) =>
-											invoicePayment.onAccountChange(event.target.value)
-										}
+										onValueChange={invoicePayment.onAccountChange}
 										disabled={isPending}
 									>
-										<option value="" disabled>
-											Selecione a conta
-										</option>
-										{invoicePayment.accountOptions.map((option) => (
-											<option key={option.value} value={option.value}>
-												{option.label}
-											</option>
-										))}
-									</select>
+										<SelectTrigger
+											id="import-invoice-payment-account"
+											className="w-full"
+										>
+											<SelectValue placeholder="Selecione a conta">
+												{selectedPaymentAccount ? (
+													<AccountCardSelectContent
+														label={selectedPaymentAccount.label}
+														logo={selectedPaymentAccount.logo}
+													/>
+												) : null}
+											</SelectValue>
+										</SelectTrigger>
+										<SelectContent>
+											{invoicePayment.accountOptions.map((option) => (
+												<SelectItem key={option.value} value={option.value}>
+													<AccountCardSelectContent
+														label={option.label}
+														logo={option.logo}
+													/>
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
 								</div>
 							</div>
 						) : (

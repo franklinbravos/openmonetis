@@ -3953,6 +3953,7 @@ export function ImportPage({
 								accountOptions: accountOptions.map((option) => ({
 									value: option.value,
 									label: option.label,
+									logo: option.logo ?? null,
 								})),
 								accountId: paymentAccountId,
 								onAccountChange: setPaymentAccountId,
