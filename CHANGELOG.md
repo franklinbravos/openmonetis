@@ -27,6 +27,7 @@ Esta versão adiciona conferência do total da fatura na importação de cartão
 - Fatura do cartão: selo **Conferida com o arquivo** quando o cadastro fecha com o arquivo importado, e linha **Cobrado pelo banco no arquivo** com o valor efetivamente pago sempre que ele difere da soma dos lançamentos.
 
 ### Alterado
+- Deploy: cada push na `main` passa a **disparar o deploy automático no Coolify** depois de publicar a imagem `latest`, sem Redeploy manual. Só dispara para a tag `latest` — rebuild pontual com outra tag publica a imagem e não promove nada. Depende dos secrets `COOLIFY_WEBHOOK` e `COOLIFY_TOKEN`; sem eles o passo é ignorado com aviso, então fork sem Coolify não quebra. Se o Coolify recusar o disparo o job falha, para que um deploy perdido não passe batido. GitHub Releases e imagens versionadas continuam saindo apenas de tags SemVer.
 - Importação de fatura: cadastros a mais que batem com o arquivo (mesmo nome/parcela e valor) são rotulados como **duplicata**, não como item ausente; o total projetado desconta essas duplicatas marcadas para remoção.
 - Fatura do cartão: a lista de extras compara o cadastro com o arquivo importado (FITID ou nome+valor), em vez de marcar lançamentos já conferidos.
 - Parsers OFX/PDF passam a registrar a origem do total parseado (`ofx_ledger`, `pdf_header`, `pdf_lines_fallback`).
