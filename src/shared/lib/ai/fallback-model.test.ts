@@ -1,6 +1,7 @@
 import { APICallError } from "ai";
 import { describe, expect, it } from "vitest";
 import {
+	buildFallbackCredentials,
 	resolveFallbackModelId,
 	shouldRetryWithFallbackModel,
 } from "@/shared/lib/ai/fallback-model";
@@ -40,6 +41,36 @@ describe("shouldRetryWithFallbackModel", () => {
 	});
 });
 
+describe("buildFallbackCredentials", () => {
+	const base = {
+		opencode: { apiKey: "chave-principal", source: "database" as const },
+		openai: { apiKey: "outra", source: "database" as const },
+	} as unknown as Parameters<typeof buildFallbackCredentials>[0]["credentials"];
+
+	it("substitui a chave só do provedor da reserva", () => {
+		const result = buildFallbackCredentials({
+			credentials: base,
+			modelId: "opencode:deepseek-v4-flash",
+			apiKey: "segunda-chave",
+			baseUrl: null,
+		});
+
+		expect(result.opencode.apiKey).toBe("segunda-chave");
+		expect(result.openai.apiKey).toBe("outra");
+	});
+
+	it("mantém as credenciais quando a reserva não tem chave própria", () => {
+		const result = buildFallbackCredentials({
+			credentials: base,
+			modelId: "opencode:deepseek-v4-flash",
+			apiKey: null,
+			baseUrl: null,
+		});
+
+		expect(result).toBe(base);
+	});
+});
+
 describe("resolveFallbackModelId", () => {
 	it("usa a reserva configurada", () => {
 		expect(
@@ -50,13 +81,23 @@ describe("resolveFallbackModelId", () => {
 		).toBe("gpt-5-mini");
 	});
 
-	it("ignora reserva igual ao principal", () => {
+	it("ignora reserva igual ao principal sem chave própria", () => {
 		expect(
 			resolveFallbackModelId({
 				primaryModelId: "gpt-5-mini",
 				fallbackModelId: "gpt-5-mini",
 			}),
 		).toBeNull();
+	});
+
+	it("aceita o mesmo modelo quando a reserva tem chave própria", () => {
+		expect(
+			resolveFallbackModelId({
+				primaryModelId: "opencode:deepseek-v4-flash",
+				fallbackModelId: "opencode:deepseek-v4-flash",
+				hasOwnKey: true,
+			}),
+		).toBe("opencode:deepseek-v4-flash");
 	});
 
 	it("ignora reserva vazia ou ausente", () => {

@@ -3,6 +3,8 @@ import {
 	NoSuchModelError,
 	UnsupportedFunctionalityError,
 } from "ai";
+import { getProviderFromModelId } from "@/shared/lib/ai/model-config-helpers";
+import type { ResolvedAiCredentials } from "@/shared/lib/ai/types";
 
 /**
  * Quando vale repetir o lote no modelo de reserva.
@@ -26,13 +28,47 @@ export function shouldRetryWithFallbackModel(error: unknown): boolean {
 	return false;
 }
 
-/** Reserva só serve se estiver configurada e for diferente do modelo que falhou. */
+/**
+ * Reserva precisa estar configurada e trazer algo diferente do que falhou.
+ *
+ * Mesmo modelo vale quando a reserva tem chave própria: é justamente o caso de
+ * ter uma segunda chave do mesmo provedor para quando a cota da primeira acaba.
+ */
 export function resolveFallbackModelId(input: {
 	primaryModelId: string;
 	fallbackModelId: string | null | undefined;
+	hasOwnKey?: boolean;
 }): string | null {
 	const fallback = input.fallbackModelId?.trim();
 	if (!fallback) return null;
-	if (fallback === input.primaryModelId) return null;
+	if (fallback === input.primaryModelId && !input.hasOwnKey) return null;
 	return fallback;
+}
+
+/**
+ * Credenciais para a reserva: a chave própria substitui a do provedor dela,
+ * deixando os outros provedores intactos.
+ */
+export function buildFallbackCredentials(input: {
+	credentials: ResolvedAiCredentials;
+	modelId: string;
+	apiKey: string | null;
+	baseUrl: string | null;
+}): ResolvedAiCredentials {
+	if (!input.apiKey) return input.credentials;
+
+	const provider = getProviderFromModelId(input.modelId);
+	if (!provider) return input.credentials;
+
+	const current = input.credentials[provider];
+
+	return {
+		...input.credentials,
+		[provider]: {
+			...current,
+			apiKey: input.apiKey,
+			baseUrl: input.baseUrl ?? current?.baseUrl,
+			source: "database" as const,
+		},
+	};
 }

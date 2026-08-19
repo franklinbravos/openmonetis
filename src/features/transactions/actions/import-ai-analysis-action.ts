@@ -36,6 +36,7 @@ import {
 	mergeImportDuplicateSnapshots,
 } from "@/features/transactions/lib/import-duplicate-match";
 import {
+	buildFallbackCredentials,
 	resolveFallbackModelId,
 	shouldRetryWithFallbackModel,
 } from "@/shared/lib/ai/fallback-model";
@@ -297,12 +298,8 @@ async function resolveImportAiExecutionContext(
 	},
 ) {
 	const userId = await getUserId();
-	const {
-		credentials,
-		insightsDefaultModelId,
-		aiFallbackModelId,
-		storedSettings,
-	} = await fetchInstanceAiProviderSettings(userId);
+	const { credentials, insightsDefaultModelId, fallback, storedSettings } =
+		await fetchInstanceAiProviderSettings(userId);
 
 	if (hasInvalidStoredAiKeys(storedSettings)) {
 		return {
@@ -365,12 +362,25 @@ async function resolveImportAiExecutionContext(
 		: [];
 
 	// Reserva resolvida junto: se o principal cair por cota, o lote repete aqui.
-	const fallbackModelId = resolveFallbackModelId({
-		primaryModelId: modelId,
-		fallbackModelId: aiFallbackModelId,
-	});
+	// Chave própria entra sobrescrevendo a credencial do provedor da reserva, que
+	// é o caso de ter uma segunda chave do mesmo provedor.
+	const fallbackModelId = fallback.enabled
+		? resolveFallbackModelId({
+				primaryModelId: modelId,
+				fallbackModelId: fallback.modelId,
+				hasOwnKey: fallback.apiKey != null,
+			})
+		: null;
+	const fallbackCredentials = fallbackModelId
+		? buildFallbackCredentials({
+				credentials,
+				modelId: fallbackModelId,
+				apiKey: fallback.apiKey,
+				baseUrl: fallback.baseUrl,
+			})
+		: credentials;
 	const resolvedFallback = fallbackModelId
-		? resolveInsightsModel(fallbackModelId, credentials)
+		? resolveInsightsModel(fallbackModelId, fallbackCredentials)
 		: null;
 
 	return {

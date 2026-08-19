@@ -4,6 +4,8 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { AIProvider } from "@/features/insights/constants";
+import { encryptSecret } from "@/shared/lib/ai/secret-encryption";
+import type { StoredAiFallbackSettings } from "@/shared/lib/ai/types";
 import {
 	fetchInstanceAiProviderSettings,
 	mergeStoredProviderSettings,
@@ -45,8 +47,16 @@ function isUndefinedColumnError(error: unknown): boolean {
 
 const updateAiProviderSettingsSchema = z.object({
 	insightsDefaultModelId: z.string().trim().min(1).nullable().optional(),
-	/** Modelo de reserva; null limpa a configuração. */
-	aiFallbackModelId: z.string().trim().min(1).nullable().optional(),
+	/** Reserva da análise: modelo, chave própria opcional e habilitação. */
+	fallback: z
+		.object({
+			enabled: z.boolean(),
+			modelId: z.string().trim().min(1).nullable(),
+			/** Ausente mantém a chave salva; string vazia não é aceita. */
+			apiKey: z.string().trim().min(1).optional(),
+			baseUrl: z.string().trim().min(1).nullable().optional(),
+		})
+		.optional(),
 	providers: z.partialRecord(aiProviderEnum, providerUpdateSchema).optional(),
 });
 
@@ -62,6 +72,7 @@ export async function updateAiProviderSettingsAction(
 			.select({
 				id: schema.userPreferences.id,
 				aiProviderSettings: schema.userPreferences.aiProviderSettings,
+				aiFallbackSettings: schema.userPreferences.aiFallbackSettings,
 			})
 			.from(schema.userPreferences)
 			.where(eq(schema.userPreferences.userId, dataOwnerUserId))
@@ -85,7 +96,7 @@ export async function updateAiProviderSettingsAction(
 
 		const preferencesPayload: {
 			insightsDefaultModelId?: string | null;
-			aiFallbackModelId?: string | null;
+			aiFallbackSettings?: StoredAiFallbackSettings;
 			aiProviderSettings?: typeof nextSettings;
 			updatedAt: Date;
 		} = {
@@ -97,8 +108,22 @@ export async function updateAiProviderSettingsAction(
 				validated.insightsDefaultModelId;
 		}
 
-		if (validated.aiFallbackModelId !== undefined) {
-			preferencesPayload.aiFallbackModelId = validated.aiFallbackModelId;
+		if (validated.fallback) {
+			const previous = existing?.aiFallbackSettings ?? null;
+			// Chave em branco mantém a que já está salva — a tela nunca a recebe de volta.
+			const encryptedApiKey = validated.fallback.apiKey
+				? encryptSecret(validated.fallback.apiKey)
+				: (previous?.encryptedApiKey ?? null);
+
+			preferencesPayload.aiFallbackSettings = {
+				enabled: validated.fallback.enabled,
+				modelId: validated.fallback.modelId,
+				encryptedApiKey,
+				baseUrl:
+					validated.fallback.baseUrl !== undefined
+						? validated.fallback.baseUrl
+						: (previous?.baseUrl ?? null),
+			};
 		}
 
 		if (validated.providers) {
@@ -138,7 +163,7 @@ export async function updateAiProviderSettingsAction(
 			return {
 				success: false,
 				error:
-					"O banco desta instância ainda não tem a coluna do modelo de reserva. Rode as migrations e tente novamente.",
+					"O banco desta instância ainda não tem a coluna da reserva de IA. Rode as migrations e tente novamente.",
 			};
 		}
 

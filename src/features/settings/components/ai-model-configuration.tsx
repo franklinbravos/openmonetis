@@ -107,7 +107,7 @@ export function AiModelConfiguration({ settings }: AiModelConfigurationProps) {
 				/>
 
 				<AiFallbackModelCard
-					savedFallbackModelId={settings.aiFallbackModelId}
+					fallback={settings.fallback}
 					availableModels={fetchedModels}
 					primaryModelId={selectedModelId}
 				/>

@@ -20,6 +20,7 @@ import type {
 	AiProviderSettingsViewEntry,
 	ResolvedAiCredentials,
 	ResolvedProviderCredential,
+	StoredAiFallbackSettings,
 	StoredAiProviderEntry,
 	StoredAiProviderSettings,
 } from "./types";
@@ -152,7 +153,42 @@ export async function fetchInstanceAiProviderSettings(
 	return fetchUserAiProviderSettings(settingsOwnerUserId);
 }
 
-/** Postgres: coluna inexistente. */
+export type ResolvedAiFallback = {
+	enabled: boolean;
+	modelId: string | null;
+	/** Já decifrada; null quando não há chave própria ou ela ficou ilegível. */
+	apiKey: string | null;
+	baseUrl: string | null;
+};
+
+/** Chave própria da reserva é decifrada aqui; ilegível vira ausência, não erro. */
+function resolveStoredFallback(
+	stored: StoredAiFallbackSettings | null,
+): ResolvedAiFallback {
+	if (!stored) {
+		return { enabled: false, modelId: null, apiKey: null, baseUrl: null };
+	}
+
+	const apiKey = stored.encryptedApiKey
+		? tryDecryptSecret(stored.encryptedApiKey)
+		: null;
+
+	if (stored.encryptedApiKey && apiKey == null) {
+		console.error(
+			"Chave da reserva de IA ilegível:",
+			diagnoseSecretReadFailure(stored.encryptedApiKey),
+		);
+	}
+
+	return {
+		enabled: Boolean(stored.enabled),
+		modelId: stored.modelId?.trim() || null,
+		apiKey,
+		baseUrl: stored.baseUrl?.trim() || null,
+	};
+}
+
+/** Postgres: coluna inexistente. */ /** Postgres: coluna inexistente. */
 function isUndefinedColumnError(error: unknown): boolean {
 	if (!error || typeof error !== "object") return false;
 	const record = error as { code?: string; cause?: { code?: string } };
@@ -167,7 +203,7 @@ function isUndefinedColumnError(error: unknown): boolean {
 async function selectAiPreferencesRow(userId: string): Promise<
 	Array<{
 		insightsDefaultModelId: string | null;
-		aiFallbackModelId: string | null;
+		aiFallbackSettings: StoredAiFallbackSettings | null;
 		aiProviderSettings: StoredAiProviderSettings | null;
 	}>
 > {
@@ -175,7 +211,7 @@ async function selectAiPreferencesRow(userId: string): Promise<
 		return await db
 			.select({
 				insightsDefaultModelId: schema.userPreferences.insightsDefaultModelId,
-				aiFallbackModelId: schema.userPreferences.aiFallbackModelId,
+				aiFallbackSettings: schema.userPreferences.aiFallbackSettings,
 				aiProviderSettings: schema.userPreferences.aiProviderSettings,
 			})
 			.from(schema.userPreferences)
@@ -185,7 +221,7 @@ async function selectAiPreferencesRow(userId: string): Promise<
 		if (!isUndefinedColumnError(error)) throw error;
 
 		console.warn(
-			"preferencias_usuario.ai_fallback_model_id ausente: rode as migrations para habilitar o modelo de reserva.",
+			"preferencias_usuario.ai_fallback_settings ausente: rode as migrations para habilitar o modelo de reserva.",
 		);
 
 		const rows = await db
@@ -197,13 +233,13 @@ async function selectAiPreferencesRow(userId: string): Promise<
 			.where(eq(schema.userPreferences.userId, userId))
 			.limit(1);
 
-		return rows.map((row) => ({ ...row, aiFallbackModelId: null }));
+		return rows.map((row) => ({ ...row, aiFallbackSettings: null }));
 	}
 }
 
 export async function fetchUserAiProviderSettings(userId: string): Promise<{
 	insightsDefaultModelId: string | null;
-	aiFallbackModelId: string | null;
+	fallback: ResolvedAiFallback;
 	storedSettings: StoredAiProviderSettings | null;
 	view: AiProviderSettingsView;
 	credentials: ResolvedAiCredentials;
@@ -213,7 +249,7 @@ export async function fetchUserAiProviderSettings(userId: string): Promise<{
 	const row = result[0];
 	const storedSettings = row?.aiProviderSettings ?? null;
 	const insightsDefaultModelId = row?.insightsDefaultModelId ?? null;
-	const aiFallbackModelId = row?.aiFallbackModelId ?? null;
+	const fallback = resolveStoredFallback(row?.aiFallbackSettings ?? null);
 
 	const providers = AI_PROVIDER_IDS.reduce(
 		(view, provider) => {
@@ -225,11 +261,16 @@ export async function fetchUserAiProviderSettings(userId: string): Promise<{
 
 	return {
 		insightsDefaultModelId,
-		aiFallbackModelId,
+		fallback,
 		storedSettings,
 		view: {
 			insightsDefaultModelId,
-			aiFallbackModelId,
+			fallback: {
+				enabled: fallback.enabled,
+				modelId: fallback.modelId,
+				hasOwnKey: fallback.apiKey != null,
+				baseUrl: fallback.baseUrl,
+			},
 			providers,
 		},
 		credentials: resolveAllProviderCredentials(storedSettings),
