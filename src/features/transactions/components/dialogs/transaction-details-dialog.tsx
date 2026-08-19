@@ -39,6 +39,7 @@ import { getCategoryColorFromName } from "@/shared/utils/category-colors";
 import { formatDate, parseLocalDateString } from "@/shared/utils/date";
 import { getIconComponent, getPaymentMethodIcon } from "@/shared/utils/icons";
 import { AttachmentSection } from "../attachments/attachment-section";
+import { InstallmentSeriesList } from "../shared/installment-series-list";
 import { InstallmentTimeline } from "../shared/installment-timeline";
 import type { TransactionItem } from "../types";
 
@@ -124,6 +125,22 @@ export function TransactionDetailsDialog({
 	const handleEdit = () => {
 		onOpenChange(false);
 		onEdit?.(details);
+	};
+
+	/** Abre a edição de outra parcela da mesma série, direto pela lista. */
+	const handleEditOccurrence = (transactionId: string) => {
+		if (!onEdit) return;
+
+		if (transactionId === details.id) {
+			handleEdit();
+			return;
+		}
+
+		void fetchTransactionByIdAction(transactionId).then((full) => {
+			if (!full) return;
+			onOpenChange(false);
+			onEdit(full);
+		});
 	};
 
 	return (
@@ -371,6 +388,24 @@ export function TransactionDetailsDialog({
 								) : null}
 							</ul>
 						</section>
+
+						{isInstallment && details.seriesId ? (
+							<section className="space-y-2">
+								<h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+									Parcelas
+								</h3>
+								<InstallmentSeriesList
+									seriesId={details.seriesId}
+									currentTransactionId={details.id}
+									installmentCount={totalParcelas}
+									onEditOccurrence={
+										onEdit && !details.readonly
+											? handleEditOccurrence
+											: undefined
+									}
+								/>
+							</section>
+						) : null}
 
 						{details.note ? (
 							<section className="space-y-2">
