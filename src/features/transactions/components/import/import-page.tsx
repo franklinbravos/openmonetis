@@ -106,6 +106,7 @@ import {
 	resolveExistingTransactionIdForAmountEdit,
 } from "@/features/transactions/lib/import-amount-edit";
 import {
+	applyImportBatchDraftToExtraRows,
 	applyImportBatchDraftToRows,
 	buildImportBatchDraft,
 	buildImportReviewRowKey,
@@ -1414,8 +1415,11 @@ export function ImportPage({
 							})
 						: closedRows.filter((row) => !isInvoiceExtraReviewRow(row));
 
+				// Só as linhas de excesso, que nascem depois do fechamento: reaplicar o
+				// rascunho em tudo apagaria a decisão fresca do fechamento com o estado
+				// salvo antes dele existir (ver applyImportBatchDraftToExtraRows).
 				const finalRows = draftData
-					? applyImportBatchDraftToRows(mergedRows, draftData)
+					? applyImportBatchDraftToExtraRows(mergedRows, draftData)
 					: mergedRows;
 
 				const existingAmountById =

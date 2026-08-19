@@ -5,7 +5,10 @@ import type {
 	ReviewInstallmentImport,
 	ReviewRecurrenceImport,
 } from "@/features/transactions/lib/import-installments";
-import { buildInvoiceExtraReviewRowKey } from "@/features/transactions/lib/import-invoice-extra-rows";
+import {
+	buildInvoiceExtraReviewRowKey,
+	isInvoiceExtraReviewRow,
+} from "@/features/transactions/lib/import-invoice-extra-rows";
 import { normalizeDescriptionKey } from "@/features/transactions/lib/import-utils";
 
 const importDuplicateMismatchDraftSchema = z.object({
@@ -262,4 +265,25 @@ export function extractImportBatchDraftGlobals(
 		paymentAccountId: draftData.paymentAccountId,
 		paymentDate: draftData.paymentDate,
 	};
+}
+
+/**
+ * Restaura o rascunho só nas linhas de excesso (kind "invoice_extra").
+ *
+ * Essas linhas só existem depois do fechamento da fatura — a primeira aplicação
+ * do rascunho, feita antes do fechamento, não tem como alcançá-las. Reaplicar o
+ * rascunho em TODAS as linhas para chegar até elas tinha um efeito colateral: o
+ * rascunho pode ter sido salvo antes do fechamento decidir o que conferir e o que
+ * importar, e `selected`/`categoryId`/`payerId` do rascunho antigo sobrescreviam
+ * a decisão fresca do fechamento — a fatura reabria como se nada tivesse sido
+ * resolvido, mesmo com o fechamento tendo acertado tudo.
+ */
+export function applyImportBatchDraftToExtraRows(
+	rows: ReviewRow[],
+	draftData: ImportBatchDraftData,
+): ReviewRow[] {
+	const drafted = applyImportBatchDraftToRows(rows, draftData);
+	return rows.map((row, index) =>
+		isInvoiceExtraReviewRow(row) ? drafted[index] : row,
+	);
 }

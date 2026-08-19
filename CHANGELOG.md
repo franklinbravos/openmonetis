@@ -52,6 +52,7 @@ Esta versão adiciona conferência do total da fatura na importação de cartão
 - Revisão da importação: a caixa de divergências deixa de acusar diferença de data em parcela — a série guarda uma única data de compra em todas as ocorrências, e a comparação com a data da linha da fatura dava a impressão de que o casamento havia buscado outro mês. A caixa agora diz **com qual cadastro a linha casou** (nome, parcela e fatura de origem).
 - Erro de IA: cota do provedor esgotada deixa de ser anunciada como "aguarde alguns minutos e tente novamente". Um 429 por cota semanal ou mensal só volta na virada do período, e a mensagem agora orienta a trocar de modelo ou configurar o modelo de reserva.
 - Barra de navegação: em telas entre 768px e 1100px o menu horizontal aparecia sem caber e empurrava o avatar do usuário para fora da tela. O menu compacto passa a valer até 1100px, largura medida como o mínimo para todos os itens caberem.
+- Importação de fatura: retomar um rascunho salvo não desfaz mais o fechamento automático. A restauração do rascunho passava por todas as linhas depois do fechamento decidir o que conferir, corrigir e importar, e sobrescrevia essa decisão com o estado salvo antes do fechamento existir — a fatura reabria como se nada tivesse sido resolvido. A restauração agora só toca nas linhas de excesso, que só existem depois do fechamento.
 
 ### Removido
 - Login: aviso técnico de configuração do Google OAuth em desenvolvimento.

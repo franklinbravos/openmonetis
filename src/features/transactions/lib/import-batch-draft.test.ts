@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ReviewRow } from "@/features/transactions/components/import/review-table";
 import {
+	applyImportBatchDraftToExtraRows,
 	applyImportBatchDraftToRows,
 	buildImportBatchDraft,
 	buildImportReviewRowKey,
@@ -189,5 +190,39 @@ describe("import-batch-draft: round-trip de amount editado (W2)", () => {
 
 		expect(applied[0]?.amount).toBe(14.85);
 		expect(applied[1]?.amount).toBe(9.9);
+	});
+});
+
+describe("applyImportBatchDraftToExtraRows", () => {
+	it("não sobrescreve a decisão do fechamento em linha de arquivo", () => {
+		// Rascunho salvo antes do fechamento existir: a linha estava desmarcada.
+		const preClosing = keylessRow({ reviewKey: "a", selected: false });
+		const draftData = buildImportBatchDraft(baseDraftInput([preClosing]));
+
+		// O fechamento roda de novo no próximo carregamento e decide importar.
+		const afterClosing = { ...preClosing, selected: true };
+
+		const restored = applyImportBatchDraftToExtraRows(
+			[afterClosing],
+			draftData,
+		);
+
+		expect(restored[0].selected).toBe(true);
+	});
+
+	it("restaura o rascunho em linha de excesso, que só existe após o fechamento", () => {
+		const extraRow: ReviewRow = {
+			...keylessRow({ reviewKey: "b" }),
+			kind: "invoice_extra",
+			existingTransactionId: "existing-1",
+			selected: true,
+		};
+		const draftData = buildImportBatchDraft(
+			baseDraftInput([{ ...extraRow, selected: false }]),
+		);
+
+		const restored = applyImportBatchDraftToExtraRows([extraRow], draftData);
+
+		expect(restored[0].selected).toBe(false);
 	});
 });
