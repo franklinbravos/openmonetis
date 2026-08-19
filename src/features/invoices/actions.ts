@@ -1,11 +1,12 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import {
 	cards,
 	categories,
 	financialAccounts,
+	importBatches,
 	transactions,
 } from "@/db/schema";
 import { upsertInvoicePaymentStatus } from "@/features/invoices/lib/upsert-invoice-payment";
@@ -16,6 +17,10 @@ import {
 import { revalidateForEntity } from "@/shared/lib/actions/helpers";
 import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import {
+	resolveInvoicePaymentRoundingDelta,
+	roundMoney,
+} from "@/shared/lib/import/invoice-total";
 import {
 	INVOICE_PAYMENT_STATUS,
 	INVOICE_STATUS_VALUES,
@@ -80,6 +85,58 @@ type UpdateInvoicePaymentStatusInput = z.infer<
 type ActionResult =
 	| { success: true; message: string }
 	| { success: false; error: string };
+
+/**
+ * A conta corrente é debitada pelo que o banco cobrou, e o total declarado no
+ * arquivo pode ficar alguns centavos abaixo da soma dos lançamentos: parcela com
+ * fração de centavo. Até dois centavos a fatura fecha pelo valor do arquivo.
+ *
+ * Acima disso a diferença tem causa concreta — lançamento faltando, valor errado
+ * — e arredondar o pagamento esconderia o problema, então a cota fica como está.
+ */
+async function resolveSourceRoundingDelta(
+	client: Pick<typeof db, "select" | "query">,
+	input: { dataOwnerUserId: string; cardId: string; period: string },
+): Promise<number> {
+	const batch = await client.query.importBatches.findFirst({
+		columns: { sourceInvoiceTotal: true },
+		where: and(
+			eq(importBatches.userId, input.dataOwnerUserId),
+			eq(importBatches.cardId, input.cardId),
+			eq(importBatches.invoicePeriod, input.period),
+			isNotNull(importBatches.sourceInvoiceTotal),
+		),
+		orderBy: [desc(importBatches.createdAt)],
+	});
+
+	if (batch?.sourceInvoiceTotal == null) return 0;
+
+	const sourceTotal = Math.abs(Number(batch.sourceInvoiceTotal));
+	if (!Number.isFinite(sourceTotal) || sourceTotal === 0) return 0;
+
+	const registeredRows = await client
+		.select({ amount: transactions.amount, name: transactions.name })
+		.from(transactions)
+		.where(
+			and(
+				eq(transactions.userId, input.dataOwnerUserId),
+				eq(transactions.cardId, input.cardId),
+				eq(transactions.period, input.period),
+			),
+		);
+
+	const registeredTotal = Math.abs(
+		registeredRows.reduce(
+			(total, row) =>
+				row.name === INVOICE_ADJUSTMENT_NAME
+					? total
+					: total + Number(row.amount ?? 0),
+			0,
+		),
+	);
+
+	return resolveInvoicePaymentRoundingDelta({ sourceTotal, registeredTotal });
+}
 
 const successMessageByStatus: Record<InvoicePaymentStatus, string> = {
 	[INVOICE_PAYMENT_STATUS.PAID]: "Fatura marcada como paga.",
@@ -151,7 +208,14 @@ export async function updateInvoicePaymentStatusAction(
 					(total, row) => total + Number(row.amount ?? 0),
 					0,
 				);
-				const adminPayableAmount = Math.abs(Math.min(adminShare, 0));
+				const sourceRoundingDelta = await resolveSourceRoundingDelta(tx, {
+					dataOwnerUserId,
+					cardId: card.id,
+					period: data.period,
+				});
+				const adminPayableAmount = roundMoney(
+					Math.abs(Math.min(adminShare, 0)) + sourceRoundingDelta,
+				);
 				const paymentAccountId = data.paymentAccountId ?? card.accountId;
 
 				if (adminPayerId) {

@@ -173,6 +173,32 @@ describe("applyInvoiceClosingToReviewRows", () => {
 		expect(rows[1]).toBe(extra);
 	});
 
+	it("corrige a linha por um centavo: valor individual acompanha o arquivo", () => {
+		const rows = applyInvoiceClosingToReviewRows({
+			rows: [
+				fileRow({
+					amount: 35.51,
+					description: "Mercado*Mercadolivre - Parcela 1/5",
+					sourceDescription: "Mercado*Mercadolivre - Parcela 1/5",
+				}),
+			],
+			snapshots: [
+				snapshot({
+					id: "parcela",
+					name: "Mercado*Mercadolivre",
+					amount: "-35.50",
+					currentInstallment: 1,
+					installmentCount: 5,
+				}),
+			],
+		});
+
+		expect(rows[0].existingAmountCorrection).toEqual({
+			transactionId: "parcela",
+			amount: 35.51,
+		});
+	});
+
 	it("corrige a numeração da parcela cadastrada no mês errado", () => {
 		const rows = applyInvoiceClosingToReviewRows({
 			rows: [

@@ -226,7 +226,28 @@ export function roundMoney(value: number): number {
 }
 
 /** Acima disso a divergência do arquivo deixa de ser arredondamento e vira linha faltando. */
-const SOURCE_ROUNDING_TOLERANCE = 0.02;
+export const SOURCE_ROUNDING_TOLERANCE = 0.02;
+
+/**
+ * Quanto somar à cota do pagador para a fatura fechar pelo valor do arquivo.
+ *
+ * A conta corrente é debitada pelo que o banco cobrou, e o total declarado pode
+ * ficar centavos abaixo da soma dos lançamentos por causa de parcela com fração
+ * de centavo. Diferença maior tem causa concreta — linha faltando, valor errado —
+ * e arredondar o pagamento esconderia o problema: nesse caso devolve zero.
+ */
+export function resolveInvoicePaymentRoundingDelta(input: {
+	sourceTotal: number;
+	registeredTotal: number;
+}): number {
+	if (!Number.isFinite(input.sourceTotal) || input.sourceTotal === 0) return 0;
+	if (!Number.isFinite(input.registeredTotal)) return 0;
+
+	const delta = roundMoney(
+		Math.abs(input.sourceTotal) - Math.abs(input.registeredTotal),
+	);
+	return Math.abs(delta) <= SOURCE_ROUNDING_TOLERANCE ? delta : 0;
+}
 
 export type InvoiceClosingTarget = {
 	/** Valor que o cadastro precisa alcançar para a fatura fechar. */

@@ -4,6 +4,7 @@ import {
 	computeImportReconciliation,
 	isInvoiceTotalReconciled,
 	resolveInvoiceClosingTarget,
+	resolveInvoicePaymentRoundingDelta,
 	sumSignedAmountsForReviewRows,
 } from "./invoice-total";
 
@@ -245,5 +246,52 @@ describe("resolveInvoiceClosingTarget", () => {
 		expect(
 			resolveInvoiceClosingTarget({ sourceTotal: 100, fileRowsTotal: null }),
 		).toEqual({ target: 100, rounding: 0, unexplained: 0 });
+	});
+});
+
+describe("resolveInvoicePaymentRoundingDelta", () => {
+	it("fecha pelo valor do arquivo quando falta um centavo", () => {
+		expect(
+			resolveInvoicePaymentRoundingDelta({
+				sourceTotal: 7301.59,
+				registeredTotal: 7301.6,
+			}),
+		).toBe(-0.01);
+	});
+
+	it("aceita até dois centavos", () => {
+		expect(
+			resolveInvoicePaymentRoundingDelta({
+				sourceTotal: 100.02,
+				registeredTotal: 100,
+			}),
+		).toBe(0.02);
+	});
+
+	it("recusa três centavos: diferença tem causa concreta", () => {
+		expect(
+			resolveInvoicePaymentRoundingDelta({
+				sourceTotal: 100.03,
+				registeredTotal: 100,
+			}),
+		).toBe(0);
+	});
+
+	it("recusa divergência grande, como linha faltando no arquivo", () => {
+		expect(
+			resolveInvoicePaymentRoundingDelta({
+				sourceTotal: 6003.17,
+				registeredTotal: 5946.89,
+			}),
+		).toBe(0);
+	});
+
+	it("não mexe quando não há total de arquivo", () => {
+		expect(
+			resolveInvoicePaymentRoundingDelta({
+				sourceTotal: 0,
+				registeredTotal: 100,
+			}),
+		).toBe(0);
 	});
 });
