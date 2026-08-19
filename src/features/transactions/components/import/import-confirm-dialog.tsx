@@ -43,6 +43,8 @@ type ImportConfirmDialogProps = {
 	invoiceTotalOverrideConfirmed?: boolean;
 	onInvoiceTotalOverrideChange?: (confirmed: boolean) => void;
 	canConfirm?: boolean;
+	/** Nada a importar, remover ou corrigir: só o pagamento justifica confirmar. */
+	nothingToConfirm?: boolean;
 	invoicePayment?: ImportInvoicePaymentPrompt | null;
 	onConfirm: () => void;
 };
@@ -63,6 +65,7 @@ export function ImportConfirmDialog({
 	invoiceTotalOverrideConfirmed = false,
 	onInvoiceTotalOverrideChange,
 	canConfirm = true,
+	nothingToConfirm = false,
 	invoicePayment = null,
 	onConfirm,
 }: ImportConfirmDialogProps) {
@@ -100,6 +103,12 @@ export function ImportConfirmDialog({
 					) : isPaidInvoiceImport ? (
 						<p className="text-muted-foreground text-sm leading-relaxed">
 							Nenhum lançamento novo será importado.
+						</p>
+					) : nothingToConfirm ? (
+						<p className="text-muted-foreground text-sm leading-relaxed">
+							A fatura já está conferida com o arquivo: nada a importar, remover
+							ou corrigir. Marque abaixo se ela já foi paga para registrar a
+							baixa e fechar o mês.
 						</p>
 					) : null}
 					{verifiedCount > 0 ? (

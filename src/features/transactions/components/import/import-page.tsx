@@ -3157,11 +3157,16 @@ export function ImportPage({
 		[rows],
 	);
 
+	// Fatura já conferida não tem nada a mudar, mas ainda falta registrar o
+	// pagamento — sem isto o botão travava e não havia caminho para fechar o mês.
+	const hasPendingImportWork =
+		selectedRows.length > 0 ||
+		rowsMarkedForRemoval.length > 0 ||
+		amountCorrectionCount > 0 ||
+		installmentCorrectionCount > 0;
+
 	const canImport =
-		(selectedRows.length > 0 ||
-			rowsMarkedForRemoval.length > 0 ||
-			amountCorrectionCount > 0 ||
-			installmentCorrectionCount > 0) &&
+		(hasPendingImportWork || canAskInvoicePayment) &&
 		!!accountCardValue &&
 		uncategorizedCount === 0 &&
 		withoutPayerCount === 0 &&
@@ -3227,6 +3232,9 @@ export function ImportPage({
 	/** Marcou "já foi paga" mas não escolheu a conta: a action recusaria. */
 	const invoicePaymentBlocked =
 		canAskInvoicePayment && payInvoiceOnImport && !paymentAccountId;
+
+	/** Sem nada a mudar e sem marcar o pagamento, confirmar não faria nada. */
+	const nothingToConfirm = !hasPendingImportWork && !shouldPayInvoiceOnImport;
 
 	const canConfirmImport =
 		canProceedToImport &&
@@ -3930,7 +3938,10 @@ export function ImportPage({
 				invoiceTotalDelta={importInvoiceReconciliation?.delta ?? null}
 				invoiceTotalOverrideConfirmed={invoiceTotalOverrideConfirmed}
 				onInvoiceTotalOverrideChange={setInvoiceTotalOverrideConfirmed}
-				canConfirm={canConfirmImport && !invoicePaymentBlocked}
+				canConfirm={
+					canConfirmImport && !invoicePaymentBlocked && !nothingToConfirm
+				}
+				nothingToConfirm={nothingToConfirm}
 				invoicePayment={
 					canAskInvoicePayment
 						? {

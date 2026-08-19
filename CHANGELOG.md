@@ -42,6 +42,7 @@ Esta versão adiciona conferência do total da fatura na importação de cartão
 - Importação de fatura (PDF/planilha): duas compras iguais no mesmo dia e no mesmo estabelecimento deixam de ser tratadas como repetição do parser; ambas chegam à revisão.
 - Conferência da fatura: o cadastro passa a ser comparado com a soma das linhas do arquivo, e não com o total declarado pelo banco. O Nubank fecha a fatura arredondando parcelas com fração de centavo, o que deixava uma diferença de R$ 0,01 impossível de resolver; a diferença entre o declarado e as linhas agora aparece como nota explicativa. Divergência grande continua sendo cobrada contra o total declarado, que é o que revela linha faltando no arquivo.
 - Carrossel de meses (fatura, extrato, lançamentos e dashboard): as setas de navegação voltam a rolar em ambiente que ignora rolagem suave — com "reduzir movimento" ativo, o clique não saía do lugar. Agora, se a animação não acontecer, a rolagem é aplicada na hora.
+- Importação de fatura: quando o arquivo já está todo conferido — nada a importar, remover ou corrigir — o botão de processar deixa de ficar travado. Ele abre a confirmação para registrar o pagamento e fechar o mês, explicando que não há lançamentos a alterar.
 
 ### Removido
 - Login: aviso técnico de configuração do Google OAuth em desenvolvimento.
