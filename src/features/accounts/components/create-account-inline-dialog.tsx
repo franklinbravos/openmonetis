@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { fetchAccountFormOptionsAction } from "@/features/accounts/actions";
+import { useReleaseBodyPointerEventsLock } from "@/shared/hooks/use-body-pointer-events-lock";
 import type { CreatedAccount } from "./account-dialog";
 import { AccountDialog } from "./account-dialog";
 
@@ -27,6 +28,9 @@ export function CreateAccountInlineDialog({
 	defaultAccountType,
 }: CreateAccountInlineDialogProps) {
 	const [logoOptions, setLogoOptions] = useState<string[]>([]);
+
+	// Também é aberto de dentro de um select, com o mesmo risco de travamento.
+	useReleaseBodyPointerEventsLock(open);
 
 	useEffect(() => {
 		if (!open) {
