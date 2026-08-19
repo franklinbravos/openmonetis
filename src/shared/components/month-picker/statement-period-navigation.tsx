@@ -205,8 +205,23 @@ function PeriodMonthCarousel({
 		return () => cancelAnimationFrame(frame);
 	}, [scrollSelectedIntoView, months, selectedPeriod]);
 
+	/**
+	 * Há ambiente que ignora rolagem suave por completo — "reduzir movimento"
+	 * ligado, por exemplo — e aí o clique na seta não saía do lugar. Tenta suave
+	 * e, se a posição não mudou, rola na hora.
+	 */
 	const scrollByOffset = (offset: number) => {
-		scrollRef.current?.scrollBy({ left: offset, behavior: "smooth" });
+		const node = scrollRef.current;
+		if (!node) return;
+
+		const before = node.scrollLeft;
+		node.scrollBy({ left: offset, behavior: "smooth" });
+
+		window.setTimeout(() => {
+			const current = scrollRef.current;
+			if (!current || current.scrollLeft !== before) return;
+			current.scrollBy({ left: offset, behavior: "auto" });
+		}, 120);
 	};
 
 	return (
