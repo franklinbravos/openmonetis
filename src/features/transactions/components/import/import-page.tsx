@@ -143,6 +143,7 @@ import {
 	isValidInstallmentImport,
 	isValidRecurrenceImport,
 } from "@/features/transactions/lib/import-installments";
+import { applyInvoiceClosingToReviewRows } from "@/features/transactions/lib/import-invoice-closing";
 import {
 	collectInvoiceExtraRemovalTransactionIds,
 	isInvoiceExtraReviewRow,
@@ -1385,15 +1386,24 @@ export function ImportPage({
 					activePeriodForReconciliation,
 				);
 
+				const closedRows =
+					shouldFetchInvoiceSnapshots && activePeriodForReconciliation
+						? applyInvoiceClosingToReviewRows({
+								rows: rowsWithDraft,
+								snapshots: periodSnapshots,
+								options: { invoicePeriods: invoicePeriodsForSnapshots },
+							})
+						: rowsWithDraft;
+
 				const mergedRows =
 					shouldFetchInvoiceSnapshots && activePeriodForReconciliation
 						? mergeInvoiceReviewRowsWithExtras({
-								fileRows: rowsWithDraft,
+								fileRows: closedRows,
 								snapshots: periodSnapshots,
-								fileExternalIds: collectFileExternalIds(rowsWithDraft, fitIds),
-								previousRows: rowsWithDraft,
+								fileExternalIds: collectFileExternalIds(closedRows, fitIds),
+								previousRows: closedRows,
 							})
-						: rowsWithDraft.filter((row) => !isInvoiceExtraReviewRow(row));
+						: closedRows.filter((row) => !isInvoiceExtraReviewRow(row));
 
 				const finalRows = draftData
 					? applyImportBatchDraftToRows(mergedRows, draftData)
@@ -1665,11 +1675,17 @@ export function ImportPage({
 					invoicePeriod ?? invoicePeriodsForSnapshots[0] ?? null,
 				);
 
+				const closedRows = applyInvoiceClosingToReviewRows({
+					rows: updatedFileRows,
+					snapshots: periodSnapshots,
+					options: { invoicePeriods: invoicePeriodsForSnapshots },
+				});
+
 				return enrichReviewRowsWithExistingAmount(
 					mergeInvoiceReviewRowsWithExtras({
-						fileRows: updatedFileRows,
+						fileRows: closedRows,
 						snapshots: periodSnapshots,
-						fileExternalIds: collectFileExternalIds(updatedFileRows, fitIds),
+						fileExternalIds: collectFileExternalIds(closedRows, fitIds),
 						previousRows,
 					}),
 					buildExistingAmountSnapshotMap(periodSnapshots),
