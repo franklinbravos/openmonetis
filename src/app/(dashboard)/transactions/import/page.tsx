@@ -14,6 +14,10 @@ import {
 import type { InvoiceImportContext } from "@/features/transactions/lib/validate-invoice-import-context";
 import { fetchTransactionFilterSources } from "@/features/transactions/queries";
 import { fetchImportBatchHistory } from "@/features/transactions/queries/import-batch-history";
+import {
+	PageBreadcrumb,
+	type PageBreadcrumbItem,
+} from "@/shared/components/navigation/page-breadcrumb";
 import PageDescription from "@/shared/components/page-description";
 import {
 	fetchInstanceAiProviderSettings,
@@ -22,7 +26,11 @@ import {
 	isAnyAiProviderConfigured,
 } from "@/shared/lib/ai/user-provider-config";
 import { getUserId } from "@/shared/lib/auth/server";
-import { displayPeriod, parsePeriod } from "@/shared/utils/period";
+import {
+	displayPeriod,
+	formatPeriodForUrl,
+	parsePeriod,
+} from "@/shared/utils/period";
 
 type PageSearchParams = Promise<ResolvedSearchParams>;
 
@@ -171,8 +179,32 @@ export default async function Page({ searchParams }: PageProps) {
 		invoicePeriod: validCardId || validAccountId ? initialInvoicePeriod : null,
 	});
 
+	// A importação é sempre alcançada de algum lugar — fatura, extrato ou
+	// lançamentos. O breadcrumb devolve o caminho de volta.
+	const breadcrumbItems: PageBreadcrumbItem[] = invoiceContext
+		? [
+				{ label: "Cartões", href: "/cards" },
+				{
+					label: `${invoiceContext.cardName} · ${displayPeriod(invoiceContext.invoicePeriod)}`,
+					href: `/cards/${invoiceContext.cardId}/invoice?periodo=${formatPeriodForUrl(invoiceContext.invoicePeriod)}`,
+				},
+				{ label: "Importar fatura" },
+			]
+		: validAccountId
+			? [
+					{ label: "Contas", href: "/accounts" },
+					{ label: accountName, href: `/accounts/${validAccountId}/statement` },
+					{ label: "Importar extrato" },
+				]
+			: [
+					{ label: "Lançamentos", href: "/transactions" },
+					{ label: "Importar lançamentos" },
+				];
+
 	return (
 		<main className="flex flex-col gap-6">
+			<PageBreadcrumb items={breadcrumbItems} />
+
 			{invoiceContext ? (
 				<PageDescription
 					icon={<RiUploadCloud2Line />}
