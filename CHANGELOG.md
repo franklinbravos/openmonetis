@@ -44,6 +44,7 @@ Esta versão adiciona conferência do total da fatura na importação de cartão
 - Carrossel de meses (fatura, extrato, lançamentos e dashboard): as setas de navegação voltam a rolar em ambiente que ignora rolagem suave — com "reduzir movimento" ativo, o clique não saía do lugar. Agora, se a animação não acontecer, a rolagem é aplicada na hora.
 - Importação de fatura: quando o arquivo já está todo conferido — nada a importar, remover ou corrigir — o botão de processar deixa de ficar travado. Ele abre a confirmação para registrar o pagamento e fechar o mês, explicando que não há lançamentos a alterar.
 - Criar categoria ou conta a partir de um select: a tela não fica mais sem responder a cliques depois de fechar o diálogo. O travamento que o Radix aplica no `body` ficava órfão quando a lista mudava no fechamento, e nenhum elemento visível indicava o motivo.
+- Revisão da importação: a caixa de divergências deixa de acusar diferença de data em parcela — a série guarda uma única data de compra em todas as ocorrências, e a comparação com a data da linha da fatura dava a impressão de que o casamento havia buscado outro mês. A caixa agora diz **com qual cadastro a linha casou** (nome, parcela e fatura de origem).
 
 ### Removido
 - Login: aviso técnico de configuração do Google OAuth em desenvolvimento.

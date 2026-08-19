@@ -99,6 +99,12 @@ export type ImportDuplicateValidation = {
 	existingTransactionId: string;
 	existingPayerId: string | null;
 	existingCategoryId: string | null;
+	/** Fatura em que o cadastro casado está, para o usuário saber de onde ele veio. */
+	existingPeriod?: string | null;
+	/** Nome do cadastro casado — costuma diferir do nome da maquininha. */
+	existingName?: string;
+	/** Parcela do cadastro casado, no formato "1/5". */
+	existingInstallmentLabel?: string | null;
 };
 
 type ImportRowForMatch = Pick<
@@ -480,12 +486,18 @@ export function buildImportDuplicateValidation(
 
 	// Data diverge com frequência entre faturas (ex.: Nubank). Em parcela
 	// já identificada por nome+N/M+valor, não reportar como divergência.
+	// Série parcelada guarda uma única data de compra em todas as ocorrências, então
+	// comparar com a data da linha da fatura acusa uma divergência que não existe —
+	// e dava a impressão de que o casamento tinha ido buscar outro mês.
+	const existingIsInstallmentOccurrence = existing.installmentCount != null;
+
 	if (
 		importedDate &&
 		existingDate &&
 		importedDate !== existingDate &&
 		!installmentParcelDuplicate &&
-		!sameInvoiceFlatDuplicate
+		!sameInvoiceFlatDuplicate &&
+		!existingIsInstallmentOccurrence
 	) {
 		mismatches.push({
 			field: "date",
@@ -585,6 +597,12 @@ export function buildImportDuplicateValidation(
 		existingTransactionId: existing.id,
 		existingPayerId: existing.payerId,
 		existingCategoryId: existing.categoryId,
+		existingPeriod: existing.period ?? null,
+		existingName: existing.name,
+		existingInstallmentLabel: formatInstallmentLabel(
+			existing.currentInstallment,
+			existing.installmentCount,
+		),
 	};
 }
 

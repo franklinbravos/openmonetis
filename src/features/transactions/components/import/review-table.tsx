@@ -100,6 +100,7 @@ import type { ImportedTransaction } from "@/shared/lib/import/types";
 import { formatCurrency } from "@/shared/utils/currency";
 import { formatDate } from "@/shared/utils/date";
 import { getConditionIcon } from "@/shared/utils/icons";
+import { displayPeriod } from "@/shared/utils/period";
 import { cn } from "@/shared/utils/ui";
 
 function getInvoiceExtraRowClassName(row: ReviewRow) {
@@ -487,6 +488,7 @@ function ReviewDuplicateStatus({
 					<p className="font-medium text-amber-800 dark:text-amber-300">
 						Diferenças encontradas:
 					</p>
+					<ReviewMatchedExistingSummary validation={validation} />
 					<ul className="mt-1 space-y-1 break-words text-amber-900/90 whitespace-normal dark:text-amber-100/90">
 						{validation.mismatches.map((mismatch) => (
 							<li key={mismatch.field} className="break-words">
@@ -498,6 +500,31 @@ function ReviewDuplicateStatus({
 				</div>
 			) : null}
 		</div>
+	);
+}
+
+/** Diz com qual cadastro a linha casou: sem isso a divergência parece vir de outro mês. */
+function ReviewMatchedExistingSummary({
+	validation,
+}: {
+	validation: ImportDuplicateValidation;
+}) {
+	const partes = [
+		validation.existingName,
+		validation.existingInstallmentLabel
+			? `parcela ${validation.existingInstallmentLabel}`
+			: null,
+		validation.existingPeriod
+			? `fatura de ${displayPeriod(validation.existingPeriod)}`
+			: null,
+	].filter(Boolean);
+
+	if (partes.length === 0) return null;
+
+	return (
+		<p className="mt-1 break-words text-amber-900/70 whitespace-normal dark:text-amber-100/70">
+			Casou com: {partes.join(" · ")}
+		</p>
 	);
 }
 
