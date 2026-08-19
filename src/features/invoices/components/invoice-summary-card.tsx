@@ -97,6 +97,12 @@ type InvoiceSummaryCardProps = {
 	hasImportHistory?: boolean;
 	hasImportAttachment?: boolean;
 	reconciliation?: InvoiceReconciliationSummary | null;
+	/**
+	 * Valor exibido como total da fatura: o do arquivo quando a soma dos
+	 * lançamentos só diverge por arredondamento. As demais contas — cota do
+	 * pagador, ajuste, conferência — seguem usando `totalAmount`.
+	 */
+	displayTotalAmount?: number;
 };
 
 const actionLabelByStatus: Record<InvoicePaymentStatus, string> = {
@@ -144,6 +150,7 @@ export function InvoiceSummaryCard({
 	hasImportHistory = false,
 	hasImportAttachment = false,
 	reconciliation = null,
+	displayTotalAmount,
 }: InvoiceSummaryCardProps) {
 	const router = useRouter();
 	const [isPending, startTransition] = useTransition();
@@ -169,6 +176,7 @@ export function InvoiceSummaryCard({
 	const isPaid = invoiceStatus === INVOICE_PAYMENT_STATUS.PAID;
 	const importHref = `/transactions/import?cartao=${encodeURIComponent(cardId)}&periodo=${encodeURIComponent(period)}`;
 	const registeredAbsTotal = Math.abs(totalAmount);
+	const heroTotal = Math.abs(displayTotalAmount ?? totalAmount);
 	const hasSourceReconciliation = reconciliation?.sourceTotal != null;
 	const reconciliationDelta = reconciliation?.delta ?? null;
 	const sourceRounding = reconciliation?.sourceRounding ?? 0;
@@ -255,7 +263,7 @@ export function InvoiceSummaryCard({
 						</p>
 						<div className="flex items-center gap-2">
 							<MoneyValues
-								amount={Math.abs(totalAmount)}
+								amount={heroTotal}
 								className={cn(
 									"text-3xl leading-none tracking-tighter sm:text-2xl",
 									isPaid ? "text-success" : "text-foreground",

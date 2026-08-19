@@ -28,6 +28,7 @@ Esta versão adiciona conferência do total da fatura na importação de cartão
 - Fatura do cartão: a lista de extras compara o cadastro com o arquivo importado (FITID ou nome+valor), em vez de marcar lançamentos já conferidos.
 - Parsers OFX/PDF passam a registrar a origem do total parseado (`ofx_ledger`, `pdf_header`, `pdf_lines_fallback`).
 - Pagamento da fatura: a baixa na conta corrente passa a fechar pelo total declarado no arquivo quando ele difere da soma dos lançamentos em no máximo R$ 0,02 — arredondamento de parcela com fração de centavo, que é o valor que o banco realmente cobra. Diferença maior mantém a cota calculada pelos lançamentos, para não esconder linha faltando ou valor errado atrás de um arredondamento.
+- Total da fatura: o valor exibido — no destaque da fatura e no carrossel de meses — passa a ser o total declarado no arquivo quando a soma dos lançamentos só diverge por arredondamento (até R$ 0,02). É o valor que o banco cobra e que sai da conta. Diferença maior continua mostrando a soma dos lançamentos, para não esconder lançamento faltando.
 
 ### Corrigido
 - Importação de fatura de cartão: linhas de pagamento recebido (fatura do mês anterior) entram desmarcadas e não são tratadas como pagamento de fatura a cadastrar.

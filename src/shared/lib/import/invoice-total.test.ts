@@ -4,6 +4,7 @@ import {
 	computeImportReconciliation,
 	isInvoiceTotalReconciled,
 	resolveInvoiceClosingTarget,
+	resolveInvoiceDisplayTotal,
 	resolveInvoicePaymentRoundingDelta,
 	sumSignedAmountsForReviewRows,
 } from "./invoice-total";
@@ -293,5 +294,34 @@ describe("resolveInvoicePaymentRoundingDelta", () => {
 				registeredTotal: 100,
 			}),
 		).toBe(0);
+	});
+});
+
+describe("resolveInvoiceDisplayTotal", () => {
+	it("mostra o total do arquivo quando a soma diverge um centavo", () => {
+		expect(
+			resolveInvoiceDisplayTotal({
+				registeredTotal: -7301.6,
+				sourceTotal: 7301.59,
+			}),
+		).toBe(7301.59);
+	});
+
+	it("mostra a soma dos lançamentos quando a diferença é real", () => {
+		expect(
+			resolveInvoiceDisplayTotal({
+				registeredTotal: -5946.89,
+				sourceTotal: 6003.17,
+			}),
+		).toBe(5946.89);
+	});
+
+	it("mostra a soma quando não há total de arquivo", () => {
+		expect(
+			resolveInvoiceDisplayTotal({
+				registeredTotal: -1234.56,
+				sourceTotal: null,
+			}),
+		).toBe(1234.56);
 	});
 });

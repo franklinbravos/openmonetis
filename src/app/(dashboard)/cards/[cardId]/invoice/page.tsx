@@ -42,6 +42,7 @@ import {
 	CARD_IMPORT_PDF_PASSWORD_RULES,
 	isCardImportPdfPasswordRule,
 } from "@/shared/lib/cards/import-pdf-password";
+import { resolveInvoiceDisplayTotal } from "@/shared/lib/import/invoice-total";
 import { loadLogoOptions } from "@/shared/lib/logo/options";
 import { resolveFinancialDataContext } from "@/shared/lib/payers/financial-context";
 import { parsePeriodParam } from "@/shared/utils/period";
@@ -239,6 +240,10 @@ export default async function Page({ params, searchParams }: PageProps) {
 					closingDay={card.closingDay}
 					dueDay={card.dueDay}
 					totalAmount={totalAmount}
+					displayTotalAmount={resolveInvoiceDisplayTotal({
+						registeredTotal: totalAmount,
+						sourceTotal: invoiceReconciliation.sourceTotal,
+					})}
 					limitAmount={limitAmount}
 					invoiceStatus={invoiceStatus}
 					paymentDate={paymentDate}

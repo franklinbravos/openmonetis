@@ -1,10 +1,11 @@
-import { and, eq, type SQL, sql } from "drizzle-orm";
-import { cards, invoices, transactions } from "@/db/schema";
+import { and, asc, eq, isNotNull, type SQL, sql } from "drizzle-orm";
+import { cards, importBatches, invoices, transactions } from "@/db/schema";
 import { resolveInvoicePeriodCarouselStatus } from "@/features/invoices/lib/period-carousel-status";
 import { fetchTransactionsWithRelations } from "@/features/transactions/queries";
 import type { PeriodCarouselMonth } from "@/shared/components/month-picker/period-carousel-types";
 import { buildInvoicePaymentNote } from "@/shared/lib/accounts/constants";
 import { db } from "@/shared/lib/db";
+import { resolveInvoiceDisplayTotal } from "@/shared/lib/import/invoice-total";
 import {
 	INVOICE_PAYMENT_STATUS,
 	type InvoicePaymentStatus,
@@ -120,7 +121,7 @@ export async function fetchCardInvoiceMonthSummaries(
 	dueDay: string,
 ): Promise<PeriodCarouselMonth[]> {
 	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
-	const [invoiceRows, amountRows] = await Promise.all([
+	const [invoiceRows, amountRows, sourceTotalRows] = await Promise.all([
 		db.query.invoices.findMany({
 			columns: {
 				period: true,
@@ -135,7 +136,31 @@ export async function fetchCardInvoiceMonthSummaries(
 			p_user_id: dataOwnerUserId,
 			p_card_id: cardId,
 		}),
+		// Total declarado no arquivo importado: é o que o banco cobrou de fato.
+		db.query.importBatches.findMany({
+			columns: {
+				invoicePeriod: true,
+				sourceInvoiceTotal: true,
+				createdAt: true,
+			},
+			where: and(
+				eq(importBatches.userId, dataOwnerUserId),
+				eq(importBatches.cardId, cardId),
+				isNotNull(importBatches.sourceInvoiceTotal),
+			),
+			orderBy: [asc(importBatches.createdAt)],
+		}),
 	]);
+
+	// Percorrido em ordem crescente: o lote mais recente de cada período vence.
+	const sourceTotalByPeriod = new Map<string, number>();
+	for (const row of sourceTotalRows) {
+		if (!row.invoicePeriod || row.sourceInvoiceTotal == null) continue;
+		sourceTotalByPeriod.set(
+			row.invoicePeriod,
+			Math.abs(toNumber(row.sourceInvoiceTotal)),
+		);
+	}
 
 	const amountByPeriod = new Map<string, number>();
 	for (const row of amountRows) {
@@ -172,7 +197,10 @@ export async function fetchCardInvoiceMonthSummaries(
 
 	return periodRange.map((period) => ({
 		period,
-		amount: amountByPeriod.get(period) ?? 0,
+		amount: resolveInvoiceDisplayTotal({
+			registeredTotal: amountByPeriod.get(period) ?? 0,
+			sourceTotal: sourceTotalByPeriod.get(period) ?? null,
+		}),
 		status: resolveInvoicePeriodCarouselStatus(
 			period,
 			invoiceByPeriod.get(period),

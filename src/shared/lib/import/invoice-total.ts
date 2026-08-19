@@ -229,6 +229,31 @@ export function roundMoney(value: number): number {
 export const SOURCE_ROUNDING_TOLERANCE = 0.02;
 
 /**
+ * Valor a exibir como total da fatura.
+ *
+ * O que o banco cobra — e o que sai da conta — é o total declarado no arquivo.
+ * A soma dos lançamentos pode ficar centavos acima por arredondamento de parcela,
+ * e mostrar essa soma faz a fatura parecer diferente do que foi pago. Até dois
+ * centavos vale o arquivo; acima disso a diferença é real e precisa aparecer.
+ */
+export function resolveInvoiceDisplayTotal(input: {
+	registeredTotal: number;
+	sourceTotal: number | null | undefined;
+}): number {
+	const registered = Math.abs(input.registeredTotal);
+	const source = input.sourceTotal;
+
+	if (source == null || !Number.isFinite(source) || source === 0) {
+		return registered;
+	}
+
+	const delta = roundMoney(Math.abs(source) - registered);
+	return Math.abs(delta) <= SOURCE_ROUNDING_TOLERANCE
+		? roundMoney(Math.abs(source))
+		: registered;
+}
+
+/**
  * Quanto somar à cota do pagador para a fatura fechar pelo valor do arquivo.
  *
  * A conta corrente é debitada pelo que o banco cobrou, e o total declarado pode
