@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+	asc,
+	desc,
 	getTableColumns,
 	getTableName,
 	type SQL,
@@ -11,7 +13,7 @@ import { getSupabaseAdmin } from "@/shared/lib/supabase/admin";
 import type { Database } from "@/shared/lib/supabase/database.types";
 
 /** Incrementar ao alterar a API pública do bridge (invalida cache em db.ts). */
-export const DRIZZLE_BRIDGE_VERSION = 12;
+export const DRIZZLE_BRIDGE_VERSION = 15;
 
 type ColumnFilter = {
 	table?: string;
@@ -48,7 +50,13 @@ function toBridgeError(error: unknown): Error {
 			"code" in error && typeof (error as { code: unknown }).code === "string"
 				? (error as { code: string }).code
 				: null;
-		return new Error(code ? `[${code}] ${message}` : message);
+		const bridgeError = new Error(code ? `[${code}] ${message}` : message);
+		// Preserva o SQLSTATE: quem trata o erro (ex.: 23505, violação de índice
+		// único) precisa lê-lo como propriedade, não garimpar na mensagem.
+		if (code) {
+			Object.assign(bridgeError, { code });
+		}
+		return bridgeError;
 	}
 	return new Error("Falha na operação do banco.");
 }
@@ -935,10 +943,27 @@ function formatOrValue(value: unknown): string {
 }
 
 /**
+ * O texto cru de um chunk SQL. O StringChunk do Drizzle guarda `value` como
+ * array de strings, então ler só `typeof value === "string"` perde o " desc".
+ */
+function sqlChunkToText(part: unknown): string {
+	if (typeof part === "string") return part;
+	if (typeof part !== "object" || part === null || !("value" in part))
+		return "";
+
+	const value = (part as { value: unknown }).value;
+	if (typeof value === "string") return value;
+	if (Array.isArray(value)) {
+		return value.filter((item) => typeof item === "string").join(" ");
+	}
+	return "";
+}
+
+/**
  * Extrai coluna + direção de um orderBy do Drizzle.
  * Aceita PgColumn direto (asc) ou wrappers desc()/asc() (objetos SQL com chunks).
  */
-function extractOrderSpec(orderExpr: unknown): {
+export function extractOrderSpec(orderExpr: unknown): {
 	column: PgColumn | null;
 	ascending: boolean;
 } {
@@ -948,22 +973,33 @@ function extractOrderSpec(orderExpr: unknown): {
 
 	const chunks = getSqlChunks(orderExpr as SQL);
 	const column = chunks.find(isPgColumn) as PgColumn | undefined;
-	const direction = chunks
-		.map((part) =>
-			typeof part === "object" &&
-			part !== null &&
-			"value" in part &&
-			typeof (part as { value: unknown }).value === "string"
-				? (part as { value: string }).value
-				: "",
-		)
-		.join("")
-		.toLowerCase();
+	const direction = chunks.map(sqlChunkToText).join(" ").toLowerCase();
 
 	return {
 		column: column ?? null,
 		ascending: !direction.includes("desc"),
 	};
+}
+
+/**
+ * O orderBy do relational query aceita array de expressões ou callback
+ * `(fields, { asc, desc }) => [...]`. Resolve as duas formas em uma lista.
+ */
+function normalizeOrderExprs(orderBy: unknown, table: Table): unknown[] {
+	if (orderBy === undefined || orderBy === null) return [];
+
+	const resolved =
+		typeof orderBy === "function"
+			? (
+					orderBy as (
+						fields: Record<string, PgColumn>,
+						operators: { asc: typeof asc; desc: typeof desc },
+					) => unknown
+				)(getTableColumns(table) as Record<string, PgColumn>, { asc, desc })
+			: orderBy;
+
+	if (resolved === undefined || resolved === null) return [];
+	return Array.isArray(resolved) ? resolved : [resolved];
 }
 
 function filterToOrExpr(filter: Filter, mainTable?: string): string | null {
@@ -1179,6 +1215,14 @@ async function runFind<T extends Table>(
 
 	const filters = parseWhere(options.where);
 	query = applyFilters(query, filters, tableName);
+
+	// A ordenação precisa entrar antes do limit: com findFirst o PostgREST
+	// resolve o limit(1) sobre a ordem já aplicada.
+	for (const orderExpr of normalizeOrderExprs(options.orderBy, table)) {
+		const { column, ascending } = extractOrderSpec(orderExpr);
+		if (!column) continue;
+		query = query.order(column.name, { ascending }) as typeof query;
+	}
 
 	if (options.limit !== undefined) {
 		query = query.limit(options.limit);
