@@ -139,6 +139,95 @@ export async function registerImportUploadAction(
 	}
 }
 
+const reprocessSchema = z.object({
+	batchId: z.string().uuid(),
+});
+
+/**
+ * Reprocessar um lote já importado, sem tocar nele.
+ *
+ * As duas tentativas anteriores de "Reimportar" (registradas no histórico do
+ * projeto) misturavam instrução, chave de remontagem e navegação na mesma
+ * `?reimportar=<id>` da URL, e caíam sempre no mesmo nó: o React remonta o
+ * assistente no meio do fluxo e perde a revisão. A saída documentada era
+ * clonar o lote no servidor e retomar pelo fluxo `?lote=<id>` que já existe e
+ * já é idempotente — a instrução ("reprocesse este arquivo") executa uma vez
+ * aqui, e a URL do cliente passa a carregar só identidade.
+ *
+ * O clone começa em "uploaded" e sem rascunho: a próxima revisão roda o
+ * casador de duplicatas do zero, então reconhece certo o que já está
+ * cadastrado (inclusive o que uma correção de bug trouxe depois da primeira
+ * importação) e só traz o que realmente falta.
+ */
+export async function cloneImportBatchForReprocessAction(
+	input: z.infer<typeof reprocessSchema>,
+): Promise<
+	{ success: true; importBatchId: string } | { success: false; error: string }
+> {
+	try {
+		const userId = await getUserId();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
+		const data = reprocessSchema.parse(input);
+
+		const source = await db.query.importBatches.findFirst({
+			columns: {
+				attachmentId: true,
+				sourceFileName: true,
+				sourceFileSize: true,
+				cardId: true,
+				invoicePeriod: true,
+				accountId: true,
+				sourceInvoiceTotal: true,
+				sourceInvoiceTotalKind: true,
+				sourceFileRows: true,
+			},
+			where: and(
+				eq(importBatches.userId, dataOwnerUserId),
+				eq(importBatches.id, data.batchId),
+			),
+		});
+
+		if (!source) {
+			return { success: false, error: "Importação não encontrada." };
+		}
+
+		if (!source.attachmentId) {
+			return {
+				success: false,
+				error: "O arquivo original não está salvo no servidor.",
+			};
+		}
+
+		const newBatchId = randomUUID();
+
+		await db.insert(importBatches).values({
+			id: newBatchId,
+			userId: dataOwnerUserId,
+			attachmentId: source.attachmentId,
+			sourceFileName: source.sourceFileName,
+			sourceFileSize: source.sourceFileSize,
+			cardId: source.cardId,
+			invoicePeriod: source.invoicePeriod,
+			accountId: source.accountId,
+			sourceInvoiceTotal: source.sourceInvoiceTotal,
+			sourceInvoiceTotalKind: source.sourceInvoiceTotalKind,
+			sourceFileRows: source.sourceFileRows,
+			importedCount: 0,
+			skippedCount: 0,
+			status: IMPORT_BATCH_STATUS.UPLOADED,
+		});
+
+		revalidatePath("/transactions/import");
+		revalidatePath("/transactions/import/history");
+
+		return { success: true, importBatchId: newBatchId };
+	} catch (error) {
+		const result = handleActionError(error);
+		if (!result.success) return { success: false, error: result.error };
+		return { success: false, error: "Erro inesperado." };
+	}
+}
+
 export async function syncImportBatchSourceTotalAction(
 	input: z.infer<typeof syncSourceTotalSchema>,
 ): Promise<{ success: boolean; error?: string }> {

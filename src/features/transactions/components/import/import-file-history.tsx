@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
+	cloneImportBatchForReprocessAction,
 	deleteImportBatchAction,
 	getImportBatchDownloadUrlAction,
 } from "@/features/transactions/actions/import-batch-history-action";
@@ -161,12 +162,35 @@ function ImportFileHistoryActions({
 	onRequestDelete?: (entry: ImportFileHistoryEntry) => void;
 }) {
 	const [isPending, startTransition] = useTransition();
+	const [isCloning, startCloning] = useTransition();
 	const primaryActionLabel = resolveImportEntryActionLabel(entry);
 	const isResumingThisEntry = resumingBatchId === entry.id;
 	const isResumingOtherEntry =
 		resumingBatchId != null && resumingBatchId !== entry.id;
 	const canResumeOrReprocess = !isImportBatchImported(entry.status);
+	// Já importado não tem rascunho para retomar — reprocessar clona o lote no
+	// servidor (nunca toca no original) e abre uma revisão nova a partir dele,
+	// pelo mesmo fluxo `?lote=<id>` que a retomada normal já usa.
+	const canReprocessImported =
+		isImportBatchImported(entry.status) && entry.hasAttachment;
 	const canDelete = allowDelete && canDeleteImportBatch(entry.status);
+
+	const handleReprocessImported = () => {
+		startCloning(async () => {
+			const result = await cloneImportBatchForReprocessAction({
+				batchId: entry.id,
+			});
+
+			if (!result.success) {
+				toast.error(result.error);
+				return;
+			}
+
+			window.location.assign(
+				buildImportResumeHref({ ...entry, id: result.importBatchId }),
+			);
+		});
+	};
 
 	return (
 		<div
@@ -188,6 +212,19 @@ function ImportFileHistoryActions({
 				>
 					<RiPlayLine className="size-3.5" aria-hidden />
 					{isResumingThisEntry ? "Carregando…" : primaryActionLabel}
+				</Button>
+			) : null}
+			{canReprocessImported ? (
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					className="h-8 gap-1.5 border-primary/25 px-2.5 text-xs text-foreground hover:bg-primary/5 hover:text-foreground"
+					disabled={isCloning}
+					onClick={handleReprocessImported}
+				>
+					<RiPlayLine className="size-3.5" aria-hidden />
+					{isCloning ? "Carregando…" : "Reprocessar"}
 				</Button>
 			) : null}
 			{entry.hasAttachment ? (
