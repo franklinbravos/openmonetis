@@ -22,6 +22,22 @@ Pagamentos e Financiamentos
 05 FEV Pagamento recebido R$ 150,00
 `;
 
+// Fatura real quebra a lista de transações em várias páginas, repetindo
+// cabeçalho e rodapé no meio dela.
+const NUBANK_PAGE_BREAK_FIXTURE = `
+Nu Pagamentos S.A.
+FATURA 12 JAN 2026
+Vencimento 12 JAN 2026
+Total a pagar R$ 103,28
+
+TRANSAÇÕES DE 05 DEZ A 05 JAN
+Franklin Santos R$ 103,28
+11 DEZ •••• 8058 Amora Semij Art Joalhe R$ 47,00
+5 de 7
+FRANKLIN DIOGO APARECIDO BRAVOS QUERINO DOS FATURA 12 JAN 2026 EMISSÃO E ENVIO 05 JAN 2026 TRANSAÇÕES DE 05 DEZ A 05 JAN 12 DEZ •••• 8058 Indigo R$ 18,00
+22 DEZ •••• 8992 Mercadolivre*2produto R$ 38,28
+`;
+
 describe("parseNubankPdf", () => {
 	it("usa o cabeçalho FATURA antes de TRANSAÇÕES, não teasers futuros", () => {
 		const result = parsePdfText(NUBANK_JAN_2026_FIXTURE);
@@ -97,5 +113,21 @@ Total a pagar R$ 150,00
 
 		expect(result.invoice?.totalAmount).toBe(150);
 		expect(linesTotal).toBe(101.9);
+	});
+
+	it("não perde a primeira transação depois da quebra de página", () => {
+		const result = parsePdfText(NUBANK_PAGE_BREAK_FIXTURE);
+		const linesTotal = displayInvoiceTotal(
+			sumSignedAmountsForImportedTransactions(result.transactions),
+		);
+
+		expect(
+			result.transactions.map((t) => `${t.description}|${t.amount}`),
+		).toEqual([
+			"Amora Semij Art Joalhe|47",
+			"Indigo|18",
+			"Mercadolivre*2produto|38.28",
+		]);
+		expect(linesTotal).toBe(result.invoice?.totalAmount);
 	});
 });

@@ -167,6 +167,32 @@ describe("importExternalIdCollidesWithStored", () => {
 });
 
 describe("dedupeImportedTransactionsByFingerprint", () => {
+	it("mantém duas compras iguais no mesmo dia quando têm id próprio", () => {
+		const rows = dedupeImportedTransactionsByFingerprint(
+			uniquifyImportedExternalIds([
+				{
+					externalId: "2025-12-07|mikrolot hamburguer|47",
+					date: "2025-12-07",
+					amount: 47,
+					description: "Mikrolot Hamburguer",
+					transactionType: "expense" as const,
+				},
+				{
+					externalId: "2025-12-07|mikrolot hamburguer|47",
+					date: "2025-12-07",
+					amount: 47,
+					description: "Mikrolot Hamburguer",
+					transactionType: "expense" as const,
+				},
+			]),
+		);
+
+		expect(rows.map((row) => row.externalId)).toEqual([
+			"2025-12-07|mikrolot hamburguer|47",
+			"2025-12-07|mikrolot hamburguer|47#2",
+		]);
+	});
+
 	it("remove repetições exatas do parser", () => {
 		const rows = dedupeImportedTransactionsByFingerprint([
 			{

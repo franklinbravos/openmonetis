@@ -26,7 +26,7 @@ async function openPdfDocument(
 	return openPdfDocumentWithPassword(buffer, password, extraCandidates);
 }
 
-async function extractPdfText(
+export async function extractPdfText(
 	buffer: ArrayBuffer,
 	password?: string,
 	extraCandidates: string[] = [],
@@ -705,6 +705,23 @@ function findNubankTransactionsSectionStart(text: string): number {
 	return text.search(/TRANSAÇÕES/i);
 }
 
+/**
+ * Cada página de continuação repete cabeçalho e rodapé no meio da lista de
+ * transações. Como "FATURA 12 JAN 2026" tem a mesma cara de uma data de
+ * lançamento, a regex de transação ancorava nele e engolia a primeira compra da
+ * página junto com o ruído — a linha sumia da importação sem aviso.
+ */
+function stripNubankPageBreakNoise(section: string): string {
+	return section
+		.replace(
+			/TRANSA[ÇC][ÕO]ES\s+DE\s+\d{2}\s+[A-Z]{3}\s+A\s+\d{2}\s+[A-Z]{3}/gi,
+			"\n",
+		)
+		.replace(/EMISS[ÃA]O\s+E\s+ENVIO\s+\d{2}\s+[A-Z]{3}\s+\d{4}/gi, "\n")
+		.replace(/FATURA\s+\d{2}\s+[A-Z]{3}\s+\d{4}/gi, "\n")
+		.replace(/Per[ií]odo vigente:\s*[^\n]*/gi, "\n");
+}
+
 function parseNubankPdf(text: string): ImportStatement {
 	if (!isNubankCardInvoicePdf(text)) {
 		throw new Error("Fatura Nubank não reconhecida.");
@@ -729,12 +746,7 @@ function parseNubankPdf(text: string): ImportStatement {
 			? text.slice(transactionsStart, paymentsStart)
 			: text.slice(transactionsStart);
 
-	transactionsSection = transactionsSection
-		.replace(
-			/^TRANSAÇÕES\s+DE\s+\d{2}\s+[A-Z]{3}\s+A\s+\d{2}\s+[A-Z]{3}\s*\n/i,
-			"",
-		)
-		.replace(/^Per[ií]odo vigente:\s*[^\n]*\n/i, "");
+	transactionsSection = stripNubankPageBreakNoise(transactionsSection);
 
 	const txnRe =
 		/(\d{2}\s+[A-Z]{3})\s+(?:••••\s+\d{4}\s+)?(.+?)\s+R\$\s*([\d.]+,\d{2})/g;

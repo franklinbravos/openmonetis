@@ -155,8 +155,12 @@ export function buildImportTransactionFingerprint(transaction: {
 
 /**
  * Remove linhas idênticas repetidas no mesmo arquivo (ruído de parser).
- * Compras legítimas iguais no mesmo dia continuam passando por
- * `uniquifyImportedExternalIds` antes desta etapa.
+ *
+ * Só vale para linha sem id próprio: `uniquifyImportedExternalIds` já rodou e
+ * deu id distinto a cada ocorrência, e duas compras iguais no mesmo dia — dois
+ * lanches na mesma lanchonete — são duas compras, não repetição. Descartar uma
+ * delas sumia com o lançamento antes mesmo da revisão e deixava a fatura sem
+ * fechar pelo valor da linha perdida.
  */
 export function dedupeImportedTransactionsByFingerprint<
 	T extends {
@@ -164,11 +168,14 @@ export function dedupeImportedTransactionsByFingerprint<
 		amount: number;
 		description: string;
 		transactionType: "income" | "expense";
+		externalId?: string | null;
 	},
 >(transactions: T[]): T[] {
 	const seen = new Set<string>();
 
 	return transactions.filter((transaction) => {
+		if (transaction.externalId) return true;
+
 		const fingerprint = buildImportTransactionFingerprint(transaction);
 		if (seen.has(fingerprint)) return false;
 		seen.add(fingerprint);
