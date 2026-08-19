@@ -139,6 +139,94 @@ export function importExternalIdCollidesWithStored(
 	return false;
 }
 
+/**
+ * O que fazer com um registro que carrega identificador do extrato.
+ *
+ * - `insert`: cobrança nova, entra com o id.
+ * - `insert_without_external_id`: cobrança nova, mas o id já tem dono (outra
+ *   parcela da mesma compra). Entra sem o id — o índice único
+ *   `lancamentos_ofx_fit_id_user_id_idx` admite um só dono por (usuário, id).
+ * - `skip`: mesma cobrança já gravada.
+ */
+export type ImportInsertionPlan =
+	| "insert"
+	| "insert_without_external_id"
+	| "skip";
+
+export function planImportRecordInsertion(
+	candidate: ImportOccurrenceIdentity,
+	context: {
+		storedOccurrences: Iterable<ImportOccurrenceIdentity>;
+		storedExternalIds: Iterable<string>;
+	},
+): ImportInsertionPlan {
+	if (
+		importOccurrenceCollidesWithStored(candidate, context.storedOccurrences)
+	) {
+		return "skip";
+	}
+
+	if (
+		importExternalIdCollidesWithStored(
+			candidate.externalId,
+			context.storedExternalIds,
+		)
+	) {
+		return "insert_without_external_id";
+	}
+
+	return "insert";
+}
+
+/** Identidade de uma cobrança na hora de decidir se ela já está gravada. */
+export type ImportOccurrenceIdentity = {
+	externalId: string;
+	installmentCount: number | null;
+	currentInstallment: number | null;
+};
+
+/**
+ * Mesma cobrança já gravada?
+ *
+ * O FITID do Nubank identifica a **compra**, não a cobrança do mês: todas as
+ * parcelas de uma série chegam com o mesmo id. Barrar a inserção só pela
+ * colisão do id descartava a parcela do mês corrente sempre que qualquer outra
+ * ocorrência da mesma compra já existisse — a fatura ficava eternamente sem
+ * aquela linha, e reprocessar não resolvia.
+ *
+ * Mesma regra de `fitIdMatchIsReliable`: o id só decide sozinho quando nenhum
+ * dos lados é parcela; entre séries, é preciso ser a mesma ocorrência (N/M).
+ */
+export function importOccurrenceCollidesWithStored(
+	candidate: ImportOccurrenceIdentity,
+	storedOccurrences: Iterable<ImportOccurrenceIdentity>,
+): boolean {
+	const baseId = stripImportExternalIdSuffix(candidate.externalId);
+	const candidateIsSeries = candidate.installmentCount != null;
+
+	for (const stored of storedOccurrences) {
+		const sameId =
+			stored.externalId === candidate.externalId ||
+			stripImportExternalIdSuffix(stored.externalId) === baseId;
+		if (!sameId) continue;
+
+		const storedIsSeries = stored.installmentCount != null;
+
+		if (!candidateIsSeries && !storedIsSeries) return true;
+
+		if (
+			candidateIsSeries &&
+			storedIsSeries &&
+			stored.installmentCount === candidate.installmentCount &&
+			stored.currentInstallment === candidate.currentInstallment
+		) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 export function buildImportTransactionFingerprint(transaction: {
 	date: string;
 	amount: number;

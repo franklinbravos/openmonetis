@@ -4,6 +4,7 @@ import {
 	dedupeImportedTransactionsByFingerprint,
 	expandImportExternalIdsForLookup,
 	importExternalIdCollidesWithStored,
+	importOccurrenceCollidesWithStored,
 	makeSyntheticExternalId,
 	parseBrazilianAmount,
 	parseCnabDate,
@@ -11,6 +12,7 @@ import {
 	parsePortugueseLongDate,
 	parsePortugueseShortDate,
 	parseSlashDateDMY,
+	planImportRecordInsertion,
 	stripImportExternalIdSuffix,
 	uniquifyImportedExternalIds,
 } from "./helpers";
@@ -224,5 +226,171 @@ describe("expandImportExternalIdsForLookup", () => {
 		expect(expandImportExternalIdsForLookup(["abc#2", "def"]).sort()).toEqual(
 			["abc", "abc#2", "def"].sort(),
 		);
+	});
+});
+
+describe("importOccurrenceCollidesWithStored", () => {
+	const CLARO_FIT_ID = "698e65bc-3e73-4aa0-831f-a3e68ee7fad1";
+
+	it("não bloqueia a parcela do mês quando outra parcela da série já está gravada", () => {
+		// Caso real da fatura de março: o arquivo traz "Claro - Parcela 1/12" com o
+		// mesmo FITID que já estava em 5/12 (julho), porque o Nubank reaproveita o
+		// id da compra. Barrar por id descartava a 1/12 e março nunca fechava.
+		const collides = importOccurrenceCollidesWithStored(
+			{
+				externalId: CLARO_FIT_ID,
+				installmentCount: 12,
+				currentInstallment: 1,
+			},
+			[
+				{
+					externalId: CLARO_FIT_ID,
+					installmentCount: 12,
+					currentInstallment: 5,
+				},
+			],
+		);
+
+		expect(collides).toBe(false);
+	});
+
+	it("bloqueia a mesma ocorrência da mesma série", () => {
+		const collides = importOccurrenceCollidesWithStored(
+			{
+				externalId: CLARO_FIT_ID,
+				installmentCount: 12,
+				currentInstallment: 5,
+			},
+			[
+				{
+					externalId: CLARO_FIT_ID,
+					installmentCount: 12,
+					currentInstallment: 5,
+				},
+			],
+		);
+
+		expect(collides).toBe(true);
+	});
+
+	it("bloqueia cobrança avulsa repetida, inclusive com sufixo #2", () => {
+		expect(
+			importOccurrenceCollidesWithStored(
+				{
+					externalId: "fit-1",
+					installmentCount: null,
+					currentInstallment: null,
+				},
+				[
+					{
+						externalId: "fit-1#2",
+						installmentCount: null,
+						currentInstallment: null,
+					},
+				],
+			),
+		).toBe(true);
+	});
+
+	it("não bloqueia quando só um dos lados é parcela", () => {
+		expect(
+			importOccurrenceCollidesWithStored(
+				{ externalId: "fit-1", installmentCount: 12, currentInstallment: 1 },
+				[
+					{
+						externalId: "fit-1",
+						installmentCount: null,
+						currentInstallment: null,
+					},
+				],
+			),
+		).toBe(false);
+	});
+
+	it("ignora ocorrências de outro id", () => {
+		expect(
+			importOccurrenceCollidesWithStored(
+				{
+					externalId: "fit-1",
+					installmentCount: null,
+					currentInstallment: null,
+				},
+				[
+					{
+						externalId: "fit-outro",
+						installmentCount: null,
+						currentInstallment: null,
+					},
+				],
+			),
+		).toBe(false);
+	});
+});
+
+describe("planImportRecordInsertion", () => {
+	const CLARO_FIT_ID = "698e65bc-3e73-4aa0-831f-a3e68ee7fad1";
+	const CLARO_5_DE_12 = {
+		externalId: CLARO_FIT_ID,
+		installmentCount: 12,
+		currentInstallment: 5,
+	};
+
+	it("grava a parcela do mês sem o id quando outra parcela da série já é dona dele", () => {
+		// O índice único (user_id, ofx_fit_id) só admite um dono. Inserir com o id
+		// repetido estourava 23505 e derrubava a importação inteira; pular a linha
+		// deixava a fatura sem ela. O caminho certo é gravar sem o id.
+		const plan = planImportRecordInsertion(
+			{ externalId: CLARO_FIT_ID, installmentCount: 12, currentInstallment: 1 },
+			{
+				storedOccurrences: [CLARO_5_DE_12],
+				storedExternalIds: [CLARO_FIT_ID],
+			},
+		);
+
+		expect(plan).toBe("insert_without_external_id");
+	});
+
+	it("pula quando é a mesma ocorrência já gravada", () => {
+		const plan = planImportRecordInsertion(CLARO_5_DE_12, {
+			storedOccurrences: [CLARO_5_DE_12],
+			storedExternalIds: [CLARO_FIT_ID],
+		});
+
+		expect(plan).toBe("skip");
+	});
+
+	it("grava com o id quando a cobrança é inédita", () => {
+		const plan = planImportRecordInsertion(
+			{
+				externalId: "fit-novo",
+				installmentCount: null,
+				currentInstallment: null,
+			},
+			{ storedOccurrences: [CLARO_5_DE_12], storedExternalIds: [CLARO_FIT_ID] },
+		);
+
+		expect(plan).toBe("insert");
+	});
+
+	it("pula cobrança avulsa já gravada, mesmo com sufixo #2", () => {
+		const plan = planImportRecordInsertion(
+			{
+				externalId: "fit-1#2",
+				installmentCount: null,
+				currentInstallment: null,
+			},
+			{
+				storedOccurrences: [
+					{
+						externalId: "fit-1",
+						installmentCount: null,
+						currentInstallment: null,
+					},
+				],
+				storedExternalIds: ["fit-1"],
+			},
+		);
+
+		expect(plan).toBe("skip");
 	});
 });
