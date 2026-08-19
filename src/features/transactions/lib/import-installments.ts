@@ -1,7 +1,7 @@
 import {
 	detectInstallmentFromName,
 	type InstallmentDetection,
-} from "@/features/transactions/lib/installment-detection";
+} from "@/shared/utils/installment-detection";
 import { addMonthsToPeriod, displayPeriod } from "@/shared/utils/period";
 
 export type ReviewInstallmentImport = {

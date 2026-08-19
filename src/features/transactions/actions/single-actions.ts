@@ -23,8 +23,8 @@ import {
 	getBusinessTodayDate,
 	parseLocalDateString,
 } from "@/shared/utils/date";
+import { detectInstallmentFromName } from "@/shared/utils/installment-detection";
 import { copyAttachmentsForImport } from "../lib/attachment-copy";
-import { detectInstallmentFromName } from "../lib/installment-detection";
 import { cleanupAttachmentsAfterTransactionDelete } from "./attachments";
 import {
 	buildShares,

@@ -20,7 +20,6 @@ import {
 	detachAttachmentBulkAction,
 	getPresignedUploadUrlAction,
 } from "@/features/transactions/actions/attachments";
-import { detectInstallmentFromName } from "@/features/transactions/lib/installment-detection";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
 import { Button } from "@/shared/components/ui/button";
 import {
@@ -34,6 +33,7 @@ import {
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
 import { formatCurrency } from "@/shared/utils/currency";
+import { detectInstallmentFromName } from "@/shared/utils/installment-detection";
 import type {
 	TransactionsExportContext,
 	TransactionsPaginationState,

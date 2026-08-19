@@ -7,9 +7,9 @@ import {
 } from "@/features/transactions/lib/import-duplicate-match";
 import { isInvoiceExtraReviewRow } from "@/features/transactions/lib/import-invoice-extra-rows";
 import { mapDuplicateSnapshotToExistingRow } from "@/features/transactions/lib/import-invoice-reconciliation";
-import { detectInstallmentFromName } from "@/features/transactions/lib/installment-detection";
 import type { InvoiceFileRowFingerprint } from "@/shared/lib/import/invoice-file-match";
 import { pairInvoiceAgainstFile } from "@/shared/lib/import/invoice-pairing";
+import { detectInstallmentFromName } from "@/shared/utils/installment-detection";
 
 /**
  * Fechamento da fatura: transforma os pares da conciliação em estado da revisão.

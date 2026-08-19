@@ -86,4 +86,32 @@ describe("findRegisteredRowsMissingFromFile", () => {
 
 		expect(extras.map((row) => row.id)).toEqual(["extra-manual"]);
 	});
+
+	it("não marca como extra a parcela cadastrada sem o sufixo do arquivo", () => {
+		// O cadastro guarda "Fabio C Thomaziello"; o arquivo traz a mesma compra
+		// como "Fabio C Thomaziello - Parcela 6/10". Comparar as strings cruas
+		// nunca bate para nenhuma parcela cadastrada.
+		const extras = findRegisteredRowsMissingFromFile(
+			[
+				{
+					id: "fabio-parcela-6",
+					ofxFitId: null,
+					name: "Fabio C Thomaziello",
+					amount: "-260.00",
+					transactionType: "Despesa",
+				},
+			],
+			sourceFileRowsFromTransactions([
+				{
+					externalId: "fit-fabio",
+					date: "2026-03-04",
+					amount: 260,
+					description: "Fabio C Thomaziello - Parcela 6/10",
+					transactionType: "expense",
+				},
+			]),
+		);
+
+		expect(extras).toHaveLength(0);
+	});
 });

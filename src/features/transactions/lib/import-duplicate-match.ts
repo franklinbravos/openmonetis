@@ -1,5 +1,4 @@
 import type { ReviewInstallmentImport } from "@/features/transactions/lib/import-installments";
-import { detectInstallmentFromName } from "@/features/transactions/lib/installment-detection";
 import {
 	buildImportTransactionFingerprint,
 	importExternalIdCollidesWithStored,
@@ -8,6 +7,7 @@ import {
 import type { ImportedTransaction } from "@/shared/lib/import/types";
 import { formatCurrency } from "@/shared/utils/currency";
 import { formatDateOnly, toDateOnlyString } from "@/shared/utils/date";
+import { detectInstallmentFromName } from "@/shared/utils/installment-detection";
 
 export type ImportDuplicateSnapshot = {
 	id: string;

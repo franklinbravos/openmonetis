@@ -10,6 +10,7 @@ import type {
 	ImportedTransaction,
 	ImportStatement,
 } from "@/shared/lib/import/types";
+import { detectInstallmentFromName } from "@/shared/utils/installment-detection";
 
 export type InvoiceFileRowFingerprint = {
 	externalId: string | null;
@@ -21,6 +22,20 @@ export type InvoiceFileRowFingerprint = {
 
 function normalizeMatchName(value: string): string {
 	return normalizeImportedText(value).toLowerCase();
+}
+
+/**
+ * Nome base sem o sufixo de parcela ("- Parcela 6/10", "(3/5)" etc.).
+ *
+ * O cadastro guarda só o nome da compra; o arquivo traz o nome com a parcela
+ * anexada. Comparar as strings cruas nunca bate para nenhuma parcela — todo
+ * lançamento parcelado cadastrado aparecia como "a mais no OpenMonetis" e como
+ * se estivesse "ausente do arquivo importado", quando as duas pontas tinham a
+ * mesma linha, só com o nome escrito de formas diferentes.
+ */
+function normalizeMatchBaseName(value: string): string {
+	const detected = detectInstallmentFromName(value);
+	return normalizeMatchName(detected?.name ?? value);
 }
 
 function amountCentsFromSigned(signed: number): number {
@@ -127,16 +142,19 @@ export function findRegisteredRowsMissingFromFile(
 
 		if (matchedByExternalId) continue;
 
+		const registeredBaseName = normalizeMatchBaseName(registered.name);
+
 		const matchedByNameAndAmount = consumeFileMatch((fileRow) => {
 			const fileSigned = signedAmountFromReviewValues(
 				fileRow.amount,
 				fileRow.transactionType,
 			);
+			if (amountCentsFromSigned(fileSigned) !== registeredCents) return false;
 
-			return (
-				amountCentsFromSigned(fileSigned) === registeredCents &&
-				normalizeMatchName(fileRow.description) === registeredName
-			);
+			const fileName = normalizeMatchName(fileRow.description);
+			if (fileName === registeredName) return true;
+
+			return normalizeMatchBaseName(fileRow.description) === registeredBaseName;
 		});
 
 		if (matchedByNameAndAmount) continue;

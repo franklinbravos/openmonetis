@@ -2,12 +2,12 @@ import type { ReviewRow } from "@/features/transactions/components/import/review
 import type { ImportDuplicateSnapshot } from "@/features/transactions/lib/import-duplicate-match";
 import { collectImportLinkedExistingTransactionIds } from "@/features/transactions/lib/import-duplicate-match";
 import { mapDuplicateSnapshotToExistingRow } from "@/features/transactions/lib/import-invoice-reconciliation";
-import { detectInstallmentFromName } from "@/features/transactions/lib/installment-detection";
 import { normalizeImportedText } from "@/shared/lib/import/helpers";
 import {
 	shouldIncludeExistingInInvoiceTotal,
 	signedAmountFromStoredValue,
 } from "@/shared/lib/import/invoice-total";
+import { detectInstallmentFromName } from "@/shared/utils/installment-detection";
 
 export type InvoiceExtraReason = "duplicate" | "not_in_file";
 
