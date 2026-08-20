@@ -13,6 +13,7 @@ import {
 	parsePortugueseShortDate,
 	parseSlashDateDMY,
 	planImportRecordInsertion,
+	replaceAmbiguousImportExternalIds,
 	stripImportExternalIdSuffix,
 	uniquifyImportedExternalIds,
 } from "./helpers";
@@ -441,5 +442,69 @@ describe("importOccurrenceCollidesWithStored: sufixo dentro do mesmo arquivo", (
 		expect(
 			importOccurrenceCollidesWithStored(avulso("fit-1#2"), [avulso("fit-1")]),
 		).toBe(true);
+	});
+});
+
+describe("replaceAmbiguousImportExternalIds", () => {
+	const linha = (
+		description: string,
+		amount: number,
+		externalId: string | null,
+	) => ({
+		externalId,
+		date: "2026-06-02",
+		amount,
+		description,
+		transactionType: "expense" as const,
+	});
+
+	it("troca o id que o arquivo repete em cobranças diferentes", () => {
+		// Caso real da fatura de junho: o Nubank emite um FITID só para o bloco
+		// todo do rotativo. As três linhas casavam com o único lançamento que
+		// conseguiu guardar esse id e saíam da conferência como "já cadastrado em
+		// outro período", abrindo um furo de R$ 6.135,89.
+		const FITID = "6a07939b-fc2e-4aeb-96a8-03a403e249ad";
+
+		const rows = replaceAmbiguousImportExternalIds([
+			linha("Valor pendente do mês anterior (rotativo)", 5525.23, FITID),
+			linha("Juros de pagamento parcial da fatura (rotativo)", 575.4, FITID),
+			linha("IOF de pagamento parcial da fatura (rotativo)", 35.26, FITID),
+		]);
+
+		expect(rows.every((row) => row.externalId !== FITID)).toBe(true);
+		expect(new Set(rows.map((row) => row.externalId)).size).toBe(3);
+		// O id derivado da linha é estável entre reimportações.
+		expect(rows[0].externalId).toBe(
+			"2026-06-02|5525.23|valor pendente do mês anterior (rotativo)",
+		);
+	});
+
+	it("preserva id repetido em linhas de conteúdo igual", () => {
+		// Aqui o id repetido é repetição do parser ou duas cobranças idênticas —
+		// tratado adiante por uniquify/dedupe, não aqui.
+		const rows = replaceAmbiguousImportExternalIds([
+			linha("Ec *Ec*Conectcar", 13.7, "fit-1"),
+			linha("Ec *Ec*Conectcar", 13.7, "fit-1"),
+		]);
+
+		expect(rows.map((row) => row.externalId)).toEqual(["fit-1", "fit-1"]);
+	});
+
+	it("preserva id único", () => {
+		const rows = replaceAmbiguousImportExternalIds([
+			linha("Padaria", 10, "fit-1"),
+			linha("Posto", 20, "fit-2"),
+		]);
+
+		expect(rows.map((row) => row.externalId)).toEqual(["fit-1", "fit-2"]);
+	});
+
+	it("não mexe em linha sem id", () => {
+		const rows = replaceAmbiguousImportExternalIds([
+			linha("Padaria", 10, null),
+			linha("Posto", 20, null),
+		]);
+
+		expect(rows.map((row) => row.externalId)).toEqual([null, null]);
 	});
 });

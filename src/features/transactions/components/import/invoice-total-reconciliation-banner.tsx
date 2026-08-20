@@ -162,6 +162,16 @@ export function InvoiceTotalReconciliationBanner({
 					</span>
 				</p>
 
+				{reconciliation.filePaymentsTotal > 0 ? (
+					<p className="text-muted-foreground text-xs leading-relaxed">
+						O arquivo declara {formatCurrency(reconciliation.filePaymentsTotal)}{" "}
+						em pagamentos recebidos, então o total de{" "}
+						{formatCurrency(reconciliation.sourceTotal)} é o saldo da fatura, já
+						líquido do que foi pago. A conferência usa a soma das cobranças do
+						arquivo, que é o total da fatura no OpenMonetis.
+					</p>
+				) : null}
+
 				{statusParts.length > 0 ? (
 					<p className="text-muted-foreground text-xs leading-relaxed">
 						{statusParts.join(" · ")}.

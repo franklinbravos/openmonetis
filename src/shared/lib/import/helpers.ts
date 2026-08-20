@@ -278,6 +278,63 @@ export function importOccurrenceCollidesWithStored(
 	return false;
 }
 
+/**
+ * Troca por id sintético o identificador que o arquivo repete em cobranças
+ * diferentes.
+ *
+ * O FITID deveria identificar a cobrança, mas alguns bancos emitem um id por
+ * evento. O Nubank usa o mesmo em todo o bloco do rotativo: "valor pendente do
+ * mês anterior", juros e IOF chegam com o id idêntico — e o mesmo id volta na
+ * fatura seguinte. Tratá-lo como identidade fazia as três linhas casarem com o
+ * único lançamento que conseguiu guardá-lo, saírem da conferência como "já
+ * cadastrado em outro período" e abrirem um furo do tamanho delas; o índice
+ * único `(user_id, ofx_fit_id)` ainda deixava entrar só uma.
+ *
+ * Quando o mesmo id aparece em linhas de conteúdo diferente, ele é mais
+ * grosseiro que a cobrança e não serve de identidade. O id derivado da própria
+ * linha serve: é único por cobrança e estável entre reimportações.
+ *
+ * Id repetido em linhas de conteúdo IGUAL é outra coisa — repetição do parser,
+ * ou duas cobranças idênticas — e continua com o tratamento de sempre.
+ */
+export function replaceAmbiguousImportExternalIds<
+	T extends {
+		externalId?: string | null;
+		date: string;
+		amount: number;
+		description: string;
+		transactionType: "income" | "expense";
+	},
+>(transactions: T[]): T[] {
+	const fingerprintsById = new Map<string, Set<string>>();
+
+	for (const transaction of transactions) {
+		if (!transaction.externalId) continue;
+
+		const fingerprints =
+			fingerprintsById.get(transaction.externalId) ?? new Set<string>();
+		fingerprints.add(buildImportTransactionFingerprint(transaction));
+		fingerprintsById.set(transaction.externalId, fingerprints);
+	}
+
+	return transactions.map((transaction) => {
+		if (!transaction.externalId) return transaction;
+
+		const distinctContents =
+			fingerprintsById.get(transaction.externalId)?.size ?? 0;
+		if (distinctContents < 2) return transaction;
+
+		return {
+			...transaction,
+			externalId: makeSyntheticExternalId([
+				transaction.date,
+				transaction.amount.toFixed(2),
+				transaction.description,
+			]),
+		};
+	});
+}
+
 export function buildImportTransactionFingerprint(transaction: {
 	date: string;
 	amount: number;

@@ -325,3 +325,88 @@ describe("resolveInvoiceDisplayTotal", () => {
 		).toBe(1234.56);
 	});
 });
+
+describe("fatura de rotativo: total declarado é líquido do pagamento", () => {
+	it("soma o pagamento de volta ao alvo, e a fatura fecha", () => {
+		// Caso real da fatura de junho: as cobranças somam R$ 10.478,14 e o OFX
+		// declara R$ 7.978,14 — exatos R$ 2.500,00 a menos, que é o pagamento
+		// parcial já feito. O pagamento não é gravado como cobrança do cartão,
+		// então comparar a soma dos lançamentos com o declarado acusava para
+		// sempre uma diferença do valor pago.
+		const reconciliation = computeImportReconciliation({
+			sourceTotal: 7978.14,
+			reviewRows: [
+				baseRow({
+					externalId: "fit-rotativo",
+					amount: 10478.14,
+					description: "Valor pendente do mês anterior (rotativo)",
+				}),
+				baseRow({
+					externalId: "fit-pagamento",
+					amount: 2500,
+					transactionType: "income",
+					kind: "invoice_payment",
+					description: "Pagamento recebido",
+				}),
+			],
+			existingRows: [],
+			fileExternalIds: ["fit-rotativo", "fit-pagamento"],
+		});
+
+		expect(reconciliation.filePaymentsTotal).toBe(2500);
+		// O alvo passa a ser a soma das cobranças do arquivo, não o saldo
+		// declarado: quanto de cada pagamento o banco já embutiu no "valor
+		// pendente" não está no arquivo.
+		expect(reconciliation.delta).toBe(0);
+		expect(isInvoiceTotalReconciled(reconciliation.delta)).toBe(true);
+	});
+
+	it("fecha mesmo quando o banco embutiu parte do pagamento no saldo", () => {
+		// Caso real de junho: dois pagamentos (R$ 1.000 no vencimento e R$ 2.500
+		// depois) somam R$ 3.500, mas o saldo declarado só desconta R$ 2.500 — o
+		// outro já estava no "valor pendente do mês anterior". Somar os
+		// pagamentos de volta ao saldo erraria por R$ 1.000; usar a soma das
+		// cobranças fecha sem depender dessa distinção.
+		const reconciliation = computeImportReconciliation({
+			sourceTotal: 7978.14,
+			reviewRows: [
+				baseRow({
+					externalId: "fit-cobrancas",
+					amount: 10478.14,
+					description: "Valor pendente do mês anterior (rotativo)",
+				}),
+				baseRow({
+					externalId: "fit-pg-1",
+					amount: 1000,
+					transactionType: "income",
+					kind: "invoice_payment",
+					description: "Pagamento recebido",
+				}),
+				baseRow({
+					externalId: "fit-pg-2",
+					amount: 2500,
+					transactionType: "income",
+					kind: "invoice_payment",
+					description: "Pagamento recebido",
+				}),
+			],
+			existingRows: [],
+			fileExternalIds: ["fit-cobrancas", "fit-pg-1", "fit-pg-2"],
+		});
+
+		expect(reconciliation.filePaymentsTotal).toBe(3500);
+		expect(reconciliation.delta).toBe(0);
+	});
+
+	it("sem pagamento no arquivo, o alvo é o declarado", () => {
+		const reconciliation = computeImportReconciliation({
+			sourceTotal: 100,
+			reviewRows: [baseRow({ amount: 100 })],
+			existingRows: [],
+			fileExternalIds: ["fit-1"],
+		});
+
+		expect(reconciliation.filePaymentsTotal).toBe(0);
+		expect(reconciliation.delta).toBe(0);
+	});
+});

@@ -207,6 +207,7 @@ import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants
 import {
 	dedupeImportedTransactionsByFingerprint,
 	normalizeImportedText,
+	replaceAmbiguousImportExternalIds,
 	stripImportExternalIdSuffix,
 	uniquifyImportedExternalIds,
 } from "@/shared/lib/import/helpers";
@@ -262,8 +263,13 @@ function withNormalizedDescriptions(
 
 	return {
 		...statement,
+		// Ordem importa: primeiro troca o id que o arquivo repete em cobranças
+		// diferentes (bloco do rotativo do Nubank), depois sufixa o que sobrou
+		// repetido — aí o sufixo já significa "linha idêntica".
 		transactions: dedupeImportedTransactionsByFingerprint(
-			uniquifyImportedExternalIds(normalizedTransactions),
+			uniquifyImportedExternalIds(
+				replaceAmbiguousImportExternalIds(normalizedTransactions),
+			),
 		),
 	};
 }
