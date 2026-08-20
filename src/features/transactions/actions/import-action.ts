@@ -22,7 +22,6 @@ import {
 	transactions,
 } from "@/db/schema";
 import { updateInvoicePaymentStatusAction } from "@/features/invoices/actions";
-import { upsertInvoicePaymentStatus } from "@/features/invoices/lib/upsert-invoice-payment";
 import {
 	buildTransactionRecords,
 	fetchOwnedCategoryIds,
@@ -69,6 +68,8 @@ import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { periodSchema, uuidSchema } from "@/shared/lib/schemas/common";
 import { deleteS3Object } from "@/shared/lib/storage/presign";
+import { toDbColumnNames } from "@/shared/lib/supabase/drizzle-bridge";
+import { callRpc } from "@/shared/lib/supabase/rpc";
 import {
 	TRANSFER_CATEGORY_NAME,
 	TRANSFER_CONDITION,
@@ -1757,162 +1758,139 @@ export async function importTransactionsAction(
 	let inserted: { id: string }[] = [];
 
 	try {
-		inserted = await db.transaction(async (tx) => {
-			if (removeIds.length > 0) {
-				await tx
-					.delete(transactions)
-					.where(
-						and(
-							eq(transactions.userId, dataOwnerUserId),
-							inArray(transactions.id, removeIds),
-						),
-					);
-			}
+		const allRecords = [
+			...regularRecords,
+			...transferRecords,
+			...invoicePaymentRecords.map(
+				({ settleCardId, settlePeriod, ...record }) => record,
+			),
+		];
 
-			if (validatedAmountEdits.length > 0) {
-				await applyExistingAmountCorrectionsT(
-					tx,
-					dataOwnerUserId,
-					validatedAmountEdits,
+		const fitIdsInBatch = [
+			...new Set(
+				allRecords
+					.map((record) => record.ofxFitId)
+					.filter((fitId): fitId is string => Boolean(fitId)),
+			),
+		];
+
+		const storedOccurrences: ImportOccurrenceIdentity[] = [];
+		const storedFitIds = new Set<string>();
+		if (fitIdsInBatch.length > 0) {
+			const duplicateRows = await db
+				.select({
+					ofxFitId: transactions.ofxFitId,
+					installmentCount: transactions.installmentCount,
+					currentInstallment: transactions.currentInstallment,
+				})
+				.from(transactions)
+				.where(
+					and(
+						eq(transactions.userId, dataOwnerUserId),
+						inArray(transactions.ofxFitId, fitIdsInBatch),
+					),
 				);
-			}
 
-			if (validatedInstallmentEdits.length > 0) {
-				await applyExistingInstallmentCorrectionsT(
-					tx,
-					dataOwnerUserId,
-					validatedInstallmentEdits,
-				);
-			}
-
-			const allRecords = [
-				...regularRecords,
-				...transferRecords,
-				...invoicePaymentRecords.map(
-					({ settleCardId, settlePeriod, ...record }) => record,
-				),
-			];
-
-			const fitIdsInBatch = [
-				...new Set(
-					allRecords
-						.map((record) => record.ofxFitId)
-						.filter((fitId): fitId is string => Boolean(fitId)),
-				),
-			];
-
-			const storedOccurrences: ImportOccurrenceIdentity[] = [];
-			const storedFitIds = new Set<string>();
-			if (fitIdsInBatch.length > 0) {
-				const duplicateRows = await tx
-					.select({
-						ofxFitId: transactions.ofxFitId,
-						installmentCount: transactions.installmentCount,
-						currentInstallment: transactions.currentInstallment,
-					})
-					.from(transactions)
-					.where(
-						and(
-							eq(transactions.userId, dataOwnerUserId),
-							inArray(transactions.ofxFitId, fitIdsInBatch),
-						),
-					);
-
-				for (const row of duplicateRows) {
-					if (!row.ofxFitId) continue;
-					storedFitIds.add(row.ofxFitId);
-					storedOccurrences.push({
-						externalId: row.ofxFitId,
-						installmentCount: row.installmentCount,
-						currentInstallment: row.currentInstallment,
-					});
-				}
-			}
-
-			const seenOccurrencesInBatch: ImportOccurrenceIdentity[] = [];
-			const seenFitIdsInBatch = new Set<string>();
-			const recordsToInsert = allRecords.flatMap((record) => {
-				if (!record.ofxFitId) return [record];
-
-				// Pagamento de fatura e transferência não têm campos de parcela.
-				const identity: ImportOccurrenceIdentity = {
-					externalId: record.ofxFitId,
-					installmentCount:
-						"installmentCount" in record
-							? (record.installmentCount ?? null)
-							: null,
-					currentInstallment:
-						"currentInstallment" in record
-							? (record.currentInstallment ?? null)
-							: null,
-				};
-
-				// Contra o banco vale a base do id: reimportar o mesmo arquivo com a
-				// numeração do sufixo trocada não deve duplicar.
-				const plan = planImportRecordInsertion(identity, {
-					storedOccurrences,
-					storedExternalIds: storedFitIds,
+			for (const row of duplicateRows) {
+				if (!row.ofxFitId) continue;
+				storedFitIds.add(row.ofxFitId);
+				storedOccurrences.push({
+					externalId: row.ofxFitId,
+					installmentCount: row.installmentCount,
+					currentInstallment: row.currentInstallment,
 				});
+			}
+		}
 
-				if (plan === "skip") return [];
+		const seenOccurrencesInBatch: ImportOccurrenceIdentity[] = [];
+		const seenFitIdsInBatch = new Set<string>();
+		const recordsToInsert = allRecords.flatMap((record) => {
+			if (!record.ofxFitId) return [record];
 
-				// Dentro do lote o id é comparado inteiro: o sufixo "#2" existe
-				// porque as duas linhas são idênticas e são duas cobranças reais —
-				// dois pedágios no mesmo dia pelo mesmo valor, por exemplo.
-				if (
-					importOccurrenceCollidesWithStored(identity, seenOccurrencesInBatch, {
-						sameFile: true,
-					})
-				) {
-					return [];
-				}
+			// Pagamento de fatura e transferência não têm campos de parcela.
+			const identity: ImportOccurrenceIdentity = {
+				externalId: record.ofxFitId,
+				installmentCount:
+					"installmentCount" in record
+						? (record.installmentCount ?? null)
+						: null,
+				currentInstallment:
+					"currentInstallment" in record
+						? (record.currentInstallment ?? null)
+						: null,
+			};
 
-				seenOccurrencesInBatch.push(identity);
-
-				// O id já tem dono: no banco, ou numa linha anterior deste mesmo
-				// lote. A cobrança é distinta e precisa existir, então entra sem o
-				// id — o índice único admite um só dono por (usuário, id).
-				if (
-					plan === "insert_without_external_id" ||
-					seenFitIdsInBatch.has(record.ofxFitId)
-				) {
-					return [{ ...record, ofxFitId: null }];
-				}
-
-				seenFitIdsInBatch.add(record.ofxFitId);
-				return [record];
+			// Contra o banco vale a base do id: reimportar o mesmo arquivo com a
+			// numeração do sufixo trocada não deve duplicar.
+			const plan = planImportRecordInsertion(identity, {
+				storedOccurrences,
+				storedExternalIds: storedFitIds,
 			});
 
-			const insertedRows =
-				recordsToInsert.length > 0
-					? await tx
-							.insert(transactions)
-							.values(recordsToInsert)
-							.returning({ id: transactions.id })
-					: [];
+			if (plan === "skip") return [];
 
-			for (const record of invoicePaymentRecords) {
-				await upsertInvoicePaymentStatus(tx, {
-					userId: dataOwnerUserId,
-					cardId: record.settleCardId,
-					period: record.settlePeriod,
-					paymentStatus: INVOICE_PAYMENT_STATUS.PAID,
-				});
-
-				await tx
-					.update(transactions)
-					.set({ isSettled: true })
-					.where(
-						and(
-							eq(transactions.userId, dataOwnerUserId),
-							eq(transactions.cardId, record.settleCardId),
-							eq(transactions.period, record.settlePeriod),
-						),
-					);
+			// Dentro do lote o id é comparado inteiro: o sufixo "#2" existe
+			// porque as duas linhas são idênticas e são duas cobranças reais —
+			// dois pedágios no mesmo dia pelo mesmo valor, por exemplo.
+			if (
+				importOccurrenceCollidesWithStored(identity, seenOccurrencesInBatch, {
+					sameFile: true,
+				})
+			) {
+				return [];
 			}
 
-			return insertedRows;
+			seenOccurrencesInBatch.push(identity);
+
+			// O id já tem dono: no banco, ou numa linha anterior deste mesmo
+			// lote. A cobrança é distinta e precisa existir, então entra sem o
+			// id — o índice único admite um só dono por (usuário, id).
+			if (
+				plan === "insert_without_external_id" ||
+				seenFitIdsInBatch.has(record.ofxFitId)
+			) {
+				return [{ ...record, ofxFitId: null }];
+			}
+
+			seenFitIdsInBatch.add(record.ofxFitId);
+			return [record];
 		});
+
+		// Uma chamada, uma transação. `db.transaction()` do bridge não abre
+		// transação nenhuma — é a API do Supabase, HTTP stateless — então as seis
+		// escritas ficavam soltas e uma falha no meio deixava metade aplicada.
+		// A decisão de o que apagar, corrigir e inserir continua toda aqui em
+		// TypeScript; a RPC apenas aplica o resultado de forma atômica.
+		const insertedRows = await callRpc<{ inserted_id: string }>(
+			"apply_invoice_import",
+			{
+				p_user_id: dataOwnerUserId,
+				p_delete_ids: removeIds,
+				p_amount_edits: validatedAmountEdits.map((edit) => ({
+					id: edit.transactionId,
+					valor: formatDecimalForDbRequired(
+						amountEditToSignedStored(edit.amount, edit.transactionType),
+					),
+				})),
+				p_installment_edits: validatedInstallmentEdits.map((edit) => ({
+					id: edit.transactionId,
+					parcela_atual: edit.currentInstallment,
+					qtde_parcela: edit.installmentCount,
+				})),
+				p_rows: recordsToInsert.map((record) =>
+					toDbColumnNames(transactions, record as Record<string, unknown>),
+				),
+				p_invoice_payments: invoicePaymentRecords.map((record) => ({
+					cartao_id: record.settleCardId,
+					periodo: record.settlePeriod,
+					status_pagamento: INVOICE_PAYMENT_STATUS.PAID,
+				})),
+			},
+		);
+
+		inserted = insertedRows.map((row: { inserted_id: string }) => ({
+			id: row.inserted_id,
+		}));
 	} catch (error) {
 		console.error("importTransactionsAction", error);
 		if (isPostgresUniqueViolation(error)) {
