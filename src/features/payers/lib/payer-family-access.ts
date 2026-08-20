@@ -1,4 +1,4 @@
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, or } from "drizzle-orm";
 import { payerShares, payers, user } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import {
@@ -181,11 +181,9 @@ export async function buildPayerLoginLinks(
 					})
 					.from(user)
 					.where(
-						or(
-							...thirdPartyEmails.map((email) =>
-								eq(sql`lower(${user.email})`, email),
-							),
-						),
+						// `lower(email) = x` não é traduzível para PostgREST; `ilike`
+						// compara sem caixa e a igualdade é reconfirmada abaixo.
+						or(...thirdPartyEmails.map((email) => ilike(user.email, email))),
 					)
 			: Promise.resolve([]),
 	]);

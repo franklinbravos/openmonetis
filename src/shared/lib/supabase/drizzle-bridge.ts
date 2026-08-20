@@ -13,7 +13,7 @@ import { getSupabaseAdmin } from "@/shared/lib/supabase/admin";
 import type { Database } from "@/shared/lib/supabase/database.types";
 
 /** Incrementar ao alterar a API pública do bridge (invalida cache em db.ts). */
-export const DRIZZLE_BRIDGE_VERSION = 15;
+export const DRIZZLE_BRIDGE_VERSION = 16;
 
 type ColumnFilter = {
 	table?: string;
@@ -27,14 +27,54 @@ type Filter =
 	| ({ type: "gte" } & ColumnFilter & { value: unknown })
 	| ({ type: "lt" } & ColumnFilter & { value: unknown })
 	| ({ type: "lte" } & ColumnFilter & { value: unknown })
-	| ({ type: "is" } & ColumnFilter & { value: null })
+	| ({ type: "is" } & ColumnFilter & { value: null; negated?: boolean })
 	| ({ type: "in" } & ColumnFilter & { values: unknown[] })
 	| ({ type: "ilike" } & ColumnFilter & { value: string; negated?: boolean })
+	| ({ type: "like" } & ColumnFilter & { value: string; negated?: boolean })
 	| { type: "or"; filters: Filter[] }
 	| { type: "and"; filters: Filter[] }
 	| { type: "unsupported" };
 
 const DRIZZLE_QUERY_KEY = "queryChunks";
+
+/** Operadores de padrão que o PostgREST expressa (`like`/`ilike`, negados ou não). */
+const PATTERN_OPERATORS: Record<
+	string,
+	{ type: "like" | "ilike"; negated?: boolean }
+> = {
+	like: { type: "like" },
+	ilike: { type: "ilike" },
+	"not like": { type: "like", negated: true },
+	"not ilike": { type: "ilike", negated: true },
+};
+
+/** Checagens de nulo que o PostgREST expressa via `.is(col, null)`. */
+const NULL_CHECK_OPERATORS: Record<string, { negated: boolean }> = {
+	"is null": { negated: false },
+	"is not null": { negated: true },
+};
+
+/**
+ * Texto de chunk que não carrega condição: conectores e pontuação.
+ *
+ * Qualquer outro texto — chamada de função, `exists`, aritmética — significa que
+ * a expressão não é traduzível, e o scanner precisa reclamar em vez de seguir.
+ */
+const HARMLESS_CHUNK_TEXT = new Set([
+	"",
+	"(",
+	")",
+	",",
+	"and",
+	"or",
+	"not",
+	"true",
+	"false",
+	"is",
+	"null",
+	"is null",
+	"is not null",
+]);
 
 function toBridgeError(error: unknown): Error {
 	if (error instanceof Error) return error;
@@ -277,6 +317,48 @@ function tryParseOrGroup(chunks: unknown[]): Filter[] | null {
 	return [{ type: "or", filters: [...leftFilters, ...rightFilters] }];
 }
 
+/** Chunk de parâmetro (valor ligado), não texto SQL. */
+function isParamChunk(part: unknown): boolean {
+	return (
+		typeof part === "object" &&
+		part !== null &&
+		"value" in part &&
+		"encoder" in part
+	);
+}
+
+/**
+ * Recusa chunk de texto que carrega condição não traduzível.
+ *
+ * O scanner só entende `coluna operador valor` e os conectores. Chamada de
+ * função (`lower(...)`, `abs(...)`), subconsulta (`exists (select ...)`) e
+ * aritmética não têm equivalente em PostgREST — e antes eram puladas em
+ * silêncio, deixando a consulta sem aquela condição. Vindo de dado financeiro,
+ * o resultado errado passava por certo.
+ */
+function assertChunkCarriesNoCondition(part: unknown): void {
+	if (isPgColumn(part) || isParamChunk(part) || Array.isArray(part)) return;
+
+	const text = chunkText(part).trim().toLowerCase();
+	if (!text) return;
+
+	const normalized = text.replace(/\s+/g, " ");
+	if (HARMLESS_CHUNK_TEXT.has(normalized)) return;
+
+	// Conectores colados em parênteses, ex.: "(", ") and (", " or ".
+	const withoutConnectors = normalized
+		.replace(/[()]/g, " ")
+		.replace(/\b(and|or|not)\b/g, " ")
+		.replace(/\s+/g, "")
+		.trim();
+	if (!withoutConnectors) return;
+
+	throw new Error(
+		`[bridge] expressão SQL não traduzível para PostgREST: "${text}". ` +
+			"Reescreva com colunas e operadores simples, ou mova a consulta para uma RPC.",
+	);
+}
+
 function parseWhereChunk(chunk: unknown): Filter[] {
 	if (!chunk || typeof chunk !== "object") return [];
 
@@ -315,6 +397,22 @@ function parseWhereChunk(chunk: unknown): Filter[] {
 				.toLowerCase();
 			const value = chunkParamValue(chunks[i + 2]);
 
+			// `isNull` chega como um único chunk " is null"; `isNotNull`, como
+			// " is not null". A versão anterior só testava op === "is", então
+			// todo isNull/isNotNull virava no-op silencioso.
+			const nullCheck = NULL_CHECK_OPERATORS[op];
+			if (nullCheck) {
+				filters.push({
+					type: "is",
+					table: columnTable(part),
+					column: part.name,
+					value: null,
+					negated: nullCheck.negated,
+				});
+				i += 4;
+				continue;
+			}
+
 			if (op === "is") {
 				const isValue = String(value ?? "").toLowerCase();
 				if (isValue.includes("null")) {
@@ -323,6 +421,7 @@ function parseWhereChunk(chunk: unknown): Filter[] {
 						table: columnTable(part),
 						column: part.name,
 						value: null,
+						negated: isValue.includes("not"),
 					});
 					i += 4;
 					continue;
@@ -340,12 +439,14 @@ function parseWhereChunk(chunk: unknown): Filter[] {
 				continue;
 			}
 
-			if (op === "ilike") {
+			const patternOp = PATTERN_OPERATORS[op];
+			if (patternOp) {
 				filters.push({
-					type: "ilike",
+					type: patternOp.type,
 					table: columnTable(part),
 					column: part.name,
 					value: String(value ?? ""),
+					negated: patternOp.negated,
 				});
 				i += 4;
 				continue;
@@ -356,6 +457,14 @@ function parseWhereChunk(chunk: unknown): Filter[] {
 				i += 4;
 				continue;
 			}
+
+			// Coluna seguida de operador que o PostgREST não expressa. Antes o
+			// scanner pulava e a condição desaparecia calada — resultado errado
+			// em dado financeiro é pior que erro.
+			throw new Error(
+				`[bridge] operador não suportado "${op}" sobre ${columnTable(part) ?? "?"}.${part.name}. ` +
+					"Reescreva a condição com operadores que o PostgREST expressa, ou mova a consulta para uma RPC.",
+			);
 		}
 
 		if (
@@ -364,12 +473,20 @@ function parseWhereChunk(chunk: unknown): Filter[] {
 			getSqlChunks(part as SQL).length > 0
 		) {
 			filters.push(...parseWhereChunk(part));
+			i += 1;
+			continue;
 		}
+
+		assertChunkCarriesNoCondition(part);
 
 		i += 1;
 	}
 
 	return filters;
+}
+
+export function __parseWhereForTests(where: SQL | undefined): Filter[] {
+	return parseWhere(where);
 }
 
 function parseWhere(where: SQL | undefined): Filter[] {
@@ -607,11 +724,13 @@ function evaluateFilter(ctx: RowEvalContext, filter: Filter): boolean {
 				compareFilterValues(entry, filter.value, "lte"),
 			);
 		}
-		case "is":
-			return columnValuesMatch(
+		case "is": {
+			const isNullValue = columnValuesMatch(
 				getFilterColumnValue(ctx, filter),
 				(value) => value == null,
 			);
+			return filter.negated ? !isNullValue : isNullValue;
+		}
 		case "in": {
 			const value = getFilterColumnValue(ctx, filter);
 			return columnValuesMatch(value, (entry) => filter.values.includes(entry));
@@ -746,18 +865,22 @@ function resolveShapeColumnValue(
 	const colTable = columnTable(col);
 	const mainTableName = getTableName(fromTable);
 	if (!colTable || colTable === mainTableName) {
-		return row[col.name] ?? fromDbRow(fromTable, row)[col.name];
+		return decodeColumnValue(
+			col,
+			row[col.name] ?? fromDbRow(fromTable, row)[col.name],
+		);
 	}
 
 	const embedKey = findEmbedKeyForTable(fromTable, colTable);
 	const embed = (embedKey ? row[embedKey] : undefined) ?? row[colTable];
 	if (!embed) return null;
 	if (Array.isArray(embed)) {
-		return (
-			(embed[0] as Record<string, unknown> | undefined)?.[col.name] ?? null
+		return decodeColumnValue(
+			col,
+			(embed[0] as Record<string, unknown> | undefined)?.[col.name] ?? null,
 		);
 	}
-	return (embed as Record<string, unknown>)[col.name];
+	return decodeColumnValue(col, (embed as Record<string, unknown>)[col.name]);
 }
 
 function sqlExpressionText(expr: unknown): string {
@@ -907,10 +1030,11 @@ function resolveGroupedColumnValue(
 	const colTable = columnTable(expr);
 	const mainTableName = getTableName(fromTable);
 	if (!colTable || colTable === mainTableName) {
-		return (
+		return decodeColumnValue(
+			expr,
 			columnValueFromMappedRow(mainMapped, expr) ??
-			rawMainRow[expr.name] ??
-			null
+				rawMainRow[expr.name] ??
+				null,
 		);
 	}
 
@@ -920,7 +1044,7 @@ function resolveGroupedColumnValue(
 	if (joinIndex >= 0) {
 		const joinRow = relatedJoinRows[joinIndex]?.[0];
 		if (joinRow) {
-			return columnValueFromMappedRow(joinRow, expr);
+			return decodeColumnValue(expr, columnValueFromMappedRow(joinRow, expr));
 		}
 		return null;
 	}
@@ -1026,13 +1150,17 @@ function filterToOrExpr(filter: Filter, mainTable?: string): string | null {
 		case "lte":
 			return `${col}.lte.${formatOrValue(filter.value)}`;
 		case "is":
-			return `${col}.is.null`;
+			return filter.negated ? `${col}.not.is.null` : `${col}.is.null`;
 		case "in":
 			return `${col}.in.(${filter.values.map(formatOrValue).join(",")})`;
 		case "ilike":
 			return filter.negated
 				? `${col}.not.ilike.${formatOrValue(filter.value)}`
 				: `${col}.ilike.${formatOrValue(filter.value)}`;
+		case "like":
+			return filter.negated
+				? `${col}.not.like.${formatOrValue(filter.value)}`
+				: `${col}.like.${formatOrValue(filter.value)}`;
 		default:
 			return null;
 	}
@@ -1057,6 +1185,7 @@ function applyFilters<
 		in: FilterBuilderMethod;
 		or: FilterBuilderMethod;
 		ilike: FilterBuilderMethod;
+		like: FilterBuilderMethod;
 		not: FilterBuilderMethod;
 	},
 >(query: T, filters: Filter[], mainTable?: string): T {
@@ -1102,7 +1231,9 @@ function applyFilters<
 				query = query.lte(col, value) as T;
 				break;
 			case "is":
-				query = query.is(col, filter.value) as T;
+				query = filter.negated
+					? (query.not(col, "is", null) as T)
+					: (query.is(col, filter.value) as T);
 				break;
 			case "in":
 				query = query.in(col, filter.values) as T;
@@ -1112,6 +1243,13 @@ function applyFilters<
 					query = query.not(col, "ilike", value) as T;
 				} else {
 					query = query.ilike(col, value) as T;
+				}
+				break;
+			case "like":
+				if (filter.negated) {
+					query = query.not(col, "like", value) as T;
+				} else {
+					query = query.like(col, value) as T;
 				}
 				break;
 		}
@@ -1124,6 +1262,76 @@ function jsKeyFromTable(table: Table): string {
 		if (value === table) return key;
 	}
 	return getTableName(table);
+}
+
+/** Objeto SQL do Drizzle (não um valor literal). */
+function isSqlExpression(value: unknown): boolean {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		DRIZZLE_QUERY_KEY in (value as object)
+	);
+}
+
+/**
+ * Remove de um `set` de upsert as referências a `excluded.*`.
+ *
+ * `excluded.x` significa "grave o valor que está entrando" — que é justamente
+ * o que o upsert do PostgREST faz por padrão. Mantê-las no payload enviaria o
+ * objeto SQL do Drizzle para a API. Qualquer outra expressão não tem tradução
+ * e para aqui, em vez de virar lixo gravado.
+ */
+function stripExcludedReferences(
+	set: Record<string, unknown>,
+): Record<string, unknown> {
+	const cleaned: Record<string, unknown> = {};
+
+	for (const [key, value] of Object.entries(set)) {
+		if (!isSqlExpression(value)) {
+			cleaned[key] = value;
+			continue;
+		}
+
+		const text = sqlExpressionText(value).toLowerCase();
+		if (/^excluded\.[a-z0-9_]+$/.test(text)) continue;
+
+		throw new Error(
+			`[bridge] expressão SQL não suportada em gravação: "${sqlExpressionText(value)}" (campo "${key}"). ` +
+				"Calcule o valor antes de gravar, ou mova a operação para uma RPC.",
+		);
+	}
+
+	return cleaned;
+}
+
+/**
+ * Recusa expressão SQL em valores de gravação.
+ *
+ * O PostgREST recebe JSON: `coluna + 1` ou qualquer cálculo precisa ser
+ * resolvido antes, ou virar RPC.
+ */
+function assertNoSqlExpressions(
+	values: Record<string, unknown>,
+): Record<string, unknown> {
+	for (const [key, value] of Object.entries(values)) {
+		if (!isSqlExpression(value)) continue;
+		throw new Error(
+			`[bridge] expressão SQL não suportada em gravação: "${sqlExpressionText(value)}" (campo "${key}"). ` +
+				"Calcule o valor antes de gravar, ou mova a operação para uma RPC.",
+		);
+	}
+	return values;
+}
+
+/**
+ * Traduz as chaves de um objeto do schema (camelCase) para os nomes reais das
+ * colunas. Útil para montar payload de RPC sem duplicar o mapa de nomes.
+ */
+export function toDbColumnNames(
+	table: Table,
+	values: Record<string, unknown>,
+): Record<string, unknown> {
+	return toDbRow(table, values);
 }
 
 function toDbRow(
@@ -1143,6 +1351,56 @@ function toDbRow(
 	return row;
 }
 
+/**
+ * Converte o valor cru da API para o tipo que a coluna declara.
+ *
+ * A API do Supabase devolve JSON: data vira string, `numeric` vira número. O
+ * schema promete `Date` e `string` respectivamente, e o resto do código confia
+ * nesse contrato — daí erros como `value.getTime is not a function` e
+ * `.toFixed` sobre o que deveria ser texto. Contra o Postgres direto o Drizzle
+ * já entregava convertido; aqui a conversão precisa ser explícita.
+ *
+ * O guia é o `dataType` da coluna, que é o tipo TypeScript declarado, e não o
+ * tipo do Postgres — assim `date({ mode: "string" })` continua string.
+ */
+function decodeColumnValue(column: PgColumn, value: unknown): unknown {
+	if (value === null || value === undefined) return value;
+
+	switch (column.dataType) {
+		case "date": {
+			if (value instanceof Date) return value;
+			if (typeof value !== "string" && typeof value !== "number") return value;
+			const parsed = new Date(value);
+			return Number.isNaN(parsed.getTime()) ? value : parsed;
+		}
+		case "string":
+			return typeof value === "number" || typeof value === "bigint"
+				? String(value)
+				: value;
+		case "number":
+			if (typeof value === "string") {
+				const parsed = Number(value);
+				return Number.isNaN(parsed) ? value : parsed;
+			}
+			return value;
+		case "boolean":
+			if (typeof value === "string") {
+				if (value === "true") return true;
+				if (value === "false") return false;
+			}
+			return value;
+		default:
+			return value;
+	}
+}
+
+export function __decodeColumnValueForTests(
+	column: PgColumn,
+	value: unknown,
+): unknown {
+	return decodeColumnValue(column, value);
+}
+
 function fromDbRow(
 	table: Table,
 	row: Record<string, unknown>,
@@ -1151,9 +1409,9 @@ function fromDbRow(
 	const mapped: Record<string, unknown> = {};
 	for (const [jsKey, column] of Object.entries(columns)) {
 		if (column.name in row) {
-			mapped[jsKey] = row[column.name];
+			mapped[jsKey] = decodeColumnValue(column, row[column.name]);
 		} else if (jsKey in row) {
-			mapped[jsKey] = row[jsKey];
+			mapped[jsKey] = decodeColumnValue(column, row[jsKey]);
 		}
 	}
 	return mapped;
@@ -1388,7 +1646,7 @@ function createInsertBuilder(client: SupabaseClient<Database>, table: Table) {
 
 		const buildWritePayload = () => {
 			if (conflict?.mode === "update") {
-				const setDb = toDbRow(table, conflict.set);
+				const setDb = toDbRow(table, stripExcludedReferences(conflict.set));
 				return payload.map((row) => ({ ...row, ...setDb }));
 			}
 			return payload;
@@ -1604,7 +1862,9 @@ function createUpdateBuilder(client: SupabaseClient<Database>, table: Table) {
 	const tableName = getTableName(table);
 	return {
 		set(values: Record<string, unknown>) {
-			const payload = toDbRow(table, values);
+			// Expressão SQL em UPDATE (ex.: `coluna + 1`) não tem tradução em
+			// PostgREST e antes seguia como objeto no payload.
+			const payload = toDbRow(table, assertNoSqlExpressions(values));
 			return {
 				where(where: SQL) {
 					let executed = false;

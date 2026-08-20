@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { categories, reconciliationAliases } from "@/db/schema";
 import { RECONCILIATION_ALIAS_SOURCES } from "@/features/reconciliation/lib/constants";
@@ -93,6 +93,17 @@ export async function saveReconciliationAliasAction(
 			}
 		}
 
+		// O incremento é resolvido antes da gravação: a API do Supabase recebe
+		// JSON, então `hitCount + 1` não pode ir como expressão.
+		const existingAlias = await db.query.reconciliationAliases.findFirst({
+			columns: { hitCount: true },
+			where: and(
+				eq(reconciliationAliases.userId, dataOwnerUserId),
+				eq(reconciliationAliases.statementKey, statementKey),
+			),
+		});
+		const nextHitCount = (existingAlias?.hitCount ?? 0) + 1;
+
 		await db
 			.insert(reconciliationAliases)
 			.values({
@@ -101,7 +112,7 @@ export async function saveReconciliationAliasAction(
 				targetName: data.targetName.trim(),
 				targetCategoryId: data.targetCategoryId ?? null,
 				source: data.source,
-				hitCount: 1,
+				hitCount: nextHitCount,
 				lastUsedAt: new Date(),
 			})
 			.onConflictDoUpdate({
@@ -113,7 +124,7 @@ export async function saveReconciliationAliasAction(
 					targetName: data.targetName.trim(),
 					targetCategoryId: data.targetCategoryId ?? null,
 					source: data.source,
-					hitCount: sql`${reconciliationAliases.hitCount} + 1`,
+					hitCount: nextHitCount,
 					lastUsedAt: new Date(),
 					updatedAt: new Date(),
 				},

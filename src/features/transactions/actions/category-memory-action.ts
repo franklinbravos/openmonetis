@@ -1,17 +1,8 @@
 "use server";
 
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
-import {
-	categories,
-	importCategoryMappings,
-	payers,
-	transactions,
-} from "@/db/schema";
-import {
-	isTruncatedDescriptionMatch,
-	MIN_DESCRIPTION_PREFIX_MATCH_LENGTH,
-	normalizeDescriptionKey,
-} from "@/features/transactions/lib/import-utils";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { categories, importCategoryMappings, payers } from "@/db/schema";
+import { normalizeDescriptionKey } from "@/features/transactions/lib/import-utils";
 import { getUserId } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
 import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
@@ -23,169 +14,6 @@ export type ImportDescriptionMemory = {
 	categoryId: string | null;
 	payerId: string | null;
 };
-
-const transactionDescriptionKeySql = sql<string>`lower(regexp_replace(trim(${transactions.name}), '\\s+', ' ', 'g'))`;
-
-async function fetchSavedDescriptionMemory(
-	userId: string,
-	keys: string[],
-): Promise<Record<string, ImportDescriptionMemory>> {
-	if (keys.length === 0) return {};
-
-	const rows = await db
-		.select({
-			descriptionKey: importCategoryMappings.descriptionKey,
-			categoryId: importCategoryMappings.categoryId,
-			payerId: importCategoryMappings.payerId,
-		})
-		.from(importCategoryMappings)
-		.where(
-			and(
-				eq(importCategoryMappings.userId, userId),
-				inArray(importCategoryMappings.descriptionKey, keys),
-			),
-		);
-
-	return Object.fromEntries(
-		rows.map((row) => [
-			row.descriptionKey,
-			{
-				categoryId: row.categoryId,
-				payerId: row.payerId,
-			},
-		]),
-	);
-}
-
-async function fetchTransactionDescriptionMemory(
-	userId: string,
-	keys: string[],
-): Promise<Record<string, ImportDescriptionMemory>> {
-	if (keys.length === 0) return {};
-
-	const rows = await db
-		.select({
-			descriptionKey: transactionDescriptionKeySql,
-			categoryId: transactions.categoryId,
-			payerId: transactions.payerId,
-			createdAt: transactions.createdAt,
-		})
-		.from(transactions)
-		.where(
-			and(
-				eq(transactions.userId, userId),
-				inArray(transactionDescriptionKeySql, keys),
-			),
-		)
-		.orderBy(desc(transactions.createdAt));
-
-	const memory: Record<string, ImportDescriptionMemory> = {};
-	for (const row of rows) {
-		if (!row.descriptionKey || memory[row.descriptionKey]) continue;
-		memory[row.descriptionKey] = {
-			categoryId: row.categoryId,
-			payerId: row.payerId,
-		};
-	}
-
-	return memory;
-}
-
-function getEligiblePrefixKeys(keys: string[]): string[] {
-	return keys.filter(
-		(key) => key.length >= MIN_DESCRIPTION_PREFIX_MATCH_LENGTH,
-	);
-}
-
-function resolvePrefixMemoryForKeys(
-	keys: string[],
-	candidates: {
-		descriptionKey: string;
-		categoryId: string | null;
-		payerId: string | null;
-	}[],
-): Record<string, ImportDescriptionMemory> {
-	const memory: Record<string, ImportDescriptionMemory> = {};
-
-	for (const importKey of getEligiblePrefixKeys(keys)) {
-		const match = candidates.find(
-			(candidate) =>
-				candidate.descriptionKey &&
-				isTruncatedDescriptionMatch(importKey, candidate.descriptionKey),
-		);
-
-		if (!match) continue;
-
-		memory[importKey] = {
-			categoryId: match.categoryId,
-			payerId: match.payerId,
-		};
-	}
-
-	return memory;
-}
-
-async function fetchSavedPrefixDescriptionMemory(
-	userId: string,
-	keys: string[],
-): Promise<Record<string, ImportDescriptionMemory>> {
-	const eligibleKeys = getEligiblePrefixKeys(keys);
-	if (eligibleKeys.length === 0) return {};
-
-	const rows = await db
-		.select({
-			descriptionKey: importCategoryMappings.descriptionKey,
-			categoryId: importCategoryMappings.categoryId,
-			payerId: importCategoryMappings.payerId,
-			updatedAt: importCategoryMappings.updatedAt,
-		})
-		.from(importCategoryMappings)
-		.where(
-			and(
-				eq(importCategoryMappings.userId, userId),
-				or(
-					...eligibleKeys.flatMap((key) => [
-						sql`${importCategoryMappings.descriptionKey} like ${`${key}%`}`,
-						sql`${key} like ${importCategoryMappings.descriptionKey} || '%'`,
-					]),
-				),
-			),
-		)
-		.orderBy(desc(importCategoryMappings.updatedAt));
-
-	return resolvePrefixMemoryForKeys(keys, rows);
-}
-
-async function fetchTransactionPrefixDescriptionMemory(
-	userId: string,
-	keys: string[],
-): Promise<Record<string, ImportDescriptionMemory>> {
-	const eligibleKeys = getEligiblePrefixKeys(keys);
-	if (eligibleKeys.length === 0) return {};
-
-	const rows = await db
-		.select({
-			descriptionKey: transactionDescriptionKeySql,
-			categoryId: transactions.categoryId,
-			payerId: transactions.payerId,
-			createdAt: transactions.createdAt,
-		})
-		.from(transactions)
-		.where(
-			and(
-				eq(transactions.userId, userId),
-				or(
-					...eligibleKeys.flatMap((key) => [
-						sql`${transactionDescriptionKeySql} like ${`${key}%`}`,
-						sql`${key} like ${transactionDescriptionKeySql} || '%'`,
-					]),
-				),
-			),
-		)
-		.orderBy(desc(transactions.createdAt));
-
-	return resolvePrefixMemoryForKeys(keys, rows);
-}
 
 function mergeDescriptionMemory(
 	keys: string[],
@@ -208,13 +36,6 @@ function mergeDescriptionMemory(
 	);
 }
 
-function getKeysMissingCategory(
-	keys: string[],
-	memory: Record<string, ImportDescriptionMemory>,
-): string[] {
-	return keys.filter((key) => !memory[key]?.categoryId);
-}
-
 type DescriptionMemoryRow = {
 	description_key: string | null;
 	categoria_id: string | null;
@@ -224,8 +45,10 @@ type DescriptionMemoryRow = {
 /**
  * Memória vinda da RPC, que normaliza e casa prefixo no próprio banco.
  *
- * Devolve `null` quando a função ainda não existe — instalação sem a migration
- * aplicada continua funcionando pelo caminho antigo, só sem o histórico.
+ * A normalização precisa acontecer no SQL: PostgREST não expressa
+ * `lower(regexp_replace(...))` nem em filtro nem em projeção. Devolve `null`
+ * quando a função não existe — a conferência segue sem sugestão em vez de
+ * quebrar a tela.
  */
 async function fetchDescriptionMemoryFromRpc(
 	userId: string,
@@ -264,40 +87,7 @@ export async function fetchImportDescriptionMemory(
 	if (keys.length === 0) return {};
 
 	const rpcMemory = await fetchDescriptionMemoryFromRpc(dataOwnerUserId, keys);
-	if (rpcMemory) {
-		return mergeDescriptionMemory(keys, rpcMemory);
-	}
-
-	const [savedMemory, transactionMemory] = await Promise.all([
-		fetchSavedDescriptionMemory(dataOwnerUserId, keys),
-		fetchTransactionDescriptionMemory(dataOwnerUserId, keys),
-	]);
-
-	const exactMemory = mergeDescriptionMemory(
-		keys,
-		savedMemory,
-		transactionMemory,
-	);
-	const keysMissingCategory = getKeysMissingCategory(keys, exactMemory);
-
-	if (keysMissingCategory.length === 0) {
-		return exactMemory;
-	}
-
-	const [savedPrefixMemory, transactionPrefixMemory] = await Promise.all([
-		fetchSavedPrefixDescriptionMemory(dataOwnerUserId, keysMissingCategory),
-		fetchTransactionPrefixDescriptionMemory(
-			dataOwnerUserId,
-			keysMissingCategory,
-		),
-	]);
-
-	return mergeDescriptionMemory(
-		keys,
-		exactMemory,
-		savedPrefixMemory,
-		transactionPrefixMemory,
-	);
+	return mergeDescriptionMemory(keys, rpcMemory ?? {});
 }
 
 // Compat: retorna apenas categoryId para chamadas legadas.
