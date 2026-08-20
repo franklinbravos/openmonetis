@@ -110,6 +110,8 @@ type InvoiceSummaryCardProps = {
 const actionLabelByStatus: Record<InvoicePaymentStatus, string> = {
 	[INVOICE_PAYMENT_STATUS.PENDING]: "Marcar como paga",
 	[INVOICE_PAYMENT_STATUS.PAID]: "Desfazer pagamento",
+	// Parcial ainda tem saldo em aberto: a ação útil é quitar o resto.
+	[INVOICE_PAYMENT_STATUS.PARTIAL]: "Marcar como paga",
 };
 
 const actionVariantByStatus: Record<
@@ -118,6 +120,7 @@ const actionVariantByStatus: Record<
 > = {
 	[INVOICE_PAYMENT_STATUS.PENDING]: "outline",
 	[INVOICE_PAYMENT_STATUS.PAID]: "outline",
+	[INVOICE_PAYMENT_STATUS.PARTIAL]: "outline",
 };
 
 const actionButtonClassName =

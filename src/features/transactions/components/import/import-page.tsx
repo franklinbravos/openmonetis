@@ -56,6 +56,10 @@ import {
 	syncImportBatchContextAction,
 	syncImportBatchSourceTotalAction,
 } from "@/features/transactions/actions/import-batch-history-action";
+import {
+	fetchPreviousInvoiceSnapshotAction,
+	type PreviousInvoiceSnapshot,
+} from "@/features/transactions/actions/previous-invoice-snapshot";
 import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
 import {
 	decodeAccountCard,
@@ -74,6 +78,7 @@ import { ImportLinkDialog } from "@/features/transactions/components/import/impo
 import { ImportSteps } from "@/features/transactions/components/import/import-steps";
 import { ImportSummary } from "@/features/transactions/components/import/import-summary";
 import { InvoiceTotalReconciliationBanner } from "@/features/transactions/components/import/invoice-total-reconciliation-banner";
+import { PreviousInvoiceSettlementCard } from "@/features/transactions/components/import/previous-invoice-settlement-card";
 import {
 	type ReviewRow,
 	ReviewTable,
@@ -211,10 +216,16 @@ import {
 	stripImportExternalIdSuffix,
 	uniquifyImportedExternalIds,
 } from "@/shared/lib/import/helpers";
+import {
+	resolvePreviousInvoiceSettlement,
+	sumInvoiceRolloverCarry,
+	sumInvoiceRolloverCharges,
+} from "@/shared/lib/import/invoice-rollover";
 import { resolveInvoiceSourceTotal } from "@/shared/lib/import/invoice-source-total";
 import {
 	computeImportReconciliation,
 	isInvoiceTotalReconciled,
+	sumInvoicePaymentRowsFromFile,
 } from "@/shared/lib/import/invoice-total";
 import { mapPdfLoadError } from "@/shared/lib/import/pdf-password";
 import type { ImportStatement } from "@/shared/lib/import/types";
@@ -3047,6 +3058,62 @@ export function ImportPage({
 		};
 	}, [rows, selectedRows]);
 
+	/**
+	 * Fatura anterior, para apurar como ela foi paga.
+	 *
+	 * Buscada só em importação de fatura de cartão: é o arquivo desta fatura que
+	 * revela quanto da anterior ficou pendente.
+	 */
+	const [previousInvoice, setPreviousInvoice] =
+		useState<PreviousInvoiceSnapshot | null>(null);
+
+	const invoiceCardId =
+		linkedCardId ?? initialCardId ?? activeInvoiceContext?.cardId ?? null;
+	const invoiceTargetPeriod =
+		invoicePeriod ??
+		initialInvoicePeriod ??
+		activeInvoiceContext?.invoicePeriod ??
+		null;
+
+	useEffect(() => {
+		if (!invoiceCardId || !invoiceTargetPeriod) {
+			setPreviousInvoice(null);
+			return;
+		}
+
+		let cancelled = false;
+		void fetchPreviousInvoiceSnapshotAction({
+			cardId: invoiceCardId,
+			period: invoiceTargetPeriod,
+		}).then((snapshot) => {
+			if (cancelled) return;
+			setPreviousInvoice(snapshot);
+		});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [invoiceCardId, invoiceTargetPeriod]);
+
+	/** Liquidação da fatura anterior, apurada pelas linhas de rotativo deste arquivo. */
+	const previousInvoiceSettlement = useMemo(() => {
+		if (!previousInvoice) return null;
+
+		const carriedOver = sumInvoiceRolloverCarry(rows);
+		if (carriedOver <= 0) return null;
+
+		return resolvePreviousInvoiceSettlement({
+			previousTotal: previousInvoice.total,
+			carriedOver,
+			filePaymentsTotal: sumInvoicePaymentRowsFromFile(rows),
+		});
+	}, [previousInvoice, rows]);
+
+	const rolloverCharges = useMemo(
+		() => sumInvoiceRolloverCharges(rows),
+		[rows],
+	);
+
 	const returnToInvoiceHref = useMemo(() => {
 		const decoded = accountCardValue
 			? decodeAccountCard(accountCardValue)
@@ -3449,6 +3516,15 @@ export function ImportPage({
 					rowsMarkedForRemoval.length > 0 ? rowsMarkedForRemoval : undefined,
 				existingAmountEdits: collectExistingAmountEdits(rows),
 				existingInstallmentEdits: collectExistingInstallmentEdits(rows),
+				previousInvoiceSettlement:
+					previousInvoiceSettlement && previousInvoice
+						? {
+								period: previousInvoice.period,
+								paidAmount: previousInvoiceSettlement.paidOnPrevious,
+								carriedOver: previousInvoiceSettlement.carriedOver,
+								paymentTransactionId: previousInvoice.paymentTransactionId,
+							}
+						: undefined,
 			});
 
 			if (!result.success) {
@@ -3725,6 +3801,17 @@ export function ImportPage({
 								amountCorrectionCount={amountCorrectionCount}
 								installmentCorrectionCount={installmentCorrectionCount}
 							/>
+
+							{previousInvoiceSettlement && previousInvoice ? (
+								<PreviousInvoiceSettlementCard
+									settlement={previousInvoiceSettlement}
+									previousPeriod={previousInvoice.period}
+									registeredPaymentAmount={
+										previousInvoice.paymentTransactionAmount
+									}
+									rolloverCharges={rolloverCharges}
+								/>
+							) : null}
 
 							{importInvoiceReconciliation && invoiceSourceTotal ? (
 								<InvoiceTotalReconciliationBanner

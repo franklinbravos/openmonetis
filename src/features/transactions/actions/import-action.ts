@@ -166,6 +166,38 @@ const existingInstallmentEditSchema = z.object({
 	installmentCount: z.number().int().positive(),
 });
 
+/**
+ * Liquidação da fatura anterior, deduzida do arquivo desta.
+ *
+ * Chega da revisão já conferida pelo usuário: quanto foi pago na fatura
+ * anterior e quanto dela rolou para esta. Aplicar isso na importação corrige o
+ * registro do mês anterior, que ficava marcado como pago por inteiro e com um
+ * débito na conta por um valor que nunca saiu dela.
+ */
+const previousInvoiceSettlementSchema = z.object({
+	period: z
+		.string()
+		.regex(/^\d{4}-\d{2}$/, "Período da fatura anterior inválido."),
+	paidAmount: z.number().nonnegative(),
+	carriedOver: z.number().nonnegative(),
+	paymentTransactionId: uuidSchema("Lançamento").nullable().optional(),
+});
+
+/**
+ * Status da fatura anterior a partir do que sobrou dela.
+ *
+ * Nada carregado significa quitada; carregado sem pagamento, pendente. A
+ * tolerância de um centavo absorve o arredondamento do banco.
+ */
+function resolveSettlementStatus(settlement: {
+	paidAmount: number;
+	carriedOver: number;
+}): string {
+	if (settlement.carriedOver <= 0.01) return INVOICE_PAYMENT_STATUS.PAID;
+	if (settlement.paidAmount <= 0.01) return INVOICE_PAYMENT_STATUS.PENDING;
+	return INVOICE_PAYMENT_STATUS.PARTIAL;
+}
+
 const importSchema = z
 	.object({
 		rows: z.array(importRowSchema),
@@ -191,6 +223,7 @@ const importSchema = z
 		removeTransactionIds: z.array(z.string().uuid()).optional(),
 		existingAmountEdits: z.array(existingAmountEditSchema).optional(),
 		existingInstallmentEdits: z.array(existingInstallmentEditSchema).optional(),
+		previousInvoiceSettlement: previousInvoiceSettlementSchema.optional(),
 	})
 	.superRefine((data, ctx) => {
 		if (
@@ -948,6 +981,17 @@ export async function importTransactionsAction(
 	const existingInstallmentEdits = dedupeExistingInstallmentEdits(
 		parsed.data.existingInstallmentEdits ?? [],
 	);
+
+	/**
+	 * Liquidação da fatura anterior, se a revisão apurou uma.
+	 *
+	 * Só vale para importação de fatura de cartão: é o arquivo desta fatura que
+	 * revela quanto da anterior ficou pendente.
+	 */
+	const previousSettlement =
+		cardId && invoicePeriod
+			? (parsed.data.previousInvoiceSettlement ?? null)
+			: null;
 
 	let validatedInstallmentEdits: ExistingInstallmentEdit[] = [];
 	if (existingInstallmentEdits.length > 0) {
@@ -1885,6 +1929,23 @@ export async function importTransactionsAction(
 					periodo: record.settlePeriod,
 					status_pagamento: INVOICE_PAYMENT_STATUS.PAID,
 				})),
+				p_previous_settlement: previousSettlement
+					? {
+							cartao_id: cardId,
+							periodo: previousSettlement.period,
+							status_pagamento: resolveSettlementStatus(previousSettlement),
+							valor_pago:
+								resolveSettlementStatus(previousSettlement) ===
+								INVOICE_PAYMENT_STATUS.PARTIAL
+									? formatDecimalForDbRequired(previousSettlement.paidAmount)
+									: null,
+							lancamento_id: previousSettlement.paymentTransactionId ?? null,
+							// O débito na conta é saída de dinheiro: sinal negativo.
+							valor_lancamento: formatDecimalForDbRequired(
+								-Math.abs(previousSettlement.paidAmount),
+							),
+						}
+					: null,
 			},
 		);
 

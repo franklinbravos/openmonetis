@@ -141,6 +141,7 @@ async function resolveSourceRoundingDelta(
 const successMessageByStatus: Record<InvoicePaymentStatus, string> = {
 	[INVOICE_PAYMENT_STATUS.PAID]: "Fatura marcada como paga.",
 	[INVOICE_PAYMENT_STATUS.PENDING]: "Pagamento da fatura foi revertido.",
+	[INVOICE_PAYMENT_STATUS.PARTIAL]: "Fatura marcada como paga parcialmente.",
 };
 
 export async function updateInvoicePaymentStatusAction(

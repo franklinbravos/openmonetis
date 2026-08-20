@@ -408,6 +408,8 @@ export const invoices = pgTable(
 	{
 		id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
 		paymentStatus: text("status_pagamento"),
+		/** Quanto foi pago, só quando o pagamento é parcial. */
+		paidAmount: numeric("valor_pago", { precision: 12, scale: 2 }),
 		period: text("periodo"),
 		createdAt: timestamp("created_at", {
 			mode: "date",
