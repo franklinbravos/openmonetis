@@ -21,6 +21,11 @@ import {
 } from "@/features/categories/components/create-category-inline-dialog";
 import type { Category } from "@/features/categories/components/types";
 import {
+	type CardLimitsSnapshot,
+	fetchCardLimitsAction,
+	updateCardLimitsFromInvoiceAction,
+} from "@/features/transactions/actions/card-limits";
+import {
 	fetchImportDescriptionMemory,
 	saveCategoryMappings,
 } from "@/features/transactions/actions/category-memory-action";
@@ -61,6 +66,7 @@ import {
 	type PreviousInvoiceSnapshot,
 } from "@/features/transactions/actions/previous-invoice-snapshot";
 import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
+import { CardLimitsCard } from "@/features/transactions/components/import/card-limits-card";
 import {
 	decodeAccountCard,
 	encodeAccountCard,
@@ -3159,6 +3165,35 @@ export function ImportPage({
 		[rows],
 	);
 
+	/** Limites do cartão hoje, para comparar com o que a fatura declara. */
+	const [cardLimits, setCardLimits] = useState<CardLimitsSnapshot | null>(null);
+	const [cardLimitsConfirmed, setCardLimitsConfirmed] = useState(true);
+
+	useEffect(() => {
+		if (!invoiceCardId) {
+			setCardLimits(null);
+			return;
+		}
+
+		let cancelled = false;
+		void fetchCardLimitsAction(invoiceCardId).then((snapshot) => {
+			if (cancelled) return;
+			setCardLimits(snapshot);
+		});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [invoiceCardId]);
+
+	// Trocar de cartão invalida a confirmação anterior.
+	useEffect(() => {
+		setCardLimitsConfirmed(true);
+	}, [invoiceCardId]);
+
+	const fileCreditLimit = statement?.invoice?.creditLimitTotal ?? null;
+	const fileGuaranteedLimit = statement?.invoice?.creditLimitGuaranteed ?? null;
+
 	/** O que a importação mudaria na fatura anterior, em uma frase. */
 	const previousSettlementChangeSummary = useMemo(() => {
 		if (!previousInvoiceSettlement || !previousInvoice) return null;
@@ -3658,6 +3693,25 @@ export function ImportPage({
 
 			setConfirmOpen(false);
 
+			// Limite do cartão: fora da transação da importação de propósito. Não é
+			// registro financeiro, e uma falha aqui não deve derrubar a importação
+			// que já foi gravada — o limite continua ajustável na tela do cartão.
+			if (
+				cardLimitsConfirmed &&
+				invoiceCardId &&
+				fileCreditLimit != null &&
+				cardLimits &&
+				(Math.abs(fileCreditLimit - cardLimits.limit) > 0.01 ||
+					(fileGuaranteedLimit ?? null) !==
+						(cardLimits.guaranteedLimit ?? null))
+			) {
+				void updateCardLimitsFromInvoiceAction({
+					cardId: invoiceCardId,
+					limit: fileCreditLimit,
+					guaranteedLimit: fileGuaranteedLimit,
+				});
+			}
+
 			// Salva mapeamentos description → category (fire-and-forget)
 			saveCategoryMappings(
 				selectedRows.map((r) => ({
@@ -3930,6 +3984,17 @@ export function ImportPage({
 									review={previousInvoiceReview}
 									previousPeriod={previousInvoice.period}
 									carriedOver={previousInvoiceSettlement?.carriedOver ?? 0}
+								/>
+							) : null}
+
+							{fileCreditLimit != null && cardLimits ? (
+								<CardLimitsCard
+									fileLimit={fileCreditLimit}
+									fileGuaranteedLimit={fileGuaranteedLimit}
+									registeredLimit={cardLimits.limit}
+									registeredGuaranteedLimit={cardLimits.guaranteedLimit}
+									confirmed={cardLimitsConfirmed}
+									onConfirmedChange={setCardLimitsConfirmed}
 								/>
 							) : null}
 

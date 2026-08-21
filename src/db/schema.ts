@@ -377,6 +377,11 @@ export const cards = pgTable(
 		limit: numeric("limite", { precision: 10, scale: 2 })
 			.notNull()
 			.default("0"),
+		/** Parcela do limite lastreada por investimento, lida da fatura. */
+		guaranteedLimit: numeric("limite_garantido", {
+			precision: 12,
+			scale: 2,
+		}),
 		brand: text("bandeira"),
 		logo: text("logo"),
 		status: text("status").notNull(),

@@ -29,6 +29,14 @@ export type InvoiceImportMetadata = {
 	 */
 	previousInvoiceTotal?: number | null;
 	previousInvoicePaymentReceived?: number | null;
+	/**
+	 * Limites lidos do bloco "Limites disponíveis".
+	 *
+	 * O total é utilizado + disponível. O garantido é a parcela lastreada por
+	 * investimento, que o usuário controla aportando ou resgatando.
+	 */
+	creditLimitTotal?: number | null;
+	creditLimitGuaranteed?: number | null;
 };
 
 export type ImportStatement = {

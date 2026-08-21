@@ -595,6 +595,45 @@ function resolvePaymentDateBeforeDueDate(
 	return parsePortugueseShortDate(day, monthAbbr, dueYear - 1);
 }
 
+/**
+ * Limites do bloco "Limites disponíveis".
+ *
+ * O bloco traz duas colunas — utilizado e disponível — por linha:
+ *
+ *   Limite total                         R$ 11.398,09   R$ 14.576,95
+ *   Pré-aprovado                          R$ 2.799,99    R$ 2.800,00
+ *   Nu Limite Garantido e limite extra    R$ 8.598,10   R$ 11.776,95
+ *
+ * O limite de cada linha é a soma das duas colunas; as sub-linhas somam o total.
+ */
+function parseNubankCreditLimits(text: string): {
+	total: number | null;
+	guaranteed: number | null;
+} {
+	const readLine = (label: RegExp): number | null => {
+		const match = text.match(
+			new RegExp(
+				`${label.source}\\s+R\\$\\s*([\\d.]+,\\d{2})\\s+R\\$\\s*([\\d.]+,\\d{2})`,
+				"i",
+			),
+		);
+		if (!match) return null;
+
+		return roundToCents(
+			parseBrazilianAmount(match[1]) + parseBrazilianAmount(match[2]),
+		);
+	};
+
+	return {
+		total: readLine(/Limite total/),
+		guaranteed: readLine(/Nu Limite Garantido(?:\s+e\s+limite\s+extra)?/),
+	};
+}
+
+function roundToCents(value: number): number {
+	return Math.round(value * 100) / 100;
+}
+
 function parseNubankInvoiceMetadata(
 	text: string,
 	transactions: ImportedTransaction[],
@@ -613,6 +652,7 @@ function parseNubankInvoiceMetadata(
 	const previousPaymentMatch = text.match(
 		/Pagamento recebido\s+[-−–]?\s*R\$\s*([\d.]+,\d{2})/i,
 	);
+	const creditLimits = parseNubankCreditLimits(text);
 	const parsedTotal = totalMatch ? parseBrazilianAmount(totalMatch[1]) : null;
 	const transactionTotal = transactions.reduce(
 		(total, transaction) => total + transaction.amount,
@@ -662,6 +702,8 @@ function parseNubankInvoiceMetadata(
 		previousInvoicePaymentReceived: previousPaymentMatch
 			? parseBrazilianAmount(previousPaymentMatch[1])
 			: null,
+		creditLimitTotal: creditLimits.total,
+		creditLimitGuaranteed: creditLimits.guaranteed,
 		dueDate,
 		isPaid,
 		paymentDate,
