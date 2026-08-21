@@ -10,9 +10,8 @@ import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access"
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { callRpcOne } from "@/shared/lib/supabase/rpc";
 import { parseLocalDateString, toDateOnlyString } from "@/shared/utils/date";
-import { addMonthsToPeriod } from "@/shared/utils/period";
 
-export type PreviousInvoiceSnapshot = {
+export type InvoiceSnapshot = {
 	period: string;
 	/** Total cadastrado da fatura anterior. */
 	total: number;
@@ -31,43 +30,41 @@ function toNumber(value: unknown): number {
 }
 
 /**
- * Fatura anterior de um cartão, para conferir o pagamento parcial.
+ * Estado de uma fatura: total, situação e o débito registrado por ela.
  *
- * Como uma fatura foi paga só se sabe no arquivo do mês seguinte, pela linha
- * "valor pendente do mês anterior". Para deduzir o quanto foi pago é preciso o
- * total da fatura anterior e o débito que ficou registrado por ela.
+ * Serve a dois usos na importação — conferir como a fatura ANTERIOR foi paga, e
+ * saber se a fatura sendo importada já está quitada, para não perguntar de novo
+ * o que já foi feito.
  */
-export async function fetchPreviousInvoiceSnapshotAction(input: {
+export async function fetchInvoiceSnapshotAction(input: {
 	cardId: string;
+	/** Período exato da fatura desejada. */
 	period: string;
-}): Promise<PreviousInvoiceSnapshot | null> {
+}): Promise<InvoiceSnapshot | null> {
 	try {
 		const userId = await getUserId();
 		const dataOwnerUserId = await getFinancialDataOwnerId(userId);
-		const previousPeriod = addMonthsToPeriod(input.period, -1);
+		const period = input.period;
 
 		const [totalRow, invoice, paymentRow] = await Promise.all([
 			callRpcOne<{ total: string | number | null }>("get_invoice_total", {
 				p_user_id: dataOwnerUserId,
 				p_card_id: input.cardId,
-				p_period: previousPeriod,
+				p_period: period,
 			}),
 			db.query.invoices.findFirst({
 				columns: { paymentStatus: true },
 				where: and(
 					eq(invoices.userId, dataOwnerUserId),
 					eq(invoices.cardId, input.cardId),
-					eq(invoices.period, previousPeriod),
+					eq(invoices.period, period),
 				),
 			}),
 			db.query.transactions.findFirst({
 				columns: { id: true, amount: true, purchaseDate: true },
 				where: and(
 					eq(transactions.userId, dataOwnerUserId),
-					eq(
-						transactions.note,
-						buildInvoicePaymentNote(input.cardId, previousPeriod),
-					),
+					eq(transactions.note, buildInvoicePaymentNote(input.cardId, period)),
 				),
 			}),
 		]);
@@ -76,7 +73,7 @@ export async function fetchPreviousInvoiceSnapshotAction(input: {
 		if (total <= 0) return null;
 
 		return {
-			period: previousPeriod,
+			period,
 			total,
 			paymentStatus: invoice?.paymentStatus ?? null,
 			paymentTransactionId: paymentRow?.id ?? null,
@@ -86,7 +83,7 @@ export async function fetchPreviousInvoiceSnapshotAction(input: {
 			paymentTransactionDate: toDateOnlyString(paymentRow?.purchaseDate),
 		};
 	} catch (error) {
-		console.error("fetchPreviousInvoiceSnapshotAction", error);
+		console.error("fetchInvoiceSnapshotAction", error);
 		return null;
 	}
 }

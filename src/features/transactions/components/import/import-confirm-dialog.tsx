@@ -1,5 +1,6 @@
 "use client";
 
+import { RiCheckboxCircleLine } from "@remixicon/react";
 import { AccountCardSelectContent } from "@/features/transactions/components/select-items";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
@@ -21,11 +22,20 @@ import {
 	SelectValue,
 } from "@/shared/components/ui/select";
 import { formatCurrency } from "@/shared/utils/currency";
+import { formatDateOnly } from "@/shared/utils/date";
 import { cn } from "@/shared/utils/ui";
 
 export type ImportInvoicePaymentPrompt = {
 	/** Vencimento da fatura, sugerido como data do pagamento. */
 	dueDate: string | null;
+	/**
+	 * Pagamento já registrado desta fatura, quando existe.
+	 *
+	 * Reprocessar um arquivo já processado é o caso comum. Perguntar "esta fatura
+	 * já foi paga?" nessa situação ignora o que já foi feito e convida a
+	 * registrar o pagamento duas vezes.
+	 */
+	alreadyPaid?: { date: string | null; amount: number | null } | null;
 	paid: boolean;
 	onPaidChange: (paid: boolean) => void;
 	paymentDate: string;
@@ -150,9 +160,9 @@ export function ImportConfirmDialog({
 						</p>
 					) : nothingToConfirm ? (
 						<p className="text-muted-foreground text-sm leading-relaxed">
-							A fatura já está conferida com o arquivo: nada a importar, remover
-							ou corrigir. Marque abaixo se ela já foi paga para registrar a
-							baixa e fechar o mês.
+							{invoicePayment?.alreadyPaid
+								? "A fatura já está conferida com o arquivo e já está paga: nada a importar, remover ou corrigir."
+								: "A fatura já está conferida com o arquivo: nada a importar, remover ou corrigir. Marque abaixo se ela já foi paga para registrar a baixa e fechar o mês."}
 						</p>
 					) : null}
 					{verifiedCount > 0 ? (
@@ -301,7 +311,37 @@ export function ImportConfirmDialog({
 					</div>
 				) : null}
 
-				{invoicePayment ? (
+				{invoicePayment?.alreadyPaid ? (
+					<div className="space-y-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3">
+						<div className="flex flex-wrap items-center gap-2">
+							<RiCheckboxCircleLine className="size-4 shrink-0 text-emerald-600" />
+							<p className="font-medium text-sm">Esta fatura já está paga</p>
+						</div>
+						<ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+							{invoicePayment.alreadyPaid.date ? (
+								<li className="flex items-center gap-1.5">
+									<span className="text-muted-foreground">Pago em</span>
+									<span className="font-medium tabular-nums">
+										{formatDateOnly(invoicePayment.alreadyPaid.date) ??
+											invoicePayment.alreadyPaid.date}
+									</span>
+								</li>
+							) : null}
+							{invoicePayment.alreadyPaid.amount != null ? (
+								<li className="flex items-center gap-1.5">
+									<span className="text-muted-foreground">Valor</span>
+									<span className="font-medium tabular-nums">
+										{formatCurrency(invoicePayment.alreadyPaid.amount)}
+									</span>
+								</li>
+							) : null}
+						</ul>
+						<p className="text-muted-foreground text-xs leading-relaxed">
+							O pagamento não é registrado de novo. Este reprocessamento aplica
+							apenas o que mudou nos lançamentos.
+						</p>
+					</div>
+				) : invoicePayment ? (
 					<div className="space-y-3 rounded-md border p-3">
 						<p className="font-medium text-sm">Esta fatura já foi paga?</p>
 						<div className="grid grid-cols-2 gap-2">

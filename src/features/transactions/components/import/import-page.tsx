@@ -62,8 +62,8 @@ import {
 	syncImportBatchSourceTotalAction,
 } from "@/features/transactions/actions/import-batch-history-action";
 import {
-	fetchPreviousInvoiceSnapshotAction,
-	type PreviousInvoiceSnapshot,
+	fetchInvoiceSnapshotAction,
+	type InvoiceSnapshot,
 	updatePreviousInvoicePaymentDateAction,
 } from "@/features/transactions/actions/previous-invoice-snapshot";
 import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
@@ -250,7 +250,11 @@ import {
 	formatDateOnly,
 	getTodayDateString,
 } from "@/shared/utils/date";
-import { displayPeriod, formatPeriodForUrl } from "@/shared/utils/period";
+import {
+	addMonthsToPeriod,
+	displayPeriod,
+	formatPeriodForUrl,
+} from "@/shared/utils/period";
 
 function fileFromBase64(
 	base64: string,
@@ -3095,7 +3099,7 @@ export function ImportPage({
 	 * revela quanto da anterior ficou pendente.
 	 */
 	const [previousInvoice, setPreviousInvoice] =
-		useState<PreviousInvoiceSnapshot | null>(null);
+		useState<InvoiceSnapshot | null>(null);
 
 	/**
 	 * Cartão desta importação.
@@ -3125,19 +3129,40 @@ export function ImportPage({
 		activeInvoiceContext?.invoicePeriod ??
 		null;
 
+	/**
+	 * Estado da fatura sendo importada.
+	 *
+	 * Reprocessar um arquivo já processado é o caso comum — serve para aplicar
+	 * melhorias posteriores. Sem saber que a fatura já está paga, o diálogo
+	 * perguntava de novo "esta fatura já foi paga?", como se nada tivesse
+	 * acontecido.
+	 */
+	const [currentInvoice, setCurrentInvoice] = useState<InvoiceSnapshot | null>(
+		null,
+	);
+
 	useEffect(() => {
 		if (!invoiceCardId || !invoiceTargetPeriod) {
 			setPreviousInvoice(null);
+			setCurrentInvoice(null);
 			return;
 		}
 
 		let cancelled = false;
-		void fetchPreviousInvoiceSnapshotAction({
-			cardId: invoiceCardId,
-			period: invoiceTargetPeriod,
-		}).then((snapshot) => {
+
+		void Promise.all([
+			fetchInvoiceSnapshotAction({
+				cardId: invoiceCardId,
+				period: addMonthsToPeriod(invoiceTargetPeriod, -1),
+			}),
+			fetchInvoiceSnapshotAction({
+				cardId: invoiceCardId,
+				period: invoiceTargetPeriod,
+			}),
+		]).then(([previous, current]) => {
 			if (cancelled) return;
-			setPreviousInvoice(snapshot);
+			setPreviousInvoice(previous);
+			setCurrentInvoice(current);
 		});
 
 		return () => {
@@ -3357,8 +3382,15 @@ export function ImportPage({
 			statement?.isCreditCard,
 	);
 
+	/** Fatura já quitada não recebe baixa de novo, mesmo que o toggle esteja ligado. */
+	const invoiceAlreadyPaid =
+		currentInvoice?.paymentStatus === INVOICE_PAYMENT_STATUS.PAID;
+
 	const shouldPayInvoiceOnImport =
-		canAskInvoicePayment && payInvoiceOnImport && Boolean(paymentAccountId);
+		canAskInvoicePayment &&
+		!invoiceAlreadyPaid &&
+		payInvoiceOnImport &&
+		Boolean(paymentAccountId);
 
 	const returnToAccountStatementHref = useMemo(() => {
 		const decoded = accountCardValue
@@ -3490,7 +3522,24 @@ export function ImportPage({
 		canAskInvoicePayment && payInvoiceOnImport && !paymentAccountId;
 
 	/** Sem nada a mudar e sem marcar o pagamento, confirmar não faria nada. */
-	const nothingToConfirm = !hasPendingImportWork && !shouldPayInvoiceOnImport;
+	/**
+	 * Ajustes que o reprocessamento aplica fora dos lançamentos.
+	 *
+	 * Reprocessar uma fatura já conferida e já paga não mexe em lançamento
+	 * nenhum, mas pode corrigir a fatura anterior e os limites do cartão — que é
+	 * justamente o motivo de reprocessar. Sem contar isso, o botão de confirmar
+	 * ficava desabilitado com trabalho pendente na tela.
+	 */
+	const hasSideAdjustments =
+		(previousInvoiceReview?.hasChanges === true &&
+			previousSettlementConfirmed) ||
+		(cardLimitsConfirmed &&
+			fileCreditLimit != null &&
+			cardLimits != null &&
+			Math.abs(fileCreditLimit - cardLimits.limit) > 0.01);
+
+	const nothingToConfirm =
+		!hasPendingImportWork && !shouldPayInvoiceOnImport && !hasSideAdjustments;
 
 	const canConfirmImport =
 		canProceedToImport &&
@@ -4273,6 +4322,14 @@ export function ImportPage({
 				invoicePayment={
 					canAskInvoicePayment
 						? {
+								// Fatura já quitada: informa, não pergunta.
+								alreadyPaid:
+									currentInvoice?.paymentStatus === INVOICE_PAYMENT_STATUS.PAID
+										? {
+												date: currentInvoice.paymentTransactionDate,
+												amount: currentInvoice.paymentTransactionAmount,
+											}
+										: null,
 								dueDate: invoiceDueDate,
 								paid: payInvoiceOnImport,
 								onPaidChange: setPayInvoiceOnImport,
@@ -4326,7 +4383,7 @@ export function ImportPage({
 							setFixPreviousOpen(false);
 							// Recarrega o snapshot para o bloco refletir a correção.
 							if (invoiceCardId && invoiceTargetPeriod) {
-								const snapshot = await fetchPreviousInvoiceSnapshotAction({
+								const snapshot = await fetchInvoiceSnapshotAction({
 									cardId: invoiceCardId,
 									period: invoiceTargetPeriod,
 								});
