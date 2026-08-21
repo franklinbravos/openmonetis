@@ -203,12 +203,13 @@ export function ImportConfirmDialog({
 							tone="info"
 						/>
 					) : null}
+					{/* Ignorar não é destruir: o arquivo fica intacto e nada sai do
+					    cadastro. O vermelho e o sinal de menos ficam para "serão
+					    removidos", que é o único que apaga lançamento. */}
 					{excludedCount > 0 ? (
 						<SummaryRow
-							label="Excluídos do arquivo"
+							label="Serão ignorados do arquivo"
 							value={excludedCount}
-							tone="destructive"
-							prefix="-"
 						/>
 					) : null}
 					{removalCount > 0 ? (

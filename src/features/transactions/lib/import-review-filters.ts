@@ -67,7 +67,7 @@ export const IMPORT_REVIEW_STATUS_FILTER_OPTIONS: Array<{
 	{ value: "without_payer", label: "Sem pessoa" },
 	{ value: "ready", label: "Prontos" },
 	{ value: "selected", label: "Selecionados" },
-	{ value: "excluded", label: "Excluídos" },
+	{ value: "excluded", label: "Ignorados" },
 	{ value: "duplicate_verified", label: "Conferidos" },
 	{ value: "duplicate_mismatch", label: "Divergências" },
 	{ value: "link_suggestion", label: "Vínculo sugerido" },
