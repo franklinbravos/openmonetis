@@ -181,6 +181,12 @@ const previousInvoiceSettlementSchema = z.object({
 	paidAmount: z.number().nonnegative(),
 	carriedOver: z.number().nonnegative(),
 	paymentTransactionId: uuidSchema("Lançamento").nullable().optional(),
+	/** Data em que o banco recebeu, declarada no arquivo. */
+	paymentDate: z
+		.string()
+		.regex(/^\d{4}-\d{2}-\d{2}$/, "Data do pagamento inválida.")
+		.nullable()
+		.optional(),
 });
 
 /**
@@ -1940,6 +1946,7 @@ export async function importTransactionsAction(
 									? formatDecimalForDbRequired(previousSettlement.paidAmount)
 									: null,
 							lancamento_id: previousSettlement.paymentTransactionId ?? null,
+							data_lancamento: previousSettlement.paymentDate ?? null,
 							// O débito na conta é saída de dinheiro: sinal negativo.
 							valor_lancamento: formatDecimalForDbRequired(
 								-Math.abs(previousSettlement.paidAmount),

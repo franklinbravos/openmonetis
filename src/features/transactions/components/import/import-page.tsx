@@ -3243,43 +3243,6 @@ export function ImportPage({
 	const fileCreditLimit = statement?.invoice?.creditLimitTotal ?? null;
 	const fileGuaranteedLimit = statement?.invoice?.creditLimitGuaranteed ?? null;
 
-	/** O que a importação mudaria na fatura anterior, em uma frase. */
-	const previousSettlementChangeSummary = useMemo(() => {
-		if (!previousInvoiceSettlement || !previousInvoice) return null;
-
-		const parts: string[] = [];
-		const statusLabel =
-			previousInvoiceSettlement.paymentStatus === INVOICE_PAYMENT_STATUS.PARTIAL
-				? "paga parcialmente"
-				: previousInvoiceSettlement.paymentStatus ===
-						INVOICE_PAYMENT_STATUS.PAID
-					? "paga"
-					: "em aberto";
-
-		if (
-			previousInvoice.paymentStatus !== previousInvoiceSettlement.paymentStatus
-		) {
-			parts.push(`a fatura passa a constar como ${statusLabel}`);
-		}
-
-		if (
-			previousInvoice.paymentTransactionAmount != null &&
-			Math.abs(
-				previousInvoice.paymentTransactionAmount -
-					previousInvoiceSettlement.paidOnPrevious,
-			) > 0.01
-		) {
-			parts.push(
-				`o débito na conta vai de ${formatCurrency(
-					previousInvoice.paymentTransactionAmount,
-				)} para ${formatCurrency(previousInvoiceSettlement.paidOnPrevious)}`,
-			);
-		}
-
-		if (parts.length === 0) return null;
-		return `Ao confirmar, ${parts.join(" e ")}.`;
-	}, [previousInvoice, previousInvoiceSettlement]);
-
 	/** Conferência ponto a ponto da fatura anterior. */
 	const previousInvoiceReview = useMemo(() => {
 		if (!previousInvoiceSettlement || !previousInvoice) return null;
@@ -3301,6 +3264,64 @@ export function ImportPage({
 		previousInvoice,
 		previousInvoiceSettlement,
 		rows,
+		statement?.invoice?.paymentDate,
+	]);
+
+	/** O que a importação mudaria na fatura anterior, uma linha por item. */
+	const previousSettlementChangeLines = useMemo(() => {
+		if (
+			!previousInvoiceSettlement ||
+			!previousInvoice ||
+			!previousInvoiceReview
+		)
+			return [];
+
+		const lines: string[] = [];
+		const { changes } = previousInvoiceReview;
+
+		if (changes.status) {
+			const statusLabel =
+				previousInvoiceSettlement.paymentStatus ===
+				INVOICE_PAYMENT_STATUS.PARTIAL
+					? "paga parcialmente"
+					: previousInvoiceSettlement.paymentStatus ===
+							INVOICE_PAYMENT_STATUS.PAID
+						? "paga"
+						: "em aberto";
+			lines.push(`A fatura passa a constar como ${statusLabel}.`);
+		}
+
+		if (
+			changes.debitAmount &&
+			previousInvoice.paymentTransactionAmount != null
+		) {
+			lines.push(
+				`O débito na conta vai de ${formatCurrency(
+					previousInvoice.paymentTransactionAmount,
+				)} para ${formatCurrency(previousInvoiceSettlement.paidOnPrevious)}.`,
+			);
+		}
+
+		if (changes.paymentDate && statement?.invoice?.paymentDate) {
+			const novaData =
+				formatDateOnly(statement.invoice.paymentDate) ??
+				statement.invoice.paymentDate;
+			const dataAtual = previousInvoice.paymentTransactionDate
+				? (formatDateOnly(previousInvoice.paymentTransactionDate) ??
+					previousInvoice.paymentTransactionDate)
+				: null;
+			lines.push(
+				dataAtual
+					? `A data do pagamento vai de ${dataAtual} para ${novaData}.`
+					: `A data do pagamento passa a ser ${novaData}.`,
+			);
+		}
+
+		return lines;
+	}, [
+		previousInvoice,
+		previousInvoiceReview,
+		previousInvoiceSettlement,
 		statement?.invoice?.paymentDate,
 	]);
 
@@ -3754,6 +3775,9 @@ export function ImportPage({
 								paidAmount: previousInvoiceSettlement.paidOnPrevious,
 								carriedOver: previousInvoiceSettlement.carriedOver,
 								paymentTransactionId: previousInvoice.paymentTransactionId,
+								paymentDate: previousInvoiceReview?.changes.paymentDate
+									? (statement?.invoice?.paymentDate ?? null)
+									: null,
 							}
 						: undefined,
 			});
@@ -4313,7 +4337,7 @@ export function ImportPage({
 								checks: previousInvoiceReview.checks,
 								allOk: previousInvoiceReview.allOk,
 								hasChanges: previousInvoiceReview.hasChanges,
-								changeSummary: previousSettlementChangeSummary,
+								changeLines: previousSettlementChangeLines,
 								confirmed: previousSettlementConfirmed,
 								onConfirmedChange: setPreviousSettlementConfirmed,
 							}

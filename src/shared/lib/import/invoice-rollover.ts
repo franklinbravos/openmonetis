@@ -209,10 +209,16 @@ export type PreviousInvoiceReview = {
 	/**
 	 * A importação mudaria algo na fatura anterior.
 	 *
-	 * Quando nada muda — status já correto e débito no valor certo — não há o que
+	 * Quando nada muda — status, valor e data já corretos — não há o que
 	 * confirmar nem o que gravar: o bloco é só conferência.
 	 */
 	hasChanges: boolean;
+	/** O que muda ao confirmar, para o diálogo listar sem ambiguidade. */
+	changes: {
+		status: boolean;
+		debitAmount: boolean;
+		paymentDate: boolean;
+	};
 };
 
 /**
@@ -265,6 +271,7 @@ export function buildPreviousInvoiceReview(input: {
 			noFileEvidence: true,
 			allOk: checks.every((check) => check.ok),
 			hasChanges: false,
+			changes: { status: false, debitAmount: false, paymentDate: false },
 		};
 	}
 
@@ -311,10 +318,25 @@ export function buildPreviousInvoiceReview(input: {
 		input.registeredPaymentAmount != null &&
 		Math.abs(input.registeredPaymentAmount - settlement.paidOnPrevious) > 0.01;
 
+	// A data também é corrigida ao confirmar: o arquivo diz quando o banco
+	// recebeu, e deixar isso de fora fazia a conferência apontar um problema que
+	// a confirmação não resolvia.
+	const dateDiffers = Boolean(
+		input.filePaymentDate &&
+			input.registeredPaymentDate !== input.filePaymentDate,
+	);
+
+	const changes = {
+		status: !statusOk,
+		debitAmount: debitDiffers,
+		paymentDate: dateDiffers,
+	};
+
 	return {
 		checks,
 		noFileEvidence: false,
 		allOk: checks.every((check) => check.ok),
-		hasChanges: !statusOk || debitDiffers,
+		hasChanges: changes.status || changes.debitAmount || changes.paymentDate,
+		changes,
 	};
 }

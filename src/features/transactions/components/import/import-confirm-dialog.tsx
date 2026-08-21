@@ -70,8 +70,13 @@ export type ImportPreviousInvoicePrompt = {
 	allOk: boolean;
 	/** A importação mudaria algo na fatura anterior. */
 	hasChanges: boolean;
-	/** Descrição curta do que muda, quando muda. */
-	changeSummary: string | null;
+	/**
+	 * O que muda ao confirmar, uma linha por item.
+	 *
+	 * Uma frase só deixava dúvida sobre a data: a conferência apontava a
+	 * divergência e o resumo falava apenas do valor.
+	 */
+	changeLines: string[];
 	confirmed: boolean;
 	onConfirmedChange: (confirmed: boolean) => void;
 };
@@ -299,13 +304,20 @@ export function ImportConfirmDialog({
 										Ajustar a fatura de {previousInvoice.previousPeriodLabel}
 									</Label>
 								</div>
-								{previousInvoice.changeSummary ? (
-									<p className="text-muted-foreground text-xs leading-relaxed">
-										{previousInvoice.confirmed
-											? previousInvoice.changeSummary
-											: "Sem ajustar, a fatura anterior fica como está."}
+
+								{previousInvoice.confirmed ? (
+									<ul className="space-y-1 pl-5 text-muted-foreground text-xs leading-relaxed">
+										{previousInvoice.changeLines.map((line) => (
+											<li key={line} className="list-disc">
+												{line}
+											</li>
+										))}
+									</ul>
+								) : (
+									<p className="pl-5 text-muted-foreground text-xs leading-relaxed">
+										Sem ajustar, a fatura anterior fica como está.
 									</p>
-								) : null}
+								)}
 							</>
 						) : null}
 					</div>

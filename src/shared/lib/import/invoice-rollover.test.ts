@@ -210,8 +210,14 @@ describe("buildPreviousInvoiceReview", () => {
 		const dateCheck = review.checks.find((check) => check.label === "Pago em");
 		expect(dateCheck?.ok).toBe(false);
 		expect(dateCheck?.detail).toContain("10/02/2026");
-		// Data errada não é algo que a importação corrija por conta própria.
-		expect(review.hasChanges).toBe(false);
+		// A data entra no que a confirmação corrige: apontar a divergência sem
+		// resolvê-la deixava o usuário sem saída dentro do fluxo.
+		expect(review.hasChanges).toBe(true);
+		expect(review.changes).toEqual({
+			status: false,
+			debitAmount: false,
+			paymentDate: true,
+		});
 	});
 
 	it("rotativo: status e débito mudam, então há o que confirmar", () => {
