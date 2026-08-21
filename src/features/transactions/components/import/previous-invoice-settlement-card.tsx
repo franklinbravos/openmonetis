@@ -123,6 +123,8 @@ export function PreviousInvoiceSettlementCard({
 							<span className="text-amber-700 dark:text-amber-500">
 								({check.detail})
 							</span>
+						) : check.note ? (
+							<span className="text-muted-foreground">({check.note})</span>
 						) : null}
 					</li>
 				))}

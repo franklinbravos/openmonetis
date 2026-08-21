@@ -62,6 +62,7 @@ export type ImportPreviousInvoiceCheck = {
 	value: string;
 	ok: boolean;
 	detail?: string;
+	note?: string;
 };
 
 /**
@@ -301,6 +302,10 @@ export function ImportConfirmDialog({
 									{check.detail ? (
 										<span className="text-amber-700 dark:text-amber-500">
 											({check.detail})
+										</span>
+									) : check.note ? (
+										<span className="text-muted-foreground">
+											({check.note})
 										</span>
 									) : null}
 								</li>

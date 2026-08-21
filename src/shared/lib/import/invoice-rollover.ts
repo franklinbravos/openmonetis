@@ -191,6 +191,8 @@ export type PreviousInvoiceCheck = {
 	ok: boolean;
 	/** Preenchido quando não confere: o outro lado da comparação. */
 	detail?: string;
+	/** Contexto neutro, para um número que confere mas pede explicação. */
+	note?: string;
 };
 
 export type PreviousInvoiceReview = {
@@ -276,9 +278,22 @@ export function buildPreviousInvoiceReview(input: {
 	}
 
 	const amountOk = settlement.reconcilesWithPreviousTotal;
+
+	/*
+	 * Aqui vai o TOTAL pago no mês, não a parte que abateu a fatura anterior.
+	 *
+	 * Num mês com vários pagamentos, só uma parte abate a anterior e o resto
+	 * amortiza a atual — mas essa divisão já aparece logo abaixo, pagamento por
+	 * pagamento. Repetir a parcela aqui, sob um rótulo genérico, fazia o número
+	 * parecer não bater com o que saiu da conta.
+	 */
 	checks.push({
-		label: "Valor",
-		value: formatMoney(settlement.paidOnPrevious),
+		label: "Pago no mês",
+		value: formatMoney(
+			settlement.filePaymentsTotal > 0
+				? settlement.filePaymentsTotal
+				: settlement.paidOnPrevious,
+		),
 		ok: amountOk,
 		detail: amountOk
 			? undefined

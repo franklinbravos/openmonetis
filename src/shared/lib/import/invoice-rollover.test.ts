@@ -186,7 +186,7 @@ describe("buildPreviousInvoiceReview", () => {
 		expect(review.allOk).toBe(true);
 		expect(review.hasChanges).toBe(false);
 		expect(review.checks.map((check) => check.label)).toEqual([
-			"Valor",
+			"Pago no mês",
 			"Situação",
 			"Pago em",
 		]);
@@ -260,7 +260,7 @@ describe("buildPreviousInvoiceReview", () => {
 		});
 
 		expect(review.checks.map((check) => check.label)).toEqual([
-			"Valor",
+			"Pago no mês",
 			"Situação",
 		]);
 		expect(review.hasChanges).toBe(false);
@@ -384,5 +384,50 @@ describe("allocateInvoicePayments", () => {
 		expect(
 			allocation.payments.reduce((sum, p) => sum + p.appliedToPrevious, 0),
 		).toBe(250);
+	});
+});
+
+describe("valor exibido na conferência", () => {
+	const money = (value: number) => `R$ ${value.toFixed(2)}`;
+	const date = (iso: string) => iso.split("-").reverse().join("/");
+
+	it("mostra o total pago no mês, não só a parte que abateu a anterior", () => {
+		// Junho: pagou R$ 3.500 no mês, dos quais R$ 1.000,01 fecharam maio. O
+		// número aqui é o total — a divisão aparece na lista de pagamentos.
+		const review = buildPreviousInvoiceReview({
+			settlement: resolvePreviousInvoiceSettlement({
+				previousTotal: 6525.24,
+				carriedOver: 5525.23,
+				filePaymentsTotal: 3500,
+			}),
+			registeredStatus: INVOICE_PAYMENT_STATUS.PARTIAL,
+			registeredPaymentAmount: 1000.01,
+			registeredPaymentDate: "2026-05-12",
+			filePaymentDate: "2026-05-12",
+			formatMoney: money,
+			formatDate: date,
+		});
+
+		const paid = review.checks.find((check) => check.label === "Pago no mês");
+		expect(paid?.value).toBe(money(3500));
+	});
+
+	it("sem pagamento no arquivo, cai no valor apurado pelo carrego", () => {
+		const review = buildPreviousInvoiceReview({
+			settlement: resolvePreviousInvoiceSettlement({
+				previousTotal: 1000,
+				carriedOver: 900,
+				filePaymentsTotal: 0,
+			}),
+			registeredStatus: INVOICE_PAYMENT_STATUS.PARTIAL,
+			registeredPaymentAmount: 100,
+			registeredPaymentDate: null,
+			filePaymentDate: null,
+			formatMoney: money,
+			formatDate: date,
+		});
+
+		const paid = review.checks.find((check) => check.label === "Pago no mês");
+		expect(paid?.value).toBe(money(100));
 	});
 });
