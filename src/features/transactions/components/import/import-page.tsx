@@ -3123,12 +3123,36 @@ export function ImportPage({
 	const previousInvoiceSettlement = useMemo(() => {
 		if (!previousInvoice) return null;
 
+		/**
+		 * O resumo do arquivo manda quando existe.
+		 *
+		 * O PDF do Nubank declara a fatura anterior e quanto dela recebeu, então
+		 * o carrego é a diferença entre os dois — sem depender de o parser ter
+		 * emitido linha de pagamento, e sem inferir nada.
+		 */
+		const declaredPrevious = statement?.invoice?.previousInvoiceTotal ?? null;
+		const declaredPayment =
+			statement?.invoice?.previousInvoicePaymentReceived ?? null;
+
+		if (declaredPrevious != null && declaredPayment != null) {
+			return resolvePreviousInvoiceSettlement({
+				previousTotal: previousInvoice.total,
+				carriedOver: Math.max(0, declaredPrevious - declaredPayment),
+				filePaymentsTotal: declaredPayment,
+			});
+		}
+
 		return resolvePreviousInvoiceSettlement({
 			previousTotal: previousInvoice.total,
 			carriedOver: sumInvoiceRolloverCarry(rows),
 			filePaymentsTotal: sumInvoicePaymentRowsFromFile(rows),
 		});
-	}, [previousInvoice, rows]);
+	}, [
+		previousInvoice,
+		rows,
+		statement?.invoice?.previousInvoiceTotal,
+		statement?.invoice?.previousInvoicePaymentReceived,
+	]);
 
 	const rolloverCharges = useMemo(
 		() => sumInvoiceRolloverCharges(rows),
@@ -3181,14 +3205,20 @@ export function ImportPage({
 			registeredStatus: previousInvoice.paymentStatus,
 			registeredPaymentAmount: previousInvoice.paymentTransactionAmount,
 			registeredPaymentDate: previousInvoice.paymentTransactionDate,
-			filePaymentDate: findInvoicePaymentDateFromFile(
-				rows,
-				isInvoicePaymentDescription,
-			),
+			// A metadata do PDF já traz a data da seção "Pagamentos"; o OFX cai
+			// nas próprias linhas.
+			filePaymentDate:
+				statement?.invoice?.paymentDate ??
+				findInvoicePaymentDateFromFile(rows, isInvoicePaymentDescription),
 			formatMoney: formatCurrency,
 			formatDate: (isoDate) => formatDateOnly(isoDate) ?? isoDate,
 		});
-	}, [previousInvoice, previousInvoiceSettlement, rows]);
+	}, [
+		previousInvoice,
+		previousInvoiceSettlement,
+		rows,
+		statement?.invoice?.paymentDate,
+	]);
 
 	/**
 	 * Confirmação de reescrever a fatura anterior.

@@ -575,6 +575,26 @@ function resolveNubankTransactionYear(
 		: billingWindow.toYear;
 }
 
+/**
+ * Data do pagamento, resolvendo o ano.
+ *
+ * O PDF traz só dia e mês. O pagamento antecede o vencimento, então quando o
+ * ano do vencimento colocaria a data depois dele, o ano certo é o anterior —
+ * caso da fatura de janeiro paga em dezembro.
+ */
+function resolvePaymentDateBeforeDueDate(
+	day: string,
+	monthAbbr: string,
+	dueDate: string,
+): string | null {
+	const dueYear = Number.parseInt(dueDate.slice(0, 4), 10);
+	const sameYear = parsePortugueseShortDate(day, monthAbbr, dueYear);
+	if (!sameYear) return null;
+	if (sameYear <= dueDate) return sameYear;
+
+	return parsePortugueseShortDate(day, monthAbbr, dueYear - 1);
+}
+
 function parseNubankInvoiceMetadata(
 	text: string,
 	transactions: ImportedTransaction[],
@@ -583,24 +603,43 @@ function parseNubankInvoiceMetadata(
 	const dueDate = parseNubankDueDate(text);
 
 	const totalMatch = text.match(/Total a pagar\s+R\$\s*([\d.]+,\d{2})/i);
+
+	// Bloco "Resumo da fatura atual": o banco declara a fatura anterior e quanto
+	// dela recebeu. Com os dois, o pagamento parcial é conferido sem inferência.
+	// O sinal do pagamento vem como menos ASCII ou Unicode.
+	const previousInvoiceMatch = text.match(
+		/Fatura anterior\s+R\$\s*([\d.]+,\d{2})/i,
+	);
+	const previousPaymentMatch = text.match(
+		/Pagamento recebido\s+[-−–]?\s*R\$\s*([\d.]+,\d{2})/i,
+	);
 	const parsedTotal = totalMatch ? parseBrazilianAmount(totalMatch[1]) : null;
 	const transactionTotal = transactions.reduce(
 		(total, transaction) => total + transaction.amount,
 		0,
 	);
 
-	const paymentSection = text.slice(
-		text.search(/Pagamentos e Financiamentos/i),
-	);
-	const paymentMatch = paymentSection.match(
-		/(\d{2}\s+[A-Z]{3})\s+.+?\s+R\$\s*([\d.]+,\d{2})/,
+	/**
+	 * Linha do pagamento: "13 ABR Pagamento em 13 ABR −R$ 10.430,51".
+	 *
+	 * Casar a linha inteira, em vez de fatiar por título de seção: o título varia
+	 * ("Pagamentos", "Pagamentos e Financiamentos"), a palavra aparece antes no
+	 * documento, e `slice(-1)` de um índice não encontrado cortava o texto no
+	 * último caractere. O resultado era a data do vencimento no lugar da data do
+	 * pagamento.
+	 *
+	 * O menos é obrigatório: pagamento é crédito, e exigi-lo evita casar com
+	 * linha de compra que mencione a palavra.
+	 */
+	const paymentMatch = text.match(
+		/(\d{2})\s+([A-Z]{3})\s+Pagamento[^\n]*?[-−–]\s*R\$\s*[\d.]+,\d{2}/i,
 	);
 	const paymentDate =
 		dueDate && paymentMatch
-			? parsePortugueseShortDate(
-					paymentMatch[1].split(/\s+/)[0],
-					paymentMatch[1].split(/\s+/)[1],
-					Number.parseInt(dueDate.slice(0, 4), 10),
+			? resolvePaymentDateBeforeDueDate(
+					paymentMatch[1],
+					paymentMatch[2],
+					dueDate,
 				)
 			: null;
 
@@ -617,6 +656,12 @@ function parseNubankInvoiceMetadata(
 
 	return {
 		period,
+		previousInvoiceTotal: previousInvoiceMatch
+			? parseBrazilianAmount(previousInvoiceMatch[1])
+			: null,
+		previousInvoicePaymentReceived: previousPaymentMatch
+			? parseBrazilianAmount(previousPaymentMatch[1])
+			: null,
 		dueDate,
 		isPaid,
 		paymentDate,
