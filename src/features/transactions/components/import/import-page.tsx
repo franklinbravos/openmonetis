@@ -3243,6 +3243,34 @@ export function ImportPage({
 	const fileCreditLimit = statement?.invoice?.creditLimitTotal ?? null;
 	const fileGuaranteedLimit = statement?.invoice?.creditLimitGuaranteed ?? null;
 
+	/** O que muda nos limites ao confirmar, uma linha por item. */
+	const cardLimitsChangeLines = useMemo(() => {
+		if (fileCreditLimit == null || !cardLimits) return [];
+
+		const lines: string[] = [];
+
+		if (Math.abs(fileCreditLimit - cardLimits.limit) > 0.01) {
+			lines.push(
+				`O limite total vai de ${formatCurrency(cardLimits.limit)} para ${formatCurrency(fileCreditLimit)}.`,
+			);
+		}
+
+		const guaranteedDiffers =
+			fileGuaranteedLimit != null &&
+			(cardLimits.guaranteedLimit == null ||
+				Math.abs(fileGuaranteedLimit - cardLimits.guaranteedLimit) > 0.01);
+
+		if (guaranteedDiffers && fileGuaranteedLimit != null) {
+			lines.push(
+				cardLimits.guaranteedLimit == null
+					? `O limite garantido passa a ser ${formatCurrency(fileGuaranteedLimit)}.`
+					: `O limite garantido vai de ${formatCurrency(cardLimits.guaranteedLimit)} para ${formatCurrency(fileGuaranteedLimit)}.`,
+			);
+		}
+
+		return lines;
+	}, [cardLimits, fileCreditLimit, fileGuaranteedLimit]);
+
 	/** Conferência ponto a ponto da fatura anterior. */
 	const previousInvoiceReview = useMemo(() => {
 		if (!previousInvoiceSettlement || !previousInvoice) return null;
@@ -3554,10 +3582,7 @@ export function ImportPage({
 	const hasSideAdjustments =
 		(previousInvoiceReview?.hasChanges === true &&
 			previousSettlementConfirmed) ||
-		(cardLimitsConfirmed &&
-			fileCreditLimit != null &&
-			cardLimits != null &&
-			Math.abs(fileCreditLimit - cardLimits.limit) > 0.01);
+		(cardLimitsConfirmed && cardLimitsChangeLines.length > 0);
 
 	const nothingToConfirm =
 		!hasPendingImportWork && !shouldPayInvoiceOnImport && !hasSideAdjustments;
@@ -4330,6 +4355,15 @@ export function ImportPage({
 					canConfirmImport && !invoicePaymentBlocked && !nothingToConfirm
 				}
 				nothingToConfirm={nothingToConfirm}
+				cardLimits={
+					cardLimitsChangeLines.length > 0
+						? {
+								changeLines: cardLimitsChangeLines,
+								confirmed: cardLimitsConfirmed,
+								onConfirmedChange: setCardLimitsConfirmed,
+							}
+						: null
+				}
 				previousInvoice={
 					previousInvoiceReview && previousInvoice
 						? {

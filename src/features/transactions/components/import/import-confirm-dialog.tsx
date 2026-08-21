@@ -81,6 +81,18 @@ export type ImportPreviousInvoicePrompt = {
 	onConfirmedChange: (confirmed: boolean) => void;
 };
 
+/**
+ * Atualização dos limites do cartão, confirmada no último passo.
+ *
+ * O bloco da revisão fica longe do botão que aplica. Repetir aqui o que muda
+ * evita clicar em confirmar sem saber que o limite também será alterado.
+ */
+export type ImportCardLimitsPrompt = {
+	changeLines: string[];
+	confirmed: boolean;
+	onConfirmedChange: (confirmed: boolean) => void;
+};
+
 type ImportConfirmDialogProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -101,6 +113,7 @@ type ImportConfirmDialogProps = {
 	nothingToConfirm?: boolean;
 	invoicePayment?: ImportInvoicePaymentPrompt | null;
 	previousInvoice?: ImportPreviousInvoicePrompt | null;
+	cardLimits?: ImportCardLimitsPrompt | null;
 	onConfirm: () => void;
 };
 
@@ -123,6 +136,7 @@ export function ImportConfirmDialog({
 	nothingToConfirm = false,
 	invoicePayment = null,
 	previousInvoice = null,
+	cardLimits = null,
 	onConfirm,
 }: ImportConfirmDialogProps) {
 	const editedCount = replacedCount + installmentBackfillCount;
@@ -320,6 +334,42 @@ export function ImportConfirmDialog({
 								)}
 							</>
 						) : null}
+					</div>
+				) : null}
+
+				{cardLimits && cardLimits.changeLines.length > 0 ? (
+					<div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+						<p className="font-medium text-sm">Limites do cartão</p>
+
+						<div className="flex items-start gap-2">
+							<Checkbox
+								id="card-limits-confirm"
+								checked={cardLimits.confirmed}
+								onCheckedChange={(checked) =>
+									cardLimits.onConfirmedChange(checked === true)
+								}
+							/>
+							<Label
+								htmlFor="card-limits-confirm"
+								className="text-sm font-normal leading-snug"
+							>
+								Atualizar os limites com o que a fatura declara
+							</Label>
+						</div>
+
+						{cardLimits.confirmed ? (
+							<ul className="space-y-1 pl-5 text-muted-foreground text-xs leading-relaxed">
+								{cardLimits.changeLines.map((line) => (
+									<li key={line} className="list-disc">
+										{line}
+									</li>
+								))}
+							</ul>
+						) : (
+							<p className="pl-5 text-muted-foreground text-xs leading-relaxed">
+								Sem atualizar, os limites ficam como estão.
+							</p>
+						)}
 					</div>
 				) : null}
 
