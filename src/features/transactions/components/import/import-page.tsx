@@ -229,6 +229,7 @@ import {
 	uniquifyImportedExternalIds,
 } from "@/shared/lib/import/helpers";
 import {
+	allocateInvoicePayments,
 	buildPreviousInvoiceReview,
 	findInvoicePaymentDateFromFile,
 	resolvePreviousInvoiceSettlement,
@@ -237,6 +238,7 @@ import {
 } from "@/shared/lib/import/invoice-rollover";
 import { resolveInvoiceSourceTotal } from "@/shared/lib/import/invoice-source-total";
 import {
+	collectInvoicePaymentRowsFromFile,
 	computeImportReconciliation,
 	isInvoiceTotalReconciled,
 	sumInvoicePaymentRowsFromFile,
@@ -3285,6 +3287,16 @@ export function ImportPage({
 		return lines;
 	}, [cardLimits, fileCreditLimit, fileGuaranteedLimit]);
 
+	/** Pagamentos do arquivo, distribuídos entre a fatura anterior e esta. */
+	const invoicePaymentAllocation = useMemo(() => {
+		if (!previousInvoiceSettlement) return null;
+
+		return allocateInvoicePayments({
+			payments: collectInvoicePaymentRowsFromFile(rows),
+			paidOnPrevious: previousInvoiceSettlement.paidOnPrevious,
+		});
+	}, [previousInvoiceSettlement, rows]);
+
 	/** Conferência ponto a ponto da fatura anterior. */
 	const previousInvoiceReview = useMemo(() => {
 		if (!previousInvoiceSettlement || !previousInvoice) return null;
@@ -3294,15 +3306,23 @@ export function ImportPage({
 			registeredStatus: previousInvoice.paymentStatus,
 			registeredPaymentAmount: previousInvoice.paymentTransactionAmount,
 			registeredPaymentDate: previousInvoice.paymentTransactionDate,
-			// A metadata do PDF já traz a data da seção "Pagamentos"; o OFX cai
-			// nas próprias linhas.
+			/*
+			 * Data que liquidou a fatura anterior.
+			 *
+			 * Com vários pagamentos no mês, o mais recente pode ser amortização
+			 * desta fatura — usá-lo acusava divergência onde não havia. A alocação
+			 * diz qual pagamento de fato abateu a anterior. O PDF, que não traz as
+			 * linhas, cai na data declarada na seção "Pagamentos".
+			 */
 			filePaymentDate:
+				invoicePaymentAllocation?.previousSettlementDate ??
 				statement?.invoice?.paymentDate ??
 				findInvoicePaymentDateFromFile(rows, isInvoicePaymentDescription),
 			formatMoney: formatCurrency,
 			formatDate: (isoDate) => formatDateOnly(isoDate) ?? isoDate,
 		});
 	}, [
+		invoicePaymentAllocation,
 		previousInvoice,
 		previousInvoiceSettlement,
 		rows,
@@ -4150,6 +4170,7 @@ export function ImportPage({
 									review={previousInvoiceReview}
 									previousPeriod={previousInvoice.period}
 									carriedOver={previousInvoiceSettlement?.carriedOver ?? 0}
+									payments={invoicePaymentAllocation?.payments ?? []}
 									onFix={
 										previousInvoice.paymentTransactionId &&
 										statement?.invoice?.paymentDate

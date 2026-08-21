@@ -340,3 +340,65 @@ export function buildPreviousInvoiceReview(input: {
 		changes,
 	};
 }
+
+export type InvoicePaymentEntry = {
+	date: string | null;
+	amount: number;
+};
+
+export type AllocatedInvoicePayment = InvoicePaymentEntry & {
+	/** Quanto deste pagamento abateu a fatura anterior. */
+	appliedToPrevious: number;
+	/** Quanto sobrou e amortiza a fatura atual. */
+	appliedToCurrent: number;
+};
+
+export type InvoicePaymentAllocation = {
+	payments: AllocatedInvoicePayment[];
+	/**
+	 * Data do último pagamento que abateu a fatura anterior.
+	 *
+	 * É essa a data que deve bater com o débito registrado por ela — não a do
+	 * pagamento mais recente do arquivo, que pode ser uma amortização da fatura
+	 * atual e acusaria divergência onde não há.
+	 */
+	previousSettlementDate: string | null;
+};
+
+/**
+ * Distribui os pagamentos do arquivo entre a fatura anterior e a atual.
+ *
+ * Quem paga em vários dias para reduzir juros vê no arquivo uma sequência de
+ * pagamentos. Os primeiros liquidam o que restava da fatura passada; o que
+ * sobra amortiza a atual. A ordem é cronológica, que é como o banco aplica.
+ */
+export function allocateInvoicePayments(input: {
+	payments: InvoicePaymentEntry[];
+	paidOnPrevious: number;
+}): InvoicePaymentAllocation {
+	const ordered = [...input.payments].sort((left, right) =>
+		(left.date ?? "").localeCompare(right.date ?? ""),
+	);
+
+	let remaining = roundMoney(Math.max(0, input.paidOnPrevious));
+	let previousSettlementDate: string | null = null;
+
+	const payments = ordered.map((payment) => {
+		const amount = roundMoney(Math.abs(payment.amount));
+		const appliedToPrevious = roundMoney(Math.min(remaining, amount));
+		remaining = roundMoney(remaining - appliedToPrevious);
+
+		if (appliedToPrevious > 0.01) {
+			previousSettlementDate = payment.date;
+		}
+
+		return {
+			...payment,
+			amount,
+			appliedToPrevious,
+			appliedToCurrent: roundMoney(amount - appliedToPrevious),
+		};
+	});
+
+	return { payments, previousSettlementDate };
+}

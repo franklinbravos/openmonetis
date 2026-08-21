@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import {
+	allocateInvoicePayments,
 	buildPreviousInvoiceReview,
 	isInvoiceRolloverCarryDescription,
 	isInvoiceRolloverChargeDescription,
@@ -309,5 +310,79 @@ describe("buildPreviousInvoiceReview sem evidência no arquivo", () => {
 			(check) => check.label === "Situação no cadastro",
 		);
 		expect(statusCheck?.detail).toBe("confira se já foi paga");
+	});
+});
+
+describe("allocateInvoicePayments", () => {
+	it("distribui os pagamentos de junho entre maio e a fatura atual", () => {
+		// Caso real: pagou R$ 1.000 em 12/05 (vencimento de maio) e R$ 2.500 em
+		// 18/05 para reduzir juros. O primeiro liquida o que restava de maio; o
+		// segundo amortiza junho.
+		const allocation = allocateInvoicePayments({
+			payments: [
+				{ date: "2026-05-18", amount: 2500 },
+				{ date: "2026-05-12", amount: 1000 },
+			],
+			paidOnPrevious: 1000.01,
+		});
+
+		expect(allocation.payments.map((p) => p.date)).toEqual([
+			"2026-05-12",
+			"2026-05-18",
+		]);
+		expect(allocation.payments[0].appliedToPrevious).toBe(1000);
+		expect(allocation.payments[0].appliedToCurrent).toBe(0);
+		expect(allocation.payments[1].appliedToPrevious).toBe(0.01);
+		expect(allocation.payments[1].appliedToCurrent).toBe(2499.99);
+	});
+
+	it("a data de liquidação é a do pagamento que abateu a anterior", () => {
+		// Usar a data do pagamento mais recente acusava divergência onde não há:
+		// o débito de maio está gravado em 12/05, que é quando maio foi de fato
+		// liquidada — 18/05 é amortização da fatura atual.
+		const allocation = allocateInvoicePayments({
+			payments: [
+				{ date: "2026-05-12", amount: 1000 },
+				{ date: "2026-05-18", amount: 2500 },
+			],
+			paidOnPrevious: 1000,
+		});
+
+		expect(allocation.previousSettlementDate).toBe("2026-05-12");
+	});
+
+	it("sem nada a abater, tudo amortiza a fatura atual", () => {
+		const allocation = allocateInvoicePayments({
+			payments: [{ date: "2026-05-18", amount: 2500 }],
+			paidOnPrevious: 0,
+		});
+
+		expect(allocation.previousSettlementDate).toBeNull();
+		expect(allocation.payments[0].appliedToCurrent).toBe(2500);
+	});
+
+	it("pagamento único que cobre a anterior inteira", () => {
+		const allocation = allocateInvoicePayments({
+			payments: [{ date: "2026-04-13", amount: 10430.51 }],
+			paidOnPrevious: 10430.51,
+		});
+
+		expect(allocation.previousSettlementDate).toBe("2026-04-13");
+		expect(allocation.payments[0].appliedToCurrent).toBe(0);
+	});
+
+	it("pagamento sem data não quebra a ordenação", () => {
+		const allocation = allocateInvoicePayments({
+			payments: [
+				{ date: null, amount: 100 },
+				{ date: "2026-05-12", amount: 200 },
+			],
+			paidOnPrevious: 250,
+		});
+
+		expect(allocation.payments).toHaveLength(2);
+		expect(
+			allocation.payments.reduce((sum, p) => sum + p.appliedToPrevious, 0),
+		).toBe(250);
 	});
 });

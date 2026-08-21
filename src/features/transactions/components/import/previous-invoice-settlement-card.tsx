@@ -7,8 +7,12 @@ import {
 } from "@remixicon/react";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
-import type { PreviousInvoiceReview } from "@/shared/lib/import/invoice-rollover";
+import type {
+	AllocatedInvoicePayment,
+	PreviousInvoiceReview,
+} from "@/shared/lib/import/invoice-rollover";
 import { formatCurrency } from "@/shared/utils/currency";
+import { formatDateOnly } from "@/shared/utils/date";
 import { displayPeriod } from "@/shared/utils/period";
 import { cn } from "@/shared/utils/ui";
 
@@ -17,6 +21,8 @@ type PreviousInvoiceSettlementCardProps = {
 	previousPeriod: string;
 	/** Valor que rolou para esta fatura, quando houve rotativo. */
 	carriedOver: number;
+	/** Pagamentos do arquivo, já distribuídos entre a fatura anterior e esta. */
+	payments?: AllocatedInvoicePayment[];
 	/** Abre a correção da divergência apontada. Sem isso, o bloco é só leitura. */
 	onFix?: () => void;
 };
@@ -31,6 +37,7 @@ export function PreviousInvoiceSettlementCard({
 	review,
 	previousPeriod,
 	carriedOver,
+	payments = [],
 	onFix,
 }: PreviousInvoiceSettlementCardProps) {
 	const periodLabel = displayPeriod(previousPeriod);
@@ -120,6 +127,36 @@ export function PreviousInvoiceSettlementCard({
 					</li>
 				))}
 			</ul>
+
+			{/* Quem paga em vários dias para reduzir juros precisa ver cada
+			    pagamento: um número só esconde o parcelamento do pagamento e não
+			    deixa conferir contra o extrato da conta. */}
+			{payments.length > 1 ? (
+				<ul className="space-y-0.5 border-t pt-2 text-xs">
+					{payments.map((payment) => (
+						<li
+							key={`${payment.date}-${payment.amount}`}
+							className="flex flex-wrap items-baseline gap-x-2"
+						>
+							<span className="tabular-nums">
+								{payment.date
+									? (formatDateOnly(payment.date) ?? payment.date)
+									: "sem data"}
+							</span>
+							<span className="font-medium tabular-nums">
+								{formatCurrency(payment.amount)}
+							</span>
+							<span className="text-muted-foreground">
+								{payment.appliedToCurrent <= 0.01
+									? `abateu ${periodLabel}`
+									: payment.appliedToPrevious <= 0.01
+										? "amortizou esta fatura"
+										: `${formatCurrency(payment.appliedToPrevious)} em ${periodLabel}, ${formatCurrency(payment.appliedToCurrent)} nesta`}
+							</span>
+						</li>
+					))}
+				</ul>
+			) : null}
 		</div>
 	);
 }

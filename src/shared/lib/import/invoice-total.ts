@@ -176,6 +176,19 @@ function filterReviewInvoiceRows(
  * na mesma base; sem isso a conferência acusava uma diferença exatamente do
  * valor pago e a fatura nunca fechava.
  */
+/** Cada pagamento declarado no arquivo, com data e valor. */
+export function collectInvoicePaymentRowsFromFile(
+	rows: InvoiceReconciliationReviewRow[],
+): Array<{ date: string | null; amount: number }> {
+	return rows
+		.filter(
+			(row) =>
+				row.kind === "invoice_payment" ||
+				isInvoicePaymentDescription(row.description),
+		)
+		.map((row) => ({ date: row.date ?? null, amount: Math.abs(row.amount) }));
+}
+
 export function sumInvoicePaymentRowsFromFile(
 	rows: InvoiceReconciliationReviewRow[],
 ): number {
