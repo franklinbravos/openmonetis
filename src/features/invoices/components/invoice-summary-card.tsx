@@ -18,7 +18,13 @@ import {
 } from "@/features/invoices/actions";
 import type { InvoiceReconciliationTransaction } from "@/features/invoices/lib/invoice-reconciliation";
 import { resolveInvoicePaymentTiming } from "@/features/invoices/lib/payment-timing";
+import type { InvoicePaymentEntry } from "@/features/invoices/queries";
+import { fetchTransactionByIdAction } from "@/features/transactions/actions/fetch-by-id";
+import type { TransactionDialogOptions } from "@/features/transactions/actions/fetch-dialog-options";
+import { fetchTransactionDialogOptionsAction } from "@/features/transactions/actions/fetch-dialog-options";
+import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
 import { AccountCardSelectContent } from "@/features/transactions/components/select-items";
+import type { TransactionItem } from "@/features/transactions/components/types";
 import StatusDot from "@/shared/components/feedback/status-dot";
 import MoneyValues from "@/shared/components/money-values";
 import { Badge } from "@/shared/components/ui/badge";
@@ -42,6 +48,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/shared/components/ui/select";
+import { Spinner } from "@/shared/components/ui/spinner";
 import {
 	Tooltip,
 	TooltipContent,
@@ -50,6 +57,7 @@ import {
 } from "@/shared/components/ui/tooltip";
 import { resolveCardBrandAsset } from "@/shared/lib/cards/brand-assets";
 import { invoiceSourceTotalKindLabel } from "@/shared/lib/import/invoice-source-total";
+import { roundMoney } from "@/shared/lib/import/invoice-total";
 import type { InvoiceSourceTotalKind } from "@/shared/lib/import/types";
 import {
 	INVOICE_PAYMENT_STATUS,
@@ -101,7 +109,7 @@ type InvoiceSummaryCardProps = {
 	 * parte na data e o resto depois. Mostrar só um esconderia o resto e o valor
 	 * exibido não fecharia com o que saiu da conta.
 	 */
-	payments?: Array<{ id: string; date: string | null; amount: number }>;
+	payments?: InvoicePaymentEntry[];
 	defaultPaymentAccountId: string | null;
 	paymentAccountOptions: PaymentAccountOption[];
 	hasImportHistory?: boolean;
@@ -168,6 +176,12 @@ export function InvoiceSummaryCard({
 }: InvoiceSummaryCardProps) {
 	const router = useRouter();
 	const [isPending, startTransition] = useTransition();
+	const [paymentToEdit, setPaymentToEdit] = useState<TransactionItem | null>(
+		null,
+	);
+	const [paymentDialogOptions, setPaymentDialogOptions] =
+		useState<TransactionDialogOptions | null>(null);
+	const [loadingPaymentId, setLoadingPaymentId] = useState<string | null>(null);
 	const [paymentDate, setPaymentDate] = useState<Date>(
 		initialPaymentDate ?? new Date(),
 	);
@@ -230,7 +244,10 @@ export function InvoiceSummaryCard({
 	 * anterior". Sem esse número a tela mostra uma fatura de seis mil com um
 	 * pagamento de mil e nenhuma explicação para a diferença.
 	 */
-	const rolledOverAmount = isPartial ? heroTotal - paidTotal : 0;
+	const rolledOverAmount = isPartial ? roundMoney(heroTotal - paidTotal) : 0;
+	const accountLabelById = new Map(
+		paymentAccountOptions.map((option) => [option.value, option.label]),
+	);
 
 	const targetStatus = isPaid
 		? INVOICE_PAYMENT_STATUS.PENDING
@@ -268,6 +285,29 @@ export function InvoiceSummaryCard({
 		}
 
 		handleAction(paymentAccountId);
+	};
+
+	/**
+	 * O pagamento da fatura é um lançamento como qualquer outro, na conta que foi
+	 * debitada. Editar daqui abre o mesmo diálogo da tela de lançamentos — valor,
+	 * data e conta —, então o extrato da conta reflete a correção sem uma segunda
+	 * viagem do usuário até lá.
+	 */
+	const handleEditPayment = (paymentId: string) => {
+		setLoadingPaymentId(paymentId);
+		startTransition(async () => {
+			const [transaction, options] = await Promise.all([
+				fetchTransactionByIdAction(paymentId),
+				fetchTransactionDialogOptionsAction(),
+			]);
+			setLoadingPaymentId(null);
+			if (!transaction) {
+				toast.error("Lançamento do pagamento não encontrado.");
+				return;
+			}
+			setPaymentDialogOptions(options);
+			setPaymentToEdit(transaction);
+		});
 	};
 
 	const handleDateChange = (newDate: Date) => {
@@ -361,14 +401,7 @@ export function InvoiceSummaryCard({
 							) : null}
 							{paymentTiming ? (
 								<div className="flex flex-wrap items-center gap-1">
-									<InvoicePaymentDateMeta
-										timing={paymentTiming}
-										amountLabel={
-											payments.length === 1
-												? formatCurrency(payments[0].amount)
-												: null
-										}
-									/>
+									<InvoicePaymentDateMeta timing={paymentTiming} />
 									<EditPaymentDateDialog
 										trigger={
 											<Button
@@ -389,21 +422,15 @@ export function InvoiceSummaryCard({
 						</div>
 					</div>
 
-					{/* Um pagamento só já aparece na linha de status, com valor. A lista
-					    existe para quando houve mais de um — antecipação de limite ou
-					    pagamento parcial —, caso em que o total precisa ser visível. */}
-					{payments.length > 1 ? (
-						<InvoicePaymentsBreakdown payments={payments} />
-					) : null}
-
-					{rolledOverAmount > 0.01 ? (
-						<p className="text-muted-foreground text-xs">
-							Rolou para a fatura seguinte:{" "}
-							<span className="font-medium tabular-nums text-foreground">
-								{formatCurrency(rolledOverAmount)}
-							</span>{" "}
-							— cobrado lá como valor pendente do mês anterior, com juros e IOF.
-						</p>
+					{payments.length > 0 ? (
+						<InvoicePaymentsPanel
+							payments={payments}
+							paidTotal={paidTotal}
+							pendingAmount={rolledOverAmount}
+							accountLabelById={accountLabelById}
+							loadingPaymentId={loadingPaymentId}
+							onEditPayment={handleEditPayment}
+						/>
 					) : null}
 
 					{hasSourceReconciliation && reconciliation ? (
@@ -670,6 +697,29 @@ export function InvoiceSummaryCard({
 					</div>
 				</div>
 			</CardContent>
+
+			{paymentDialogOptions && paymentToEdit ? (
+				<TransactionDialog
+					mode="update"
+					open
+					onOpenChange={(open) => {
+						if (open) return;
+						setPaymentToEdit(null);
+						setPaymentDialogOptions(null);
+						// A ação de lançamentos revalida /accounts, não /cards: sem isto a
+						// fatura seguiria mostrando o valor antigo do pagamento.
+						router.refresh();
+					}}
+					transaction={paymentToEdit}
+					payerOptions={paymentDialogOptions.payerOptions}
+					splitPayerOptions={paymentDialogOptions.splitPayerOptions}
+					defaultPayerId={paymentDialogOptions.defaultPayerId}
+					accountOptions={paymentDialogOptions.accountOptions}
+					cardOptions={paymentDialogOptions.cardOptions}
+					categoryOptions={paymentDialogOptions.categoryOptions}
+					estabelecimentos={paymentDialogOptions.estabelecimentos}
+				/>
+			) : null}
 		</Card>
 	);
 }
@@ -686,47 +736,112 @@ function MetaItem({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /**
- * Pagamentos da fatura, um por linha.
+ * Quanto foi pago desta fatura, quanto ficou pendente e cada pagamento feito.
  *
- * Com um pagamento só, uma linha basta. Com mais de um, cada um aparece com
- * data e valor, mais o total — é a única forma de o usuário conferir que a soma
- * bate com a fatura quando houve antecipação ou pagamento parcial.
+ * O total pago é a informação principal — e não estava em lugar nenhum quando o
+ * mês teve um pagamento só: ele aparecia solto na linha de status, sem o
+ * contraponto do que ficou faltando. Aqui os dois números ficam lado a lado, e
+ * abaixo deles os lançamentos que compõem o pago: quem paga em vários dias para
+ * reduzir juros precisa ver a soma fechar.
+ *
+ * Cada linha abre o lançamento na conta que foi debitada, porque é lá que uma
+ * correção de valor ou data tem efeito — no extrato, não no status da fatura.
  */
-function InvoicePaymentsBreakdown({
+function InvoicePaymentsPanel({
 	payments,
+	paidTotal,
+	pendingAmount,
+	accountLabelById,
+	loadingPaymentId,
+	onEditPayment,
 }: {
-	payments: Array<{ id: string; date: string | null; amount: number }>;
+	payments: InvoicePaymentEntry[];
+	paidTotal: number;
+	/** Saldo que não foi pago e entrou na fatura seguinte. */
+	pendingAmount: number;
+	accountLabelById: Map<string, string>;
+	loadingPaymentId: string | null;
+	onEditPayment: (paymentId: string) => void;
 }) {
-	const total = payments.reduce((sum, payment) => sum + payment.amount, 0);
+	const hasPending = pendingAmount > 0.01;
+	/*
+	 * Com um pagamento só e nada pendente, a própria linha é o total — repeti-lo
+	 * acima seria o mesmo número duas vezes num cabeçalho que já é cheio.
+	 */
+	const showTotals = hasPending || payments.length > 1;
 
 	return (
-		<div className="space-y-1 rounded-lg border px-3 py-2">
-			<div className="flex items-baseline justify-between gap-3 text-xs">
-				<span className="font-medium">Pagamentos ({payments.length})</span>
-				<span className="font-semibold tabular-nums">
-					{formatCurrency(total)}
-				</span>
-			</div>
-			<ul className="space-y-0.5">
-				{payments.map((payment) => (
-					<li
-						key={payment.id}
-						className="flex items-baseline justify-between gap-3 text-muted-foreground text-xs"
-					>
-						<span className="tabular-nums">
-							{payment.date
-								? formatDateOnly(payment.date, {
-										day: "2-digit",
-										month: "short",
-										year: "numeric",
-									})
-								: "sem data"}
+		<div className="space-y-2 rounded-lg border px-3 py-2.5">
+			{showTotals ? (
+				<div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+					<span className="text-xs">
+						<span className="text-muted-foreground">Total pago</span>{" "}
+						<span className="font-semibold tabular-nums">
+							{formatCurrency(paidTotal)}
 						</span>
-						<span className="tabular-nums">
-							{formatCurrency(payment.amount)}
+					</span>
+					{hasPending ? (
+						<span className="text-xs">
+							<span className="text-muted-foreground">Pendente</span>{" "}
+							<span className="font-semibold text-amber-600 tabular-nums dark:text-amber-500">
+								{formatCurrency(pendingAmount)}
+							</span>{" "}
+							<span className="text-muted-foreground">
+								— rolou para a fatura seguinte, com juros e IOF
+							</span>
 						</span>
-					</li>
-				))}
+					) : null}
+				</div>
+			) : null}
+
+			<ul className={cn("divide-y", showTotals && "border-t")}>
+				{payments.map((payment) => {
+					const accountLabel = payment.accountId
+						? accountLabelById.get(payment.accountId)
+						: null;
+					const isLoading = loadingPaymentId === payment.id;
+
+					return (
+						<li key={payment.id}>
+							<button
+								type="button"
+								onClick={() => onEditPayment(payment.id)}
+								disabled={isLoading}
+								className="-mx-1 flex w-full items-baseline justify-between gap-3 rounded px-1 py-1.5 text-left text-xs transition-colors hover:bg-accent disabled:opacity-60"
+							>
+								<span className="flex flex-wrap items-baseline gap-x-2">
+									<span className="tabular-nums">
+										{payment.date
+											? formatDateOnly(payment.date, {
+													day: "2-digit",
+													month: "short",
+													year: "numeric",
+												})
+											: "sem data"}
+									</span>
+									{accountLabel ? (
+										<span className="text-muted-foreground">
+											{accountLabel}
+										</span>
+									) : null}
+								</span>
+								<span className="flex items-center gap-1.5">
+									<span className="font-medium tabular-nums">
+										{formatCurrency(payment.amount)}
+									</span>
+									{isLoading ? (
+										<Spinner className="size-3.5 text-muted-foreground" />
+									) : (
+										<RiEditLine
+											className="size-3.5 text-muted-foreground"
+											aria-hidden
+										/>
+									)}
+								</span>
+							</button>
+						</li>
+					);
+				})}
 			</ul>
 		</div>
 	);
@@ -734,11 +849,8 @@ function InvoicePaymentsBreakdown({
 
 function InvoicePaymentDateMeta({
 	timing,
-	amountLabel,
 }: {
 	timing: NonNullable<ReturnType<typeof resolveInvoicePaymentTiming>>;
-	/** Valor do pagamento, quando há um só — evita uma linha extra só para ele. */
-	amountLabel?: string | null;
 }) {
 	const paymentLabel =
 		formatFinancialDateLabel(timing.paymentDate, "Pago em") ??
@@ -762,17 +874,7 @@ function InvoicePaymentDateMeta({
 
 	return (
 		<div className="flex flex-wrap items-center gap-1.5">
-			<span className="text-xs text-muted-foreground">
-				{paymentLabel}
-				{amountLabel ? (
-					<>
-						{" · "}
-						<span className="font-medium text-foreground tabular-nums">
-							{amountLabel}
-						</span>
-					</>
-				) : null}
-			</span>
+			<span className="text-xs text-muted-foreground">{paymentLabel}</span>
 			{timing.isLate ? (
 				<TooltipProvider delayDuration={200}>
 					<Tooltip>

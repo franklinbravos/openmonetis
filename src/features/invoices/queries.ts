@@ -233,6 +233,8 @@ export type InvoicePaymentEntry = {
 	id: string;
 	date: string | null;
 	amount: number;
+	/** Conta debitada — é dela que o dinheiro saiu. */
+	accountId: string | null;
 };
 
 /**
@@ -252,7 +254,12 @@ export async function fetchInvoicePayments(
 	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 
 	const rows = await db.query.transactions.findMany({
-		columns: { id: true, amount: true, purchaseDate: true },
+		columns: {
+			id: true,
+			amount: true,
+			purchaseDate: true,
+			accountId: true,
+		},
 		where: and(
 			eq(transactions.userId, dataOwnerUserId),
 			eq(transactions.note, buildInvoicePaymentNote(cardId, period)),
@@ -264,5 +271,6 @@ export async function fetchInvoicePayments(
 		id: row.id,
 		date: toDateOnlyString(row.purchaseDate),
 		amount: Math.abs(Number.parseFloat(String(row.amount ?? "0")) || 0),
+		accountId: row.accountId ?? null,
 	}));
 }

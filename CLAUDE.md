@@ -49,6 +49,10 @@ Se um contrato cruza dominios, ele deve morar em `src/shared/`.
 
 `src/features/attachments` importa `TransactionDialog`, `TransactionDetailsDialog` e `TransactionItem` diretamente de `src/features/transactions`. Isso e uma dependencia explicita e aceita: anexos sao semanticamente uma extensao de lancamentos — existem por causa deles e nao fazem sentido sem esse contexto. Mover esses componentes para `shared/` seria errado (eles pertencem a transactions). Nao tratar isso como bug a corrigir.
 
+**Excecao intencional: `invoices` depende de `transactions`**
+
+Pela mesma razao, `src/features/invoices` importa `TransactionDialog`, `fetchTransactionByIdAction` e `fetchTransactionDialogOptionsAction` de `src/features/transactions`: o pagamento de fatura **e** um lancamento, e edita-lo por um formulario proprio duplicaria a regra de conta, categoria e divisao. A pagina da fatura tambem renderiza a secao de lancamentos da feature. Nao tratar como bug.
+
 Exemplos comuns:
 
 - auth: `src/shared/lib/auth/*`
