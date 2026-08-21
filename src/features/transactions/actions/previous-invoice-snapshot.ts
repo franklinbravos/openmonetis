@@ -7,6 +7,7 @@ import { getUserId } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { callRpcOne } from "@/shared/lib/supabase/rpc";
+import { toDateOnlyString } from "@/shared/utils/date";
 import { addMonthsToPeriod } from "@/shared/utils/period";
 
 export type PreviousInvoiceSnapshot = {
@@ -17,6 +18,8 @@ export type PreviousInvoiceSnapshot = {
 	/** Débito na conta gravado como pagamento dessa fatura, se houver. */
 	paymentTransactionId: string | null;
 	paymentTransactionAmount: number | null;
+	/** Data do débito registrado, em `YYYY-MM-DD`. */
+	paymentTransactionDate: string | null;
 };
 
 function toNumber(value: unknown): number {
@@ -56,7 +59,7 @@ export async function fetchPreviousInvoiceSnapshotAction(input: {
 				),
 			}),
 			db.query.transactions.findFirst({
-				columns: { id: true, amount: true },
+				columns: { id: true, amount: true, purchaseDate: true },
 				where: and(
 					eq(transactions.userId, dataOwnerUserId),
 					eq(
@@ -78,6 +81,7 @@ export async function fetchPreviousInvoiceSnapshotAction(input: {
 			paymentTransactionAmount: paymentRow
 				? Math.abs(toNumber(paymentRow.amount))
 				: null,
+			paymentTransactionDate: toDateOnlyString(paymentRow?.purchaseDate),
 		};
 	} catch (error) {
 		console.error("fetchPreviousInvoiceSnapshotAction", error);

@@ -217,6 +217,8 @@ import {
 	uniquifyImportedExternalIds,
 } from "@/shared/lib/import/helpers";
 import {
+	buildPreviousInvoiceReview,
+	findInvoicePaymentDateFromFile,
 	resolvePreviousInvoiceSettlement,
 	sumInvoiceRolloverCarry,
 	sumInvoiceRolloverCharges,
@@ -233,6 +235,7 @@ import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import { formatCurrency } from "@/shared/utils/currency";
 import {
 	buildDateOnlyStringFromPeriodDay,
+	formatDateOnly,
 	getTodayDateString,
 } from "@/shared/utils/date";
 import { displayPeriod, formatPeriodForUrl } from "@/shared/utils/period";
@@ -3115,6 +3118,61 @@ export function ImportPage({
 		[rows],
 	);
 
+	/** O que a importação mudaria na fatura anterior, em uma frase. */
+	const previousSettlementChangeSummary = useMemo(() => {
+		if (!previousInvoiceSettlement || !previousInvoice) return null;
+
+		const parts: string[] = [];
+		const statusLabel =
+			previousInvoiceSettlement.paymentStatus === INVOICE_PAYMENT_STATUS.PARTIAL
+				? "paga parcialmente"
+				: previousInvoiceSettlement.paymentStatus ===
+						INVOICE_PAYMENT_STATUS.PAID
+					? "paga"
+					: "em aberto";
+
+		if (
+			previousInvoice.paymentStatus !== previousInvoiceSettlement.paymentStatus
+		) {
+			parts.push(`a fatura passa a constar como ${statusLabel}`);
+		}
+
+		if (
+			previousInvoice.paymentTransactionAmount != null &&
+			Math.abs(
+				previousInvoice.paymentTransactionAmount -
+					previousInvoiceSettlement.paidOnPrevious,
+			) > 0.01
+		) {
+			parts.push(
+				`o débito na conta vai de ${formatCurrency(
+					previousInvoice.paymentTransactionAmount,
+				)} para ${formatCurrency(previousInvoiceSettlement.paidOnPrevious)}`,
+			);
+		}
+
+		if (parts.length === 0) return null;
+		return `Ao confirmar, ${parts.join(" e ")}.`;
+	}, [previousInvoice, previousInvoiceSettlement]);
+
+	/** Conferência ponto a ponto da fatura anterior. */
+	const previousInvoiceReview = useMemo(() => {
+		if (!previousInvoiceSettlement || !previousInvoice) return null;
+
+		return buildPreviousInvoiceReview({
+			settlement: previousInvoiceSettlement,
+			registeredStatus: previousInvoice.paymentStatus,
+			registeredPaymentAmount: previousInvoice.paymentTransactionAmount,
+			registeredPaymentDate: previousInvoice.paymentTransactionDate,
+			filePaymentDate: findInvoicePaymentDateFromFile(
+				rows,
+				isInvoicePaymentDescription,
+			),
+			formatMoney: formatCurrency,
+			formatDate: (isoDate) => formatDateOnly(isoDate) ?? isoDate,
+		});
+	}, [previousInvoice, previousInvoiceSettlement, rows]);
+
 	/**
 	 * Confirmação de reescrever a fatura anterior.
 	 *
@@ -3534,6 +3592,7 @@ export function ImportPage({
 				previousInvoiceSettlement:
 					previousInvoiceSettlement &&
 					previousInvoice &&
+					previousInvoiceReview?.hasChanges &&
 					previousSettlementConfirmed
 						? {
 								period: previousInvoice.period,
@@ -3819,14 +3878,11 @@ export function ImportPage({
 								installmentCorrectionCount={installmentCorrectionCount}
 							/>
 
-							{previousInvoiceSettlement && previousInvoice ? (
+							{previousInvoiceReview && previousInvoice ? (
 								<PreviousInvoiceSettlementCard
-									settlement={previousInvoiceSettlement}
+									review={previousInvoiceReview}
 									previousPeriod={previousInvoice.period}
-									registeredPaymentAmount={
-										previousInvoice.paymentTransactionAmount
-									}
-									rolloverCharges={rolloverCharges}
+									carriedOver={previousInvoiceSettlement?.carriedOver ?? 0}
 								/>
 							) : null}
 
@@ -4057,19 +4113,13 @@ export function ImportPage({
 				}
 				nothingToConfirm={nothingToConfirm}
 				previousInvoice={
-					previousInvoiceSettlement && previousInvoice
+					previousInvoiceReview && previousInvoice
 						? {
 								previousPeriodLabel: displayPeriod(previousInvoice.period),
-								previousTotal: previousInvoiceSettlement.previousTotal,
-								paidAmount: previousInvoiceSettlement.paidOnPrevious,
-								carriedOver: previousInvoiceSettlement.carriedOver,
-								registeredPaymentAmount:
-									previousInvoice.paymentTransactionAmount,
-								isPartial:
-									previousInvoiceSettlement.paymentStatus ===
-									INVOICE_PAYMENT_STATUS.PARTIAL,
-								reconciles:
-									previousInvoiceSettlement.reconcilesWithPreviousTotal,
+								checks: previousInvoiceReview.checks,
+								allOk: previousInvoiceReview.allOk,
+								hasChanges: previousInvoiceReview.hasChanges,
+								changeSummary: previousSettlementChangeSummary,
 								confirmed: previousSettlementConfirmed,
 								onConfirmedChange: setPreviousSettlementConfirmed,
 							}

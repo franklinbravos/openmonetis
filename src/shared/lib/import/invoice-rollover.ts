@@ -59,6 +59,26 @@ export function sumInvoiceRolloverCharges(rows: RolloverRow[]): number {
 	);
 }
 
+/**
+ * Data do pagamento declarado no arquivo — a mais recente, quando há várias.
+ *
+ * É o que permite conferir a data gravada no débito da fatura anterior contra o
+ * que o banco registrou.
+ */
+export function findInvoicePaymentDateFromFile(
+	rows: Array<{ description: string; date: string }>,
+	isPaymentDescription: (description: string) => boolean,
+): string | null {
+	let latest: string | null = null;
+
+	for (const row of rows) {
+		if (!isPaymentDescription(row.description)) continue;
+		if (!latest || row.date > latest) latest = row.date;
+	}
+
+	return latest;
+}
+
 export type PreviousInvoiceSettlement = {
 	/** Total da fatura anterior, como está cadastrado. */
 	previousTotal: number;
@@ -162,5 +182,96 @@ export function resolvePreviousInvoiceSettlement(input: {
 		paymentStatus: null,
 		amortizationOnCurrent: 0,
 		reconcilesWithPreviousTotal: true,
+	};
+}
+
+export type PreviousInvoiceCheck = {
+	label: string;
+	value: string;
+	ok: boolean;
+	/** Preenchido quando não confere: o outro lado da comparação. */
+	detail?: string;
+};
+
+export type PreviousInvoiceReview = {
+	checks: PreviousInvoiceCheck[];
+	/** Todos os pontos conferem. */
+	allOk: boolean;
+	/**
+	 * A importação mudaria algo na fatura anterior.
+	 *
+	 * Quando nada muda — status já correto e débito no valor certo — não há o que
+	 * confirmar nem o que gravar: o bloco é só conferência.
+	 */
+	hasChanges: boolean;
+};
+
+/**
+ * Conferência da fatura anterior, ponto a ponto.
+ *
+ * O arquivo desta fatura carrega como a anterior foi paga, então dá para
+ * comparar três coisas com o que está cadastrado: o valor pago, o status da
+ * fatura e a data do pagamento. É conferência, não ação — na maioria dos meses
+ * já está tudo certo, e afirmar que algo "passa a constar" seria mentira.
+ */
+export function buildPreviousInvoiceReview(input: {
+	settlement: PreviousInvoiceSettlement;
+	registeredStatus: string | null;
+	registeredPaymentAmount: number | null;
+	registeredPaymentDate: string | null;
+	filePaymentDate: string | null;
+	formatMoney: (value: number) => string;
+	formatDate: (isoDate: string) => string;
+}): PreviousInvoiceReview {
+	const { settlement, formatMoney, formatDate } = input;
+	const checks: PreviousInvoiceCheck[] = [];
+
+	const amountOk = settlement.reconcilesWithPreviousTotal;
+	checks.push({
+		label: "Valor",
+		value: formatMoney(settlement.paidOnPrevious),
+		ok: amountOk,
+		detail: amountOk
+			? undefined
+			: `cadastro soma ${formatMoney(settlement.previousTotal)}`,
+	});
+
+	const statusOk = input.registeredStatus === settlement.paymentStatus;
+	checks.push({
+		label: "Situação",
+		value:
+			settlement.paymentStatus === INVOICE_PAYMENT_STATUS.PARTIAL
+				? "paga parcialmente"
+				: settlement.paymentStatus === INVOICE_PAYMENT_STATUS.PAID
+					? "paga"
+					: "em aberto",
+		ok: statusOk,
+		detail: statusOk ? undefined : "cadastro será ajustado",
+	});
+
+	if (input.filePaymentDate) {
+		const dateOk =
+			input.registeredPaymentDate != null &&
+			input.registeredPaymentDate === input.filePaymentDate;
+		checks.push({
+			label: "Pago em",
+			value: formatDate(input.filePaymentDate),
+			ok: dateOk,
+			detail: dateOk
+				? undefined
+				: input.registeredPaymentDate
+					? `cadastro diz ${formatDate(input.registeredPaymentDate)}`
+					: "sem data no cadastro",
+		});
+	}
+
+	const debitDiffers =
+		input.registeredPaymentAmount != null &&
+		Math.abs(input.registeredPaymentAmount - settlement.paidOnPrevious) > 0.01;
+
+	return {
+		checks,
+		allOk: checks.every((check) => check.ok),
+		hasChanges: !statusOk || debitDiffers,
 	};
 }

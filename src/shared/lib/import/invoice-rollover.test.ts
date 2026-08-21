@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import {
+	buildPreviousInvoiceReview,
 	isInvoiceRolloverCarryDescription,
 	isInvoiceRolloverChargeDescription,
 	resolvePreviousInvoiceSettlement,
@@ -157,5 +158,104 @@ describe("resolvePreviousInvoiceSettlement", () => {
 
 		expect(settlement.paymentStatus).toBe(INVOICE_PAYMENT_STATUS.PAID);
 		expect(settlement.reconcilesWithPreviousTotal).toBe(true);
+	});
+});
+
+describe("buildPreviousInvoiceReview", () => {
+	const money = (value: number) => `R$ ${value.toFixed(2)}`;
+	const date = (iso: string) => iso.split("-").reverse().join("/");
+
+	it("janeiro já paga e conferindo: tudo ok e nada a mudar", () => {
+		// Caso comum. Dizer que a fatura "passa a constar como paga" seria falso —
+		// ela já está. Aqui o bloco é conferência, e não há nada para gravar.
+		const review = buildPreviousInvoiceReview({
+			settlement: resolvePreviousInvoiceSettlement({
+				previousTotal: 6003.17,
+				carriedOver: 0,
+				filePaymentsTotal: 6003.17,
+			}),
+			registeredStatus: INVOICE_PAYMENT_STATUS.PAID,
+			registeredPaymentAmount: 6003.17,
+			registeredPaymentDate: "2026-02-12",
+			filePaymentDate: "2026-02-12",
+			formatMoney: money,
+			formatDate: date,
+		});
+
+		expect(review.allOk).toBe(true);
+		expect(review.hasChanges).toBe(false);
+		expect(review.checks.map((check) => check.label)).toEqual([
+			"Valor",
+			"Situação",
+			"Pago em",
+		]);
+	});
+
+	it("aponta a data divergente sem invalidar o resto", () => {
+		const review = buildPreviousInvoiceReview({
+			settlement: resolvePreviousInvoiceSettlement({
+				previousTotal: 6003.17,
+				carriedOver: 0,
+				filePaymentsTotal: 6003.17,
+			}),
+			registeredStatus: INVOICE_PAYMENT_STATUS.PAID,
+			registeredPaymentAmount: 6003.17,
+			registeredPaymentDate: "2026-02-10",
+			filePaymentDate: "2026-02-12",
+			formatMoney: money,
+			formatDate: date,
+		});
+
+		expect(review.allOk).toBe(false);
+		const dateCheck = review.checks.find((check) => check.label === "Pago em");
+		expect(dateCheck?.ok).toBe(false);
+		expect(dateCheck?.detail).toContain("10/02/2026");
+		// Data errada não é algo que a importação corrija por conta própria.
+		expect(review.hasChanges).toBe(false);
+	});
+
+	it("rotativo: status e débito mudam, então há o que confirmar", () => {
+		const review = buildPreviousInvoiceReview({
+			settlement: resolvePreviousInvoiceSettlement({
+				previousTotal: 6525.24,
+				carriedOver: 5525.23,
+				filePaymentsTotal: 3500,
+			}),
+			registeredStatus: INVOICE_PAYMENT_STATUS.PAID,
+			registeredPaymentAmount: 6525.24,
+			registeredPaymentDate: "2026-05-12",
+			filePaymentDate: "2026-05-12",
+			formatMoney: money,
+			formatDate: date,
+		});
+
+		expect(review.hasChanges).toBe(true);
+		const statusCheck = review.checks.find(
+			(check) => check.label === "Situação",
+		);
+		expect(statusCheck?.ok).toBe(false);
+		expect(statusCheck?.value).toBe("paga parcialmente");
+	});
+
+	it("omite o check de data quando o arquivo não traz pagamento datado", () => {
+		const review = buildPreviousInvoiceReview({
+			settlement: resolvePreviousInvoiceSettlement({
+				previousTotal: 1000,
+				carriedOver: 900,
+				filePaymentsTotal: 100,
+			}),
+			registeredStatus: INVOICE_PAYMENT_STATUS.PARTIAL,
+			registeredPaymentAmount: 100,
+			registeredPaymentDate: null,
+			filePaymentDate: null,
+			formatMoney: money,
+			formatDate: date,
+		});
+
+		expect(review.checks.map((check) => check.label)).toEqual([
+			"Valor",
+			"Situação",
+		]);
+		expect(review.hasChanges).toBe(false);
 	});
 });

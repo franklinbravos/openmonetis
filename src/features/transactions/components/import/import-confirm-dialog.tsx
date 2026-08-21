@@ -41,17 +41,27 @@ export type ImportInvoicePaymentPrompt = {
  * Fica atrás de uma confirmação porque reescreve o registro de um mês já
  * fechado: o status da fatura anterior e o valor do débito na conta.
  */
+export type ImportPreviousInvoiceCheck = {
+	label: string;
+	value: string;
+	ok: boolean;
+	detail?: string;
+};
+
+/**
+ * Conferência da fatura anterior no último passo.
+ *
+ * Quando nada muda — status já correto e débito no valor certo — não há
+ * confirmação a pedir: o bloco só mostra que está tudo certo.
+ */
 export type ImportPreviousInvoicePrompt = {
 	previousPeriodLabel: string;
-	previousTotal: number;
-	paidAmount: number;
-	carriedOver: number;
-	/** Débito hoje registrado, quando difere do que foi realmente pago. */
-	registeredPaymentAmount: number | null;
-	/** `true` quando a fatura anterior ficou parcialmente paga. */
-	isPartial: boolean;
-	/** A evidência do arquivo fecha com o total cadastrado da anterior? */
-	reconciles: boolean;
+	checks: ImportPreviousInvoiceCheck[];
+	allOk: boolean;
+	/** A importação mudaria algo na fatura anterior. */
+	hasChanges: boolean;
+	/** Descrição curta do que muda, quando muda. */
+	changeSummary: string | null;
 	confirmed: boolean;
 	onConfirmedChange: (confirmed: boolean) => void;
 };
@@ -218,87 +228,76 @@ export function ImportConfirmDialog({
 				{previousInvoice ? (
 					<div
 						className={cn(
-							"space-y-3 rounded-md border p-3",
-							previousInvoice.reconciles
+							"space-y-2 rounded-md border p-3",
+							previousInvoice.allOk
 								? "border-emerald-500/40 bg-emerald-500/5"
 								: "border-amber-500/40 bg-amber-500/5",
 						)}
 					>
-						<p className="font-medium text-sm">
-							{previousInvoice.isPartial
-								? `A fatura de ${previousInvoice.previousPeriodLabel} foi paga em parte`
-								: `Pagamento da fatura de ${previousInvoice.previousPeriodLabel}`}
-						</p>
-
-						<dl className="grid gap-2 text-sm sm:grid-cols-3">
-							<div>
-								<dt className="text-muted-foreground text-xs">Total</dt>
-								<dd className="tabular-nums">
-									{formatCurrency(previousInvoice.previousTotal)}
-								</dd>
-							</div>
-							<div>
-								<dt className="text-muted-foreground text-xs">Pago</dt>
-								<dd className="font-medium text-emerald-600 tabular-nums">
-									{formatCurrency(previousInvoice.paidAmount)}
-								</dd>
-							</div>
-							{previousInvoice.carriedOver > 0 ? (
-								<div>
-									<dt className="text-muted-foreground text-xs">
-										Rolou para cá
-									</dt>
-									<dd className="font-medium tabular-nums">
-										{formatCurrency(previousInvoice.carriedOver)}
-									</dd>
-								</div>
-							) : null}
-						</dl>
-
-						<div className="flex items-start gap-2">
-							<Checkbox
-								id="previous-invoice-settlement"
-								checked={previousInvoice.confirmed}
-								onCheckedChange={(checked) =>
-									previousInvoice.onConfirmedChange(checked === true)
-								}
-							/>
-							<Label
-								htmlFor="previous-invoice-settlement"
-								className="text-sm font-normal leading-snug"
+						<div className="flex flex-wrap items-center gap-2">
+							<p className="font-medium text-sm">
+								Fatura de {previousInvoice.previousPeriodLabel}
+							</p>
+							<span
+								className={cn(
+									"rounded-full border px-2 py-0.5 text-xs",
+									previousInvoice.allOk
+										? "border-emerald-500/40 text-emerald-700 dark:text-emerald-500"
+										: "border-amber-500/40 text-amber-700 dark:text-amber-500",
+								)}
 							>
-								Confirmar o pagamento de {previousInvoice.previousPeriodLabel}
-							</Label>
+								{previousInvoice.allOk ? "Confere" : "Requer atenção"}
+							</span>
 						</div>
 
-						{previousInvoice.reconciles ? null : (
-							<p className="text-xs leading-relaxed text-amber-700 dark:text-amber-500">
-								O arquivo diz que se pagou{" "}
-								{formatCurrency(previousInvoice.paidAmount)}, mas a fatura de{" "}
-								{previousInvoice.previousPeriodLabel} soma{" "}
-								{formatCurrency(previousInvoice.previousTotal)} no cadastro.
-								Vale conferir aquele mês antes de confirmar — pode faltar
-								lançamento ou haver valor errado.
-							</p>
-						)}
+						<ul className="space-y-1 text-xs">
+							{previousInvoice.checks.map((check) => (
+								<li key={check.label} className="flex items-center gap-1.5">
+									<span
+										aria-hidden="true"
+										className={check.ok ? "text-emerald-600" : "text-amber-600"}
+									>
+										{check.ok ? "✓" : "!"}
+									</span>
+									<span className="text-muted-foreground">{check.label}</span>
+									<span className="font-medium tabular-nums">
+										{check.value}
+									</span>
+									{check.detail ? (
+										<span className="text-amber-700 dark:text-amber-500">
+											({check.detail})
+										</span>
+									) : null}
+								</li>
+							))}
+						</ul>
 
-						<p className="text-muted-foreground text-xs leading-relaxed">
-							{previousInvoice.confirmed
-								? `A fatura passa a constar como ${
-										previousInvoice.isPartial ? "paga parcialmente" : "paga"
-									}${
-										previousInvoice.registeredPaymentAmount != null &&
-										Math.abs(
-											previousInvoice.registeredPaymentAmount -
-												previousInvoice.paidAmount,
-										) > 0.01
-											? `, e o débito na conta é corrigido de ${formatCurrency(
-													previousInvoice.registeredPaymentAmount,
-												)} para ${formatCurrency(previousInvoice.paidAmount)}`
-											: ""
-									}.`
-								: "Sem confirmar, a fatura anterior fica como está e você pode ajustá-la depois na tela dela."}
-						</p>
+						{previousInvoice.hasChanges ? (
+							<>
+								<div className="flex items-start gap-2 pt-1">
+									<Checkbox
+										id="previous-invoice-settlement"
+										checked={previousInvoice.confirmed}
+										onCheckedChange={(checked) =>
+											previousInvoice.onConfirmedChange(checked === true)
+										}
+									/>
+									<Label
+										htmlFor="previous-invoice-settlement"
+										className="text-sm font-normal leading-snug"
+									>
+										Ajustar a fatura de {previousInvoice.previousPeriodLabel}
+									</Label>
+								</div>
+								{previousInvoice.changeSummary ? (
+									<p className="text-muted-foreground text-xs leading-relaxed">
+										{previousInvoice.confirmed
+											? previousInvoice.changeSummary
+											: "Sem ajustar, a fatura anterior fica como está."}
+									</p>
+								) : null}
+							</>
+						) : null}
 					</div>
 				) : null}
 
