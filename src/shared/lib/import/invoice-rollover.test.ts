@@ -72,16 +72,56 @@ describe("resolvePreviousInvoiceSettlement", () => {
 		expect(settlement.amortizationOnCurrent).toBe(2499.99);
 	});
 
-	it("sem carrego, a fatura anterior foi paga por inteiro", () => {
+	it("sem carrego, com pagamento, a anterior foi quitada e a conta fecha", () => {
+		// Caso comum: fevereiro quitou janeiro por inteiro. A validação útil aqui
+		// é o pagamento do arquivo bater com o total cadastrado da anterior.
 		const settlement = resolvePreviousInvoiceSettlement({
-			previousTotal: 6525.24,
+			previousTotal: 6003.17,
 			carriedOver: 0,
-			filePaymentsTotal: 6525.24,
+			filePaymentsTotal: 6003.17,
 		});
 
-		expect(settlement.paidOnPrevious).toBe(6525.24);
+		expect(settlement.paidOnPrevious).toBe(6003.17);
 		expect(settlement.paymentStatus).toBe(INVOICE_PAYMENT_STATUS.PAID);
 		expect(settlement.amortizationOnCurrent).toBe(0);
+		expect(settlement.reconcilesWithPreviousTotal).toBe(true);
+	});
+
+	it("aponta divergência quando o pago não fecha com o total cadastrado", () => {
+		// O arquivo diz que se pagou 6.000, mas a fatura anterior soma 6.500:
+		// falta lançamento no mês passado, ou algum valor está errado.
+		const settlement = resolvePreviousInvoiceSettlement({
+			previousTotal: 6500,
+			carriedOver: 0,
+			filePaymentsTotal: 6000,
+		});
+
+		expect(settlement.paymentStatus).toBe(INVOICE_PAYMENT_STATUS.PAID);
+		expect(settlement.reconcilesWithPreviousTotal).toBe(false);
+	});
+
+	it("pagamento acima do total da anterior amortiza a atual", () => {
+		const settlement = resolvePreviousInvoiceSettlement({
+			previousTotal: 1000,
+			carriedOver: 0,
+			filePaymentsTotal: 1500,
+		});
+
+		expect(settlement.paidOnPrevious).toBe(1000);
+		expect(settlement.amortizationOnCurrent).toBe(500);
+	});
+
+	it("sem carrego e sem pagamento, o arquivo não afirma nada", () => {
+		// Ausência de rotativo não prova quitação: pode ser fatura ainda em
+		// aberto. Sem evidência, nada deve ser escrito na fatura anterior.
+		const settlement = resolvePreviousInvoiceSettlement({
+			previousTotal: 6003.17,
+			carriedOver: 0,
+			filePaymentsTotal: 0,
+		});
+
+		expect(settlement.paymentStatus).toBeNull();
+		expect(settlement.paidOnPrevious).toBe(0);
 	});
 
 	it("carrego igual ao total significa que nada foi pago", () => {
@@ -108,7 +148,7 @@ describe("resolvePreviousInvoiceSettlement", () => {
 		expect(settlement.amortizationOnCurrent).toBe(0);
 	});
 
-	it("um centavo de arredondamento conta como quitada", () => {
+	it("um centavo de carrego não caracteriza rotativo", () => {
 		const settlement = resolvePreviousInvoiceSettlement({
 			previousTotal: 1000,
 			carriedOver: 0.01,
@@ -116,5 +156,6 @@ describe("resolvePreviousInvoiceSettlement", () => {
 		});
 
 		expect(settlement.paymentStatus).toBe(INVOICE_PAYMENT_STATUS.PAID);
+		expect(settlement.reconcilesWithPreviousTotal).toBe(true);
 	});
 });

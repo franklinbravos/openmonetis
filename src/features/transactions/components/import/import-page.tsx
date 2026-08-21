@@ -229,6 +229,7 @@ import {
 } from "@/shared/lib/import/invoice-total";
 import { mapPdfLoadError } from "@/shared/lib/import/pdf-password";
 import type { ImportStatement } from "@/shared/lib/import/types";
+import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import { formatCurrency } from "@/shared/utils/currency";
 import {
 	buildDateOnlyStringFromPeriodDay,
@@ -3099,14 +3100,14 @@ export function ImportPage({
 	const previousInvoiceSettlement = useMemo(() => {
 		if (!previousInvoice) return null;
 
-		const carriedOver = sumInvoiceRolloverCarry(rows);
-		if (carriedOver <= 0) return null;
-
-		return resolvePreviousInvoiceSettlement({
+		const settlement = resolvePreviousInvoiceSettlement({
 			previousTotal: previousInvoice.total,
-			carriedOver,
+			carriedOver: sumInvoiceRolloverCarry(rows),
 			filePaymentsTotal: sumInvoicePaymentRowsFromFile(rows),
 		});
+
+		// Sem pagamento e sem carrego o arquivo não afirma nada sobre a anterior.
+		return settlement.paymentStatus ? settlement : null;
 	}, [previousInvoice, rows]);
 
 	const rolloverCharges = useMemo(
@@ -4064,6 +4065,11 @@ export function ImportPage({
 								carriedOver: previousInvoiceSettlement.carriedOver,
 								registeredPaymentAmount:
 									previousInvoice.paymentTransactionAmount,
+								isPartial:
+									previousInvoiceSettlement.paymentStatus ===
+									INVOICE_PAYMENT_STATUS.PARTIAL,
+								reconciles:
+									previousInvoiceSettlement.reconcilesWithPreviousTotal,
 								confirmed: previousSettlementConfirmed,
 								onConfirmedChange: setPreviousSettlementConfirmed,
 							}

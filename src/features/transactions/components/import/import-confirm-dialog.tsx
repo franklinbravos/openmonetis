@@ -48,6 +48,10 @@ export type ImportPreviousInvoicePrompt = {
 	carriedOver: number;
 	/** Débito hoje registrado, quando difere do que foi realmente pago. */
 	registeredPaymentAmount: number | null;
+	/** `true` quando a fatura anterior ficou parcialmente paga. */
+	isPartial: boolean;
+	/** A evidência do arquivo fecha com o total cadastrado da anterior? */
+	reconciles: boolean;
 	confirmed: boolean;
 	onConfirmedChange: (confirmed: boolean) => void;
 };
@@ -212,10 +216,18 @@ export function ImportConfirmDialog({
 				) : null}
 
 				{previousInvoice ? (
-					<div className="space-y-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+					<div
+						className={cn(
+							"space-y-3 rounded-md border p-3",
+							previousInvoice.reconciles
+								? "border-emerald-500/40 bg-emerald-500/5"
+								: "border-amber-500/40 bg-amber-500/5",
+						)}
+					>
 						<p className="font-medium text-sm">
-							A fatura de {previousInvoice.previousPeriodLabel} foi paga em
-							parte
+							{previousInvoice.isPartial
+								? `A fatura de ${previousInvoice.previousPeriodLabel} foi paga em parte`
+								: `Pagamento da fatura de ${previousInvoice.previousPeriodLabel}`}
 						</p>
 
 						<dl className="grid gap-2 text-sm sm:grid-cols-3">
@@ -231,12 +243,16 @@ export function ImportConfirmDialog({
 									{formatCurrency(previousInvoice.paidAmount)}
 								</dd>
 							</div>
-							<div>
-								<dt className="text-muted-foreground text-xs">Rolou para cá</dt>
-								<dd className="font-medium tabular-nums">
-									{formatCurrency(previousInvoice.carriedOver)}
-								</dd>
-							</div>
+							{previousInvoice.carriedOver > 0 ? (
+								<div>
+									<dt className="text-muted-foreground text-xs">
+										Rolou para cá
+									</dt>
+									<dd className="font-medium tabular-nums">
+										{formatCurrency(previousInvoice.carriedOver)}
+									</dd>
+								</div>
+							) : null}
 						</dl>
 
 						<div className="flex items-start gap-2">
@@ -255,10 +271,27 @@ export function ImportConfirmDialog({
 							</Label>
 						</div>
 
+						{previousInvoice.reconciles ? null : (
+							<p className="text-xs leading-relaxed text-amber-700 dark:text-amber-500">
+								O arquivo diz que se pagou{" "}
+								{formatCurrency(previousInvoice.paidAmount)}, mas a fatura de{" "}
+								{previousInvoice.previousPeriodLabel} soma{" "}
+								{formatCurrency(previousInvoice.previousTotal)} no cadastro.
+								Vale conferir aquele mês antes de confirmar — pode faltar
+								lançamento ou haver valor errado.
+							</p>
+						)}
+
 						<p className="text-muted-foreground text-xs leading-relaxed">
 							{previousInvoice.confirmed
-								? `A fatura passa a constar como paga parcialmente${
-										previousInvoice.registeredPaymentAmount != null
+								? `A fatura passa a constar como ${
+										previousInvoice.isPartial ? "paga parcialmente" : "paga"
+									}${
+										previousInvoice.registeredPaymentAmount != null &&
+										Math.abs(
+											previousInvoice.registeredPaymentAmount -
+												previousInvoice.paidAmount,
+										) > 0.01
 											? `, e o débito na conta é corrigido de ${formatCurrency(
 													previousInvoice.registeredPaymentAmount,
 												)} para ${formatCurrency(previousInvoice.paidAmount)}`
