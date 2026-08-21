@@ -1,6 +1,6 @@
 "use client";
 
-import { RiCheckboxCircleLine } from "@remixicon/react";
+import { RiCheckboxCircleLine, RiCloseCircleLine } from "@remixicon/react";
 import { AccountCardSelectContent } from "@/features/transactions/components/select-items";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
@@ -35,7 +35,13 @@ export type ImportInvoicePaymentPrompt = {
 	 * já foi paga?" nessa situação ignora o que já foi feito e convida a
 	 * registrar o pagamento duas vezes.
 	 */
-	alreadyPaid?: { date: string | null; amount: number | null } | null;
+	alreadyPaid?: {
+		date: string | null;
+		amount: number | null;
+		/** Reabre o pagamento para corrigir a data ou desfazê-lo. */
+		reopened: boolean;
+		onReopenedChange: (reopened: boolean) => void;
+	} | null;
 	paid: boolean;
 	onPaidChange: (paid: boolean) => void;
 	paymentDate: string;
@@ -279,15 +285,14 @@ export function ImportConfirmDialog({
 							</span>
 						</div>
 
-						<ul className="space-y-1 text-xs">
+						<ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
 							{previousInvoice.checks.map((check) => (
-								<li key={check.label} className="flex items-center gap-1.5">
-									<span
-										aria-hidden="true"
-										className={check.ok ? "text-emerald-600" : "text-amber-600"}
-									>
-										{check.ok ? "✓" : "!"}
-									</span>
+								<li key={check.label} className="flex items-center gap-1">
+									{check.ok ? (
+										<RiCheckboxCircleLine className="size-3.5 shrink-0 text-emerald-600" />
+									) : (
+										<RiCloseCircleLine className="size-3.5 shrink-0 text-amber-600" />
+									)}
 									<span className="text-muted-foreground">{check.label}</span>
 									<span className="font-medium tabular-nums">
 										{check.value}
@@ -398,12 +403,33 @@ export function ImportConfirmDialog({
 								</li>
 							) : null}
 						</ul>
-						<p className="text-muted-foreground text-xs leading-relaxed">
-							O pagamento não é registrado de novo. Este reprocessamento aplica
-							apenas o que mudou nos lançamentos.
-						</p>
+						<div className="flex items-start gap-2">
+							<Checkbox
+								id="reopen-invoice-payment"
+								checked={invoicePayment.alreadyPaid.reopened}
+								onCheckedChange={(checked) =>
+									invoicePayment.alreadyPaid?.onReopenedChange(checked === true)
+								}
+							/>
+							<Label
+								htmlFor="reopen-invoice-payment"
+								className="text-xs font-normal leading-snug"
+							>
+								Corrigir a data ou desfazer o pagamento
+							</Label>
+						</div>
+
+						{invoicePayment.alreadyPaid.reopened ? null : (
+							<p className="text-muted-foreground text-xs leading-relaxed">
+								O pagamento não é registrado de novo. Este reprocessamento
+								aplica apenas o que mudou nos lançamentos.
+							</p>
+						)}
 					</div>
-				) : invoicePayment ? (
+				) : null}
+
+				{invoicePayment &&
+				(!invoicePayment.alreadyPaid || invoicePayment.alreadyPaid.reopened) ? (
 					<div className="space-y-3 rounded-md border p-3">
 						<p className="font-medium text-sm">Esta fatura já foi paga?</p>
 						<div className="grid grid-cols-2 gap-2">

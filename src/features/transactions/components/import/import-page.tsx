@@ -3210,6 +3210,15 @@ export function ImportPage({
 		[rows],
 	);
 
+	/**
+	 * Pagamento da fatura reaberto para correção.
+	 *
+	 * Fatura já paga não pergunta nada por padrão. Marcando aqui, a pergunta
+	 * volta — para trocar a data ou desfazer a baixa quando o registro estiver
+	 * errado.
+	 */
+	const [invoicePaymentReopened, setInvoicePaymentReopened] = useState(false);
+
 	/** Correção pontual da fatura anterior, aberta pelo botão Ajustar. */
 	const [fixPreviousOpen, setFixPreviousOpen] = useState(false);
 	const [isFixingPrevious, startFixPrevious] = useTransition();
@@ -3437,7 +3446,7 @@ export function ImportPage({
 
 	const shouldPayInvoiceOnImport =
 		canAskInvoicePayment &&
-		!invoiceAlreadyPaid &&
+		(!invoiceAlreadyPaid || invoicePaymentReopened) &&
 		payInvoiceOnImport &&
 		Boolean(paymentAccountId);
 
@@ -3738,74 +3747,101 @@ export function ImportPage({
 					? buildAccountStatementHref(initialAccountId, importedInvoicePeriod)
 					: null;
 
+		/**
+		 * A action tem algo a fazer?
+		 *
+		 * Reprocessar um mês já fechado pode não ter lançamento, remoção nem
+		 * liquidação — só a atualização de limites, que roda fora dela. Chamar a
+		 * action nesse caso volta "Selecione ao menos uma transação".
+		 */
+		const settlementPayload =
+			previousInvoiceSettlement &&
+			previousInvoice &&
+			previousInvoiceReview?.hasChanges &&
+			previousSettlementConfirmed
+				? {
+						period: previousInvoice.period,
+						paidAmount: previousInvoiceSettlement.paidOnPrevious,
+						carriedOver: previousInvoiceSettlement.carriedOver,
+						paymentTransactionId: previousInvoice.paymentTransactionId,
+						paymentDate: previousInvoiceReview.changes.paymentDate
+							? (statement.invoice?.paymentDate ?? null)
+							: null,
+					}
+				: undefined;
+
+		const hasActionWork =
+			selectedRows.length > 0 ||
+			shouldPayInvoiceOnImport ||
+			Boolean(settlementPayload) ||
+			rowsMarkedForRemoval.length > 0 ||
+			collectExistingAmountEdits(rows).length > 0 ||
+			collectExistingInstallmentEdits(rows).length > 0;
+
 		setIsImporting(true);
 		try {
-			const result = await importTransactionsAction({
-				rows: selectedRows.map((r) => ({
-					externalId: r.externalId,
-					date: r.date,
-					amount: r.amount,
-					description: r.description,
-					transactionType: r.transactionType,
-					categoryId: r.categoryId,
-					payerId: r.payerId,
-					kind: r.kind,
-					invoicePaymentCardId: r.invoicePaymentCardId,
-					invoicePaymentPeriod: r.invoicePaymentPeriod,
-					transferPeerAccountId: r.transferPeerAccountId,
-					installmentImport:
-						r.installmentImport?.enabled &&
-						isValidInstallmentImport(r.installmentImport)
-							? {
-									enabled: true,
-									name: r.installmentImport.name,
-									currentInstallment: r.installmentImport.currentInstallment,
-									installmentCount: r.installmentImport.installmentCount,
-								}
-							: null,
-					recurrenceImport:
-						r.recurrenceImport?.enabled &&
-						isValidRecurrenceImport(r.recurrenceImport)
-							? {
-									enabled: true,
-									recurrenceCount: r.recurrenceImport.recurrenceCount,
-								}
-							: null,
-				})),
-				payerId,
-				accountId,
-				cardId,
-				paymentMethod,
-				invoicePeriod,
-				payInvoice: shouldPayInvoiceOnImport,
-				paymentDate: shouldPayInvoiceOnImport ? paymentDate : undefined,
-				paymentAccountId: shouldPayInvoiceOnImport
-					? (paymentAccountId ?? undefined)
-					: undefined,
-				sourceFileName: sourceFile?.name,
-				sourceFileSize: sourceFile?.size,
-				importBatchId: uploadImportBatchId ?? undefined,
-				sourceInvoiceTotalOverride: invoiceTotalOverrideConfirmed,
-				removeTransactionIds:
-					rowsMarkedForRemoval.length > 0 ? rowsMarkedForRemoval : undefined,
-				existingAmountEdits: collectExistingAmountEdits(rows),
-				existingInstallmentEdits: collectExistingInstallmentEdits(rows),
-				previousInvoiceSettlement:
-					previousInvoiceSettlement &&
-					previousInvoice &&
-					previousInvoiceReview?.hasChanges &&
-					previousSettlementConfirmed
-						? {
-								period: previousInvoice.period,
-								paidAmount: previousInvoiceSettlement.paidOnPrevious,
-								carriedOver: previousInvoiceSettlement.carriedOver,
-								paymentTransactionId: previousInvoice.paymentTransactionId,
-								paymentDate: previousInvoiceReview?.changes.paymentDate
-									? (statement?.invoice?.paymentDate ?? null)
+			const result = hasActionWork
+				? await importTransactionsAction({
+						rows: selectedRows.map((r) => ({
+							externalId: r.externalId,
+							date: r.date,
+							amount: r.amount,
+							description: r.description,
+							transactionType: r.transactionType,
+							categoryId: r.categoryId,
+							payerId: r.payerId,
+							kind: r.kind,
+							invoicePaymentCardId: r.invoicePaymentCardId,
+							invoicePaymentPeriod: r.invoicePaymentPeriod,
+							transferPeerAccountId: r.transferPeerAccountId,
+							installmentImport:
+								r.installmentImport?.enabled &&
+								isValidInstallmentImport(r.installmentImport)
+									? {
+											enabled: true,
+											name: r.installmentImport.name,
+											currentInstallment:
+												r.installmentImport.currentInstallment,
+											installmentCount: r.installmentImport.installmentCount,
+										}
 									: null,
-							}
-						: undefined,
-			});
+							recurrenceImport:
+								r.recurrenceImport?.enabled &&
+								isValidRecurrenceImport(r.recurrenceImport)
+									? {
+											enabled: true,
+											recurrenceCount: r.recurrenceImport.recurrenceCount,
+										}
+									: null,
+						})),
+						payerId,
+						accountId,
+						cardId,
+						paymentMethod,
+						invoicePeriod,
+						payInvoice: shouldPayInvoiceOnImport,
+						paymentDate: shouldPayInvoiceOnImport ? paymentDate : undefined,
+						paymentAccountId: shouldPayInvoiceOnImport
+							? (paymentAccountId ?? undefined)
+							: undefined,
+						sourceFileName: sourceFile?.name,
+						sourceFileSize: sourceFile?.size,
+						importBatchId: uploadImportBatchId ?? undefined,
+						sourceInvoiceTotalOverride: invoiceTotalOverrideConfirmed,
+						removeTransactionIds:
+							rowsMarkedForRemoval.length > 0
+								? rowsMarkedForRemoval
+								: undefined,
+						existingAmountEdits: collectExistingAmountEdits(rows),
+						existingInstallmentEdits: collectExistingInstallmentEdits(rows),
+						previousInvoiceSettlement: settlementPayload,
+					})
+				: {
+						success: true as const,
+						imported: 0,
+						skipped: 0,
+						importBatchId: "",
+					};
 
 			if (!result.success) {
 				console.error("Falha ao importar lançamentos:", result.error);
@@ -4386,6 +4422,8 @@ export function ImportPage({
 										? {
 												date: currentInvoice.paymentTransactionDate,
 												amount: currentInvoice.paymentTransactionAmount,
+												reopened: invoicePaymentReopened,
+												onReopenedChange: setInvoicePaymentReopened,
 											}
 										: null,
 								dueDate: invoiceDueDate,

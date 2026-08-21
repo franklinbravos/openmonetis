@@ -232,9 +232,13 @@ const importSchema = z
 		previousInvoiceSettlement: previousInvoiceSettlementSchema.optional(),
 	})
 	.superRefine((data, ctx) => {
+		// A liquidação da fatura anterior é trabalho por si só: reprocessar um mês
+		// já conferido não mexe em lançamento nenhum e ainda assim corrige o
+		// status, o valor e a data do débito do mês passado.
 		if (
 			data.rows.length === 0 &&
 			!data.payInvoice &&
+			!data.previousInvoiceSettlement &&
 			!(data.removeTransactionIds?.length ?? 0) &&
 			!(data.existingAmountEdits?.length ?? 0) &&
 			!(data.existingInstallmentEdits?.length ?? 0)
