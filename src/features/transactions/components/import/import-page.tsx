@@ -3219,6 +3219,11 @@ export function ImportPage({
 	 */
 	const [invoicePaymentReopened, setInvoicePaymentReopened] = useState(false);
 
+	// Trocar de fatura fecha a reabertura: ela vale para um pagamento só.
+	useEffect(() => {
+		setInvoicePaymentReopened(false);
+	}, [invoiceCardId, invoiceTargetPeriod]);
+
 	/** Correção pontual da fatura anterior, aberta pelo botão Ajustar. */
 	const [fixPreviousOpen, setFixPreviousOpen] = useState(false);
 	const [isFixingPrevious, startFixPrevious] = useTransition();

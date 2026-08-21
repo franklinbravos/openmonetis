@@ -3,7 +3,6 @@
 import { RiCheckboxCircleLine, RiCloseCircleLine } from "@remixicon/react";
 import { AccountCardSelectContent } from "@/features/transactions/components/select-items";
 import { Button } from "@/shared/components/ui/button";
-import { Checkbox } from "@/shared/components/ui/checkbox";
 import {
 	Dialog,
 	DialogContent,
@@ -21,6 +20,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/shared/components/ui/select";
+import { Switch } from "@/shared/components/ui/switch";
 import { formatCurrency } from "@/shared/utils/currency";
 import { formatDateOnly } from "@/shared/utils/date";
 import { cn } from "@/shared/utils/ui";
@@ -242,7 +242,7 @@ export function ImportConfirmDialog({
 							{formatCurrency(Math.abs(invoiceTotalDelta))} do total do arquivo.
 						</p>
 						<div className="mt-3 flex items-start gap-2">
-							<Checkbox
+							<Switch
 								id="invoice-total-override"
 								checked={invoiceTotalOverrideConfirmed}
 								onCheckedChange={(checked) =>
@@ -308,8 +308,8 @@ export function ImportConfirmDialog({
 
 						{previousInvoice.hasChanges ? (
 							<>
-								<div className="flex items-start gap-2 pt-1">
-									<Checkbox
+								<div className="flex items-center gap-2 pt-1">
+									<Switch
 										id="previous-invoice-settlement"
 										checked={previousInvoice.confirmed}
 										onCheckedChange={(checked) =>
@@ -346,8 +346,8 @@ export function ImportConfirmDialog({
 					<div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
 						<p className="font-medium text-sm">Limites do cartão</p>
 
-						<div className="flex items-start gap-2">
-							<Checkbox
+						<div className="flex items-center gap-2">
+							<Switch
 								id="card-limits-confirm"
 								checked={cardLimits.confirmed}
 								onCheckedChange={(checked) =>
@@ -403,8 +403,8 @@ export function ImportConfirmDialog({
 								</li>
 							) : null}
 						</ul>
-						<div className="flex items-start gap-2">
-							<Checkbox
+						<div className="flex items-center gap-2">
+							<Switch
 								id="reopen-invoice-payment"
 								checked={invoicePayment.alreadyPaid.reopened}
 								onCheckedChange={(checked) =>
