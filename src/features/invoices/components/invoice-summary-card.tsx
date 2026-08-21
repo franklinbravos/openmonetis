@@ -94,6 +94,14 @@ type InvoiceSummaryCardProps = {
 	limitAmount: number | null;
 	invoiceStatus: InvoicePaymentStatus;
 	paymentDate: Date | null;
+	/**
+	 * Pagamentos registrados para esta fatura.
+	 *
+	 * Pode haver mais de um no mês — antecipação para liberar limite, ou uma
+	 * parte na data e o resto depois. Mostrar só um esconderia o resto e o valor
+	 * exibido não fecharia com o que saiu da conta.
+	 */
+	payments?: Array<{ id: string; date: string | null; amount: number }>;
 	defaultPaymentAccountId: string | null;
 	paymentAccountOptions: PaymentAccountOption[];
 	hasImportHistory?: boolean;
@@ -150,6 +158,7 @@ export function InvoiceSummaryCard({
 	limitAmount,
 	invoiceStatus,
 	paymentDate: initialPaymentDate,
+	payments = [],
 	defaultPaymentAccountId,
 	paymentAccountOptions,
 	hasImportHistory = false,
@@ -338,7 +347,14 @@ export function InvoiceSummaryCard({
 							) : null}
 							{paymentTiming ? (
 								<div className="flex flex-wrap items-center gap-1">
-									<InvoicePaymentDateMeta timing={paymentTiming} />
+									<InvoicePaymentDateMeta
+										timing={paymentTiming}
+										amountLabel={
+											payments.length === 1
+												? formatCurrency(payments[0].amount)
+												: null
+										}
+									/>
 									<EditPaymentDateDialog
 										trigger={
 											<Button
@@ -358,6 +374,13 @@ export function InvoiceSummaryCard({
 							) : null}
 						</div>
 					</div>
+
+					{/* Um pagamento só já aparece na linha de status, com valor. A lista
+					    existe para quando houve mais de um — antecipação de limite ou
+					    pagamento parcial —, caso em que o total precisa ser visível. */}
+					{payments.length > 1 ? (
+						<InvoicePaymentsBreakdown payments={payments} />
+					) : null}
 
 					{hasSourceReconciliation && reconciliation ? (
 						<div
@@ -379,8 +402,23 @@ export function InvoiceSummaryCard({
 									</Badge>
 								) : null}
 							</div>
-							<dl className="grid gap-2 text-sm sm:grid-cols-3">
-								<div>
+							{/* Fechando, os três números viram uma linha: o cabeçalho da
+							    fatura é lido de relance, e um grid de três colunas com
+							    rótulos empilhados ocupava espaço demais para dizer "está
+							    tudo certo". Divergindo, o detalhe volta. */}
+							<dl
+								className={cn(
+									"text-sm",
+									hasReconciliationMismatch
+										? "grid gap-2 sm:grid-cols-3"
+										: "flex flex-wrap items-baseline gap-x-4 gap-y-1",
+								)}
+							>
+								<div
+									className={cn(
+										!hasReconciliationMismatch && "flex items-baseline gap-1.5",
+									)}
+								>
 									<dt className="text-muted-foreground text-xs">
 										Total do arquivo
 									</dt>
@@ -388,7 +426,11 @@ export function InvoiceSummaryCard({
 										{formatCurrency(reconciliation.sourceTotal)}
 									</dd>
 								</div>
-								<div>
+								<div
+									className={cn(
+										!hasReconciliationMismatch && "flex items-baseline gap-1.5",
+									)}
+								>
 									<dt className="text-muted-foreground text-xs">
 										Total cadastrado
 									</dt>
@@ -396,7 +438,11 @@ export function InvoiceSummaryCard({
 										{formatCurrency(registeredAbsTotal)}
 									</dd>
 								</div>
-								<div>
+								<div
+									className={cn(
+										!hasReconciliationMismatch && "flex items-baseline gap-1.5",
+									)}
+								>
 									<dt className="text-muted-foreground text-xs">Diferença</dt>
 									<dd
 										className={cn(
@@ -416,7 +462,9 @@ export function InvoiceSummaryCard({
 								</div>
 							</dl>
 
-							{sourceRounding !== 0 ? (
+							{/* O arredondamento do banco só merece explicação quando algo
+							    não fecha; conferido, ele é ruído. */}
+							{sourceRounding !== 0 && hasReconciliationMismatch ? (
 								<p className="text-muted-foreground text-xs leading-relaxed">
 									O arquivo declara {formatCurrency(reconciliation.sourceTotal)}{" "}
 									e suas próprias linhas somam{" "}
@@ -613,10 +661,60 @@ function MetaItem({ label, children }: { label: string; children: ReactNode }) {
 	);
 }
 
+/**
+ * Pagamentos da fatura, um por linha.
+ *
+ * Com um pagamento só, uma linha basta. Com mais de um, cada um aparece com
+ * data e valor, mais o total — é a única forma de o usuário conferir que a soma
+ * bate com a fatura quando houve antecipação ou pagamento parcial.
+ */
+function InvoicePaymentsBreakdown({
+	payments,
+}: {
+	payments: Array<{ id: string; date: string | null; amount: number }>;
+}) {
+	const total = payments.reduce((sum, payment) => sum + payment.amount, 0);
+
+	return (
+		<div className="space-y-1 rounded-lg border px-3 py-2">
+			<div className="flex items-baseline justify-between gap-3 text-xs">
+				<span className="font-medium">Pagamentos ({payments.length})</span>
+				<span className="font-semibold tabular-nums">
+					{formatCurrency(total)}
+				</span>
+			</div>
+			<ul className="space-y-0.5">
+				{payments.map((payment) => (
+					<li
+						key={payment.id}
+						className="flex items-baseline justify-between gap-3 text-muted-foreground text-xs"
+					>
+						<span className="tabular-nums">
+							{payment.date
+								? formatDateOnly(payment.date, {
+										day: "2-digit",
+										month: "short",
+										year: "numeric",
+									})
+								: "sem data"}
+						</span>
+						<span className="tabular-nums">
+							{formatCurrency(payment.amount)}
+						</span>
+					</li>
+				))}
+			</ul>
+		</div>
+	);
+}
+
 function InvoicePaymentDateMeta({
 	timing,
+	amountLabel,
 }: {
 	timing: NonNullable<ReturnType<typeof resolveInvoicePaymentTiming>>;
+	/** Valor do pagamento, quando há um só — evita uma linha extra só para ele. */
+	amountLabel?: string | null;
 }) {
 	const paymentLabel =
 		formatFinancialDateLabel(timing.paymentDate, "Pago em") ??
@@ -640,7 +738,17 @@ function InvoicePaymentDateMeta({
 
 	return (
 		<div className="flex flex-wrap items-center gap-1.5">
-			<span className="text-xs text-muted-foreground">{paymentLabel}</span>
+			<span className="text-xs text-muted-foreground">
+				{paymentLabel}
+				{amountLabel ? (
+					<>
+						{" · "}
+						<span className="font-medium text-foreground tabular-nums">
+							{amountLabel}
+						</span>
+					</>
+				) : null}
+			</span>
 			{timing.isLate ? (
 				<TooltipProvider delayDuration={200}>
 					<Tooltip>

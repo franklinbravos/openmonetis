@@ -12,6 +12,7 @@ import {
 } from "@/shared/lib/invoices";
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { callRpc, callRpcOne } from "@/shared/lib/supabase/rpc";
+import { toDateOnlyString } from "@/shared/utils/date";
 import { safeToNumber as toNumber } from "@/shared/utils/number";
 import {
 	addMonthsToPeriod,
@@ -212,4 +213,42 @@ export async function fetchCardInvoiceMonthSummaries(
 
 export async function fetchCardTransactions(filters: SQL[]) {
 	return fetchTransactionsWithRelations({ filters });
+}
+
+export type InvoicePaymentEntry = {
+	id: string;
+	date: string | null;
+	amount: number;
+};
+
+/**
+ * Pagamentos registrados para uma fatura.
+ *
+ * Uma fatura pode receber mais de um pagamento no mês — antecipação para
+ * liberar limite, ou uma parte na data e o resto depois. Todos compartilham a
+ * mesma anotação `AUTO_FATURA:<cartão>:<período>`, então a leitura precisa ser
+ * de lista: buscar só o primeiro esconderia os demais e o valor exibido não
+ * fecharia com o que saiu da conta.
+ */
+export async function fetchInvoicePayments(
+	userId: string,
+	cardId: string,
+	period: string,
+): Promise<InvoicePaymentEntry[]> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+
+	const rows = await db.query.transactions.findMany({
+		columns: { id: true, amount: true, purchaseDate: true },
+		where: and(
+			eq(transactions.userId, dataOwnerUserId),
+			eq(transactions.note, buildInvoicePaymentNote(cardId, period)),
+		),
+		orderBy: [asc(transactions.purchaseDate)],
+	});
+
+	return rows.map((row) => ({
+		id: row.id,
+		date: toDateOnlyString(row.purchaseDate),
+		amount: Math.abs(Number.parseFloat(String(row.amount ?? "0")) || 0),
+	}));
 }

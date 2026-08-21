@@ -13,6 +13,7 @@ import {
 	fetchCardInvoiceMonthSummaries,
 	fetchCardTransactions,
 	fetchInvoiceData,
+	fetchInvoicePayments,
 } from "@/features/invoices/queries";
 import { fetchUserPreferences } from "@/features/settings/queries";
 import { TransactionsPage as LancamentosSection } from "@/features/transactions/components/page/transactions-page";
@@ -81,6 +82,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 		logoOptions,
 		invoiceData,
 		invoiceReconciliation,
+		invoicePayments,
 		estabelecimentos,
 		userPreferences,
 		importHistory,
@@ -90,6 +92,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 		loadLogoOptions(),
 		fetchInvoiceData(userId, cardId, selectedPeriod),
 		fetchInvoiceReconciliation(userId, cardId, selectedPeriod),
+		fetchInvoicePayments(userId, cardId, selectedPeriod),
 		fetchRecentEstablishments(userId),
 		fetchUserPreferences(userId),
 		fetchImportBatchHistory({
@@ -233,6 +236,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 
 			<section className="flex flex-col gap-4">
 				<InvoiceSummaryCard
+					payments={invoicePayments}
 					cardId={card.id}
 					period={selectedPeriod}
 					cardBrand={card.brand ?? null}
