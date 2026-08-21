@@ -82,6 +82,10 @@ import { ImportConfirmDialog } from "@/features/transactions/components/import/i
 import { ImportFileHistory } from "@/features/transactions/components/import/import-file-history";
 import { ImportInvoicePeriodMismatchDialog } from "@/features/transactions/components/import/import-invoice-period-mismatch-dialog";
 import { ImportLinkDialog } from "@/features/transactions/components/import/import-link-dialog";
+import {
+	ImportProgressDialog,
+	type ImportProgressStep,
+} from "@/features/transactions/components/import/import-progress-dialog";
 import { ImportSteps } from "@/features/transactions/components/import/import-steps";
 import { ImportSummary } from "@/features/transactions/components/import/import-summary";
 import { InvoiceTotalReconciliationBanner } from "@/features/transactions/components/import/invoice-total-reconciliation-banner";
@@ -574,6 +578,15 @@ export function ImportPage({
 	const [isLinking, setIsLinking] = useState(false);
 	const [editDialogOptions, setEditDialogOptions] =
 		useState<TransactionDialogOptions | null>(null);
+
+	/**
+	 * Etapa do preparo da importação, para o modal de progresso.
+	 *
+	 * Cobre o intervalo em que `statement` e `rows` são preenchidos aos poucos e
+	 * o passo do fluxo oscilava, fazendo a tela piscar.
+	 */
+	const [importProgress, setImportProgress] =
+		useState<ImportProgressStep | null>(null);
 
 	const importSessionKey = importMountKey;
 	const previousSessionKeyRef = useRef(importSessionKey);
@@ -1157,6 +1170,7 @@ export function ImportPage({
 				resolveAccountStatementDateRange(normalizedStatement);
 
 			setIsChecking(true);
+			setImportProgress("matching");
 			duplicateMatchingContextRef.current = null;
 
 			try {
@@ -1504,6 +1518,7 @@ export function ImportPage({
 				setRows([]);
 			} finally {
 				setIsChecking(false);
+				setImportProgress(null);
 			}
 		},
 		[
@@ -2079,6 +2094,7 @@ export function ImportPage({
 
 			setFileError(null);
 			setIsChecking(true);
+			setImportProgress("fetching");
 			setResumingBatchId(batchId);
 			setAwaitingResumeBatch(null);
 
@@ -2131,6 +2147,7 @@ export function ImportPage({
 
 				setImportSourceStored(true);
 
+				setImportProgress("parsing");
 				const statement = await parseImportFileClient(file, {
 					cardId: linkedCardId,
 					pdfPasswordCandidates:
@@ -2164,6 +2181,7 @@ export function ImportPage({
 				}
 			} finally {
 				setIsChecking(false);
+				setImportProgress(null);
 				setResumingBatchId(null);
 			}
 		},
@@ -3926,6 +3944,9 @@ export function ImportPage({
 										</Alert>
 									) : null}
 									<UploadZone
+										onParsingChange={(parsing) =>
+											setImportProgress(parsing ? "parsing" : null)
+										}
 										onParsed={handleUploadParsed}
 										error={fileError}
 										onErrorClear={() => setFileError(null)}
@@ -4269,6 +4290,8 @@ export function ImportPage({
 				}
 				onConfirm={() => void handleImport()}
 			/>
+			<ImportProgressDialog step={importProgress} />
+
 			{previousInvoice?.paymentTransactionId &&
 			statement?.invoice?.paymentDate ? (
 				<PreviousInvoiceFixDialog

@@ -45,6 +45,8 @@ type UploadParsedOptions = {
 };
 
 interface UploadZoneProps {
+	/** Sinaliza o parse em andamento, para o modal de progresso da página. */
+	onParsingChange?: (parsing: boolean) => void;
 	onParsed: (
 		statement: ImportStatement,
 		file: File,
@@ -104,6 +106,7 @@ function UploadLogStatusIcon({ status }: { status: ImportUploadLogStatus }) {
 }
 
 export function UploadZone({
+	onParsingChange,
 	onParsed,
 	error: externalError = null,
 	onErrorClear,
@@ -263,6 +266,7 @@ export function UploadZone({
 				autoCandidateCount: autoPdfPasswordAttempts.length,
 			});
 
+			onParsingChange?.(true);
 			const statement = await parseImportFileClient(file, {
 				pdfPassword: options?.explicitPassword?.trim(),
 				cardId: linkedCardId,
@@ -352,6 +356,7 @@ export function UploadZone({
 			setError(mappedError.message);
 		} finally {
 			setParsing(false);
+			onParsingChange?.(false);
 		}
 	};
 
