@@ -4,7 +4,9 @@ import {
 	RiBankCard2Line,
 	RiCheckboxBlankCircleLine,
 	RiCheckboxCircleFill,
+	RiCheckboxCircleLine,
 } from "@remixicon/react";
+import { useIsPartiallyPaidInvoice } from "@/features/transactions/components/table/partially-paid-invoices-context";
 import {
 	CREDIT_CARD_PAYMENT_METHOD,
 	SETTLEABLE_PAYMENT_METHODS,
@@ -30,6 +32,7 @@ export function TransactionSettlementButton({
 	isLoading,
 	onToggle,
 }: TransactionSettlementButtonProps) {
+	const isPartialInvoice = useIsPartiallyPaidInvoice(item.cardId, item.period);
 	const isCreditCard = item.paymentMethod === CREDIT_CARD_PAYMENT_METHOD;
 	const canToggleSettlement = (
 		SETTLEABLE_PAYMENT_METHODS as readonly string[]
@@ -41,6 +44,14 @@ export function TransactionSettlementButton({
 
 	if (isCreditCard) {
 		const invoicePaid = Boolean(item.isSettled);
+		// Fatura rolada: o lançamento está liquidado, mas dizer "Fatura paga"
+		// contradiz o cabeçalho da própria fatura.
+		const partiallyPaid = invoicePaid && isPartialInvoice;
+		const label = partiallyPaid
+			? "Fatura paga parcialmente"
+			: invoicePaid
+				? "Fatura paga"
+				: "Lançamento de cartão de crédito";
 
 		return (
 			<Tooltip>
@@ -52,28 +63,30 @@ export function TransactionSettlementButton({
 							disabled
 							className={cn(
 								"transition-colors",
-								invoicePaid
-									? "bg-success/10 text-success"
-									: "text-muted-foreground/30",
+								partiallyPaid
+									? "bg-amber-500/10 text-amber-600 dark:text-amber-500"
+									: invoicePaid
+										? "bg-success/10 text-success"
+										: "text-muted-foreground/30",
 							)}
 						>
-							{invoicePaid ? (
+							{partiallyPaid ? (
+								<RiCheckboxCircleLine className="size-4" aria-hidden />
+							) : invoicePaid ? (
 								<RiCheckboxCircleFill className="size-4" aria-hidden />
 							) : (
 								<RiBankCard2Line className="size-4" aria-hidden />
 							)}
-							<span className="sr-only">
-								{invoicePaid
-									? "Fatura paga"
-									: "Lançamento de cartão de crédito"}
-							</span>
+							<span className="sr-only">{label}</span>
 						</Button>
 					</span>
 				</TooltipTrigger>
 				<TooltipContent side="top" className="max-w-48 text-center">
-					{invoicePaid
-						? "Fatura paga"
-						: "Lançamentos de cartão de crédito são liquidados ao pagar a fatura"}
+					{partiallyPaid
+						? "Fatura paga parcialmente; o saldo restante foi cobrado na fatura seguinte"
+						: invoicePaid
+							? "Fatura paga"
+							: "Lançamentos de cartão de crédito são liquidados ao pagar a fatura"}
 				</TooltipContent>
 			</Tooltip>
 		);

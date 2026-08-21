@@ -188,6 +188,13 @@ export function InvoiceSummaryCard({
 
 	const brandAsset = resolveCardBrandAsset(cardBrand);
 	const isPaid = invoiceStatus === INVOICE_PAYMENT_STATUS.PAID;
+	/**
+	 * Parte da fatura foi paga e o resto virou cobrança do mês seguinte. Tem
+	 * pagamento, tem data e tem anexo como qualquer fatura quitada — o que não
+	 * tem é a quitação, e é só isso que a difere na tela.
+	 */
+	const isPartial = invoiceStatus === INVOICE_PAYMENT_STATUS.PARTIAL;
+	const hasPayment = isPaid || isPartial;
 	const importHref = `/transactions/import?cartao=${encodeURIComponent(cardId)}&periodo=${encodeURIComponent(period)}`;
 	const registeredAbsTotal = Math.abs(totalAmount);
 	const heroTotal = Math.abs(displayTotalAmount ?? totalAmount);
@@ -214,9 +221,16 @@ export function InvoiceSummaryCard({
 			(transaction) => transaction.group === "extra",
 		) ?? [];
 	const paymentTiming =
-		isPaid && initialPaymentDate
+		hasPayment && initialPaymentDate
 			? resolveInvoicePaymentTiming(initialPaymentDate, period, dueDay)
 			: null;
+	const paidTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
+	/**
+	 * O que sobrou da fatura e entrou na seguinte como "valor pendente do mês
+	 * anterior". Sem esse número a tela mostra uma fatura de seis mil com um
+	 * pagamento de mil e nenhuma explicação para a diferença.
+	 */
+	const rolledOverAmount = isPartial ? heroTotal - paidTotal : 0;
 
 	const targetStatus = isPaid
 		? INVOICE_PAYMENT_STATUS.PENDING
@@ -275,7 +289,7 @@ export function InvoiceSummaryCard({
 		});
 	};
 
-	const showViewInvoice = isPaid && hasImportAttachment;
+	const showViewInvoice = hasPayment && hasImportAttachment;
 	const actionColumnCount =
 		2 + Number(hasImportHistory) + Number(showViewInvoice);
 
@@ -380,6 +394,16 @@ export function InvoiceSummaryCard({
 					    pagamento parcial —, caso em que o total precisa ser visível. */}
 					{payments.length > 1 ? (
 						<InvoicePaymentsBreakdown payments={payments} />
+					) : null}
+
+					{rolledOverAmount > 0.01 ? (
+						<p className="text-muted-foreground text-xs">
+							Rolou para a fatura seguinte:{" "}
+							<span className="font-medium tabular-nums text-foreground">
+								{formatCurrency(rolledOverAmount)}
+							</span>{" "}
+							— cobrado lá como valor pendente do mês anterior, com juros e IOF.
+						</p>
 					) : null}
 
 					{hasSourceReconciliation && reconciliation ? (

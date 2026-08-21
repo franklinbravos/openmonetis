@@ -8,11 +8,12 @@ import { db } from "@/shared/lib/db";
 import { resolveInvoiceDisplayTotal } from "@/shared/lib/import/invoice-total";
 import {
 	INVOICE_PAYMENT_STATUS,
+	INVOICE_STATUS_VALUES,
 	type InvoicePaymentStatus,
 } from "@/shared/lib/invoices";
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { callRpc, callRpcOne } from "@/shared/lib/supabase/rpc";
-import { toDateOnlyString } from "@/shared/utils/date";
+import { parseLocalDateString, toDateOnlyString } from "@/shared/utils/date";
 import { safeToNumber as toNumber } from "@/shared/utils/number";
 import {
 	addMonthsToPeriod,
@@ -85,18 +86,24 @@ export async function fetchInvoiceData(
 	]);
 
 	const totalAmount = toNumber(totalRow?.total);
+	/*
+	 * Os três status contam: `parcial` fica de fora e a fatura aparece "Em
+	 * aberto" — sem o valor pago e sem a data, mesmo com os dois gravados. Era o
+	 * que fazia a fatura de maio parecer não paga na tela enquanto cada
+	 * lançamento dela aparecia liquidado.
+	 */
 	const isInvoiceStatus = (
 		value: string | null | undefined,
 	): value is InvoicePaymentStatus =>
-		!!value && ["pendente", "pago"].includes(value);
+		!!value && (INVOICE_STATUS_VALUES as string[]).includes(value);
 
 	const invoiceStatus = isInvoiceStatus(invoiceRow?.paymentStatus)
 		? invoiceRow?.paymentStatus
 		: INVOICE_PAYMENT_STATUS.PENDING;
 
-	// Buscar data do pagamento se a fatura estiver paga
+	// Pagamento parcial também tem data: é o dia em que saiu o que foi pago.
 	let paymentDate: Date | null = null;
-	if (invoiceStatus === INVOICE_PAYMENT_STATUS.PAID) {
+	if (invoiceStatus !== INVOICE_PAYMENT_STATUS.PENDING) {
 		const invoiceNote = buildInvoicePaymentNote(cardId, selectedPeriod);
 		const paymentLancamento = await db.query.transactions.findFirst({
 			columns: {
@@ -106,9 +113,13 @@ export async function fetchInvoiceData(
 				eq(transactions.userId, dataOwnerUserId),
 				eq(transactions.note, invoiceNote),
 			),
+			orderBy: [asc(transactions.purchaseDate)],
 		});
-		paymentDate = paymentLancamento?.purchaseDate
-			? new Date(paymentLancamento.purchaseDate)
+		// A ponte devolve `date` como string; `new Date` a leria como UTC e o dia
+		// voltaria um no fuso de São Paulo.
+		const paymentDateOnly = toDateOnlyString(paymentLancamento?.purchaseDate);
+		paymentDate = paymentDateOnly
+			? parseLocalDateString(paymentDateOnly)
 			: null;
 	}
 
@@ -172,8 +183,11 @@ export async function fetchCardInvoiceMonthSummaries(
 	const invoiceByPeriod = new Map<string, InvoicePaymentStatus>();
 	for (const row of invoiceRows) {
 		if (!row.period) continue;
+		// `parcial` incluído: sem ele a fatura rolada caía no cálculo por data e
+		// aparecia como vencida no carrossel.
 		if (
 			row.paymentStatus === INVOICE_PAYMENT_STATUS.PAID ||
+			row.paymentStatus === INVOICE_PAYMENT_STATUS.PARTIAL ||
 			row.paymentStatus === INVOICE_PAYMENT_STATUS.PENDING
 		) {
 			invoiceByPeriod.set(row.period, row.paymentStatus);

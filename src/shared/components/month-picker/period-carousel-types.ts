@@ -1,5 +1,7 @@
 export type PeriodCarouselStatus =
 	| "paid"
+	/** Parte paga; o resto entrou na fatura seguinte como rotativo. */
+	| "partial"
 	| "overdue"
 	| "closed"
 	| "open"

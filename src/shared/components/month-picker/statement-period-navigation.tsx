@@ -52,6 +52,7 @@ import { cn } from "@/shared/utils/ui";
 
 const STATUS_DOT_FILL_CLASS: Record<PeriodCarouselStatus, string> = {
 	paid: "fill-emerald-600",
+	partial: "fill-emerald-600/45",
 	overdue: "fill-destructive",
 	closed: "fill-amber-500",
 	open: "fill-primary",
@@ -60,6 +61,7 @@ const STATUS_DOT_FILL_CLASS: Record<PeriodCarouselStatus, string> = {
 
 const STATUS_DOT_RING_CLASS: Record<PeriodCarouselStatus, string> = {
 	paid: "stroke-emerald-600/15",
+	partial: "stroke-emerald-600/10",
 	overdue: "stroke-destructive/15",
 	closed: "stroke-amber-500/15",
 	open: "stroke-primary/15",
@@ -72,6 +74,7 @@ const CHART_Y_MAX = 32;
 
 const STATUS_STROKE_CLASS: Record<PeriodCarouselStatus, string> = {
 	paid: "stroke-emerald-600",
+	partial: "stroke-emerald-600/50",
 	overdue: "stroke-destructive",
 	closed: "stroke-amber-500",
 	open: "stroke-primary",
