@@ -3071,8 +3071,28 @@ export function ImportPage({
 	const [previousInvoice, setPreviousInvoice] =
 		useState<PreviousInvoiceSnapshot | null>(null);
 
-	const invoiceCardId =
-		linkedCardId ?? initialCardId ?? activeInvoiceContext?.cardId ?? null;
+	/**
+	 * Cartão desta importação.
+	 *
+	 * O seletor de conta/cartão vem primeiro: é por ele que o cartão é escolhido
+	 * no fluxo normal, e ignorá-lo deixava a conferência do mês anterior sem
+	 * cartão — e portanto invisível — em toda importação que não chegasse com o
+	 * cartão já na URL.
+	 */
+	const invoiceCardId = useMemo(() => {
+		const decoded = accountCardValue
+			? decodeAccountCard(accountCardValue)
+			: null;
+		if (decoded?.type === "card") return decoded.id;
+		return (
+			linkedCardId ?? initialCardId ?? activeInvoiceContext?.cardId ?? null
+		);
+	}, [
+		accountCardValue,
+		activeInvoiceContext?.cardId,
+		initialCardId,
+		linkedCardId,
+	]);
 	const invoiceTargetPeriod =
 		invoicePeriod ??
 		initialInvoicePeriod ??
@@ -3103,14 +3123,11 @@ export function ImportPage({
 	const previousInvoiceSettlement = useMemo(() => {
 		if (!previousInvoice) return null;
 
-		const settlement = resolvePreviousInvoiceSettlement({
+		return resolvePreviousInvoiceSettlement({
 			previousTotal: previousInvoice.total,
 			carriedOver: sumInvoiceRolloverCarry(rows),
 			filePaymentsTotal: sumInvoicePaymentRowsFromFile(rows),
 		});
-
-		// Sem pagamento e sem carrego o arquivo não afirma nada sobre a anterior.
-		return settlement.paymentStatus ? settlement : null;
 	}, [previousInvoice, rows]);
 
 	const rolloverCharges = useMemo(

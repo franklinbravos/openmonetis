@@ -195,6 +195,15 @@ export type PreviousInvoiceCheck = {
 
 export type PreviousInvoiceReview = {
 	checks: PreviousInvoiceCheck[];
+	/**
+	 * O arquivo não trouxe pagamento nem carrego.
+	 *
+	 * Acontece quando o parser não extrai a linha de pagamento — hoje o caso dos
+	 * PDFs. O bloco continua aparecendo, porque a ausência de "valor pendente do
+	 * mês anterior" já diz que nada ficou rolando, mas nada é afirmado sobre o
+	 * pagamento e nada é gravado.
+	 */
+	noFileEvidence: boolean;
 	/** Todos os pontos conferem. */
 	allOk: boolean;
 	/**
@@ -225,6 +234,39 @@ export function buildPreviousInvoiceReview(input: {
 }): PreviousInvoiceReview {
 	const { settlement, formatMoney, formatDate } = input;
 	const checks: PreviousInvoiceCheck[] = [];
+
+	const registeredStatusLabel =
+		input.registeredStatus === INVOICE_PAYMENT_STATUS.PARTIAL
+			? "paga parcialmente"
+			: input.registeredStatus === INVOICE_PAYMENT_STATUS.PAID
+				? "paga"
+				: "em aberto";
+
+	// Sem pagamento e sem carrego não há o que conferir contra o arquivo. O que
+	// ele diz, por omissão, é que nada ficou pendente.
+	if (!settlement.paymentStatus) {
+		checks.push({
+			label: "Nada pendente no arquivo",
+			value: "sem rotativo",
+			ok: true,
+		});
+		checks.push({
+			label: "Situação no cadastro",
+			value: registeredStatusLabel,
+			ok: input.registeredStatus === INVOICE_PAYMENT_STATUS.PAID,
+			detail:
+				input.registeredStatus === INVOICE_PAYMENT_STATUS.PAID
+					? undefined
+					: "confira se já foi paga",
+		});
+
+		return {
+			checks,
+			noFileEvidence: true,
+			allOk: checks.every((check) => check.ok),
+			hasChanges: false,
+		};
+	}
 
 	const amountOk = settlement.reconcilesWithPreviousTotal;
 	checks.push({
@@ -271,6 +313,7 @@ export function buildPreviousInvoiceReview(input: {
 
 	return {
 		checks,
+		noFileEvidence: false,
 		allOk: checks.every((check) => check.ok),
 		hasChanges: !statusOk || debitDiffers,
 	};

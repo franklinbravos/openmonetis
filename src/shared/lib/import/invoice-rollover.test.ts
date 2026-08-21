@@ -259,3 +259,49 @@ describe("buildPreviousInvoiceReview", () => {
 		expect(review.hasChanges).toBe(false);
 	});
 });
+
+describe("buildPreviousInvoiceReview sem evidência no arquivo", () => {
+	const money = (value: number) => `R$ ${value.toFixed(2)}`;
+	const date = (iso: string) => iso.split("-").reverse().join("/");
+
+	const semEvidencia = (registeredStatus: string | null) =>
+		buildPreviousInvoiceReview({
+			settlement: resolvePreviousInvoiceSettlement({
+				previousTotal: 10430.51,
+				carriedOver: 0,
+				filePaymentsTotal: 0,
+			}),
+			registeredStatus,
+			registeredPaymentAmount: 10430.51,
+			registeredPaymentDate: "2026-05-12",
+			filePaymentDate: null,
+			formatMoney: money,
+			formatDate: date,
+		});
+
+	it("mostra o bloco, sem afirmar pagamento e sem mudar nada", () => {
+		// PDF do Nubank não traz a linha de pagamento. A ausência de "valor
+		// pendente do mês anterior" indica que nada ficou rolando, mas isso não
+		// prova o valor nem a data — então nada é gravado.
+		const review = semEvidencia(INVOICE_PAYMENT_STATUS.PAID);
+
+		expect(review.noFileEvidence).toBe(true);
+		expect(review.hasChanges).toBe(false);
+		expect(review.allOk).toBe(true);
+		expect(review.checks.map((check) => check.label)).toEqual([
+			"Nada pendente no arquivo",
+			"Situação no cadastro",
+		]);
+	});
+
+	it("alerta quando o cadastro não está como paga", () => {
+		const review = semEvidencia(INVOICE_PAYMENT_STATUS.PENDING);
+
+		expect(review.allOk).toBe(false);
+		expect(review.hasChanges).toBe(false);
+		const statusCheck = review.checks.find(
+			(check) => check.label === "Situação no cadastro",
+		);
+		expect(statusCheck?.detail).toBe("confira se já foi paga");
+	});
+});
