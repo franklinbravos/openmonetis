@@ -3114,6 +3114,20 @@ export function ImportPage({
 		[rows],
 	);
 
+	/**
+	 * Confirmação de reescrever a fatura anterior.
+	 *
+	 * Vem marcada porque os números saem do próprio arquivo, mas fica visível e
+	 * desmarcável: é mês fechado, e o usuário pode preferir ajustar à mão.
+	 */
+	const [previousSettlementConfirmed, setPreviousSettlementConfirmed] =
+		useState(true);
+
+	// Trocar de arquivo ou de fatura invalida a confirmação anterior.
+	useEffect(() => {
+		setPreviousSettlementConfirmed(true);
+	}, [previousInvoice?.period]);
+
 	const returnToInvoiceHref = useMemo(() => {
 		const decoded = accountCardValue
 			? decodeAccountCard(accountCardValue)
@@ -3517,7 +3531,9 @@ export function ImportPage({
 				existingAmountEdits: collectExistingAmountEdits(rows),
 				existingInstallmentEdits: collectExistingInstallmentEdits(rows),
 				previousInvoiceSettlement:
-					previousInvoiceSettlement && previousInvoice
+					previousInvoiceSettlement &&
+					previousInvoice &&
+					previousSettlementConfirmed
 						? {
 								period: previousInvoice.period,
 								paidAmount: previousInvoiceSettlement.paidOnPrevious,
@@ -4039,6 +4055,20 @@ export function ImportPage({
 					canConfirmImport && !invoicePaymentBlocked && !nothingToConfirm
 				}
 				nothingToConfirm={nothingToConfirm}
+				previousInvoice={
+					previousInvoiceSettlement && previousInvoice
+						? {
+								previousPeriodLabel: displayPeriod(previousInvoice.period),
+								previousTotal: previousInvoiceSettlement.previousTotal,
+								paidAmount: previousInvoiceSettlement.paidOnPrevious,
+								carriedOver: previousInvoiceSettlement.carriedOver,
+								registeredPaymentAmount:
+									previousInvoice.paymentTransactionAmount,
+								confirmed: previousSettlementConfirmed,
+								onConfirmedChange: setPreviousSettlementConfirmed,
+							}
+						: null
+				}
 				invoicePayment={
 					canAskInvoicePayment
 						? {

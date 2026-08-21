@@ -76,12 +76,14 @@ export function PreviousInvoiceSettlementCard({
 
 			<ul className="space-y-1 text-muted-foreground text-xs leading-relaxed">
 				<li>
-					A fatura de {displayPeriod(previousPeriod)} passa a constar como{" "}
-					<strong className="text-foreground">paga parcialmente</strong>.
+					Ao confirmar a importação, a fatura de {displayPeriod(previousPeriod)}{" "}
+					passa a constar como{" "}
+					<strong className="text-foreground">paga parcialmente</strong>. A
+					confirmação fica na última etapa, e dá para recusar.
 				</li>
 				{debitNeedsFix ? (
 					<li>
-						O débito na conta será corrigido de{" "}
+						O débito na conta é corrigido de{" "}
 						<span className="tabular-nums">
 							{formatCurrency(registeredPaymentAmount ?? 0)}
 						</span>{" "}

@@ -35,6 +35,23 @@ export type ImportInvoicePaymentPrompt = {
 	onAccountChange: (accountId: string) => void;
 };
 
+/**
+ * Liquidação da fatura anterior, apurada pelo arquivo desta.
+ *
+ * Fica atrás de uma confirmação porque reescreve o registro de um mês já
+ * fechado: o status da fatura anterior e o valor do débito na conta.
+ */
+export type ImportPreviousInvoicePrompt = {
+	previousPeriodLabel: string;
+	previousTotal: number;
+	paidAmount: number;
+	carriedOver: number;
+	/** Débito hoje registrado, quando difere do que foi realmente pago. */
+	registeredPaymentAmount: number | null;
+	confirmed: boolean;
+	onConfirmedChange: (confirmed: boolean) => void;
+};
+
 type ImportConfirmDialogProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -54,6 +71,7 @@ type ImportConfirmDialogProps = {
 	/** Nada a importar, remover ou corrigir: só o pagamento justifica confirmar. */
 	nothingToConfirm?: boolean;
 	invoicePayment?: ImportInvoicePaymentPrompt | null;
+	previousInvoice?: ImportPreviousInvoicePrompt | null;
 	onConfirm: () => void;
 };
 
@@ -75,6 +93,7 @@ export function ImportConfirmDialog({
 	canConfirm = true,
 	nothingToConfirm = false,
 	invoicePayment = null,
+	previousInvoice = null,
 	onConfirm,
 }: ImportConfirmDialogProps) {
 	const editedCount = replacedCount + installmentBackfillCount;
@@ -189,6 +208,64 @@ export function ImportConfirmDialog({
 								{formatCurrency(Math.abs(invoiceTotalDelta))}
 							</Label>
 						</div>
+					</div>
+				) : null}
+
+				{previousInvoice ? (
+					<div className="space-y-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+						<p className="font-medium text-sm">
+							A fatura de {previousInvoice.previousPeriodLabel} foi paga em
+							parte
+						</p>
+
+						<dl className="grid gap-2 text-sm sm:grid-cols-3">
+							<div>
+								<dt className="text-muted-foreground text-xs">Total</dt>
+								<dd className="tabular-nums">
+									{formatCurrency(previousInvoice.previousTotal)}
+								</dd>
+							</div>
+							<div>
+								<dt className="text-muted-foreground text-xs">Pago</dt>
+								<dd className="font-medium text-emerald-600 tabular-nums">
+									{formatCurrency(previousInvoice.paidAmount)}
+								</dd>
+							</div>
+							<div>
+								<dt className="text-muted-foreground text-xs">Rolou para cá</dt>
+								<dd className="font-medium tabular-nums">
+									{formatCurrency(previousInvoice.carriedOver)}
+								</dd>
+							</div>
+						</dl>
+
+						<div className="flex items-start gap-2">
+							<Checkbox
+								id="previous-invoice-settlement"
+								checked={previousInvoice.confirmed}
+								onCheckedChange={(checked) =>
+									previousInvoice.onConfirmedChange(checked === true)
+								}
+							/>
+							<Label
+								htmlFor="previous-invoice-settlement"
+								className="text-sm font-normal leading-snug"
+							>
+								Confirmar o pagamento de {previousInvoice.previousPeriodLabel}
+							</Label>
+						</div>
+
+						<p className="text-muted-foreground text-xs leading-relaxed">
+							{previousInvoice.confirmed
+								? `A fatura passa a constar como paga parcialmente${
+										previousInvoice.registeredPaymentAmount != null
+											? `, e o débito na conta é corrigido de ${formatCurrency(
+													previousInvoice.registeredPaymentAmount,
+												)} para ${formatCurrency(previousInvoice.paidAmount)}`
+											: ""
+									}.`
+								: "Sem confirmar, a fatura anterior fica como está e você pode ajustá-la depois na tela dela."}
+						</p>
 					</div>
 				) : null}
 
