@@ -6,6 +6,7 @@ import {
 	RiCloseCircleLine,
 } from "@remixicon/react";
 import { Badge } from "@/shared/components/ui/badge";
+import { Button } from "@/shared/components/ui/button";
 import type { PreviousInvoiceReview } from "@/shared/lib/import/invoice-rollover";
 import { formatCurrency } from "@/shared/utils/currency";
 import { displayPeriod } from "@/shared/utils/period";
@@ -16,6 +17,8 @@ type PreviousInvoiceSettlementCardProps = {
 	previousPeriod: string;
 	/** Valor que rolou para esta fatura, quando houve rotativo. */
 	carriedOver: number;
+	/** Abre a correção da divergência apontada. Sem isso, o bloco é só leitura. */
+	onFix?: () => void;
 };
 
 /**
@@ -28,6 +31,7 @@ export function PreviousInvoiceSettlementCard({
 	review,
 	previousPeriod,
 	carriedOver,
+	onFix,
 }: PreviousInvoiceSettlementCardProps) {
 	const periodLabel = displayPeriod(previousPeriod);
 
@@ -66,6 +70,18 @@ export function PreviousInvoiceSettlementCard({
 					<Badge variant="outline" className="font-normal text-xs">
 						Rolou {formatCurrency(carriedOver)}
 					</Badge>
+				) : null}
+
+				{onFix && !review.allOk ? (
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						className="ml-auto h-7 px-2.5 text-xs"
+						onClick={onFix}
+					>
+						Ajustar
+					</Button>
 				) : null}
 			</div>
 

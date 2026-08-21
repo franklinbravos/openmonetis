@@ -64,6 +64,7 @@ import {
 import {
 	fetchPreviousInvoiceSnapshotAction,
 	type PreviousInvoiceSnapshot,
+	updatePreviousInvoicePaymentDateAction,
 } from "@/features/transactions/actions/previous-invoice-snapshot";
 import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
 import { CardLimitsCard } from "@/features/transactions/components/import/card-limits-card";
@@ -84,6 +85,7 @@ import { ImportLinkDialog } from "@/features/transactions/components/import/impo
 import { ImportSteps } from "@/features/transactions/components/import/import-steps";
 import { ImportSummary } from "@/features/transactions/components/import/import-summary";
 import { InvoiceTotalReconciliationBanner } from "@/features/transactions/components/import/invoice-total-reconciliation-banner";
+import { PreviousInvoiceFixDialog } from "@/features/transactions/components/import/previous-invoice-fix-dialog";
 import { PreviousInvoiceSettlementCard } from "@/features/transactions/components/import/previous-invoice-settlement-card";
 import {
 	type ReviewRow,
@@ -3165,6 +3167,10 @@ export function ImportPage({
 		[rows],
 	);
 
+	/** Correção pontual da fatura anterior, aberta pelo botão Ajustar. */
+	const [fixPreviousOpen, setFixPreviousOpen] = useState(false);
+	const [isFixingPrevious, startFixPrevious] = useTransition();
+
 	/** Limites do cartão hoje, para comparar com o que a fatura declara. */
 	const [cardLimits, setCardLimits] = useState<CardLimitsSnapshot | null>(null);
 	const [cardLimitsConfirmed, setCardLimitsConfirmed] = useState(true);
@@ -3984,6 +3990,12 @@ export function ImportPage({
 									review={previousInvoiceReview}
 									previousPeriod={previousInvoice.period}
 									carriedOver={previousInvoiceSettlement?.carriedOver ?? 0}
+									onFix={
+										previousInvoice.paymentTransactionId &&
+										statement?.invoice?.paymentDate
+											? () => setFixPreviousOpen(true)
+											: undefined
+									}
 								/>
 							) : null}
 
@@ -4257,6 +4269,51 @@ export function ImportPage({
 				}
 				onConfirm={() => void handleImport()}
 			/>
+			{previousInvoice?.paymentTransactionId &&
+			statement?.invoice?.paymentDate ? (
+				<PreviousInvoiceFixDialog
+					open={fixPreviousOpen}
+					onOpenChange={setFixPreviousOpen}
+					isPending={isFixingPrevious}
+					target={{
+						periodLabel: displayPeriod(previousInvoice.period),
+						cardName: selectedAccountCardSummary?.label ?? "Cartão",
+						registeredTotal: previousInvoice.total,
+						registeredPaymentDate: previousInvoice.paymentTransactionDate,
+						suggestedPaymentDate: statement.invoice.paymentDate,
+					}}
+					onConfirm={(paymentDate) => {
+						const transactionId = previousInvoice.paymentTransactionId;
+						if (!transactionId) return;
+
+						startFixPrevious(async () => {
+							const result = await updatePreviousInvoicePaymentDateAction({
+								transactionId,
+								paymentDate,
+							});
+
+							if (!result.success) {
+								toast.error(
+									result.error ?? "Não foi possível corrigir a data.",
+								);
+								return;
+							}
+
+							toast.success("Data do pagamento corrigida.");
+							setFixPreviousOpen(false);
+							// Recarrega o snapshot para o bloco refletir a correção.
+							if (invoiceCardId && invoiceTargetPeriod) {
+								const snapshot = await fetchPreviousInvoiceSnapshotAction({
+									cardId: invoiceCardId,
+									period: invoiceTargetPeriod,
+								});
+								setPreviousInvoice(snapshot);
+							}
+						});
+					}}
+				/>
+			) : null}
+
 			{periodMismatch ? (
 				<ImportInvoicePeriodMismatchDialog
 					open

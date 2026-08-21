@@ -3,11 +3,13 @@
 import { and, eq } from "drizzle-orm";
 import { invoices, transactions } from "@/db/schema";
 import { buildInvoicePaymentNote } from "@/shared/lib/accounts/constants";
+import { revalidateForEntity } from "@/shared/lib/actions/helpers";
 import { getUserId } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { callRpcOne } from "@/shared/lib/supabase/rpc";
-import { toDateOnlyString } from "@/shared/utils/date";
+import { parseLocalDateString, toDateOnlyString } from "@/shared/utils/date";
 import { addMonthsToPeriod } from "@/shared/utils/period";
 
 export type PreviousInvoiceSnapshot = {
@@ -86,5 +88,42 @@ export async function fetchPreviousInvoiceSnapshotAction(input: {
 	} catch (error) {
 		console.error("fetchPreviousInvoiceSnapshotAction", error);
 		return null;
+	}
+}
+
+/**
+ * Corrige a data do débito registrado como pagamento de uma fatura.
+ *
+ * A data real do pagamento só aparece no arquivo do mês seguinte, então a
+ * correção acontece com aquele arquivo em mão. Mexe só na data — valor e status
+ * têm o seu próprio caminho, na liquidação da importação.
+ */
+export async function updatePreviousInvoicePaymentDateAction(input: {
+	transactionId: string;
+	paymentDate: string;
+}): Promise<{ success: boolean; error?: string }> {
+	try {
+		const userId = await getUserId();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
+
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(input.paymentDate)) {
+			return { success: false, error: "Data inválida." };
+		}
+
+		await db
+			.update(transactions)
+			.set({ purchaseDate: parseLocalDateString(input.paymentDate) })
+			.where(
+				and(
+					eq(transactions.userId, dataOwnerUserId),
+					eq(transactions.id, input.transactionId),
+				),
+			);
+
+		await revalidateForEntity("cards", userId);
+		return { success: true };
+	} catch (error) {
+		console.error("updatePreviousInvoicePaymentDateAction", error);
+		return { success: false, error: "Não foi possível corrigir a data." };
 	}
 }
