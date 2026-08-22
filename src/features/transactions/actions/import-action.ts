@@ -21,7 +21,10 @@ import {
 	importBatches,
 	transactions,
 } from "@/db/schema";
-import { updateInvoicePaymentStatusAction } from "@/features/invoices/actions";
+import {
+	registerInvoiceAmortizationsAction,
+	updateInvoicePaymentStatusAction,
+} from "@/features/invoices/actions";
 import {
 	buildTransactionRecords,
 	fetchOwnedCategoryIds,
@@ -204,6 +207,18 @@ function resolveSettlementStatus(settlement: {
 	return INVOICE_PAYMENT_STATUS.PARTIAL;
 }
 
+/**
+ * Pagamentos do arquivo que abateram a fatura sendo importada.
+ *
+ * Só o arquivo do mês seguinte revela um abate feito antes do vencimento. Até
+ * aqui a revisão o exibia e ninguém o gravava: o dinheiro saía da conta e o
+ * extrato só mostrava a saída no vencimento, num valor que nunca saiu de uma vez.
+ */
+const invoiceAmortizationSchema = z.object({
+	date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data do pagamento inválida."),
+	amount: z.number().positive(),
+});
+
 const importSchema = z
 	.object({
 		rows: z.array(importRowSchema),
@@ -230,15 +245,18 @@ const importSchema = z
 		existingAmountEdits: z.array(existingAmountEditSchema).optional(),
 		existingInstallmentEdits: z.array(existingInstallmentEditSchema).optional(),
 		previousInvoiceSettlement: previousInvoiceSettlementSchema.optional(),
+		invoiceAmortizations: z.array(invoiceAmortizationSchema).optional(),
 	})
 	.superRefine((data, ctx) => {
 		// A liquidação da fatura anterior é trabalho por si só: reprocessar um mês
 		// já conferido não mexe em lançamento nenhum e ainda assim corrige o
-		// status, o valor e a data do débito do mês passado.
+		// status, o valor e a data do débito do mês passado. O mesmo vale para a
+		// amortização, que é um lançamento novo na conta.
 		if (
 			data.rows.length === 0 &&
 			!data.payInvoice &&
 			!data.previousInvoiceSettlement &&
+			!(data.invoiceAmortizations?.length ?? 0) &&
 			!(data.removeTransactionIds?.length ?? 0) &&
 			!(data.existingAmountEdits?.length ?? 0) &&
 			!(data.existingInstallmentEdits?.length ?? 0)
@@ -1002,6 +1020,10 @@ export async function importTransactionsAction(
 		cardId && invoicePeriod
 			? (parsed.data.previousInvoiceSettlement ?? null)
 			: null;
+
+	/** Abates desta fatura declarados no arquivo, se houver. */
+	const invoiceAmortizations =
+		cardId && invoicePeriod ? (parsed.data.invoiceAmortizations ?? []) : [];
 
 	let validatedInstallmentEdits: ExistingInstallmentEdit[] = [];
 	if (existingInstallmentEdits.length > 0) {
@@ -1988,6 +2010,29 @@ export async function importTransactionsAction(
 	}
 	if (hasTransferRows) {
 		await revalidateForEntity("accounts", userId);
+	}
+
+	/*
+	 * Antes da baixa, de propósito: a baixa desconta o que já está registrado
+	 * para gravar só o que falta pagar. Na ordem inversa, os dois débitos
+	 * somariam mais do que saiu da conta.
+	 */
+	if (cardId && invoicePeriod && invoiceAmortizations.length > 0) {
+		const amortizationResult = await registerInvoiceAmortizationsAction({
+			cardId,
+			period: invoicePeriod,
+			accountId: paymentAccountId ?? null,
+			payments: invoiceAmortizations,
+		});
+
+		if (!amortizationResult.success) {
+			return {
+				success: false,
+				error:
+					amortizationResult.error ||
+					"Lançamentos importados, mas não foi possível registrar o pagamento antecipado da fatura.",
+			};
+		}
 	}
 
 	if (payInvoice && cardId && invoicePeriod) {

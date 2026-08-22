@@ -231,7 +231,9 @@ import {
 import {
 	allocateInvoicePayments,
 	buildPreviousInvoiceReview,
+	collectInvoiceAmortizations,
 	findInvoicePaymentDateFromFile,
+	invoiceAmortizationsDiffer,
 	resolvePreviousInvoiceSettlement,
 	sumInvoiceRolloverCarry,
 	sumInvoiceRolloverCharges,
@@ -3329,6 +3331,52 @@ export function ImportPage({
 		statement?.invoice?.paymentDate,
 	]);
 
+	/**
+	 * Abates desta fatura declarados no arquivo, e o que deles falta registrar.
+	 *
+	 * A revisão já mostrava "amortizou esta fatura" e ninguém gravava nada: o
+	 * dinheiro saía da conta num mês e o extrato só mostrava a saída no
+	 * vencimento do mês seguinte, num valor que nunca saiu de uma vez.
+	 */
+	const invoiceAmortizations = useMemo(
+		() =>
+			invoicePaymentAllocation
+				? collectInvoiceAmortizations(invoicePaymentAllocation.payments)
+				: [],
+		[invoicePaymentAllocation],
+	);
+
+	const amortizationNeedsWrite = useMemo(
+		() =>
+			invoiceAmortizations.length > 0 &&
+			invoiceAmortizationsDiffer(
+				invoiceAmortizations,
+				currentInvoice?.amortizations ?? [],
+			),
+		[invoiceAmortizations, currentInvoice?.amortizations],
+	);
+
+	const amortizationChangeLines = useMemo(() => {
+		if (!amortizationNeedsWrite) return [];
+
+		return invoiceAmortizations.map(
+			(entry) =>
+				`${formatCurrency(entry.amount)} pagos em ${formatDateOnly(entry.date) ?? entry.date} passam a constar como pagamento desta fatura.`,
+		);
+	}, [amortizationNeedsWrite, invoiceAmortizations]);
+
+	/**
+	 * Confirmação de registrar o abate.
+	 *
+	 * Marcada por padrão — é dinheiro que saiu da conta e não está lançado —, mas
+	 * visível e recusável como as demais.
+	 */
+	const [amortizationConfirmed, setAmortizationConfirmed] = useState(true);
+
+	useEffect(() => {
+		setAmortizationConfirmed(true);
+	}, [invoicePeriod]);
+
 	/** O que a importação mudaria na fatura anterior, uma linha por item. */
 	const previousSettlementChangeLines = useMemo(() => {
 		if (
@@ -3616,6 +3664,7 @@ export function ImportPage({
 	const hasSideAdjustments =
 		(previousInvoiceReview?.hasChanges === true &&
 			previousSettlementConfirmed) ||
+		(amortizationConfirmed && amortizationNeedsWrite) ||
 		(cardLimitsConfirmed && cardLimitsChangeLines.length > 0);
 
 	const nothingToConfirm =
@@ -3795,10 +3844,16 @@ export function ImportPage({
 					}
 				: undefined;
 
+		const amortizationPayload =
+			amortizationConfirmed && amortizationNeedsWrite
+				? invoiceAmortizations
+				: undefined;
+
 		const hasActionWork =
 			selectedRows.length > 0 ||
 			shouldPayInvoiceOnImport ||
 			Boolean(settlementPayload) ||
+			Boolean(amortizationPayload) ||
 			rowsMarkedForRemoval.length > 0 ||
 			collectExistingAmountEdits(rows).length > 0 ||
 			collectExistingInstallmentEdits(rows).length > 0;
@@ -3860,6 +3915,7 @@ export function ImportPage({
 						existingAmountEdits: collectExistingAmountEdits(rows),
 						existingInstallmentEdits: collectExistingInstallmentEdits(rows),
 						previousInvoiceSettlement: settlementPayload,
+						invoiceAmortizations: amortizationPayload,
 					})
 				: {
 						success: true as const,
@@ -4423,6 +4479,15 @@ export function ImportPage({
 								changeLines: cardLimitsChangeLines,
 								confirmed: cardLimitsConfirmed,
 								onConfirmedChange: setCardLimitsConfirmed,
+							}
+						: null
+				}
+				invoiceAmortization={
+					amortizationNeedsWrite
+						? {
+								changeLines: amortizationChangeLines,
+								confirmed: amortizationConfirmed,
+								onConfirmedChange: setAmortizationConfirmed,
 							}
 						: null
 				}

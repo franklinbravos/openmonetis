@@ -1,11 +1,15 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, ilike } from "drizzle-orm";
 import { invoices, transactions } from "@/db/schema";
-import { buildInvoicePaymentNote } from "@/shared/lib/accounts/constants";
+import {
+	buildInvoicePaymentNote,
+	isInvoiceAmortizationNote,
+} from "@/shared/lib/accounts/constants";
 import { revalidateForEntity } from "@/shared/lib/actions/helpers";
 import { getUserId } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import type { InvoiceAmortizationEntry } from "@/shared/lib/import/invoice-rollover";
 import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { callRpcOne } from "@/shared/lib/supabase/rpc";
@@ -21,6 +25,13 @@ export type InvoiceSnapshot = {
 	paymentTransactionAmount: number | null;
 	/** Data do débito registrado, em `YYYY-MM-DD`. */
 	paymentTransactionDate: string | null;
+	/**
+	 * Amortizações já registradas para esta fatura.
+	 *
+	 * Permite à revisão saber se o abate que o arquivo declara já está gravado —
+	 * reprocessar o mesmo arquivo não deve pedir confirmação de nada.
+	 */
+	amortizations: InvoiceAmortizationEntry[];
 };
 
 function toNumber(value: unknown): number {
@@ -46,7 +57,7 @@ export async function fetchInvoiceSnapshotAction(input: {
 		const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 		const period = input.period;
 
-		const [totalRow, invoice, paymentRow] = await Promise.all([
+		const [totalRow, invoice, paymentRows] = await Promise.all([
 			callRpcOne<{ total: string | number | null }>("get_invoice_total", {
 				p_user_id: dataOwnerUserId,
 				p_card_id: input.cardId,
@@ -60,14 +71,35 @@ export async function fetchInvoiceSnapshotAction(input: {
 					eq(invoices.period, period),
 				),
 			}),
-			db.query.transactions.findFirst({
-				columns: { id: true, amount: true, purchaseDate: true },
+			// Prefixo: traz o pagamento principal e as amortizações, que levam a
+			// mesma nota com sufixo `:AMORT:<data>`.
+			db.query.transactions.findMany({
+				columns: {
+					id: true,
+					amount: true,
+					purchaseDate: true,
+					note: true,
+				},
 				where: and(
 					eq(transactions.userId, dataOwnerUserId),
-					eq(transactions.note, buildInvoicePaymentNote(input.cardId, period)),
+					ilike(
+						transactions.note,
+						`${buildInvoicePaymentNote(input.cardId, period)}%`,
+					),
 				),
 			}),
 		]);
+
+		const mainNote = buildInvoicePaymentNote(input.cardId, period);
+		const paymentRow = paymentRows.find((row) => row.note === mainNote) ?? null;
+		const amortizations: InvoiceAmortizationEntry[] = paymentRows
+			.filter((row) => isInvoiceAmortizationNote(row.note))
+			.flatMap((row) => {
+				const date = toDateOnlyString(row.purchaseDate);
+				if (!date) return [];
+				return [{ date, amount: Math.abs(toNumber(row.amount)) }];
+			})
+			.sort((left, right) => left.date.localeCompare(right.date));
 
 		const total = Math.abs(toNumber(totalRow?.total));
 		if (total <= 0) return null;
@@ -81,6 +113,7 @@ export async function fetchInvoiceSnapshotAction(input: {
 				? Math.abs(toNumber(paymentRow.amount))
 				: null,
 			paymentTransactionDate: toDateOnlyString(paymentRow?.purchaseDate),
+			amortizations,
 		};
 	} catch (error) {
 		console.error("fetchInvoiceSnapshotAction", error);

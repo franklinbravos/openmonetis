@@ -20,6 +20,27 @@ export const ACCOUNT_AUTO_INVOICE_NOTE_PREFIX = "AUTO_FATURA:";
 export const buildInvoicePaymentNote = (cardId: string, period: string) =>
 	`${ACCOUNT_AUTO_INVOICE_NOTE_PREFIX}${cardId}:${period}`;
 
+/**
+ * Marca da amortização: pagamento que abateu esta fatura antes do vencimento.
+ *
+ * Quem paga em vários dias para reduzir juros abate a fatura seguinte antes de
+ * ela fechar — o arquivo do mês seguinte declara esse pagamento. Ele precisa de
+ * nota própria porque o pagamento principal, criado pela baixa da fatura, é
+ * localizado por nota exata: com a mesma nota, a baixa sobrescreveria a
+ * amortização e o dinheiro desapareceria do extrato.
+ */
+export const INVOICE_AMORTIZATION_NOTE_MARKER = ":AMORT:";
+
+export const buildInvoiceAmortizationNote = (
+	cardId: string,
+	period: string,
+	paymentDate: string,
+) =>
+	`${buildInvoicePaymentNote(cardId, period)}${INVOICE_AMORTIZATION_NOTE_MARKER}${paymentDate}`;
+
+export const isInvoiceAmortizationNote = (note: string | null | undefined) =>
+	note?.includes(INVOICE_AMORTIZATION_NOTE_MARKER) ?? false;
+
 export const INVOICE_ADJUSTMENT_NAME = "Ajuste de fatura";
 
 export const ACCOUNT_BALANCE_ADJUSTMENT_NAME = "Ajuste de saldo";

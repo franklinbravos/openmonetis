@@ -100,6 +100,18 @@ export type ImportCardLimitsPrompt = {
 	onConfirmedChange: (confirmed: boolean) => void;
 };
 
+/**
+ * Abate desta fatura pago antes do vencimento, confirmado no último passo.
+ *
+ * Tem toggle próprio porque é um lançamento novo na conta corrente — coisa
+ * diferente de corrigir o registro do mês passado, que tem o seu.
+ */
+export type ImportInvoiceAmortizationPrompt = {
+	changeLines: string[];
+	confirmed: boolean;
+	onConfirmedChange: (confirmed: boolean) => void;
+};
+
 type ImportConfirmDialogProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -121,6 +133,7 @@ type ImportConfirmDialogProps = {
 	invoicePayment?: ImportInvoicePaymentPrompt | null;
 	previousInvoice?: ImportPreviousInvoicePrompt | null;
 	cardLimits?: ImportCardLimitsPrompt | null;
+	invoiceAmortization?: ImportInvoiceAmortizationPrompt | null;
 	onConfirm: () => void;
 };
 
@@ -144,6 +157,7 @@ export function ImportConfirmDialog({
 	invoicePayment = null,
 	previousInvoice = null,
 	cardLimits = null,
+	invoiceAmortization = null,
 	onConfirm,
 }: ImportConfirmDialogProps) {
 	const editedCount = replacedCount + installmentBackfillCount;
@@ -379,6 +393,42 @@ export function ImportConfirmDialog({
 						) : (
 							<p className="pl-5 text-muted-foreground text-xs leading-relaxed">
 								Sem atualizar, os limites ficam como estão.
+							</p>
+						)}
+					</div>
+				) : null}
+
+				{invoiceAmortization && invoiceAmortization.changeLines.length > 0 ? (
+					<div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+						<p className="font-medium text-sm">Pagamento antecipado</p>
+
+						<div className="flex items-center gap-2">
+							<Switch
+								id="invoice-amortization-confirm"
+								checked={invoiceAmortization.confirmed}
+								onCheckedChange={(checked) =>
+									invoiceAmortization.onConfirmedChange(checked === true)
+								}
+							/>
+							<Label
+								htmlFor="invoice-amortization-confirm"
+								className="text-sm font-normal leading-snug"
+							>
+								Registrar o pagamento que abateu esta fatura
+							</Label>
+						</div>
+
+						{invoiceAmortization.confirmed ? (
+							<ul className="space-y-1 pl-5 text-muted-foreground text-xs leading-relaxed">
+								{invoiceAmortization.changeLines.map((line) => (
+									<li key={line} className="list-disc">
+										{line}
+									</li>
+								))}
+							</ul>
+						) : (
+							<p className="pl-5 text-muted-foreground text-xs leading-relaxed">
+								Sem registrar, o pagamento não aparece no extrato da conta.
 							</p>
 						)}
 					</div>

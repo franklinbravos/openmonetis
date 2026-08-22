@@ -1,9 +1,12 @@
-import { and, asc, eq, isNotNull, type SQL, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, isNotNull, type SQL, sql } from "drizzle-orm";
 import { cards, importBatches, invoices, transactions } from "@/db/schema";
 import { resolveInvoicePeriodCarouselStatus } from "@/features/invoices/lib/period-carousel-status";
 import { fetchTransactionsWithRelations } from "@/features/transactions/queries";
 import type { PeriodCarouselMonth } from "@/shared/components/month-picker/period-carousel-types";
-import { buildInvoicePaymentNote } from "@/shared/lib/accounts/constants";
+import {
+	buildInvoicePaymentNote,
+	isInvoiceAmortizationNote,
+} from "@/shared/lib/accounts/constants";
 import { db } from "@/shared/lib/db";
 import { resolveInvoiceDisplayTotal } from "@/shared/lib/import/invoice-total";
 import {
@@ -105,19 +108,29 @@ export async function fetchInvoiceData(
 	let paymentDate: Date | null = null;
 	if (invoiceStatus !== INVOICE_PAYMENT_STATUS.PENDING) {
 		const invoiceNote = buildInvoicePaymentNote(cardId, selectedPeriod);
-		const paymentLancamento = await db.query.transactions.findFirst({
+		const paymentRows = await db.query.transactions.findMany({
 			columns: {
 				purchaseDate: true,
+				note: true,
 			},
 			where: and(
 				eq(transactions.userId, dataOwnerUserId),
-				eq(transactions.note, invoiceNote),
+				ilike(transactions.note, `${invoiceNote}%`),
 			),
 			orderBy: [asc(transactions.purchaseDate)],
 		});
+		/*
+		 * A data exibida é a do pagamento que liquidou a fatura, não a do mais
+		 * antigo: é dela que sai o "em atraso". Uma amortização feita semanas
+		 * antes do vencimento é sempre pontual e esconderia um atraso no
+		 * pagamento final. Sem pagamento principal, a amortização mais antiga é
+		 * a única data que existe.
+		 */
+		const settlingRow =
+			paymentRows.find((row) => row.note === invoiceNote) ?? paymentRows[0];
 		// A ponte devolve `date` como string; `new Date` a leria como UTC e o dia
 		// voltaria um no fuso de São Paulo.
-		const paymentDateOnly = toDateOnlyString(paymentLancamento?.purchaseDate);
+		const paymentDateOnly = toDateOnlyString(settlingRow?.purchaseDate);
 		paymentDate = paymentDateOnly
 			? parseLocalDateString(paymentDateOnly)
 			: null;
@@ -235,6 +248,12 @@ export type InvoicePaymentEntry = {
 	amount: number;
 	/** Conta debitada — é dela que o dinheiro saiu. */
 	accountId: string | null;
+	/**
+	 * Amortização: pagamento que abateu a fatura antes de ela vencer, declarado
+	 * no arquivo do mês seguinte. Sai da conta num mês e abate a fatura de
+	 * outro, então merece a distinção na tela.
+	 */
+	isAmortization: boolean;
 };
 
 /**
@@ -253,16 +272,20 @@ export async function fetchInvoicePayments(
 ): Promise<InvoicePaymentEntry[]> {
 	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 
+	// Prefixo, não igualdade: as amortizações levam a mesma nota com sufixo
+	// `:AMORT:<data>`, e o período tem tamanho fixo, então o único texto que
+	// pode continuar o prefixo é esse sufixo.
 	const rows = await db.query.transactions.findMany({
 		columns: {
 			id: true,
 			amount: true,
 			purchaseDate: true,
 			accountId: true,
+			note: true,
 		},
 		where: and(
 			eq(transactions.userId, dataOwnerUserId),
-			eq(transactions.note, buildInvoicePaymentNote(cardId, period)),
+			ilike(transactions.note, `${buildInvoicePaymentNote(cardId, period)}%`),
 		),
 		orderBy: [asc(transactions.purchaseDate)],
 	});
@@ -272,5 +295,6 @@ export async function fetchInvoicePayments(
 		date: toDateOnlyString(row.purchaseDate),
 		amount: Math.abs(Number.parseFloat(String(row.amount ?? "0")) || 0),
 		accountId: row.accountId ?? null,
+		isAmortization: isInvoiceAmortizationNote(row.note),
 	}));
 }

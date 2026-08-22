@@ -400,8 +400,17 @@ export function allocateInvoicePayments(input: {
 
 	const payments = ordered.map((payment) => {
 		const amount = roundMoney(Math.abs(payment.amount));
-		const appliedToPrevious = roundMoney(Math.min(remaining, amount));
+		/*
+		 * O centavo de arredondamento do banco não vaza para o pagamento
+		 * seguinte. Em junho, `pago = 6.525,24 − 5.525,23` dá 1.000,01 contra uma
+		 * linha de 1.000,00: sem a tolerância, o centavo que falta é buscado no
+		 * pagamento de 2.500,00 e a amortização registrada sai como 2.499,99 —
+		 * um erro de um centavo no extrato da conta.
+		 */
+		const consumed = roundMoney(Math.min(remaining, amount));
+		const appliedToPrevious = amount - consumed <= 0.02 ? amount : consumed;
 		remaining = roundMoney(remaining - appliedToPrevious);
+		if (remaining <= 0.02) remaining = 0;
 
 		if (appliedToPrevious > 0.01) {
 			previousSettlementDate = payment.date;
@@ -416,4 +425,67 @@ export function allocateInvoicePayments(input: {
 	});
 
 	return { payments, previousSettlementDate };
+}
+
+export type InvoiceAmortizationEntry = {
+	/** Dia em que o dinheiro saiu da conta, `YYYY-MM-DD`. */
+	date: string;
+	amount: number;
+};
+
+/**
+ * Pagamentos do arquivo que abateram a fatura ATUAL, um por data.
+ *
+ * O arquivo do mês seguinte é onde essa informação aparece: quem paga em vários
+ * dias para reduzir juros abate a fatura em formação antes de ela vencer. Sem
+ * registrar isso, o dinheiro sai da conta num mês e o extrato só o mostra no
+ * vencimento do mês seguinte.
+ *
+ * Pagamento sem data fica fora: a data é a identidade do registro, e sem ela
+ * não há como reconhecer o mesmo abate num reprocessamento.
+ */
+export function collectInvoiceAmortizations(
+	payments: AllocatedInvoicePayment[],
+): InvoiceAmortizationEntry[] {
+	const byDate = new Map<string, number>();
+
+	for (const payment of payments) {
+		if (!payment.date) continue;
+		if (payment.appliedToCurrent <= 0.01) continue;
+		byDate.set(
+			payment.date,
+			roundMoney((byDate.get(payment.date) ?? 0) + payment.appliedToCurrent),
+		);
+	}
+
+	return Array.from(byDate, ([date, amount]) => ({ date, amount })).sort(
+		(left, right) => left.date.localeCompare(right.date),
+	);
+}
+
+/**
+ * O que o arquivo declara difere do que está registrado?
+ *
+ * Reprocessar o mesmo arquivo não deve pedir confirmação de nada: os valores são
+ * os mesmos. A comparação é por data e valor, com a tolerância de um centavo que
+ * o arredondamento do banco exige.
+ */
+export function invoiceAmortizationsDiffer(
+	fromFile: InvoiceAmortizationEntry[],
+	registered: InvoiceAmortizationEntry[],
+): boolean {
+	if (fromFile.length !== registered.length) return true;
+
+	const registeredByDate = new Map(
+		registered.map((entry) => [entry.date, entry.amount]),
+	);
+
+	return fromFile.some((entry) => {
+		const current = registeredByDate.get(entry.date);
+		// Arredondar antes de comparar: `2500.01 - 2500` em ponto flutuante dá
+		// um pouco mais de 0,01 e a comparação crua acusaria diferença.
+		return (
+			current == null || Math.abs(roundMoney(current - entry.amount)) > 0.01
+		);
+	});
 }

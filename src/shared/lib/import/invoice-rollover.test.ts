@@ -3,6 +3,8 @@ import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import {
 	allocateInvoicePayments,
 	buildPreviousInvoiceReview,
+	collectInvoiceAmortizations,
+	invoiceAmortizationsDiffer,
 	isInvoiceRolloverCarryDescription,
 	isInvoiceRolloverChargeDescription,
 	resolvePreviousInvoiceSettlement,
@@ -332,8 +334,11 @@ describe("allocateInvoicePayments", () => {
 		]);
 		expect(allocation.payments[0].appliedToPrevious).toBe(1000);
 		expect(allocation.payments[0].appliedToCurrent).toBe(0);
-		expect(allocation.payments[1].appliedToPrevious).toBe(0.01);
-		expect(allocation.payments[1].appliedToCurrent).toBe(2499.99);
+		// O centavo que falta para os 1.000,01 apurados é arredondamento do banco,
+		// e fica no pagamento que o originou: buscá-lo aqui faria a amortização
+		// registrada sair como 2.499,99.
+		expect(allocation.payments[1].appliedToPrevious).toBe(0);
+		expect(allocation.payments[1].appliedToCurrent).toBe(2500);
 	});
 
 	it("a data de liquidação é a do pagamento que abateu a anterior", () => {
@@ -429,5 +434,82 @@ describe("valor exibido na conferência", () => {
 
 		const paid = review.checks.find((check) => check.label === "Pago no mês");
 		expect(paid?.value).toBe(money(100));
+	});
+});
+
+describe("collectInvoiceAmortizations", () => {
+	it("junta por data o que abateu a fatura atual", () => {
+		const { payments } = allocateInvoicePayments({
+			payments: [
+				{ date: "2026-05-12", amount: 1000 },
+				{ date: "2026-05-18", amount: 2500 },
+			],
+			paidOnPrevious: 1000.01,
+		});
+
+		expect(collectInvoiceAmortizations(payments)).toEqual([
+			{ date: "2026-05-18", amount: 2500 },
+		]);
+	});
+
+	it("divide o pagamento que abateu as duas faturas", () => {
+		const { payments } = allocateInvoicePayments({
+			payments: [{ date: "2026-05-12", amount: 3000 }],
+			paidOnPrevious: 1000,
+		});
+
+		expect(collectInvoiceAmortizations(payments)).toEqual([
+			{ date: "2026-05-12", amount: 2000 },
+		]);
+	});
+
+	it("ignora pagamento sem data, que não tem como ser reconhecido depois", () => {
+		const { payments } = allocateInvoicePayments({
+			payments: [{ date: null, amount: 500 }],
+			paidOnPrevious: 0,
+		});
+
+		expect(collectInvoiceAmortizations(payments)).toEqual([]);
+	});
+
+	it("não devolve nada quando os pagamentos só cobrem a fatura anterior", () => {
+		const { payments } = allocateInvoicePayments({
+			payments: [{ date: "2026-05-12", amount: 1000 }],
+			paidOnPrevious: 1000,
+		});
+
+		expect(collectInvoiceAmortizations(payments)).toEqual([]);
+	});
+});
+
+describe("invoiceAmortizationsDiffer", () => {
+	const file = [{ date: "2026-05-18", amount: 2500 }];
+
+	it("reprocessar o mesmo arquivo não pede confirmação", () => {
+		expect(invoiceAmortizationsDiffer(file, [...file])).toBe(false);
+	});
+
+	it("absorve o centavo de arredondamento do banco", () => {
+		expect(
+			invoiceAmortizationsDiffer(file, [
+				{ date: "2026-05-18", amount: 2500.01 },
+			]),
+		).toBe(false);
+	});
+
+	it("aponta diferença quando nada está registrado", () => {
+		expect(invoiceAmortizationsDiffer(file, [])).toBe(true);
+	});
+
+	it("aponta diferença quando a data registrada é outra", () => {
+		expect(
+			invoiceAmortizationsDiffer(file, [{ date: "2026-06-12", amount: 2500 }]),
+		).toBe(true);
+	});
+
+	it("aponta diferença quando o valor registrado é outro", () => {
+		expect(
+			invoiceAmortizationsDiffer(file, [{ date: "2026-05-18", amount: 1200 }]),
+		).toBe(true);
 	});
 });
