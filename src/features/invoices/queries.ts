@@ -4,11 +4,16 @@ import { resolveInvoicePeriodCarouselStatus } from "@/features/invoices/lib/peri
 import { fetchTransactionsWithRelations } from "@/features/transactions/queries";
 import type { PeriodCarouselMonth } from "@/shared/components/month-picker/period-carousel-types";
 import {
+	ACCOUNT_AUTO_INVOICE_NOTE_PREFIX,
 	buildInvoicePaymentNote,
 	isInvoiceAmortizationNote,
+	parseInvoicePaymentNotePeriod,
 } from "@/shared/lib/accounts/constants";
 import { db } from "@/shared/lib/db";
-import { resolveInvoiceDisplayTotal } from "@/shared/lib/import/invoice-total";
+import {
+	resolveInvoiceDisplayTotal,
+	roundMoney,
+} from "@/shared/lib/import/invoice-total";
 import {
 	INVOICE_PAYMENT_STATUS,
 	INVOICE_STATUS_VALUES,
@@ -146,36 +151,48 @@ export async function fetchCardInvoiceMonthSummaries(
 	dueDay: string,
 ): Promise<PeriodCarouselMonth[]> {
 	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
-	const [invoiceRows, amountRows, sourceTotalRows] = await Promise.all([
-		db.query.invoices.findMany({
-			columns: {
-				period: true,
-				paymentStatus: true,
-			},
-			where: and(
-				eq(invoices.userId, dataOwnerUserId),
-				eq(invoices.cardId, cardId),
-			),
-		}),
-		callRpc<InvoiceMonthSummaryRow>("get_card_invoice_month_summaries", {
-			p_user_id: dataOwnerUserId,
-			p_card_id: cardId,
-		}),
-		// Total declarado no arquivo importado: é o que o banco cobrou de fato.
-		db.query.importBatches.findMany({
-			columns: {
-				invoicePeriod: true,
-				sourceInvoiceTotal: true,
-				createdAt: true,
-			},
-			where: and(
-				eq(importBatches.userId, dataOwnerUserId),
-				eq(importBatches.cardId, cardId),
-				isNotNull(importBatches.sourceInvoiceTotal),
-			),
-			orderBy: [asc(importBatches.createdAt)],
-		}),
-	]);
+	const [invoiceRows, amountRows, paymentRows, sourceTotalRows] =
+		await Promise.all([
+			db.query.invoices.findMany({
+				columns: {
+					period: true,
+					paymentStatus: true,
+				},
+				where: and(
+					eq(invoices.userId, dataOwnerUserId),
+					eq(invoices.cardId, cardId),
+				),
+			}),
+			callRpc<InvoiceMonthSummaryRow>("get_card_invoice_month_summaries", {
+				p_user_id: dataOwnerUserId,
+				p_card_id: cardId,
+			}),
+			// Pagamentos de fatura deste cartão, para apurar o pago por período.
+			db.query.transactions.findMany({
+				columns: { amount: true, note: true },
+				where: and(
+					eq(transactions.userId, dataOwnerUserId),
+					ilike(
+						transactions.note,
+						`${ACCOUNT_AUTO_INVOICE_NOTE_PREFIX}${cardId}:%`,
+					),
+				),
+			}),
+			// Total declarado no arquivo importado: é o que o banco cobrou de fato.
+			db.query.importBatches.findMany({
+				columns: {
+					invoicePeriod: true,
+					sourceInvoiceTotal: true,
+					createdAt: true,
+				},
+				where: and(
+					eq(importBatches.userId, dataOwnerUserId),
+					eq(importBatches.cardId, cardId),
+					isNotNull(importBatches.sourceInvoiceTotal),
+				),
+				orderBy: [asc(importBatches.createdAt)],
+			}),
+		]);
 
 	// Percorrido em ordem crescente: o lote mais recente de cada período vence.
 	const sourceTotalByPeriod = new Map<string, number>();
@@ -207,6 +224,20 @@ export async function fetchCardInvoiceMonthSummaries(
 		}
 	}
 
+	/*
+	 * Pago por período, agrupado pela nota — não pela coluna `periodo`, que na
+	 * amortização é o mês em que o dinheiro saiu, anterior ao da fatura abatida.
+	 */
+	const paidByPeriod = new Map<string, number>();
+	for (const row of paymentRows) {
+		const period = parseInvoicePaymentNotePeriod(row.note);
+		if (!period) continue;
+		paidByPeriod.set(
+			period,
+			(paidByPeriod.get(period) ?? 0) + Math.abs(toNumber(row.amount)),
+		);
+	}
+
 	const knownPeriods = new Set<string>([
 		...amountByPeriod.keys(),
 		...invoiceByPeriod.keys(),
@@ -229,6 +260,12 @@ export async function fetchCardInvoiceMonthSummaries(
 			registeredTotal: amountByPeriod.get(period) ?? 0,
 			sourceTotal: sourceTotalByPeriod.get(period) ?? null,
 		}),
+		// Só na fatura paga em parte: no mês quitado o pago é o próprio total, e
+		// no futuro seria R$ 0,00.
+		paidAmount:
+			invoiceByPeriod.get(period) === INVOICE_PAYMENT_STATUS.PARTIAL
+				? roundMoney(paidByPeriod.get(period) ?? 0)
+				: null,
 		status: resolveInvoicePeriodCarouselStatus(
 			period,
 			invoiceByPeriod.get(period),

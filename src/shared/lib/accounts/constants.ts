@@ -41,6 +41,22 @@ export const buildInvoiceAmortizationNote = (
 export const isInvoiceAmortizationNote = (note: string | null | undefined) =>
 	note?.includes(INVOICE_AMORTIZATION_NOTE_MARKER) ?? false;
 
+/**
+ * Período da fatura que a nota de pagamento aponta.
+ *
+ * É a nota, e não a coluna `periodo` do lançamento, que diz a qual fatura o
+ * pagamento pertence: a amortização fica no período em que o dinheiro saiu, que
+ * é o mês anterior ao da fatura que ela abateu.
+ */
+export const parseInvoicePaymentNotePeriod = (
+	note: string | null | undefined,
+): string | null => {
+	if (!note?.startsWith(ACCOUNT_AUTO_INVOICE_NOTE_PREFIX)) return null;
+	// `AUTO_FATURA:<cartão>:<período>` — o id do cartão é um uuid, sem `:`.
+	const period = note.split(":")[2];
+	return period && /^\d{4}-\d{2}$/.test(period) ? period : null;
+};
+
 export const INVOICE_ADJUSTMENT_NAME = "Ajuste de fatura";
 
 export const ACCOUNT_BALANCE_ADJUSTMENT_NAME = "Ajuste de saldo";

@@ -245,6 +245,14 @@ export function InvoiceSummaryCard({
 	 * pagamento de mil e nenhuma explicação para a diferença.
 	 */
 	const rolledOverAmount = isPartial ? roundMoney(heroTotal - paidTotal) : 0;
+	/**
+	 * Na fatura paga em parte, o número grande é o que foi pago.
+	 *
+	 * Só nela: no mês quitado o pago é o próprio total, e num mês em aberto ele
+	 * seria R$ 0,00 — que leria como fatura sem valor.
+	 */
+	const showPaidAsHero = isPartial && paidTotal > 0.01;
+	const heroAmount = showPaidAsHero ? paidTotal : heroTotal;
 	const accountLabelById = new Map(
 		paymentAccountOptions.map((option) => [option.value, option.label]),
 	);
@@ -342,14 +350,25 @@ export function InvoiceSummaryCard({
 						<p className="text-sm text-muted-foreground">
 							Valor da fatura: {displayPeriod(period)}
 						</p>
-						<div className="flex items-center gap-2">
+						<div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
 							<MoneyValues
-								amount={heroTotal}
+								amount={heroAmount}
 								className={cn(
 									"text-3xl leading-none tracking-tighter sm:text-2xl",
 									isPaid ? "text-success" : "text-foreground",
 								)}
 							/>
+							{/* Fatura paga em parte: o destaque é o que saiu da conta, com o
+							    total da fatura ao lado. O total sozinho fazia o mês parecer
+							    pago por inteiro. */}
+							{showPaidAsHero ? (
+								<span className="text-muted-foreground text-sm">
+									pagos de{" "}
+									<span className="font-medium tabular-nums text-foreground">
+										{formatCurrency(heroTotal)}
+									</span>
+								</span>
+							) : null}
 							<AdjustInvoiceDialog
 								cardId={cardId}
 								period={period}
@@ -426,6 +445,7 @@ export function InvoiceSummaryCard({
 						<InvoicePaymentsPanel
 							payments={payments}
 							paidTotal={paidTotal}
+							showPaidTotal={!showPaidAsHero}
 							pendingAmount={rolledOverAmount}
 							accountLabelById={accountLabelById}
 							loadingPaymentId={loadingPaymentId}
@@ -750,6 +770,7 @@ function MetaItem({ label, children }: { label: string; children: ReactNode }) {
 function InvoicePaymentsPanel({
 	payments,
 	paidTotal,
+	showPaidTotal,
 	pendingAmount,
 	accountLabelById,
 	loadingPaymentId,
@@ -757,6 +778,8 @@ function InvoicePaymentsPanel({
 }: {
 	payments: InvoicePaymentEntry[];
 	paidTotal: number;
+	/** Falso quando o valor grande da fatura já é o total pago. */
+	showPaidTotal: boolean;
 	/** Saldo que não foi pago e entrou na fatura seguinte. */
 	pendingAmount: number;
 	accountLabelById: Map<string, string>;
@@ -768,18 +791,20 @@ function InvoicePaymentsPanel({
 	 * Com um pagamento só e nada pendente, a própria linha é o total — repeti-lo
 	 * acima seria o mesmo número duas vezes num cabeçalho que já é cheio.
 	 */
-	const showTotals = hasPending || payments.length > 1;
+	const showTotals = hasPending || (showPaidTotal && payments.length > 1);
 
 	return (
 		<div className="space-y-2 rounded-lg border px-3 py-2.5">
 			{showTotals ? (
 				<div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-					<span className="text-xs">
-						<span className="text-muted-foreground">Total pago</span>{" "}
-						<span className="font-semibold tabular-nums">
-							{formatCurrency(paidTotal)}
+					{showPaidTotal ? (
+						<span className="text-xs">
+							<span className="text-muted-foreground">Total pago</span>{" "}
+							<span className="font-semibold tabular-nums">
+								{formatCurrency(paidTotal)}
+							</span>
 						</span>
-					</span>
+					) : null}
 					{hasPending ? (
 						<span className="text-xs">
 							<span className="text-muted-foreground">Pendente</span>{" "}

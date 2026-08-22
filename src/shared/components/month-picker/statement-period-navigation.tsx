@@ -333,9 +333,13 @@ function PeriodMonthCarousel({
 						const monthExpenses = month.expenses ?? 0;
 						const monthBalance = month.amount;
 						const periodLabel = formatShortPeriodLabel(month.period);
+						/** Só vem preenchido na fatura paga em parte. */
+						const paidAmount = month.paidAmount ?? null;
 						const ariaLabel = isAccountVariant
 							? `${periodLabel}: entradas ${formatCurrency(monthIncomes)}, saídas ${formatCurrency(monthExpenses)}, saldo ${formatCurrency(monthBalance)}`
-							: `${periodLabel}: ${formatCurrency(month.amount)}`;
+							: paidAmount != null
+								? `${periodLabel}: ${formatCurrency(paidAmount)} pagos de ${formatCurrency(month.amount)}`
+								: `${periodLabel}: ${formatCurrency(month.amount)}`;
 
 						return (
 							<div
@@ -464,18 +468,28 @@ function PeriodMonthCarousel({
 											</div>
 										</div>
 									) : (
-										<span
-											className={cn(
-												"max-w-full truncate text-[0.6875rem] tabular-nums sm:text-xs",
-												isSelected
-													? "font-semibold text-foreground"
-													: isFuture
-														? "font-medium text-muted-foreground/55"
-														: "font-medium text-muted-foreground",
-											)}
-										>
-											{formatCurrency(month.amount)}
-										</span>
+										<>
+											<span
+												className={cn(
+													"max-w-full truncate text-[0.6875rem] tabular-nums sm:text-xs",
+													isSelected
+														? "font-semibold text-foreground"
+														: isFuture
+															? "font-medium text-muted-foreground/55"
+															: "font-medium text-muted-foreground",
+												)}
+											>
+												{formatCurrency(paidAmount ?? month.amount)}
+											</span>
+											{/* Fatura paga em parte: o número em destaque é o que
+											    saiu da conta, e o total da fatura fica logo abaixo.
+											    Sem isso o mês parecia pago por inteiro. */}
+											{paidAmount != null ? (
+												<span className="max-w-full truncate text-[0.625rem] text-muted-foreground tabular-nums">
+													de {formatCurrency(month.amount)}
+												</span>
+											) : null}
+										</>
 									)}
 								</button>
 							</div>
