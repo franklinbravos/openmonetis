@@ -97,6 +97,17 @@ function amountToChartY(amount: number, min: number, max: number): number {
 	return CHART_Y_MAX - normalized * (CHART_Y_MAX - CHART_Y_MIN);
 }
 
+/**
+ * Valor que o ponto do gráfico representa.
+ *
+ * Na fatura paga em parte é o que saiu da conta, não o total: a linha desenha o
+ * dinheiro que se moveu, e plotar o total faria maio subir como se tudo tivesse
+ * sido pago — justo o mês em que não foi.
+ */
+function resolveChartAmount(month: PeriodCarouselMonth): number {
+	return month.paidAmount ?? month.amount;
+}
+
 function buildCurveSegment(start: ChartPoint, end: ChartPoint): string {
 	const midX = (start.x + end.x) / 2;
 	return `M ${start.x} ${start.y} C ${midX} ${start.y}, ${midX} ${end.y}, ${end.x} ${end.y}`;
@@ -140,7 +151,7 @@ function PeriodMonthCarousel({
 		const chartRowRect = chartRow?.getBoundingClientRect();
 		const chartRowTop = chartRowRect ? chartRowRect.top - trackRect.top : 22;
 
-		const amounts = months.map((month) => month.amount);
+		const amounts = months.map(resolveChartAmount);
 		const minAmount = Math.min(...amounts);
 		const maxAmount = Math.max(...amounts);
 
@@ -155,7 +166,7 @@ function PeriodMonthCarousel({
 			points.push({
 				period: month.period,
 				x: columnRect.left + columnRect.width / 2 - trackRect.left,
-				y: amountToChartY(month.amount, minAmount, maxAmount),
+				y: amountToChartY(resolveChartAmount(month), minAmount, maxAmount),
 			});
 		}
 
@@ -367,7 +378,9 @@ function PeriodMonthCarousel({
 									disabled={isPending}
 									onClick={() => onNavigate(month.period)}
 									className={cn(
-										"relative z-10 flex w-full flex-col items-center gap-0 rounded-lg border px-1 py-2 transition-colors",
+										// `h-full`: o mês pago em parte tem uma linha a mais, e sem
+										// isto só o card dele cresce, deixando a fileira irregular.
+										"relative z-10 flex h-full w-full flex-col items-center gap-0 rounded-lg border px-1 py-2 transition-colors",
 										"border-border/70 hover:border-primary/40 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 										isFuture &&
 											!isSelected &&
