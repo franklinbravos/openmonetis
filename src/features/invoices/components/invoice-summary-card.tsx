@@ -87,8 +87,6 @@ type InvoiceReconciliationSummary = {
 	sourceOverride: boolean;
 	delta: number;
 	sourceRounding?: number;
-	/** Pagamentos que o banco já descontou do total declarado no arquivo. */
-	invoicePaymentsInFile?: number;
 	sourceFileName?: string | null;
 	extraTransactions: InvoiceReconciliationTransaction[];
 };
@@ -217,15 +215,6 @@ export function InvoiceSummaryCard({
 	const hasSourceReconciliation = reconciliation?.sourceTotal != null;
 	const reconciliationDelta = reconciliation?.delta ?? null;
 	const sourceRounding = reconciliation?.sourceRounding ?? 0;
-	/**
-	 * Pagamento adiantado explica a diferença entre os dois totais.
-	 *
-	 * O banco declara o saldo da fatura, já líquido do que foi pago no ciclo,
-	 * enquanto os lançamentos são as cobranças brutas. Sem dizer isso, a
-	 * conferência acusava R$ 2.500,00 em vermelho — que não é erro nenhum, é o
-	 * pagamento de 18/05.
-	 */
-	const invoicePaymentsInFile = reconciliation?.invoicePaymentsInFile ?? 0;
 	const hasReconciliationMismatch =
 		reconciliationDelta != null && Math.abs(reconciliationDelta) > 0.01;
 	/**
@@ -239,15 +228,8 @@ export function InvoiceSummaryCard({
 	 * difere do que a fatura exibe — senão é a mesma informação duas vezes.
 	 */
 	const chargedTotal = reconciliation?.sourceTotal ?? null;
-	/*
-	 * Com pagamento adiantado, o total do arquivo não é o "cobrado pelo banco" —
-	 * é o saldo, já líquido do que foi pago. Dizer "cobrado" ali seria falso, e a
-	 * explicação da conferência já dá o número com o nome certo.
-	 */
 	const showChargedTotal =
-		chargedTotal != null &&
-		Math.abs(chargedTotal - heroTotal) > 0.001 &&
-		invoicePaymentsInFile <= 0.01;
+		chargedTotal != null && Math.abs(chargedTotal - heroTotal) > 0.001;
 	const extraTransactions =
 		reconciliation?.extraTransactions.filter(
 			(transaction) => transaction.group === "extra",
@@ -550,19 +532,6 @@ export function InvoiceSummaryCard({
 									</dd>
 								</div>
 							</dl>
-
-							{invoicePaymentsInFile > 0.01 ? (
-								<p className="text-muted-foreground text-xs leading-relaxed">
-									O arquivo declara{" "}
-									<span className="font-medium tabular-nums text-foreground">
-										{formatCurrency(invoicePaymentsInFile)}
-									</span>{" "}
-									em pagamentos recebidos, então o total de{" "}
-									{formatCurrency(reconciliation.sourceTotal)} é o saldo da
-									fatura, já líquido do que foi pago. A conferência usa a soma
-									das cobranças do arquivo.
-								</p>
-							) : null}
 
 							{/* O arredondamento do banco só merece explicação quando algo
 							    não fecha; conferido, ele é ruído. */}

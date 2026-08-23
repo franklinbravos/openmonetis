@@ -1,10 +1,6 @@
-import { and, desc, eq, ilike } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { attachments, importBatches, transactions } from "@/db/schema";
-import {
-	buildInvoicePaymentNote,
-	INVOICE_ADJUSTMENT_NAME,
-	isInvoiceAmortizationNote,
-} from "@/shared/lib/accounts/constants";
+import { INVOICE_ADJUSTMENT_NAME } from "@/shared/lib/accounts/constants";
 import { db } from "@/shared/lib/db";
 import {
 	findRegisteredRowsMissingFromFile,
@@ -46,15 +42,6 @@ export type InvoiceReconciliationData = {
 	delta: number | null;
 	/** Total declarado − soma das linhas do arquivo, quando o banco arredonda. */
 	sourceRounding: number;
-	/**
-	 * Pagamentos que o arquivo já descontou do total declarado.
-	 *
-	 * O banco declara o SALDO da fatura, líquido do que foi pago no ciclo,
-	 * enquanto os lançamentos são as cobranças brutas. Sem esse número a
-	 * diferença entre os dois aparece como erro — e não é: é dinheiro pago
-	 * adiantado.
-	 */
-	invoicePaymentsInFile: number;
 	transactions: InvoiceReconciliationTransaction[];
 };
 
@@ -91,70 +78,47 @@ export async function fetchInvoiceReconciliation(
 ): Promise<InvoiceReconciliationData> {
 	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 
-	const [totalRow, lastBatch, periodTransactions, invoicePaymentRows] =
-		await Promise.all([
-			callRpcOne<InvoiceTotalRow>("get_invoice_total", {
-				p_user_id: dataOwnerUserId,
-				p_card_id: cardId,
-				p_period: period,
-			}),
-			db.query.importBatches.findFirst({
-				columns: {
-					id: true,
-					attachmentId: true,
-					sourceFileName: true,
-					sourceInvoiceTotal: true,
-					sourceInvoiceTotalKind: true,
-					sourceInvoiceTotalOverride: true,
-					sourceFileRows: true,
-				},
-				where: and(
-					eq(importBatches.userId, dataOwnerUserId),
-					eq(importBatches.cardId, cardId),
-					eq(importBatches.invoicePeriod, period),
-				),
-				orderBy: [desc(importBatches.createdAt)],
-			}),
-			db.query.transactions.findMany({
-				columns: {
-					id: true,
-					name: true,
-					amount: true,
-					purchaseDate: true,
-					importBatchId: true,
-					ofxFitId: true,
-					transactionType: true,
-				},
-				where: and(
-					eq(transactions.userId, dataOwnerUserId),
-					eq(transactions.cardId, cardId),
-					eq(transactions.period, period),
-				),
-				orderBy: [desc(transactions.purchaseDate)],
-			}),
-			// Amortizações registradas: são os pagamentos que o banco já abateu do
-			// total declarado no arquivo.
-			db.query.transactions.findMany({
-				columns: { amount: true, note: true },
-				where: and(
-					eq(transactions.userId, dataOwnerUserId),
-					ilike(
-						transactions.note,
-						`${buildInvoicePaymentNote(cardId, period)}%`,
-					),
-				),
-			}),
-		]);
-
-	const invoicePaymentsInFile = roundMoney(
-		invoicePaymentRows.reduce(
-			(total, row) =>
-				isInvoiceAmortizationNote(row.note)
-					? total + Math.abs(toNumber(row.amount))
-					: total,
-			0,
-		),
-	);
+	const [totalRow, lastBatch, periodTransactions] = await Promise.all([
+		callRpcOne<InvoiceTotalRow>("get_invoice_total", {
+			p_user_id: dataOwnerUserId,
+			p_card_id: cardId,
+			p_period: period,
+		}),
+		db.query.importBatches.findFirst({
+			columns: {
+				id: true,
+				attachmentId: true,
+				sourceFileName: true,
+				sourceInvoiceTotal: true,
+				sourceInvoiceTotalKind: true,
+				sourceInvoiceTotalOverride: true,
+				sourceFileRows: true,
+			},
+			where: and(
+				eq(importBatches.userId, dataOwnerUserId),
+				eq(importBatches.cardId, cardId),
+				eq(importBatches.invoicePeriod, period),
+			),
+			orderBy: [desc(importBatches.createdAt)],
+		}),
+		db.query.transactions.findMany({
+			columns: {
+				id: true,
+				name: true,
+				amount: true,
+				purchaseDate: true,
+				importBatchId: true,
+				ofxFitId: true,
+				transactionType: true,
+			},
+			where: and(
+				eq(transactions.userId, dataOwnerUserId),
+				eq(transactions.cardId, cardId),
+				eq(transactions.period, period),
+			),
+			orderBy: [desc(transactions.purchaseDate)],
+		}),
+	]);
 
 	const registeredTotal = Math.abs(toNumber(totalRow?.total));
 	const sourceTotal =
@@ -219,11 +183,7 @@ export async function fetchInvoiceReconciliation(
 			: null;
 	const closingTarget =
 		sourceTotal != null
-			? resolveInvoiceClosingTarget({
-					sourceTotal,
-					fileRowsTotal,
-					filePaymentsTotal: invoicePaymentsInFile,
-				})
+			? resolveInvoiceClosingTarget({ sourceTotal, fileRowsTotal })
 			: null;
 
 	const delta = closingTarget
@@ -238,7 +198,6 @@ export async function fetchInvoiceReconciliation(
 		lastImportBatchId: lastBatch?.id ?? null,
 		sourceFileName: lastBatch?.sourceFileName ?? null,
 		delta,
-		invoicePaymentsInFile,
 		sourceRounding: closingTarget?.rounding ?? 0,
 		transactions: mappedTransactions,
 	};

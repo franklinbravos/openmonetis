@@ -272,8 +272,6 @@ export default async function Page({ params, searchParams }: PageProps) {
 									sourceOverride: invoiceReconciliation.sourceOverride,
 									delta: invoiceReconciliation.delta ?? 0,
 									sourceRounding: invoiceReconciliation.sourceRounding,
-									invoicePaymentsInFile:
-										invoiceReconciliation.invoicePaymentsInFile,
 									sourceFileName: invoiceReconciliation.sourceFileName,
 									extraTransactions: invoiceReconciliation.transactions,
 								}
