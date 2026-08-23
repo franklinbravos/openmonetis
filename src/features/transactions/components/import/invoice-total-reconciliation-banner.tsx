@@ -1,6 +1,7 @@
 "use client";
 
 import { RiAlertLine, RiCheckboxCircleLine } from "@remixicon/react";
+import { ImportSourceFileLink } from "@/features/transactions/components/import/import-source-file-link";
 import {
 	Alert,
 	AlertDescription,
@@ -24,6 +25,8 @@ type InvoiceTotalReconciliationBannerProps = {
 	invoiceExtraMarkedForRemovalCount?: number;
 	crossPeriodCount?: number;
 	crossPeriodDisplayTotal?: number;
+	/** Arquivo em conferência, para abrir ao lado dos números. */
+	sourceFile?: File | null;
 };
 
 function formatSignedDelta(delta: number): string {
@@ -79,6 +82,7 @@ export function InvoiceTotalReconciliationBanner({
 	invoiceExtraMarkedForRemovalCount = 0,
 	crossPeriodCount = 0,
 	crossPeriodDisplayTotal = 0,
+	sourceFile = null,
 }: InvoiceTotalReconciliationBannerProps) {
 	// Até dois centavos é arredondamento de parcela do banco, não divergência.
 	const isBalanced =
@@ -135,6 +139,7 @@ export function InvoiceTotalReconciliationBanner({
 				<Badge variant="outline" className="font-normal text-xs">
 					{invoiceSourceTotalKindLabel(sourceKind)}
 				</Badge>
+				{sourceFile ? <ImportSourceFileLink file={sourceFile} /> : null}
 				{confidence === "inferred" ? (
 					<Badge variant="secondary" className="font-normal text-xs">
 						Inferido

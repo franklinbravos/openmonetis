@@ -4291,6 +4291,7 @@ export function ImportPage({
 									}
 									crossPeriodCount={crossPeriodReviewStats.count}
 									crossPeriodDisplayTotal={crossPeriodReviewStats.displayTotal}
+									sourceFile={sourceFile}
 								/>
 							) : null}
 
