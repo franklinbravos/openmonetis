@@ -1,3 +1,7 @@
+import {
+	isSyntheticImportExternalId,
+	makeSyntheticExternalId,
+} from "@/shared/lib/import/helpers";
 import { roundMoney } from "@/shared/lib/import/invoice-total";
 import {
 	INVOICE_PAYMENT_STATUS,
@@ -488,4 +492,127 @@ export function invoiceAmortizationsDiffer(
 			current == null || Math.abs(roundMoney(current - entry.amount)) > 0.01
 		);
 	});
+}
+
+/**
+ * Corrige o carrego declarado no arquivo pelo total que o banco cobra.
+ *
+ * A linha "valor pendente do mês anterior" é apurada na data de vencimento da
+ * fatura passada — antes, portanto, de qualquer pagamento feito depois dela. Um
+ * pagamento que chega mais tarde reduz o saldo financiado, e o banco **não
+ * emite linha de crédito** para ele no extrato da fatura: só abate do total.
+ *
+ * Foi o que aconteceu em junho/2026: o OFX declara carrego de R$ 5.525,23
+ * (12/05, depois de R$ 1.000,00 pagos no vencimento) e total de R$ 7.978,14,
+ * enquanto suas próprias linhas somam R$ 10.478,14. Os R$ 2.500,00 de diferença
+ * são o pagamento de 18/05 — o resumo do banco confirma: saldo financiado de
+ * R$ 3.025,23, exatamente o carrego menos essa diferença.
+ *
+ * Sem esse ajuste a fatura entrava R$ 2.500,00 maior, o pagamento aparecia como
+ * amortização da fatura errada, e a conferência acusava divergência que não
+ * havia como resolver.
+ *
+ * A diferença só é atribuída ao carrego quando ele existe e a cobre. Fora
+ * disso, sobra é sobra: pode ser lançamento a mais no arquivo, e mascarar isso
+ * esconderia problema de verdade.
+ */
+export function resolveRolloverCarryFromFile(input: {
+	/** Carrego como o arquivo declara. */
+	carryFromFile: number;
+	/** Total que o banco manda pagar (LEDGERBAL, "Total a pagar"). */
+	declaredTotal: number | null;
+	/** Soma das cobranças que o próprio arquivo lista. */
+	fileRowsTotal: number | null;
+}): { carriedOver: number; paidAfterCarry: number } {
+	const carryFromFile = roundMoney(Math.abs(input.carryFromFile));
+
+	if (
+		carryFromFile <= 0.01 ||
+		input.declaredTotal == null ||
+		input.fileRowsTotal == null
+	) {
+		return { carriedOver: carryFromFile, paidAfterCarry: 0 };
+	}
+
+	const excess = roundMoney(
+		Math.abs(input.fileRowsTotal) - Math.abs(input.declaredTotal),
+	);
+
+	// Excesso maior que o carrego não é pagamento posterior: zerar o carrego e
+	// ainda sobrar diferença significa que a causa está em outro lugar.
+	if (excess <= 0.01 || excess > carryFromFile) {
+		return { carriedOver: carryFromFile, paidAfterCarry: 0 };
+	}
+
+	return {
+		carriedOver: roundMoney(carryFromFile - excess),
+		paidAfterCarry: excess,
+	};
+}
+
+/**
+ * Aplica a correção do carrego às linhas do arquivo.
+ *
+ * Mexe no valor da linha porque é ele que vira lançamento: só ajustar a apuração
+ * deixaria a fatura entrando maior no cadastro, que é o erro visível. O id
+ * sintético é refeito junto — ele embute o valor, e mantê-lo velho faria o
+ * reprocessamento não reconhecer a própria linha.
+ */
+export function applyRolloverCarryCorrectionToFileRows<
+	T extends {
+		date: string;
+		amount: number;
+		description: string;
+		externalId?: string | null;
+	},
+>(
+	transactions: T[],
+	declaredTotal: number | null,
+): { transactions: T[]; paidAfterCarry: number } {
+	const carryRows = transactions.filter((transaction) =>
+		isInvoiceRolloverCarryDescription(transaction.description),
+	);
+
+	// Mais de uma linha de carrego não tem divisão óbvia; melhor não adivinhar.
+	if (carryRows.length !== 1) {
+		return { transactions, paidAfterCarry: 0 };
+	}
+
+	const carryRow = carryRows[0];
+	const fileRowsTotal = roundMoney(
+		transactions.reduce((total, row) => total + Math.abs(row.amount), 0),
+	);
+
+	const { carriedOver, paidAfterCarry } = resolveRolloverCarryFromFile({
+		carryFromFile: carryRow.amount,
+		declaredTotal,
+		fileRowsTotal,
+	});
+
+	if (paidAfterCarry <= 0.01) {
+		return { transactions, paidAfterCarry: 0 };
+	}
+
+	const signedCarry = carryRow.amount < 0 ? -carriedOver : carriedOver;
+
+	return {
+		transactions: transactions.map((transaction) =>
+			transaction === carryRow
+				? {
+						...transaction,
+						amount: signedCarry,
+						externalId:
+							transaction.externalId &&
+							isSyntheticImportExternalId(transaction.externalId)
+								? makeSyntheticExternalId([
+										transaction.date,
+										carriedOver.toFixed(2),
+										transaction.description,
+									])
+								: transaction.externalId,
+					}
+				: transaction,
+		),
+		paidAfterCarry,
+	};
 }

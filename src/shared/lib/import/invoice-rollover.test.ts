@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import {
 	allocateInvoicePayments,
+	applyRolloverCarryCorrectionToFileRows,
 	buildPreviousInvoiceReview,
 	collectInvoiceAmortizations,
 	invoiceAmortizationsDiffer,
 	isInvoiceRolloverCarryDescription,
 	isInvoiceRolloverChargeDescription,
 	resolvePreviousInvoiceSettlement,
+	resolveRolloverCarryFromFile,
 	sumInvoiceRolloverCarry,
 	sumInvoiceRolloverCharges,
 } from "./invoice-rollover";
@@ -511,5 +513,148 @@ describe("invoiceAmortizationsDiffer", () => {
 		expect(
 			invoiceAmortizationsDiffer(file, [{ date: "2026-05-18", amount: 1200 }]),
 		).toBe(true);
+	});
+});
+
+describe("resolveRolloverCarryFromFile", () => {
+	it("abate do carrego o pagamento que chegou depois do vencimento", () => {
+		// Junho/2026: OFX declara carrego de 5.525,23 (12/05) e total de 7.978,14,
+		// mas suas linhas somam 10.478,14. A diferença é o pagamento de 18/05, e o
+		// resumo do banco confirma o saldo financiado de 3.025,23.
+		expect(
+			resolveRolloverCarryFromFile({
+				carryFromFile: 5525.23,
+				declaredTotal: 7978.14,
+				fileRowsTotal: 10478.14,
+			}),
+		).toEqual({ carriedOver: 3025.23, paidAfterCarry: 2500 });
+	});
+
+	it("não mexe no carrego quando o arquivo fecha com o próprio total", () => {
+		expect(
+			resolveRolloverCarryFromFile({
+				carryFromFile: 5525.23,
+				declaredTotal: 10478.14,
+				fileRowsTotal: 10478.14,
+			}),
+		).toEqual({ carriedOver: 5525.23, paidAfterCarry: 0 });
+	});
+
+	it("absorve o centavo de arredondamento sem inventar pagamento", () => {
+		expect(
+			resolveRolloverCarryFromFile({
+				carryFromFile: 5525.23,
+				declaredTotal: 10478.13,
+				fileRowsTotal: 10478.14,
+			}),
+		).toEqual({ carriedOver: 5525.23, paidAfterCarry: 0 });
+	});
+
+	it("não mascara sobra maior que o carrego, que tem outra causa", () => {
+		expect(
+			resolveRolloverCarryFromFile({
+				carryFromFile: 1000,
+				declaredTotal: 5000,
+				fileRowsTotal: 8000,
+			}),
+		).toEqual({ carriedOver: 1000, paidAfterCarry: 0 });
+	});
+
+	it("sem carrego não há o que ajustar", () => {
+		expect(
+			resolveRolloverCarryFromFile({
+				carryFromFile: 0,
+				declaredTotal: 7978.14,
+				fileRowsTotal: 10478.14,
+			}),
+		).toEqual({ carriedOver: 0, paidAfterCarry: 0 });
+	});
+
+	it("sem total declarado, o arquivo não permite a conta", () => {
+		expect(
+			resolveRolloverCarryFromFile({
+				carryFromFile: 5525.23,
+				declaredTotal: null,
+				fileRowsTotal: 10478.14,
+			}),
+		).toEqual({ carriedOver: 5525.23, paidAfterCarry: 0 });
+	});
+});
+
+describe("applyRolloverCarryCorrectionToFileRows", () => {
+	const juneRows = () => [
+		{
+			date: "2026-05-12",
+			amount: -5525.23,
+			description: "Valor pendente do mês anterior (rotativo)",
+			externalId:
+				"2026-05-12|5525.23|valor pendente do mês anterior (rotativo)",
+		},
+		{
+			date: "2026-06-02",
+			amount: -575.4,
+			description: "Juros de pagamento parcial da fatura (rotativo)",
+			externalId: null,
+		},
+		{
+			date: "2026-06-02",
+			amount: -35.26,
+			description: "IOF de pagamento parcial da fatura (rotativo)",
+			externalId: null,
+		},
+		{
+			date: "2026-06-01",
+			amount: -4342.25,
+			description: "Compras",
+			externalId: null,
+		},
+	];
+
+	it("corrige o valor da linha e o id sintético junto", () => {
+		const result = applyRolloverCarryCorrectionToFileRows(juneRows(), 7978.14);
+
+		expect(result.paidAfterCarry).toBe(2500);
+		expect(result.transactions[0]).toMatchObject({
+			amount: -3025.23,
+			externalId:
+				"2026-05-12|3025.23|valor pendente do mês anterior (rotativo)",
+		});
+		// A soma das linhas passa a fechar com o total que o banco manda pagar.
+		expect(
+			result.transactions.reduce((sum, row) => sum + Math.abs(row.amount), 0),
+		).toBeCloseTo(7978.14, 2);
+	});
+
+	it("não mexe em nada quando o arquivo já fecha", () => {
+		const rows = juneRows();
+		const result = applyRolloverCarryCorrectionToFileRows(rows, 10478.14);
+
+		expect(result.paidAfterCarry).toBe(0);
+		expect(result.transactions).toBe(rows);
+	});
+
+	it("preserva id do banco, que não embute valor", () => {
+		const rows = juneRows();
+		rows[0].externalId = "NUBANK-FITID-123";
+		const result = applyRolloverCarryCorrectionToFileRows(rows, 7978.14);
+
+		expect(result.transactions[0].externalId).toBe("NUBANK-FITID-123");
+		expect(result.transactions[0].amount).toBe(-3025.23);
+	});
+
+	it("com duas linhas de carrego não adivinha a divisão", () => {
+		const rows = [
+			...juneRows(),
+			{
+				date: "2026-05-12",
+				amount: -100,
+				description: "Valor pendente do mês anterior (rotativo)",
+				externalId: null,
+			},
+		];
+
+		expect(applyRolloverCarryCorrectionToFileRows(rows, 7978.14)).toMatchObject(
+			{ paidAfterCarry: 0 },
+		);
 	});
 });

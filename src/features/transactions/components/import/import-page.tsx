@@ -230,6 +230,7 @@ import {
 } from "@/shared/lib/import/helpers";
 import {
 	allocateInvoicePayments,
+	applyRolloverCarryCorrectionToFileRows,
 	buildPreviousInvoiceReview,
 	collectInvoiceAmortizations,
 	findInvoicePaymentDateFromFile,
@@ -284,6 +285,31 @@ const EMPTY_AUTO_PDF_PASSWORD_ATTEMPTS: string[] = [];
 const EMPTY_INITIAL_IMPORT_HISTORY: ImportFileHistoryEntry[] = [];
 
 const normalizeCategoryName = (value: string) => value.trim().toLowerCase();
+
+/**
+ * Corrige, nas linhas do arquivo, o carrego apurado antes do último pagamento.
+ *
+ * A linha "valor pendente do mês anterior" é calculada no vencimento da fatura
+ * passada. Um pagamento que chega depois reduz o saldo financiado, e o banco não
+ * emite crédito por ele no extrato — só abate do total a pagar. Sem esse
+ * ajuste a fatura entra maior do que o banco cobra, e a diferença aparece como
+ * divergência sem causa.
+ */
+function correctRolloverCarryInStatement(
+	statement: ImportStatement,
+): ImportStatement {
+	if (!statement.isCreditCard) return statement;
+
+	const declaredTotal = statement.invoice?.totalAmount ?? null;
+	const { transactions } = applyRolloverCarryCorrectionToFileRows(
+		statement.transactions,
+		declaredTotal,
+	);
+
+	return transactions === statement.transactions
+		? statement
+		: { ...statement, transactions };
+}
 
 function withNormalizedDescriptions(
 	statement: ImportStatement,
@@ -1127,7 +1153,14 @@ export function ImportPage({
 			stmt: ImportStatement,
 			options?: { draftData?: ImportBatchDraftData | null },
 		) => {
-			const normalizedStatement = withNormalizedDescriptions(stmt);
+			/*
+			 * A correção do carrego vem depois da normalização, que é onde os ids
+			 * sintéticos ganham forma final — refazer o id da linha ajustada só faz
+			 * sentido com eles já prontos.
+			 */
+			const normalizedStatement = correctRolloverCarryInStatement(
+				withNormalizedDescriptions(stmt),
+			);
 			setStatement(normalizedStatement);
 
 			let periodFromFile: string | null = null;
