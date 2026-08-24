@@ -3222,16 +3222,28 @@ export function ImportPage({
 		const declaredPayment =
 			statement?.invoice?.previousInvoicePaymentReceived ?? null;
 
+		/*
+		 * O total da fatura anterior vem do que o BANCO declarou no arquivo dela,
+		 * não do cadastro. `pago = total − carrego` é uma subtração: se o total
+		 * carregar desvio de registro, o desvio sai como pagamento.
+		 *
+		 * Julho/2026 é o caso: rolou inteira — o carrego de agosto (R$ 2.109,50) é
+		 * exatamente o total declarado de julho —, mas o cadastro estava R$ 41,90
+		 * mais alto e apareceu um pagamento de R$ 41,90 que nunca houve.
+		 */
+		const previousTotal =
+			previousInvoice.declaredTotal ?? previousInvoice.total;
+
 		if (declaredPrevious != null && declaredPayment != null) {
 			return resolvePreviousInvoiceSettlement({
-				previousTotal: previousInvoice.total,
+				previousTotal,
 				carriedOver: Math.max(0, declaredPrevious - declaredPayment),
 				filePaymentsTotal: declaredPayment,
 			});
 		}
 
 		return resolvePreviousInvoiceSettlement({
-			previousTotal: previousInvoice.total,
+			previousTotal,
 			carriedOver: sumInvoiceRolloverCarry(rows),
 			filePaymentsTotal: sumInvoicePaymentRowsFromFile(rows),
 		});
@@ -3338,6 +3350,7 @@ export function ImportPage({
 
 		return buildPreviousInvoiceReview({
 			settlement: previousInvoiceSettlement,
+			registeredPreviousTotal: previousInvoice.total,
 			registeredStatus: previousInvoice.paymentStatus,
 			registeredPaymentAmount: previousInvoice.paymentTransactionAmount,
 			registeredPaymentDate: previousInvoice.paymentTransactionDate,

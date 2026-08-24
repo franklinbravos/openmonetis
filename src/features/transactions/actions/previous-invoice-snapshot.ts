@@ -1,7 +1,7 @@
 "use server";
 
-import { and, eq, ilike } from "drizzle-orm";
-import { invoices, transactions } from "@/db/schema";
+import { and, desc, eq, ilike, isNotNull } from "drizzle-orm";
+import { importBatches, invoices, transactions } from "@/db/schema";
 import {
 	buildInvoicePaymentNote,
 	isInvoiceAmortizationNote,
@@ -19,6 +19,16 @@ export type InvoiceSnapshot = {
 	period: string;
 	/** Total cadastrado da fatura anterior. */
 	total: number;
+	/**
+	 * Total que o banco declarou no arquivo dessa fatura, quando ela foi importada.
+	 *
+	 * É o número do banco, imune a desvio de cadastro — e é ele que deve entrar na
+	 * conta `pago = total − carrego`. Usar o cadastrado transformava qualquer
+	 * diferença de registro em "pagamento": julho/2026 rolou inteira (carrego =
+	 * total declarado de R$ 2.109,50) e o cadastro, R$ 41,90 mais alto, fez
+	 * aparecer um pagamento de R$ 41,90 que nunca existiu.
+	 */
+	declaredTotal: number | null;
 	paymentStatus: string | null;
 	/** Débito na conta gravado como pagamento dessa fatura, se houver. */
 	paymentTransactionId: string | null;
@@ -57,7 +67,18 @@ export async function fetchInvoiceSnapshotAction(input: {
 		const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 		const period = input.period;
 
-		const [totalRow, invoice, paymentRows] = await Promise.all([
+		const [declaredBatch, totalRow, invoice, paymentRows] = await Promise.all([
+			// Total declarado pelo banco no arquivo desta fatura, se houver lote.
+			db.query.importBatches.findFirst({
+				columns: { sourceInvoiceTotal: true },
+				where: and(
+					eq(importBatches.userId, dataOwnerUserId),
+					eq(importBatches.cardId, input.cardId),
+					eq(importBatches.invoicePeriod, period),
+					isNotNull(importBatches.sourceInvoiceTotal),
+				),
+				orderBy: [desc(importBatches.createdAt)],
+			}),
 			callRpcOne<{ total: string | number | null }>("get_invoice_total", {
 				p_user_id: dataOwnerUserId,
 				p_card_id: input.cardId,
@@ -102,11 +123,16 @@ export async function fetchInvoiceSnapshotAction(input: {
 			.sort((left, right) => left.date.localeCompare(right.date));
 
 		const total = Math.abs(toNumber(totalRow?.total));
+		const declaredTotal =
+			declaredBatch?.sourceInvoiceTotal != null
+				? Math.abs(toNumber(declaredBatch.sourceInvoiceTotal))
+				: null;
 		if (total <= 0) return null;
 
 		return {
 			period,
 			total,
+			declaredTotal,
 			paymentStatus: invoice?.paymentStatus ?? null,
 			paymentTransactionId: paymentRow?.id ?? null,
 			paymentTransactionAmount: paymentRow

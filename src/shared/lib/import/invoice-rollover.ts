@@ -237,6 +237,14 @@ export type PreviousInvoiceReview = {
  */
 export function buildPreviousInvoiceReview(input: {
 	settlement: PreviousInvoiceSettlement;
+	/**
+	 * Total cadastrado da fatura anterior, quando difere do declarado pelo banco.
+	 *
+	 * A conta do pagamento usa o declarado — é o número do banco. Mas a diferença
+	 * entre os dois é um problema de cadastro do mês passado, e precisa aparecer
+	 * em vez de sumir: era ela que virava pagamento fantasma.
+	 */
+	registeredPreviousTotal?: number | null;
 	registeredStatus: string | null;
 	registeredPaymentAmount: number | null;
 	registeredPaymentDate: string | null;
@@ -303,6 +311,19 @@ export function buildPreviousInvoiceReview(input: {
 			? undefined
 			: `cadastro soma ${formatMoney(settlement.previousTotal)}`,
 	});
+
+	const registeredPreviousTotal = input.registeredPreviousTotal ?? null;
+	if (
+		registeredPreviousTotal != null &&
+		Math.abs(registeredPreviousTotal - settlement.previousTotal) > 0.02
+	) {
+		checks.push({
+			label: "Total da fatura anterior",
+			value: formatMoney(settlement.previousTotal),
+			ok: false,
+			detail: `cadastro soma ${formatMoney(registeredPreviousTotal)}`,
+		});
+	}
 
 	const statusOk = input.registeredStatus === settlement.paymentStatus;
 	checks.push({

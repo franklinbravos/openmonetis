@@ -658,3 +658,72 @@ describe("applyRolloverCarryCorrectionToFileRows", () => {
 		);
 	});
 });
+
+describe("total da fatura anterior: declarado manda", () => {
+	const money = (v: number) => `R$ ${v.toFixed(2)}`;
+	const date = (d: string) => d;
+
+	it("carrego igual ao total declarado significa que nada foi pago", () => {
+		// Julho/2026: o arquivo de agosto declara carrego de R$ 2.109,50, que é
+		// exatamente o total declarado de julho — a fatura rolou inteira. Usando o
+		// total CADASTRADO (R$ 2.151,40) aparecia um pagamento de R$ 41,90 que
+		// nunca existiu.
+		const settlement = resolvePreviousInvoiceSettlement({
+			previousTotal: 2109.5,
+			carriedOver: 2109.5,
+			filePaymentsTotal: 0,
+		});
+
+		expect(settlement.paidOnPrevious).toBe(0);
+		expect(settlement.paymentStatus).toBe(INVOICE_PAYMENT_STATUS.PENDING);
+	});
+
+	it("o desvio de cadastro aparece como divergência, não como pagamento", () => {
+		const settlement = resolvePreviousInvoiceSettlement({
+			previousTotal: 2109.5,
+			carriedOver: 2109.5,
+			filePaymentsTotal: 0,
+		});
+
+		const review = buildPreviousInvoiceReview({
+			settlement,
+			registeredPreviousTotal: 2151.4,
+			registeredStatus: INVOICE_PAYMENT_STATUS.PENDING,
+			registeredPaymentAmount: null,
+			registeredPaymentDate: null,
+			filePaymentDate: null,
+			formatMoney: money,
+			formatDate: date,
+		});
+
+		const totalCheck = review.checks.find(
+			(check) => check.label === "Total da fatura anterior",
+		);
+		expect(totalCheck?.ok).toBe(false);
+		expect(totalCheck?.detail).toContain("2151.40");
+		expect(review.allOk).toBe(false);
+	});
+
+	it("não acusa divergência quando cadastro e declarado batem", () => {
+		const settlement = resolvePreviousInvoiceSettlement({
+			previousTotal: 2109.5,
+			carriedOver: 2109.5,
+			filePaymentsTotal: 0,
+		});
+
+		const review = buildPreviousInvoiceReview({
+			settlement,
+			registeredPreviousTotal: 2109.51,
+			registeredStatus: INVOICE_PAYMENT_STATUS.PENDING,
+			registeredPaymentAmount: null,
+			registeredPaymentDate: null,
+			filePaymentDate: null,
+			formatMoney: money,
+			formatDate: date,
+		});
+
+		expect(
+			review.checks.some((c) => c.label === "Total da fatura anterior"),
+		).toBe(false);
+	});
+});
