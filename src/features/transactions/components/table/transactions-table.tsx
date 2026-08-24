@@ -62,6 +62,17 @@ import { TransactionsBulkBar } from "./transactions-bulk-bar";
 import { getTransactionColumns } from "./transactions-columns";
 import { TransactionsFilters } from "./transactions-filters";
 import { TransactionsMobileList } from "./transactions-mobile-list";
+
+/**
+ * Colunas do primeiro andar.
+ *
+ * A tabela inteira pedia mais de 2000px e ficava com rolagem lateral em
+ * qualquer monitor. Em vez de encolher a descrição — que é o que se lê primeiro
+ * — cada lançamento passa a ocupar dois andares: aqui o essencial, alinhado em
+ * colunas; abaixo, os metadados em linha.
+ */
+const PRIMARY_COLUMN_IDS = new Set(["select", "name", "amount", "actions"]);
+
 import { TransactionsPagination } from "./transactions-pagination";
 
 type TransactionsTableProps = {
@@ -238,7 +249,11 @@ export function TransactionsTable({
 		});
 		return acc;
 	}, []);
-	const visibleColumnCount = table.getVisibleLeafColumns().length;
+	// A tabela renderiza só as colunas do primeiro andar, então o cabeçalho de
+	// data precisa cobrir esse número — não o total de colunas definidas.
+	const visibleColumnCount = table
+		.getVisibleLeafColumns()
+		.filter((column) => PRIMARY_COLUMN_IDS.has(column.id)).length;
 	const totalRows = isServerPaginated
 		? (serverPagination?.totalItems ?? 0)
 		: table.getCoreRowModel().rows.length;
@@ -430,13 +445,60 @@ export function TransactionsTable({
 			}
 			tabIndex={onViewDetails ? 0 : undefined}
 		>
-			{row.getVisibleCells().map((cell) => (
-				<TableCell key={cell.id}>
-					{flexRender(cell.column.columnDef.cell, cell.getContext())}
-				</TableCell>
-			))}
+			{row
+				.getVisibleCells()
+				.filter((cell) => PRIMARY_COLUMN_IDS.has(cell.column.id))
+				.map((cell) => (
+					<TableCell key={cell.id} className="border-b-0 pb-0 align-middle">
+						{flexRender(cell.column.columnDef.cell, cell.getContext())}
+					</TableCell>
+				))}
 		</TableRow>
 	);
+
+	/**
+	 * Segundo andar do lançamento.
+	 *
+	 * Os metadados vêm em linha, sob a descrição, entre a coluna do checkbox e a
+	 * das ações — assim valor e ações seguem alinhados nas suas colunas.
+	 */
+	const renderTransactionMetaRow = (row: Row<TransactionItem>) => {
+		const metaCells = row
+			.getVisibleCells()
+			.filter((cell) => !PRIMARY_COLUMN_IDS.has(cell.column.id));
+
+		if (metaCells.length === 0) return null;
+
+		return (
+			<TableRow
+				key={`${row.id}-meta`}
+				className={cn(
+					onViewDetails && "cursor-pointer",
+					"hover:bg-transparent",
+				)}
+				onClick={
+					onViewDetails
+						? (event) => {
+								if (isInteractiveRowClickTarget(event.target)) return;
+								handleOpenRowDetails(row.original);
+							}
+						: undefined
+				}
+			>
+				<TableCell className="pt-0" />
+				<TableCell colSpan={2} className="pt-0">
+					<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground text-xs">
+						{metaCells.map((cell) => (
+							<span key={cell.id} className="inline-flex items-center">
+								{flexRender(cell.column.columnDef.cell, cell.getContext())}
+							</span>
+						))}
+					</div>
+				</TableCell>
+				<TableCell className="pt-0" />
+			</TableRow>
+		);
+	};
 
 	const transactionsListContent = hasRows ? (
 		<>
@@ -458,21 +520,23 @@ export function TransactionsTable({
 				showDateGroups={groupTransactionsByDate}
 			/>
 
-			<div className="hidden overflow-x-auto md:block">
+			<div className="hidden md:block">
 				<Table>
 					<TableHeader>
 						{table.getHeaderGroups().map((headerGroup) => (
 							<TableRow key={headerGroup.id}>
-								{headerGroup.headers.map((header) => (
-									<TableHead key={header.id} className="whitespace-nowrap">
-										{header.isPlaceholder
-											? null
-											: flexRender(
-													header.column.columnDef.header,
-													header.getContext(),
-												)}
-									</TableHead>
-								))}
+								{headerGroup.headers
+									.filter((header) => PRIMARY_COLUMN_IDS.has(header.column.id))
+									.map((header) => (
+										<TableHead key={header.id} className="whitespace-nowrap">
+											{header.isPlaceholder
+												? null
+												: flexRender(
+														header.column.columnDef.header,
+														header.getContext(),
+													)}
+										</TableHead>
+									))}
 							</TableRow>
 						))}
 					</TableHeader>
@@ -488,10 +552,20 @@ export function TransactionsTable({
 												{group.label}
 											</TableCell>
 										</TableRow>
-										{group.rows.map(renderTransactionRow)}
+										{group.rows.map((row) => (
+											<Fragment key={row.id}>
+												{renderTransactionRow(row)}
+												{renderTransactionMetaRow(row)}
+											</Fragment>
+										))}
 									</Fragment>
 								))
-							: rowModel.rows.map(renderTransactionRow)}
+							: rowModel.rows.map((row) => (
+									<Fragment key={row.id}>
+										{renderTransactionRow(row)}
+										{renderTransactionMetaRow(row)}
+									</Fragment>
+								))}
 					</TableBody>
 				</Table>
 			</div>

@@ -13,9 +13,11 @@ import {
 	fetchCardInvoiceMonthSummaries,
 	fetchCardTransactions,
 	fetchInvoiceData,
+	fetchInvoicePayments,
 } from "@/features/invoices/queries";
 import { fetchUserPreferences } from "@/features/settings/queries";
 import { TransactionsPage as LancamentosSection } from "@/features/transactions/components/page/transactions-page";
+import { PartiallyPaidInvoicesProvider } from "@/features/transactions/components/table/partially-paid-invoices-context";
 import { TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID } from "@/features/transactions/lib/month-toolbar";
 import {
 	buildOptionSets,
@@ -43,6 +45,7 @@ import {
 	isCardImportPdfPasswordRule,
 } from "@/shared/lib/cards/import-pdf-password";
 import { resolveInvoiceDisplayTotal } from "@/shared/lib/import/invoice-total";
+import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import { loadLogoOptions } from "@/shared/lib/logo/options";
 import { resolveFinancialDataContext } from "@/shared/lib/payers/financial-context";
 import { parsePeriodParam } from "@/shared/utils/period";
@@ -81,6 +84,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 		logoOptions,
 		invoiceData,
 		invoiceReconciliation,
+		invoicePayments,
 		estabelecimentos,
 		userPreferences,
 		importHistory,
@@ -90,6 +94,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 		loadLogoOptions(),
 		fetchInvoiceData(userId, cardId, selectedPeriod),
 		fetchInvoiceReconciliation(userId, cardId, selectedPeriod),
+		fetchInvoicePayments(userId, cardId, selectedPeriod),
 		fetchRecentEstablishments(userId),
 		fetchUserPreferences(userId),
 		fetchImportBatchHistory({
@@ -233,6 +238,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 
 			<section className="flex flex-col gap-4">
 				<InvoiceSummaryCard
+					payments={invoicePayments}
 					cardId={card.id}
 					period={selectedPeriod}
 					cardBrand={card.brand ?? null}
@@ -266,6 +272,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 									sourceOverride: invoiceReconciliation.sourceOverride,
 									delta: invoiceReconciliation.delta ?? 0,
 									sourceRounding: invoiceReconciliation.sourceRounding,
+									sourceFileName: invoiceReconciliation.sourceFileName,
 									extraTransactions: invoiceReconciliation.transactions,
 								}
 							: null
@@ -273,52 +280,60 @@ export default async function Page({ params, searchParams }: PageProps) {
 				/>
 			</section>
 
-			<MonthToolbarSlotProvider mobileColumns={3}>
-				<UiCard className="gap-0 overflow-hidden py-0">
-					<StatementPeriodNavigation
-						embedded
-						hideCarousel
-						toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID}
-					/>
-				</UiCard>
+			<PartiallyPaidInvoicesProvider
+				invoices={
+					invoiceStatus === INVOICE_PAYMENT_STATUS.PARTIAL
+						? [{ cardId: card.id, period: selectedPeriod }]
+						: []
+				}
+			>
+				<MonthToolbarSlotProvider mobileColumns={3}>
+					<UiCard className="gap-0 overflow-hidden py-0">
+						<StatementPeriodNavigation
+							embedded
+							hideCarousel
+							toolbarSlotId={TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID}
+						/>
+					</UiCard>
 
-				<section className="flex flex-col gap-4">
-					<LancamentosSection
-						financialDataOwnerId={financialContext.dataOwnerUserId}
-						canEditFinancial={financialContext.canEditFinancial}
-						transactions={transactionData}
-						payerOptions={payerOptions}
-						splitPayerOptions={splitPayerOptions}
-						defaultPayerId={defaultPayerId}
-						accountOptions={accountOptions}
-						cardOptions={cardOptions}
-						categoryOptions={categoryOptions}
-						payerFilterOptions={payerFilterOptions}
-						categoryFilterOptions={categoryFilterOptions}
-						accountCardFilterOptions={accountCardFilterOptions}
-						selectedPeriod={selectedPeriod}
-						estabelecimentos={estabelecimentos}
-						allowCreate
-						noteAsColumn={userPreferences?.statementNoteAsColumn ?? false}
-						columnOrder={userPreferences?.transactionsColumnOrder ?? null}
-						groupTransactionsByDate={
-							userPreferences?.groupTransactionsByDate ?? true
-						}
-						attachmentMaxSizeMb={userPreferences?.attachmentMaxSizeMb ?? 50}
-						defaultCardId={card.id}
-						defaultPaymentMethod="Cartão de crédito"
-						lockCardSelection
-						lockPaymentMethod
-						showImportButton={false}
-						exportContext={{
-							source: "transactions",
-							period: selectedPeriod,
-							filters: searchFilters,
-							cardId: card.id,
-						}}
-					/>
-				</section>
-			</MonthToolbarSlotProvider>
+					<section className="flex flex-col gap-4">
+						<LancamentosSection
+							financialDataOwnerId={financialContext.dataOwnerUserId}
+							canEditFinancial={financialContext.canEditFinancial}
+							transactions={transactionData}
+							payerOptions={payerOptions}
+							splitPayerOptions={splitPayerOptions}
+							defaultPayerId={defaultPayerId}
+							accountOptions={accountOptions}
+							cardOptions={cardOptions}
+							categoryOptions={categoryOptions}
+							payerFilterOptions={payerFilterOptions}
+							categoryFilterOptions={categoryFilterOptions}
+							accountCardFilterOptions={accountCardFilterOptions}
+							selectedPeriod={selectedPeriod}
+							estabelecimentos={estabelecimentos}
+							allowCreate
+							noteAsColumn={userPreferences?.statementNoteAsColumn ?? false}
+							columnOrder={userPreferences?.transactionsColumnOrder ?? null}
+							groupTransactionsByDate={
+								userPreferences?.groupTransactionsByDate ?? true
+							}
+							attachmentMaxSizeMb={userPreferences?.attachmentMaxSizeMb ?? 50}
+							defaultCardId={card.id}
+							defaultPaymentMethod="Cartão de crédito"
+							lockCardSelection
+							lockPaymentMethod
+							showImportButton={false}
+							exportContext={{
+								source: "transactions",
+								period: selectedPeriod,
+								filters: searchFilters,
+								cardId: card.id,
+							}}
+						/>
+					</section>
+				</MonthToolbarSlotProvider>
+			</PartiallyPaidInvoicesProvider>
 		</main>
 	);
 }

@@ -11,6 +11,13 @@ export async function upsertInvoicePaymentStatus(
 		cardId: string;
 		period: string;
 		paymentStatus: string;
+		/**
+		 * Valor pago, só quando o pagamento é parcial.
+		 *
+		 * Passar `null` limpa o campo — é o que fatura pendente ou quitada por
+		 * inteiro precisa, para não sobrar um valor de um estado anterior.
+		 */
+		paidAmount?: string | null;
 	},
 ): Promise<void> {
 	const existing = await tx.query.invoices.findFirst({
@@ -25,7 +32,12 @@ export async function upsertInvoicePaymentStatus(
 	if (existing) {
 		await tx
 			.update(invoices)
-			.set({ paymentStatus: input.paymentStatus })
+			.set({
+				paymentStatus: input.paymentStatus,
+				...(input.paidAmount !== undefined
+					? { paidAmount: input.paidAmount }
+					: {}),
+			})
 			.where(
 				and(eq(invoices.userId, input.userId), eq(invoices.id, existing.id)),
 			);
@@ -37,5 +49,6 @@ export async function upsertInvoicePaymentStatus(
 		cardId: input.cardId,
 		period: input.period,
 		paymentStatus: input.paymentStatus,
+		paidAmount: input.paidAmount ?? null,
 	});
 }

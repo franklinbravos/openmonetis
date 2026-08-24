@@ -167,6 +167,40 @@ function filterReviewInvoiceRows(
 	);
 }
 
+/**
+ * Pagamentos que o próprio arquivo declara.
+ *
+ * Em fatura de rotativo o total declarado (`LEDGERBAL`) é LÍQUIDO: já desconta
+ * o pagamento parcial. Os lançamentos, não — o pagamento da fatura não é
+ * gravado como cobrança do cartão. Somar o pagamento de volta põe os dois lados
+ * na mesma base; sem isso a conferência acusava uma diferença exatamente do
+ * valor pago e a fatura nunca fechava.
+ */
+/** Cada pagamento declarado no arquivo, com data e valor. */
+export function collectInvoicePaymentRowsFromFile(
+	rows: InvoiceReconciliationReviewRow[],
+): Array<{ date: string | null; amount: number }> {
+	return rows
+		.filter(
+			(row) =>
+				row.kind === "invoice_payment" ||
+				isInvoicePaymentDescription(row.description),
+		)
+		.map((row) => ({ date: row.date ?? null, amount: Math.abs(row.amount) }));
+}
+
+export function sumInvoicePaymentRowsFromFile(
+	rows: InvoiceReconciliationReviewRow[],
+): number {
+	return rows.reduce((total, row) => {
+		const isPayment =
+			row.kind === "invoice_payment" ||
+			isInvoicePaymentDescription(row.description);
+		if (!isPayment) return total;
+		return total + Math.abs(row.amount);
+	}, 0);
+}
+
 export function sumSignedAmountsForImportedTransactions(
 	transactions: ImportedTransaction[],
 ): number {
@@ -296,9 +330,21 @@ export type InvoiceClosingTarget = {
 export function resolveInvoiceClosingTarget(input: {
 	sourceTotal: number;
 	fileRowsTotal: number | null;
+	/** Pagamentos que o próprio arquivo declara. */
+	filePaymentsTotal?: number;
 }): InvoiceClosingTarget {
 	if (input.fileRowsTotal == null) {
 		return { target: input.sourceTotal, rounding: 0, unexplained: 0 };
+	}
+
+	// Arquivo com pagamento declarado: o total do banco é o SALDO, já líquido do
+	// que foi pago no ciclo, enquanto os lançamentos são as cobranças brutas. Os
+	// dois medem coisas diferentes, e quanto de cada pagamento o banco já
+	// embutiu no "valor pendente" não está no arquivo — não há como deduzir sem
+	// chutar. O alvo passa a ser a soma das cobranças do próprio arquivo, que é
+	// também o valor que o OpenMonetis usa como total da fatura.
+	if ((input.filePaymentsTotal ?? 0) > 0) {
+		return { target: input.fileRowsTotal, rounding: 0, unexplained: 0 };
 	}
 
 	const difference = roundMoney(input.sourceTotal - input.fileRowsTotal);
@@ -327,6 +373,8 @@ export type ImportInvoiceReconciliation = {
 	sourceRounding: number;
 	/** Divergência do arquivo grande demais para ser arredondamento. */
 	sourceUnexplained: number;
+	/** Pagamento declarado no arquivo, somado de volta ao alvo da conferência. */
+	filePaymentsTotal: number;
 	extraExistingRows: InvoiceReconciliationExistingRow[];
 	unselectedFileRows: InvoiceReconciliationReviewRow[];
 	missingFileRows: InvoiceReconciliationMissingFileRow[];
@@ -473,9 +521,14 @@ export function computeImportReconciliation(input: {
 			0,
 		),
 	);
+	// O total declarado é líquido de pagamento; as linhas são brutas.
+	const filePaymentsTotal = roundMoney(
+		sumInvoicePaymentRowsFromFile(input.reviewRows),
+	);
 	const closingTarget = resolveInvoiceClosingTarget({
 		sourceTotal: roundMoney(input.sourceTotal),
 		fileRowsTotal: fileRowsDisplayTotal,
+		filePaymentsTotal,
 	});
 
 	return {
@@ -489,6 +542,7 @@ export function computeImportReconciliation(input: {
 		delta: roundMoney(projectedDisplayTotal - closingTarget.target),
 		sourceRounding: closingTarget.rounding,
 		sourceUnexplained: closingTarget.unexplained,
+		filePaymentsTotal,
 		extraExistingRows,
 		unselectedFileRows,
 		missingFileRows,

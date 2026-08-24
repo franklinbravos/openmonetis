@@ -139,6 +139,202 @@ export function importExternalIdCollidesWithStored(
 	return false;
 }
 
+/**
+ * O que fazer com um registro que carrega identificador do extrato.
+ *
+ * - `insert`: cobrança nova, entra com o id.
+ * - `insert_without_external_id`: cobrança nova, mas o id já tem dono (outra
+ *   parcela da mesma compra). Entra sem o id — o índice único
+ *   `lancamentos_ofx_fit_id_user_id_idx` admite um só dono por (usuário, id).
+ * - `skip`: mesma cobrança já gravada.
+ */
+export type ImportInsertionPlan =
+	| "insert"
+	| "insert_without_external_id"
+	| "skip";
+
+export function planImportRecordInsertion(
+	candidate: ImportOccurrenceIdentity,
+	context: {
+		storedOccurrences: Iterable<ImportOccurrenceIdentity>;
+		storedExternalIds: Iterable<string>;
+	},
+): ImportInsertionPlan {
+	if (
+		importOccurrenceCollidesWithStored(candidate, context.storedOccurrences)
+	) {
+		return "skip";
+	}
+
+	if (
+		importExternalIdCollidesWithStored(
+			candidate.externalId,
+			context.storedExternalIds,
+		)
+	) {
+		return "insert_without_external_id";
+	}
+
+	return "insert";
+}
+
+/**
+ * Id derivado do conteúdo da própria linha, não vindo do arquivo.
+ *
+ * `makeSyntheticExternalId` junta as partes com `|`; FITID de banco não tem
+ * esse separador. A origem do id muda o que um sufixo `#2` significa.
+ */
+export function isSyntheticImportExternalId(externalId: string): boolean {
+	return stripImportExternalIdSuffix(externalId).includes("|");
+}
+
+/**
+ * Os dois ids apontam para a mesma cobrança?
+ *
+ * Com `sameFile`, o sufixo `#2`/`#3` passa a ser levado em conta, e o que ele
+ * significa depende da origem do id:
+ *
+ * - **Id sintético** (PDF/CSV, derivado de data/descrição/valor): duas
+ *   cobranças idênticas colidem por natureza — dois pedágios no mesmo dia pelo
+ *   mesmo valor — e o sufixo é justamente o que separa uma da outra. São
+ *   cobranças distintas.
+ * - **Id do arquivo** (FITID) repetido: é o parser emitindo a mesma transação
+ *   duas vezes. É a mesma cobrança.
+ *
+ * Sem `sameFile` — comparando contra o que já está gravado — a base decide, para
+ * reimportar o mesmo arquivo não duplicar quando a numeração do sufixo muda.
+ */
+export function importExternalIdsPointToSameCharge(
+	left: string,
+	right: string,
+	options?: { sameFile?: boolean },
+): boolean {
+	if (left === right) return true;
+
+	if (
+		stripImportExternalIdSuffix(left) !== stripImportExternalIdSuffix(right)
+	) {
+		return false;
+	}
+
+	if (!options?.sameFile) return true;
+
+	return !(
+		isSyntheticImportExternalId(left) && isSyntheticImportExternalId(right)
+	);
+}
+
+/** Identidade de uma cobrança na hora de decidir se ela já está gravada. */
+export type ImportOccurrenceIdentity = {
+	externalId: string;
+	installmentCount: number | null;
+	currentInstallment: number | null;
+};
+
+/**
+ * Mesma cobrança já gravada?
+ *
+ * O FITID do Nubank identifica a **compra**, não a cobrança do mês: todas as
+ * parcelas de uma série chegam com o mesmo id. Barrar a inserção só pela
+ * colisão do id descartava a parcela do mês corrente sempre que qualquer outra
+ * ocorrência da mesma compra já existisse — a fatura ficava eternamente sem
+ * aquela linha, e reprocessar não resolvia.
+ *
+ * Mesma regra de `fitIdMatchIsReliable`: o id só decide sozinho quando nenhum
+ * dos lados é parcela; entre séries, é preciso ser a mesma ocorrência (N/M).
+ */
+export function importOccurrenceCollidesWithStored(
+	candidate: ImportOccurrenceIdentity,
+	storedOccurrences: Iterable<ImportOccurrenceIdentity>,
+	options?: {
+		/** Comparando linhas do mesmo arquivo — ver `importExternalIdsPointToSameCharge`. */
+		sameFile?: boolean;
+	},
+): boolean {
+	const candidateIsSeries = candidate.installmentCount != null;
+
+	for (const stored of storedOccurrences) {
+		const sameId = importExternalIdsPointToSameCharge(
+			stored.externalId,
+			candidate.externalId,
+			options,
+		);
+		if (!sameId) continue;
+
+		const storedIsSeries = stored.installmentCount != null;
+
+		if (!candidateIsSeries && !storedIsSeries) return true;
+
+		if (
+			candidateIsSeries &&
+			storedIsSeries &&
+			stored.installmentCount === candidate.installmentCount &&
+			stored.currentInstallment === candidate.currentInstallment
+		) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * Troca por id sintético o identificador que o arquivo repete em cobranças
+ * diferentes.
+ *
+ * O FITID deveria identificar a cobrança, mas alguns bancos emitem um id por
+ * evento. O Nubank usa o mesmo em todo o bloco do rotativo: "valor pendente do
+ * mês anterior", juros e IOF chegam com o id idêntico — e o mesmo id volta na
+ * fatura seguinte. Tratá-lo como identidade fazia as três linhas casarem com o
+ * único lançamento que conseguiu guardá-lo, saírem da conferência como "já
+ * cadastrado em outro período" e abrirem um furo do tamanho delas; o índice
+ * único `(user_id, ofx_fit_id)` ainda deixava entrar só uma.
+ *
+ * Quando o mesmo id aparece em linhas de conteúdo diferente, ele é mais
+ * grosseiro que a cobrança e não serve de identidade. O id derivado da própria
+ * linha serve: é único por cobrança e estável entre reimportações.
+ *
+ * Id repetido em linhas de conteúdo IGUAL é outra coisa — repetição do parser,
+ * ou duas cobranças idênticas — e continua com o tratamento de sempre.
+ */
+export function replaceAmbiguousImportExternalIds<
+	T extends {
+		externalId?: string | null;
+		date: string;
+		amount: number;
+		description: string;
+		transactionType: "income" | "expense";
+	},
+>(transactions: T[]): T[] {
+	const fingerprintsById = new Map<string, Set<string>>();
+
+	for (const transaction of transactions) {
+		if (!transaction.externalId) continue;
+
+		const fingerprints =
+			fingerprintsById.get(transaction.externalId) ?? new Set<string>();
+		fingerprints.add(buildImportTransactionFingerprint(transaction));
+		fingerprintsById.set(transaction.externalId, fingerprints);
+	}
+
+	return transactions.map((transaction) => {
+		if (!transaction.externalId) return transaction;
+
+		const distinctContents =
+			fingerprintsById.get(transaction.externalId)?.size ?? 0;
+		if (distinctContents < 2) return transaction;
+
+		return {
+			...transaction,
+			externalId: makeSyntheticExternalId([
+				transaction.date,
+				transaction.amount.toFixed(2),
+				transaction.description,
+			]),
+		};
+	});
+}
+
 export function buildImportTransactionFingerprint(transaction: {
 	date: string;
 	amount: number;

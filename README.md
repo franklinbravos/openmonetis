@@ -318,6 +318,8 @@ Em **Settings → Secrets and variables → Actions**, crie:
 |---|---|
 | `DOCKER_USERNAME` | seu usuário Docker Hub (ex: `franklinbravos`) |
 | `DOCKER_PASSWORD` | token de acesso do Docker Hub |
+| `COOLIFY_WEBHOOK` | URL de deploy do recurso no Coolify (opcional — ver passo 4) |
+| `COOLIFY_TOKEN` | API token do Coolify (opcional — ver passo 4) |
 
 #### 2. Publicar a imagem
 
@@ -340,10 +342,32 @@ A action publica `SEU_USUARIO/openmonetis:latest` no Docker Hub.
 
 Env vars obrigatórias: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`.
 
-#### 4. Atualizar depois de mudanças
+#### 4. Deploy automático (opcional)
 
-1. `git push` na `main` (o workflow roda sozinho quando arquivos relevantes mudam)
-2. No Coolify: **Redeploy** do recurso
+Com os dois secrets configurados, o workflow dispara o deploy no Coolify logo depois de publicar a `latest` — sem **Redeploy** manual.
+
+**No Coolify**, no recurso da aplicação:
+
+1. **Webhooks** → copie a URL de **Deploy** (ela já contém o `uuid` do recurso)
+2. **Keys & Tokens → API tokens** → crie um token com permissão de deploy
+
+**No GitHub**, em **Settings → Secrets and variables → Actions**:
+
+| Secret | Valor |
+|---|---|
+| `COOLIFY_WEBHOOK` | a URL de deploy copiada (ex: `https://coolify.exemplo.com/api/v1/deploy?uuid=abc123&force=false`) |
+| `COOLIFY_TOKEN` | o API token criado |
+
+Detalhes do comportamento:
+
+- Dispara **só** quando a tag publicada é `latest`. Um rebuild pontual via `workflow_dispatch` com outra tag publica a imagem mas não promove nada.
+- Sem os secrets, o passo é ignorado com um aviso — fork sem Coolify não quebra.
+- Se o Coolify recusar o disparo, o job **falha**: a imagem já está publicada, mas o deploy precisa ser refeito pela interface.
+- Não há retentativa automática, de propósito: repetir o disparo enfileira um segundo deploy do mesmo commit em vez de corrigir a falha.
+
+#### 5. Atualizar depois de mudanças
+
+`git push` na `main`. O workflow publica a imagem e dispara o deploy. Sem os secrets do Coolify, faça o **Redeploy** do recurso manualmente.
 
 #### Builds mais rápidos em alterações pequenas
 

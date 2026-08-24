@@ -1,8 +1,8 @@
 "use client";
 
+import { RiCheckboxCircleLine, RiCloseCircleLine } from "@remixicon/react";
 import { AccountCardSelectContent } from "@/features/transactions/components/select-items";
 import { Button } from "@/shared/components/ui/button";
-import { Checkbox } from "@/shared/components/ui/checkbox";
 import {
 	Dialog,
 	DialogContent,
@@ -20,12 +20,28 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/shared/components/ui/select";
+import { Switch } from "@/shared/components/ui/switch";
 import { formatCurrency } from "@/shared/utils/currency";
+import { formatDateOnly } from "@/shared/utils/date";
 import { cn } from "@/shared/utils/ui";
 
 export type ImportInvoicePaymentPrompt = {
 	/** Vencimento da fatura, sugerido como data do pagamento. */
 	dueDate: string | null;
+	/**
+	 * Pagamento já registrado desta fatura, quando existe.
+	 *
+	 * Reprocessar um arquivo já processado é o caso comum. Perguntar "esta fatura
+	 * já foi paga?" nessa situação ignora o que já foi feito e convida a
+	 * registrar o pagamento duas vezes.
+	 */
+	alreadyPaid?: {
+		date: string | null;
+		amount: number | null;
+		/** Reabre o pagamento para corrigir a data ou desfazê-lo. */
+		reopened: boolean;
+		onReopenedChange: (reopened: boolean) => void;
+	} | null;
 	paid: boolean;
 	onPaidChange: (paid: boolean) => void;
 	paymentDate: string;
@@ -33,6 +49,67 @@ export type ImportInvoicePaymentPrompt = {
 	accountOptions: Array<{ value: string; label: string; logo?: string | null }>;
 	accountId: string | null;
 	onAccountChange: (accountId: string) => void;
+};
+
+/**
+ * Liquidação da fatura anterior, apurada pelo arquivo desta.
+ *
+ * Fica atrás de uma confirmação porque reescreve o registro de um mês já
+ * fechado: o status da fatura anterior e o valor do débito na conta.
+ */
+export type ImportPreviousInvoiceCheck = {
+	label: string;
+	value: string;
+	ok: boolean;
+	detail?: string;
+	note?: string;
+};
+
+/**
+ * Conferência da fatura anterior no último passo.
+ *
+ * Quando nada muda — status já correto e débito no valor certo — não há
+ * confirmação a pedir: o bloco só mostra que está tudo certo.
+ */
+export type ImportPreviousInvoicePrompt = {
+	previousPeriodLabel: string;
+	checks: ImportPreviousInvoiceCheck[];
+	allOk: boolean;
+	/** A importação mudaria algo na fatura anterior. */
+	hasChanges: boolean;
+	/**
+	 * O que muda ao confirmar, uma linha por item.
+	 *
+	 * Uma frase só deixava dúvida sobre a data: a conferência apontava a
+	 * divergência e o resumo falava apenas do valor.
+	 */
+	changeLines: string[];
+	confirmed: boolean;
+	onConfirmedChange: (confirmed: boolean) => void;
+};
+
+/**
+ * Atualização dos limites do cartão, confirmada no último passo.
+ *
+ * O bloco da revisão fica longe do botão que aplica. Repetir aqui o que muda
+ * evita clicar em confirmar sem saber que o limite também será alterado.
+ */
+export type ImportCardLimitsPrompt = {
+	changeLines: string[];
+	confirmed: boolean;
+	onConfirmedChange: (confirmed: boolean) => void;
+};
+
+/**
+ * Abate desta fatura pago antes do vencimento, confirmado no último passo.
+ *
+ * Tem toggle próprio porque é um lançamento novo na conta corrente — coisa
+ * diferente de corrigir o registro do mês passado, que tem o seu.
+ */
+export type ImportInvoiceAmortizationPrompt = {
+	changeLines: string[];
+	confirmed: boolean;
+	onConfirmedChange: (confirmed: boolean) => void;
 };
 
 type ImportConfirmDialogProps = {
@@ -54,6 +131,9 @@ type ImportConfirmDialogProps = {
 	/** Nada a importar, remover ou corrigir: só o pagamento justifica confirmar. */
 	nothingToConfirm?: boolean;
 	invoicePayment?: ImportInvoicePaymentPrompt | null;
+	previousInvoice?: ImportPreviousInvoicePrompt | null;
+	cardLimits?: ImportCardLimitsPrompt | null;
+	invoiceAmortization?: ImportInvoiceAmortizationPrompt | null;
 	onConfirm: () => void;
 };
 
@@ -75,6 +155,9 @@ export function ImportConfirmDialog({
 	canConfirm = true,
 	nothingToConfirm = false,
 	invoicePayment = null,
+	previousInvoice = null,
+	cardLimits = null,
+	invoiceAmortization = null,
 	onConfirm,
 }: ImportConfirmDialogProps) {
 	const editedCount = replacedCount + installmentBackfillCount;
@@ -117,9 +200,9 @@ export function ImportConfirmDialog({
 						</p>
 					) : nothingToConfirm ? (
 						<p className="text-muted-foreground text-sm leading-relaxed">
-							A fatura já está conferida com o arquivo: nada a importar, remover
-							ou corrigir. Marque abaixo se ela já foi paga para registrar a
-							baixa e fechar o mês.
+							{invoicePayment?.alreadyPaid
+								? "A fatura já está conferida com o arquivo e já está paga: nada a importar, remover ou corrigir."
+								: "A fatura já está conferida com o arquivo: nada a importar, remover ou corrigir. Marque abaixo se ela já foi paga para registrar a baixa e fechar o mês."}
 						</p>
 					) : null}
 					{verifiedCount > 0 ? (
@@ -135,12 +218,13 @@ export function ImportConfirmDialog({
 							tone="info"
 						/>
 					) : null}
+					{/* Ignorar não é destruir: o arquivo fica intacto e nada sai do
+					    cadastro. O vermelho e o sinal de menos ficam para "serão
+					    removidos", que é o único que apaga lançamento. */}
 					{excludedCount > 0 ? (
 						<SummaryRow
-							label="Excluídos do arquivo"
+							label="Serão ignorados do arquivo"
 							value={excludedCount}
-							tone="destructive"
-							prefix="-"
 						/>
 					) : null}
 					{removalCount > 0 ? (
@@ -174,7 +258,7 @@ export function ImportConfirmDialog({
 							{formatCurrency(Math.abs(invoiceTotalDelta))} do total do arquivo.
 						</p>
 						<div className="mt-3 flex items-start gap-2">
-							<Checkbox
+							<Switch
 								id="invoice-total-override"
 								checked={invoiceTotalOverrideConfirmed}
 								onCheckedChange={(checked) =>
@@ -192,7 +276,216 @@ export function ImportConfirmDialog({
 					</div>
 				) : null}
 
-				{invoicePayment ? (
+				{previousInvoice ? (
+					<div
+						className={cn(
+							"space-y-2 rounded-md border p-3",
+							previousInvoice.allOk
+								? "border-emerald-500/40 bg-emerald-500/5"
+								: "border-amber-500/40 bg-amber-500/5",
+						)}
+					>
+						<div className="flex flex-wrap items-center gap-2">
+							<p className="font-medium text-sm">
+								Fatura de {previousInvoice.previousPeriodLabel}
+							</p>
+							<span
+								className={cn(
+									"rounded-full border px-2 py-0.5 text-xs",
+									previousInvoice.allOk
+										? "border-emerald-500/40 text-emerald-700 dark:text-emerald-500"
+										: "border-amber-500/40 text-amber-700 dark:text-amber-500",
+								)}
+							>
+								{previousInvoice.allOk ? "Confere" : "Requer atenção"}
+							</span>
+						</div>
+
+						<ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+							{previousInvoice.checks.map((check) => (
+								<li key={check.label} className="flex items-center gap-1">
+									{check.ok ? (
+										<RiCheckboxCircleLine className="size-3.5 shrink-0 text-emerald-600" />
+									) : (
+										<RiCloseCircleLine className="size-3.5 shrink-0 text-amber-600" />
+									)}
+									<span className="text-muted-foreground">{check.label}</span>
+									<span className="font-medium tabular-nums">
+										{check.value}
+									</span>
+									{check.detail ? (
+										<span className="text-amber-700 dark:text-amber-500">
+											({check.detail})
+										</span>
+									) : check.note ? (
+										<span className="text-muted-foreground">
+											({check.note})
+										</span>
+									) : null}
+								</li>
+							))}
+						</ul>
+
+						{previousInvoice.hasChanges ? (
+							<>
+								<div className="flex items-center gap-2 pt-1">
+									<Switch
+										id="previous-invoice-settlement"
+										checked={previousInvoice.confirmed}
+										onCheckedChange={(checked) =>
+											previousInvoice.onConfirmedChange(checked === true)
+										}
+									/>
+									<Label
+										htmlFor="previous-invoice-settlement"
+										className="text-sm font-normal leading-snug"
+									>
+										Ajustar a fatura de {previousInvoice.previousPeriodLabel}
+									</Label>
+								</div>
+
+								{previousInvoice.confirmed ? (
+									<ul className="space-y-1 pl-5 text-muted-foreground text-xs leading-relaxed">
+										{previousInvoice.changeLines.map((line) => (
+											<li key={line} className="list-disc">
+												{line}
+											</li>
+										))}
+									</ul>
+								) : (
+									<p className="pl-5 text-muted-foreground text-xs leading-relaxed">
+										Sem ajustar, a fatura anterior fica como está.
+									</p>
+								)}
+							</>
+						) : null}
+					</div>
+				) : null}
+
+				{cardLimits && cardLimits.changeLines.length > 0 ? (
+					<div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+						<p className="font-medium text-sm">Limites do cartão</p>
+
+						<div className="flex items-center gap-2">
+							<Switch
+								id="card-limits-confirm"
+								checked={cardLimits.confirmed}
+								onCheckedChange={(checked) =>
+									cardLimits.onConfirmedChange(checked === true)
+								}
+							/>
+							<Label
+								htmlFor="card-limits-confirm"
+								className="text-sm font-normal leading-snug"
+							>
+								Atualizar os limites com o que a fatura declara
+							</Label>
+						</div>
+
+						{cardLimits.confirmed ? (
+							<ul className="space-y-1 pl-5 text-muted-foreground text-xs leading-relaxed">
+								{cardLimits.changeLines.map((line) => (
+									<li key={line} className="list-disc">
+										{line}
+									</li>
+								))}
+							</ul>
+						) : (
+							<p className="pl-5 text-muted-foreground text-xs leading-relaxed">
+								Sem atualizar, os limites ficam como estão.
+							</p>
+						)}
+					</div>
+				) : null}
+
+				{invoiceAmortization && invoiceAmortization.changeLines.length > 0 ? (
+					<div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+						<p className="font-medium text-sm">Pagamento antecipado</p>
+
+						<div className="flex items-center gap-2">
+							<Switch
+								id="invoice-amortization-confirm"
+								checked={invoiceAmortization.confirmed}
+								onCheckedChange={(checked) =>
+									invoiceAmortization.onConfirmedChange(checked === true)
+								}
+							/>
+							<Label
+								htmlFor="invoice-amortization-confirm"
+								className="text-sm font-normal leading-snug"
+							>
+								Registrar o pagamento que abateu esta fatura
+							</Label>
+						</div>
+
+						{invoiceAmortization.confirmed ? (
+							<ul className="space-y-1 pl-5 text-muted-foreground text-xs leading-relaxed">
+								{invoiceAmortization.changeLines.map((line) => (
+									<li key={line} className="list-disc">
+										{line}
+									</li>
+								))}
+							</ul>
+						) : (
+							<p className="pl-5 text-muted-foreground text-xs leading-relaxed">
+								Sem registrar, o pagamento não aparece no extrato da conta.
+							</p>
+						)}
+					</div>
+				) : null}
+
+				{invoicePayment?.alreadyPaid ? (
+					<div className="space-y-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3">
+						<div className="flex flex-wrap items-center gap-2">
+							<RiCheckboxCircleLine className="size-4 shrink-0 text-emerald-600" />
+							<p className="font-medium text-sm">Esta fatura já está paga</p>
+						</div>
+						<ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+							{invoicePayment.alreadyPaid.date ? (
+								<li className="flex items-center gap-1.5">
+									<span className="text-muted-foreground">Pago em</span>
+									<span className="font-medium tabular-nums">
+										{formatDateOnly(invoicePayment.alreadyPaid.date) ??
+											invoicePayment.alreadyPaid.date}
+									</span>
+								</li>
+							) : null}
+							{invoicePayment.alreadyPaid.amount != null ? (
+								<li className="flex items-center gap-1.5">
+									<span className="text-muted-foreground">Valor</span>
+									<span className="font-medium tabular-nums">
+										{formatCurrency(invoicePayment.alreadyPaid.amount)}
+									</span>
+								</li>
+							) : null}
+						</ul>
+						<div className="flex items-center gap-2">
+							<Switch
+								id="reopen-invoice-payment"
+								checked={invoicePayment.alreadyPaid.reopened}
+								onCheckedChange={(checked) =>
+									invoicePayment.alreadyPaid?.onReopenedChange(checked === true)
+								}
+							/>
+							<Label
+								htmlFor="reopen-invoice-payment"
+								className="text-xs font-normal leading-snug"
+							>
+								Corrigir a data ou desfazer o pagamento
+							</Label>
+						</div>
+
+						{invoicePayment.alreadyPaid.reopened ? null : (
+							<p className="text-muted-foreground text-xs leading-relaxed">
+								O pagamento não é registrado de novo. Este reprocessamento
+								aplica apenas o que mudou nos lançamentos.
+							</p>
+						)}
+					</div>
+				) : null}
+
+				{invoicePayment &&
+				(!invoicePayment.alreadyPaid || invoicePayment.alreadyPaid.reopened) ? (
 					<div className="space-y-3 rounded-md border p-3">
 						<p className="font-medium text-sm">Esta fatura já foi paga?</p>
 						<div className="grid grid-cols-2 gap-2">

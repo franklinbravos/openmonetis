@@ -1,6 +1,7 @@
 "use client";
 
 import {
+	RiCheckboxCircleLine,
 	RiEditLine,
 	RiEqualizerLine,
 	RiFileExcel2Line,
@@ -17,7 +18,13 @@ import {
 } from "@/features/invoices/actions";
 import type { InvoiceReconciliationTransaction } from "@/features/invoices/lib/invoice-reconciliation";
 import { resolveInvoicePaymentTiming } from "@/features/invoices/lib/payment-timing";
+import type { InvoicePaymentEntry } from "@/features/invoices/queries";
+import { fetchTransactionByIdAction } from "@/features/transactions/actions/fetch-by-id";
+import type { TransactionDialogOptions } from "@/features/transactions/actions/fetch-dialog-options";
+import { fetchTransactionDialogOptionsAction } from "@/features/transactions/actions/fetch-dialog-options";
+import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
 import { AccountCardSelectContent } from "@/features/transactions/components/select-items";
+import type { TransactionItem } from "@/features/transactions/components/types";
 import StatusDot from "@/shared/components/feedback/status-dot";
 import MoneyValues from "@/shared/components/money-values";
 import { Badge } from "@/shared/components/ui/badge";
@@ -41,6 +48,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/shared/components/ui/select";
+import { Spinner } from "@/shared/components/ui/spinner";
 import {
 	Tooltip,
 	TooltipContent,
@@ -49,6 +57,7 @@ import {
 } from "@/shared/components/ui/tooltip";
 import { resolveCardBrandAsset } from "@/shared/lib/cards/brand-assets";
 import { invoiceSourceTotalKindLabel } from "@/shared/lib/import/invoice-source-total";
+import { roundMoney } from "@/shared/lib/import/invoice-total";
 import type { InvoiceSourceTotalKind } from "@/shared/lib/import/types";
 import {
 	INVOICE_PAYMENT_STATUS,
@@ -78,6 +87,7 @@ type InvoiceReconciliationSummary = {
 	sourceOverride: boolean;
 	delta: number;
 	sourceRounding?: number;
+	sourceFileName?: string | null;
 	extraTransactions: InvoiceReconciliationTransaction[];
 };
 
@@ -92,6 +102,14 @@ type InvoiceSummaryCardProps = {
 	limitAmount: number | null;
 	invoiceStatus: InvoicePaymentStatus;
 	paymentDate: Date | null;
+	/**
+	 * Pagamentos registrados para esta fatura.
+	 *
+	 * Pode haver mais de um no mês — antecipação para liberar limite, ou uma
+	 * parte na data e o resto depois. Mostrar só um esconderia o resto e o valor
+	 * exibido não fecharia com o que saiu da conta.
+	 */
+	payments?: InvoicePaymentEntry[];
 	defaultPaymentAccountId: string | null;
 	paymentAccountOptions: PaymentAccountOption[];
 	hasImportHistory?: boolean;
@@ -108,6 +126,8 @@ type InvoiceSummaryCardProps = {
 const actionLabelByStatus: Record<InvoicePaymentStatus, string> = {
 	[INVOICE_PAYMENT_STATUS.PENDING]: "Marcar como paga",
 	[INVOICE_PAYMENT_STATUS.PAID]: "Desfazer pagamento",
+	// Parcial ainda tem saldo em aberto: a ação útil é quitar o resto.
+	[INVOICE_PAYMENT_STATUS.PARTIAL]: "Marcar como paga",
 };
 
 const actionVariantByStatus: Record<
@@ -116,6 +136,7 @@ const actionVariantByStatus: Record<
 > = {
 	[INVOICE_PAYMENT_STATUS.PENDING]: "outline",
 	[INVOICE_PAYMENT_STATUS.PAID]: "outline",
+	[INVOICE_PAYMENT_STATUS.PARTIAL]: "outline",
 };
 
 const actionButtonClassName =
@@ -145,6 +166,7 @@ export function InvoiceSummaryCard({
 	limitAmount,
 	invoiceStatus,
 	paymentDate: initialPaymentDate,
+	payments = [],
 	defaultPaymentAccountId,
 	paymentAccountOptions,
 	hasImportHistory = false,
@@ -154,6 +176,12 @@ export function InvoiceSummaryCard({
 }: InvoiceSummaryCardProps) {
 	const router = useRouter();
 	const [isPending, startTransition] = useTransition();
+	const [paymentToEdit, setPaymentToEdit] = useState<TransactionItem | null>(
+		null,
+	);
+	const [paymentDialogOptions, setPaymentDialogOptions] =
+		useState<TransactionDialogOptions | null>(null);
+	const [loadingPaymentId, setLoadingPaymentId] = useState<string | null>(null);
 	const [paymentDate, setPaymentDate] = useState<Date>(
 		initialPaymentDate ?? new Date(),
 	);
@@ -174,6 +202,13 @@ export function InvoiceSummaryCard({
 
 	const brandAsset = resolveCardBrandAsset(cardBrand);
 	const isPaid = invoiceStatus === INVOICE_PAYMENT_STATUS.PAID;
+	/**
+	 * Parte da fatura foi paga e o resto virou cobrança do mês seguinte. Tem
+	 * pagamento, tem data e tem anexo como qualquer fatura quitada — o que não
+	 * tem é a quitação, e é só isso que a difere na tela.
+	 */
+	const isPartial = invoiceStatus === INVOICE_PAYMENT_STATUS.PARTIAL;
+	const hasPayment = isPaid || isPartial;
 	const importHref = `/transactions/import?cartao=${encodeURIComponent(cardId)}&periodo=${encodeURIComponent(period)}`;
 	const registeredAbsTotal = Math.abs(totalAmount);
 	const heroTotal = Math.abs(displayTotalAmount ?? totalAmount);
@@ -182,14 +217,45 @@ export function InvoiceSummaryCard({
 	const sourceRounding = reconciliation?.sourceRounding ?? 0;
 	const hasReconciliationMismatch =
 		reconciliationDelta != null && Math.abs(reconciliationDelta) > 0.01;
+	/**
+	 * Fatura conferida: existe arquivo atrelado e o cadastro fecha com ele. É o
+	 * sinal que diz ao usuário que o fechamento está fechado de verdade, em vez
+	 * de ele precisar abrir a conferência e comparar os números na mão.
+	 */
+	const isReconciled = hasSourceReconciliation && !hasReconciliationMismatch;
+	/**
+	 * Valor efetivamente cobrado pelo banco. Só vale mostrar em separado quando
+	 * difere do que a fatura exibe — senão é a mesma informação duas vezes.
+	 */
+	const chargedTotal = reconciliation?.sourceTotal ?? null;
+	const showChargedTotal =
+		chargedTotal != null && Math.abs(chargedTotal - heroTotal) > 0.001;
 	const extraTransactions =
 		reconciliation?.extraTransactions.filter(
 			(transaction) => transaction.group === "extra",
 		) ?? [];
 	const paymentTiming =
-		isPaid && initialPaymentDate
+		hasPayment && initialPaymentDate
 			? resolveInvoicePaymentTiming(initialPaymentDate, period, dueDay)
 			: null;
+	const paidTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
+	/**
+	 * O que sobrou da fatura e entrou na seguinte como "valor pendente do mês
+	 * anterior". Sem esse número a tela mostra uma fatura de seis mil com um
+	 * pagamento de mil e nenhuma explicação para a diferença.
+	 */
+	const rolledOverAmount = isPartial ? roundMoney(heroTotal - paidTotal) : 0;
+	/**
+	 * Na fatura paga em parte, o número grande é o que foi pago.
+	 *
+	 * Só nela: no mês quitado o pago é o próprio total, e num mês em aberto ele
+	 * seria R$ 0,00 — que leria como fatura sem valor.
+	 */
+	const showPaidAsHero = isPartial && paidTotal > 0.01;
+	const heroAmount = showPaidAsHero ? paidTotal : heroTotal;
+	const accountLabelById = new Map(
+		paymentAccountOptions.map((option) => [option.value, option.label]),
+	);
 
 	const targetStatus = isPaid
 		? INVOICE_PAYMENT_STATUS.PENDING
@@ -229,6 +295,29 @@ export function InvoiceSummaryCard({
 		handleAction(paymentAccountId);
 	};
 
+	/**
+	 * O pagamento da fatura é um lançamento como qualquer outro, na conta que foi
+	 * debitada. Editar daqui abre o mesmo diálogo da tela de lançamentos — valor,
+	 * data e conta —, então o extrato da conta reflete a correção sem uma segunda
+	 * viagem do usuário até lá.
+	 */
+	const handleEditPayment = (paymentId: string) => {
+		setLoadingPaymentId(paymentId);
+		startTransition(async () => {
+			const [transaction, options] = await Promise.all([
+				fetchTransactionByIdAction(paymentId),
+				fetchTransactionDialogOptionsAction(),
+			]);
+			setLoadingPaymentId(null);
+			if (!transaction) {
+				toast.error("Lançamento do pagamento não encontrado.");
+				return;
+			}
+			setPaymentDialogOptions(options);
+			setPaymentToEdit(transaction);
+		});
+	};
+
 	const handleDateChange = (newDate: Date) => {
 		setPaymentDate(newDate);
 		startTransition(async () => {
@@ -248,7 +337,7 @@ export function InvoiceSummaryCard({
 		});
 	};
 
-	const showViewInvoice = isPaid && hasImportAttachment;
+	const showViewInvoice = hasPayment && hasImportAttachment;
 	const actionColumnCount =
 		2 + Number(hasImportHistory) + Number(showViewInvoice);
 
@@ -261,14 +350,25 @@ export function InvoiceSummaryCard({
 						<p className="text-sm text-muted-foreground">
 							Valor da fatura: {displayPeriod(period)}
 						</p>
-						<div className="flex items-center gap-2">
+						<div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
 							<MoneyValues
-								amount={heroTotal}
+								amount={heroAmount}
 								className={cn(
 									"text-3xl leading-none tracking-tighter sm:text-2xl",
 									isPaid ? "text-success" : "text-foreground",
 								)}
 							/>
+							{/* Fatura paga em parte: o destaque é o que saiu da conta, com o
+							    total da fatura ao lado. O total sozinho fazia o mês parecer
+							    pago por inteiro. */}
+							{showPaidAsHero ? (
+								<span className="text-muted-foreground text-sm">
+									pagos de{" "}
+									<span className="font-medium tabular-nums text-foreground">
+										{formatCurrency(heroTotal)}
+									</span>
+								</span>
+							) : null}
 							<AdjustInvoiceDialog
 								cardId={cardId}
 								period={period}
@@ -287,6 +387,14 @@ export function InvoiceSummaryCard({
 								}
 							/>
 						</div>
+						{showChargedTotal ? (
+							<p className="text-muted-foreground text-xs">
+								Cobrado pelo banco no arquivo:{" "}
+								<span className="font-medium tabular-nums text-foreground">
+									{formatCurrency(chargedTotal)}
+								</span>
+							</p>
+						) : null}
 						<div className="flex flex-wrap items-center gap-2">
 							<Badge
 								variant={INVOICE_STATUS_BADGE_VARIANT[invoiceStatus]}
@@ -294,6 +402,16 @@ export function InvoiceSummaryCard({
 							>
 								{INVOICE_STATUS_LABEL[invoiceStatus]}
 							</Badge>
+							{isReconciled ? (
+								<Badge
+									variant="outline"
+									className="gap-1 border-emerald-500/40 text-emerald-700 text-xs dark:text-emerald-400"
+									title={`Confere com ${reconciliation?.sourceFileName ?? "o arquivo importado"}`}
+								>
+									<RiCheckboxCircleLine className="size-3.5" aria-hidden />
+									Conferida com o arquivo
+								</Badge>
+							) : null}
 							{cardStatus ? (
 								<div className="flex items-center gap-1.5 text-xs text-muted-foreground">
 									<StatusDot color={getCardStatusDotColor(cardStatus)} />
@@ -323,6 +441,18 @@ export function InvoiceSummaryCard({
 						</div>
 					</div>
 
+					{payments.length > 0 ? (
+						<InvoicePaymentsPanel
+							payments={payments}
+							paidTotal={paidTotal}
+							showPaidTotal={!showPaidAsHero}
+							pendingAmount={rolledOverAmount}
+							accountLabelById={accountLabelById}
+							loadingPaymentId={loadingPaymentId}
+							onEditPayment={handleEditPayment}
+						/>
+					) : null}
+
 					{hasSourceReconciliation && reconciliation ? (
 						<div
 							className={cn(
@@ -343,8 +473,23 @@ export function InvoiceSummaryCard({
 									</Badge>
 								) : null}
 							</div>
-							<dl className="grid gap-2 text-sm sm:grid-cols-3">
-								<div>
+							{/* Fechando, os três números viram uma linha: o cabeçalho da
+							    fatura é lido de relance, e um grid de três colunas com
+							    rótulos empilhados ocupava espaço demais para dizer "está
+							    tudo certo". Divergindo, o detalhe volta. */}
+							<dl
+								className={cn(
+									"text-sm",
+									hasReconciliationMismatch
+										? "grid gap-2 sm:grid-cols-3"
+										: "flex flex-wrap items-baseline gap-x-4 gap-y-1",
+								)}
+							>
+								<div
+									className={cn(
+										!hasReconciliationMismatch && "flex items-baseline gap-1.5",
+									)}
+								>
 									<dt className="text-muted-foreground text-xs">
 										Total do arquivo
 									</dt>
@@ -352,7 +497,11 @@ export function InvoiceSummaryCard({
 										{formatCurrency(reconciliation.sourceTotal)}
 									</dd>
 								</div>
-								<div>
+								<div
+									className={cn(
+										!hasReconciliationMismatch && "flex items-baseline gap-1.5",
+									)}
+								>
 									<dt className="text-muted-foreground text-xs">
 										Total cadastrado
 									</dt>
@@ -360,7 +509,11 @@ export function InvoiceSummaryCard({
 										{formatCurrency(registeredAbsTotal)}
 									</dd>
 								</div>
-								<div>
+								<div
+									className={cn(
+										!hasReconciliationMismatch && "flex items-baseline gap-1.5",
+									)}
+								>
 									<dt className="text-muted-foreground text-xs">Diferença</dt>
 									<dd
 										className={cn(
@@ -380,7 +533,9 @@ export function InvoiceSummaryCard({
 								</div>
 							</dl>
 
-							{sourceRounding !== 0 ? (
+							{/* O arredondamento do banco só merece explicação quando algo
+							    não fecha; conferido, ele é ruído. */}
+							{sourceRounding !== 0 && hasReconciliationMismatch ? (
 								<p className="text-muted-foreground text-xs leading-relaxed">
 									O arquivo declara {formatCurrency(reconciliation.sourceTotal)}{" "}
 									e suas próprias linhas somam{" "}
@@ -562,6 +717,29 @@ export function InvoiceSummaryCard({
 					</div>
 				</div>
 			</CardContent>
+
+			{paymentDialogOptions && paymentToEdit ? (
+				<TransactionDialog
+					mode="update"
+					open
+					onOpenChange={(open) => {
+						if (open) return;
+						setPaymentToEdit(null);
+						setPaymentDialogOptions(null);
+						// A ação de lançamentos revalida /accounts, não /cards: sem isto a
+						// fatura seguiria mostrando o valor antigo do pagamento.
+						router.refresh();
+					}}
+					transaction={paymentToEdit}
+					payerOptions={paymentDialogOptions.payerOptions}
+					splitPayerOptions={paymentDialogOptions.splitPayerOptions}
+					defaultPayerId={paymentDialogOptions.defaultPayerId}
+					accountOptions={paymentDialogOptions.accountOptions}
+					cardOptions={paymentDialogOptions.cardOptions}
+					categoryOptions={paymentDialogOptions.categoryOptions}
+					estabelecimentos={paymentDialogOptions.estabelecimentos}
+				/>
+			) : null}
 		</Card>
 	);
 }
@@ -573,6 +751,123 @@ function MetaItem({ label, children }: { label: string; children: ReactNode }) {
 				{label}
 			</span>
 			<div className="mt-1">{children}</div>
+		</div>
+	);
+}
+
+/**
+ * Quanto foi pago desta fatura, quanto ficou pendente e cada pagamento feito.
+ *
+ * O total pago é a informação principal — e não estava em lugar nenhum quando o
+ * mês teve um pagamento só: ele aparecia solto na linha de status, sem o
+ * contraponto do que ficou faltando. Aqui os dois números ficam lado a lado, e
+ * abaixo deles os lançamentos que compõem o pago: quem paga em vários dias para
+ * reduzir juros precisa ver a soma fechar.
+ *
+ * Cada linha abre o lançamento na conta que foi debitada, porque é lá que uma
+ * correção de valor ou data tem efeito — no extrato, não no status da fatura.
+ */
+function InvoicePaymentsPanel({
+	payments,
+	paidTotal,
+	showPaidTotal,
+	pendingAmount,
+	accountLabelById,
+	loadingPaymentId,
+	onEditPayment,
+}: {
+	payments: InvoicePaymentEntry[];
+	paidTotal: number;
+	/** Falso quando o valor grande da fatura já é o total pago. */
+	showPaidTotal: boolean;
+	/** Saldo que não foi pago e entrou na fatura seguinte. */
+	pendingAmount: number;
+	accountLabelById: Map<string, string>;
+	loadingPaymentId: string | null;
+	onEditPayment: (paymentId: string) => void;
+}) {
+	const hasPending = pendingAmount > 0.01;
+	/*
+	 * Com um pagamento só e nada pendente, a própria linha é o total — repeti-lo
+	 * acima seria o mesmo número duas vezes num cabeçalho que já é cheio.
+	 */
+	const showTotals = hasPending || (showPaidTotal && payments.length > 1);
+
+	return (
+		<div className="space-y-2 rounded-lg border px-3 py-2.5">
+			{showTotals ? (
+				<div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+					{showPaidTotal ? (
+						<span className="text-xs">
+							<span className="text-muted-foreground">Total pago</span>{" "}
+							<span className="font-semibold tabular-nums">
+								{formatCurrency(paidTotal)}
+							</span>
+						</span>
+					) : null}
+					{hasPending ? (
+						<span className="text-xs">
+							<span className="text-muted-foreground">Pendente</span>{" "}
+							<span className="font-semibold text-amber-600 tabular-nums dark:text-amber-500">
+								{formatCurrency(pendingAmount)}
+							</span>{" "}
+							<span className="text-muted-foreground">
+								— rolou para a fatura seguinte, com juros e IOF
+							</span>
+						</span>
+					) : null}
+				</div>
+			) : null}
+
+			<ul className={cn("divide-y", showTotals && "border-t")}>
+				{payments.map((payment) => {
+					const accountLabel = payment.accountId
+						? accountLabelById.get(payment.accountId)
+						: null;
+					const isLoading = loadingPaymentId === payment.id;
+
+					return (
+						<li key={payment.id}>
+							<button
+								type="button"
+								onClick={() => onEditPayment(payment.id)}
+								disabled={isLoading}
+								className="-mx-1 flex w-full items-baseline justify-between gap-3 rounded px-1 py-1.5 text-left text-xs transition-colors hover:bg-accent disabled:opacity-60"
+							>
+								<span className="flex flex-wrap items-baseline gap-x-2">
+									<span className="tabular-nums">
+										{payment.date
+											? formatDateOnly(payment.date, {
+													day: "2-digit",
+													month: "short",
+													year: "numeric",
+												})
+											: "sem data"}
+									</span>
+									{accountLabel ? (
+										<span className="text-muted-foreground">
+											{accountLabel}
+										</span>
+									) : null}
+								</span>
+								<span className="flex items-center gap-1.5">
+									<span className="font-medium tabular-nums">
+										{formatCurrency(payment.amount)}
+									</span>
+									{isLoading ? (
+										<Spinner className="size-3.5 text-muted-foreground" />
+									) : (
+										<RiEditLine
+											className="size-3.5 text-muted-foreground"
+											aria-hidden
+										/>
+									)}
+								</span>
+							</button>
+						</li>
+					);
+				})}
+			</ul>
 		</div>
 	);
 }

@@ -1,5 +1,5 @@
 import type { SQL } from "drizzle-orm";
-import { eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
 import {
 	type cards,
 	type categories,
@@ -32,6 +32,7 @@ import {
 	getCategoryAncestorPathLabel,
 	getCategoryPathLabel,
 } from "@/shared/lib/categories/tree";
+import { db } from "@/shared/lib/db";
 import {
 	PAYER_ROLE_ADMIN,
 	PAYER_ROLE_THIRD_PARTY,
@@ -384,6 +385,21 @@ export const buildSearchPattern = (value: string | null) =>
  * Retorna os IDs que casam nome/anotação/forma/condição (ILIKE no Postgres),
  * para combinar com os demais filtros dinâmicos via `inArray`.
  */
+/**
+ * Ids de lançamento que têm pelo menos um anexo.
+ *
+ * A tabela de vínculo não guarda `user_id`, então a consulta traz todos os
+ * vínculos e o escopo por usuário fica com as demais condições do where — que
+ * sempre incluem `userId`. A tabela tem uma linha por anexo vinculado.
+ */
+async function fetchTransactionIdsWithAttachment(): Promise<string[]> {
+	const rows = await db
+		.select({ transactionId: transactionAttachments.transactionId })
+		.from(transactionAttachments);
+
+	return [...new Set(rows.map((row) => row.transactionId))];
+}
+
 export async function fetchSearchTransactionIds(
 	userId: string,
 	term: string,
@@ -544,8 +560,10 @@ export const buildTransactionWhere = async ({
 	}
 
 	if (filters.attachmentFilter === "true") {
+		// PostgREST não expressa EXISTS. Vira interseção por id, como já é feito
+		// no filtro de busca; o escopo por usuário vem das outras condições.
 		where.push(
-			sql`EXISTS (SELECT 1 FROM ${transactionAttachments} WHERE ${transactionAttachments.transactionId} = ${transactions.id})`,
+			inArray(transactions.id, await fetchTransactionIdsWithAttachment()),
 		);
 	}
 
@@ -553,16 +571,21 @@ export const buildTransactionWhere = async ({
 		where.push(eq(transactions.isDivided, true));
 	}
 
+	// Despesa é gravada negativa, então o filtro é sobre o módulo. Sem `abs()`
+	// — que a ponte não traduz — o mesmo se expressa comparando os dois sinais.
 	if (filters.amountMinFilter !== null) {
-		where.push(
-			gte(sql`abs(${transactions.amount})`, filters.amountMinFilter.toFixed(2)),
+		const min = filters.amountMinFilter.toFixed(2);
+		const absMin = or(
+			gte(transactions.amount, min),
+			lte(transactions.amount, `-${min}`),
 		);
+		if (absMin) where.push(absMin);
 	}
 
 	if (filters.amountMaxFilter !== null) {
-		where.push(
-			lte(sql`abs(${transactions.amount})`, filters.amountMaxFilter.toFixed(2)),
-		);
+		const max = filters.amountMaxFilter.toFixed(2);
+		where.push(lte(transactions.amount, max));
+		where.push(gte(transactions.amount, `-${max}`));
 	}
 
 	const searchTerm = filters.searchFilter?.trim();

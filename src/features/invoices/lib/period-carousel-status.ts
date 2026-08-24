@@ -33,6 +33,15 @@ export function resolveInvoicePeriodCarouselStatus(
 		return "paid";
 	}
 
+	/*
+	 * Fatura rolada não está vencida: parte foi paga e o resto virou cobrança do
+	 * mês seguinte. Sem este ramo ela caía no cálculo por data de vencimento e
+	 * aparecia em vermelho, como se ninguém tivesse pago nada.
+	 */
+	if (paymentStatus === INVOICE_PAYMENT_STATUS.PARTIAL) {
+		return "partial";
+	}
+
 	const dueDate = buildDueDateInfoFromPeriodDay(period, dueDay).date;
 	if (dueDate && isDateOnlyPast(dueDate)) {
 		return "overdue";

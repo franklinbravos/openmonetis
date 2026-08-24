@@ -1,6 +1,7 @@
 "use client";
 
 import { RiAlertLine, RiCheckboxCircleLine } from "@remixicon/react";
+import { ImportSourceFileLink } from "@/features/transactions/components/import/import-source-file-link";
 import {
 	Alert,
 	AlertDescription,
@@ -8,7 +9,10 @@ import {
 } from "@/shared/components/ui/alert";
 import { Badge } from "@/shared/components/ui/badge";
 import { invoiceSourceTotalKindLabel } from "@/shared/lib/import/invoice-source-total";
-import type { ImportInvoiceReconciliation } from "@/shared/lib/import/invoice-total";
+import {
+	type ImportInvoiceReconciliation,
+	SOURCE_ROUNDING_TOLERANCE,
+} from "@/shared/lib/import/invoice-total";
 import type { InvoiceSourceTotalKind } from "@/shared/lib/import/types";
 import { formatCurrency } from "@/shared/utils/currency";
 import { cn } from "@/shared/utils/ui";
@@ -21,6 +25,8 @@ type InvoiceTotalReconciliationBannerProps = {
 	invoiceExtraMarkedForRemovalCount?: number;
 	crossPeriodCount?: number;
 	crossPeriodDisplayTotal?: number;
+	/** Arquivo em conferência, para abrir ao lado dos números. */
+	sourceFile?: File | null;
 };
 
 function formatSignedDelta(delta: number): string {
@@ -32,20 +38,36 @@ function StatCard({
 	label,
 	value,
 	emphasis = false,
+	checked = false,
 }: {
 	label: string;
 	value: string;
 	emphasis?: boolean;
+	/** Marca o card como conferido, dispensando frase de confirmação. */
+	checked?: boolean;
 }) {
 	return (
-		<div className="rounded-md border border-border/60 bg-background/70 px-3 py-2">
+		<div
+			className={cn(
+				"rounded-md border px-3 py-2",
+				checked
+					? "border-emerald-500/40 bg-emerald-500/10"
+					: "border-border/60 bg-background/70",
+			)}
+		>
 			<p className="text-muted-foreground text-xs">{label}</p>
 			<p
 				className={cn(
-					"tabular-nums",
+					"flex items-center gap-1.5 tabular-nums",
 					emphasis ? "font-semibold" : "font-medium",
 				)}
 			>
+				{checked ? (
+					<RiCheckboxCircleLine
+						className="size-4 shrink-0 text-emerald-600"
+						aria-label="Confere com o arquivo"
+					/>
+				) : null}
 				{value}
 			</p>
 		</div>
@@ -60,8 +82,11 @@ export function InvoiceTotalReconciliationBanner({
 	invoiceExtraMarkedForRemovalCount = 0,
 	crossPeriodCount = 0,
 	crossPeriodDisplayTotal = 0,
+	sourceFile = null,
 }: InvoiceTotalReconciliationBannerProps) {
-	const isBalanced = Math.abs(reconciliation.delta) <= 0.01;
+	// Até dois centavos é arredondamento de parcela do banco, não divergência.
+	const isBalanced =
+		Math.abs(reconciliation.delta) <= SOURCE_ROUNDING_TOLERANCE;
 	const mismatchCount = reconciliation.amountMismatchRows.length;
 	const pendingImportCount = reconciliation.pendingImportRows.length;
 	const unselectedFileCount = reconciliation.missingFileRows.length;
@@ -114,6 +139,7 @@ export function InvoiceTotalReconciliationBanner({
 				<Badge variant="outline" className="font-normal text-xs">
 					{invoiceSourceTotalKindLabel(sourceKind)}
 				</Badge>
+				{sourceFile ? <ImportSourceFileLink file={sourceFile} /> : null}
 				{confidence === "inferred" ? (
 					<Badge variant="secondary" className="font-normal text-xs">
 						Inferido
@@ -143,6 +169,7 @@ export function InvoiceTotalReconciliationBanner({
 						label="Total projetado"
 						value={formatCurrency(reconciliation.projectedDisplayTotal)}
 						emphasis
+						checked={isBalanced}
 					/>
 				</div>
 
@@ -162,21 +189,32 @@ export function InvoiceTotalReconciliationBanner({
 					</span>
 				</p>
 
+				{reconciliation.filePaymentsTotal > 0 ? (
+					<p className="text-muted-foreground text-xs leading-relaxed">
+						O arquivo declara {formatCurrency(reconciliation.filePaymentsTotal)}{" "}
+						em pagamentos recebidos, então o total de{" "}
+						{formatCurrency(reconciliation.sourceTotal)} é o saldo da fatura, já
+						líquido do que foi pago. A conferência usa a soma das cobranças do
+						arquivo, que é o total da fatura no OpenMonetis.
+					</p>
+				) : null}
+
 				{statusParts.length > 0 ? (
 					<p className="text-muted-foreground text-xs leading-relaxed">
 						{statusParts.join(" · ")}.
 					</p>
 				) : null}
 
-				<p className="text-muted-foreground text-xs leading-relaxed">
-					{isBalanced
-						? "O total projetado confere com o arquivo. Você pode confirmar a importação."
-						: invoiceExtraCount > 0
+				{/* Conferido não precisa de frase: o check no card já diz. */}
+				{isBalanced ? null : (
+					<p className="text-muted-foreground text-xs leading-relaxed">
+						{invoiceExtraCount > 0
 							? "Revise a tabela abaixo: itens em vermelho serão removidos ao confirmar. Desmarque o que quiser manter."
 							: crossPeriodCount > 0
 								? `A diferença vem de ${crossPeriodCount} lançamento${crossPeriodCount !== 1 ? "s" : ""} já cadastrado${crossPeriodCount !== 1 ? "s" : ""} em outro período (${formatCurrency(crossPeriodDisplayTotal)}). Eles não entram no total desta fatura — confira o período desses lançamentos no cadastro.`
 								: "Revise a tabela abaixo para categorizar, vincular duplicatas ou selecionar lançamentos do arquivo."}
-				</p>
+					</p>
+				)}
 			</AlertDescription>
 		</Alert>
 	);

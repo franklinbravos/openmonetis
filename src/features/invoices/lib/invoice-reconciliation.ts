@@ -37,6 +37,8 @@ export type InvoiceReconciliationData = {
 	sourceKind: InvoiceSourceTotalKind | null;
 	sourceOverride: boolean;
 	lastImportBatchId: string | null;
+	/** Nome do arquivo conferido, para a tela poder dizer com o que a fatura fecha. */
+	sourceFileName: string | null;
 	delta: number | null;
 	/** Total declarado − soma das linhas do arquivo, quando o banco arredonda. */
 	sourceRounding: number;
@@ -194,6 +196,7 @@ export async function fetchInvoiceReconciliation(
 		sourceKind,
 		sourceOverride: lastBatch?.sourceInvoiceTotalOverride ?? false,
 		lastImportBatchId: lastBatch?.id ?? null,
+		sourceFileName: lastBatch?.sourceFileName ?? null,
 		delta,
 		sourceRounding: closingTarget?.rounding ?? 0,
 		transactions: mappedTransactions,

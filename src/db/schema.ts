@@ -377,6 +377,11 @@ export const cards = pgTable(
 		limit: numeric("limite", { precision: 10, scale: 2 })
 			.notNull()
 			.default("0"),
+		/** Parcela do limite lastreada por investimento, lida da fatura. */
+		guaranteedLimit: numeric("limite_garantido", {
+			precision: 12,
+			scale: 2,
+		}),
 		brand: text("bandeira"),
 		logo: text("logo"),
 		status: text("status").notNull(),
@@ -408,6 +413,8 @@ export const invoices = pgTable(
 	{
 		id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
 		paymentStatus: text("status_pagamento"),
+		/** Quanto foi pago, só quando o pagamento é parcial. */
+		paidAmount: numeric("valor_pago", { precision: 12, scale: 2 }),
 		period: text("periodo"),
 		createdAt: timestamp("created_at", {
 			mode: "date",

@@ -10,7 +10,21 @@ const globalForDb = globalThis as unknown as {
 	bridgeVersion?: number;
 };
 
+/**
+ * Em desenvolvimento a instância não é cacheada.
+ *
+ * O objeto guardado captura as funções do módulo no momento da criação, então
+ * editar o bridge não surtia efeito até subir `DRIZZLE_BRIDGE_VERSION` à mão —
+ * e enquanto isso o dev depurava contra a versão antiga do código. Recriar
+ * custa apenas montar um objeto em volta do cliente Supabase.
+ */
+const shouldCacheInstance = process.env.NODE_ENV === "production";
+
 function getDb() {
+	if (!shouldCacheInstance) {
+		return createSupabaseDb();
+	}
+
 	const cached = globalForDb.db;
 	const bridgeStale =
 		globalForDb.bridgeVersion !== DRIZZLE_BRIDGE_VERSION ||

@@ -21,6 +21,11 @@ import {
 } from "@/features/categories/components/create-category-inline-dialog";
 import type { Category } from "@/features/categories/components/types";
 import {
+	type CardLimitsSnapshot,
+	fetchCardLimitsAction,
+	updateCardLimitsFromInvoiceAction,
+} from "@/features/transactions/actions/card-limits";
+import {
 	fetchImportDescriptionMemory,
 	saveCategoryMappings,
 } from "@/features/transactions/actions/category-memory-action";
@@ -56,7 +61,13 @@ import {
 	syncImportBatchContextAction,
 	syncImportBatchSourceTotalAction,
 } from "@/features/transactions/actions/import-batch-history-action";
+import {
+	fetchInvoiceSnapshotAction,
+	type InvoiceSnapshot,
+	updatePreviousInvoicePaymentDateAction,
+} from "@/features/transactions/actions/previous-invoice-snapshot";
 import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
+import { CardLimitsCard } from "@/features/transactions/components/import/card-limits-card";
 import {
 	decodeAccountCard,
 	encodeAccountCard,
@@ -71,9 +82,15 @@ import { ImportConfirmDialog } from "@/features/transactions/components/import/i
 import { ImportFileHistory } from "@/features/transactions/components/import/import-file-history";
 import { ImportInvoicePeriodMismatchDialog } from "@/features/transactions/components/import/import-invoice-period-mismatch-dialog";
 import { ImportLinkDialog } from "@/features/transactions/components/import/import-link-dialog";
+import {
+	ImportProgressDialog,
+	type ImportProgressStep,
+} from "@/features/transactions/components/import/import-progress-dialog";
 import { ImportSteps } from "@/features/transactions/components/import/import-steps";
 import { ImportSummary } from "@/features/transactions/components/import/import-summary";
 import { InvoiceTotalReconciliationBanner } from "@/features/transactions/components/import/invoice-total-reconciliation-banner";
+import { PreviousInvoiceFixDialog } from "@/features/transactions/components/import/previous-invoice-fix-dialog";
+import { PreviousInvoiceSettlementCard } from "@/features/transactions/components/import/previous-invoice-settlement-card";
 import {
 	type ReviewRow,
 	ReviewTable,
@@ -207,22 +224,42 @@ import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants
 import {
 	dedupeImportedTransactionsByFingerprint,
 	normalizeImportedText,
+	replaceAmbiguousImportExternalIds,
 	stripImportExternalIdSuffix,
 	uniquifyImportedExternalIds,
 } from "@/shared/lib/import/helpers";
+import {
+	allocateInvoicePayments,
+	applyRolloverCarryCorrectionToFileRows,
+	buildPreviousInvoiceReview,
+	collectInvoiceAmortizations,
+	findInvoicePaymentDateFromFile,
+	invoiceAmortizationsDiffer,
+	resolvePreviousInvoiceSettlement,
+	sumInvoiceRolloverCarry,
+	sumInvoiceRolloverCharges,
+} from "@/shared/lib/import/invoice-rollover";
 import { resolveInvoiceSourceTotal } from "@/shared/lib/import/invoice-source-total";
 import {
+	collectInvoicePaymentRowsFromFile,
 	computeImportReconciliation,
 	isInvoiceTotalReconciled,
+	sumInvoicePaymentRowsFromFile,
 } from "@/shared/lib/import/invoice-total";
 import { mapPdfLoadError } from "@/shared/lib/import/pdf-password";
 import type { ImportStatement } from "@/shared/lib/import/types";
+import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import { formatCurrency } from "@/shared/utils/currency";
 import {
 	buildDateOnlyStringFromPeriodDay,
+	formatDateOnly,
 	getTodayDateString,
 } from "@/shared/utils/date";
-import { displayPeriod, formatPeriodForUrl } from "@/shared/utils/period";
+import {
+	addMonthsToPeriod,
+	displayPeriod,
+	formatPeriodForUrl,
+} from "@/shared/utils/period";
 
 function fileFromBase64(
 	base64: string,
@@ -249,6 +286,31 @@ const EMPTY_INITIAL_IMPORT_HISTORY: ImportFileHistoryEntry[] = [];
 
 const normalizeCategoryName = (value: string) => value.trim().toLowerCase();
 
+/**
+ * Corrige, nas linhas do arquivo, o carrego apurado antes do último pagamento.
+ *
+ * A linha "valor pendente do mês anterior" é calculada no vencimento da fatura
+ * passada. Um pagamento que chega depois reduz o saldo financiado, e o banco não
+ * emite crédito por ele no extrato — só abate do total a pagar. Sem esse
+ * ajuste a fatura entra maior do que o banco cobra, e a diferença aparece como
+ * divergência sem causa.
+ */
+function correctRolloverCarryInStatement(
+	statement: ImportStatement,
+): ImportStatement {
+	if (!statement.isCreditCard) return statement;
+
+	const declaredTotal = statement.invoice?.totalAmount ?? null;
+	const { transactions } = applyRolloverCarryCorrectionToFileRows(
+		statement.transactions,
+		declaredTotal,
+	);
+
+	return transactions === statement.transactions
+		? statement
+		: { ...statement, transactions };
+}
+
 function withNormalizedDescriptions(
 	statement: ImportStatement,
 ): ImportStatement {
@@ -262,8 +324,13 @@ function withNormalizedDescriptions(
 
 	return {
 		...statement,
+		// Ordem importa: primeiro troca o id que o arquivo repete em cobranças
+		// diferentes (bloco do rotativo do Nubank), depois sufixa o que sobrou
+		// repetido — aí o sufixo já significa "linha idêntica".
 		transactions: dedupeImportedTransactionsByFingerprint(
-			uniquifyImportedExternalIds(normalizedTransactions),
+			uniquifyImportedExternalIds(
+				replaceAmbiguousImportExternalIds(normalizedTransactions),
+			),
 		),
 	};
 }
@@ -545,6 +612,15 @@ export function ImportPage({
 	const [isLinking, setIsLinking] = useState(false);
 	const [editDialogOptions, setEditDialogOptions] =
 		useState<TransactionDialogOptions | null>(null);
+
+	/**
+	 * Etapa do preparo da importação, para o modal de progresso.
+	 *
+	 * Cobre o intervalo em que `statement` e `rows` são preenchidos aos poucos e
+	 * o passo do fluxo oscilava, fazendo a tela piscar.
+	 */
+	const [importProgress, setImportProgress] =
+		useState<ImportProgressStep | null>(null);
 
 	const importSessionKey = importMountKey;
 	const previousSessionKeyRef = useRef(importSessionKey);
@@ -1077,7 +1153,14 @@ export function ImportPage({
 			stmt: ImportStatement,
 			options?: { draftData?: ImportBatchDraftData | null },
 		) => {
-			const normalizedStatement = withNormalizedDescriptions(stmt);
+			/*
+			 * A correção do carrego vem depois da normalização, que é onde os ids
+			 * sintéticos ganham forma final — refazer o id da linha ajustada só faz
+			 * sentido com eles já prontos.
+			 */
+			const normalizedStatement = correctRolloverCarryInStatement(
+				withNormalizedDescriptions(stmt),
+			);
 			setStatement(normalizedStatement);
 
 			let periodFromFile: string | null = null;
@@ -1128,6 +1211,7 @@ export function ImportPage({
 				resolveAccountStatementDateRange(normalizedStatement);
 
 			setIsChecking(true);
+			setImportProgress("matching");
 			duplicateMatchingContextRef.current = null;
 
 			try {
@@ -1475,6 +1559,7 @@ export function ImportPage({
 				setRows([]);
 			} finally {
 				setIsChecking(false);
+				setImportProgress(null);
 			}
 		},
 		[
@@ -2050,6 +2135,7 @@ export function ImportPage({
 
 			setFileError(null);
 			setIsChecking(true);
+			setImportProgress("fetching");
 			setResumingBatchId(batchId);
 			setAwaitingResumeBatch(null);
 
@@ -2102,6 +2188,7 @@ export function ImportPage({
 
 				setImportSourceStored(true);
 
+				setImportProgress("parsing");
 				const statement = await parseImportFileClient(file, {
 					cardId: linkedCardId,
 					pdfPasswordCandidates:
@@ -2135,6 +2222,7 @@ export function ImportPage({
 				}
 			} finally {
 				setIsChecking(false);
+				setImportProgress(null);
 				setResumingBatchId(null);
 			}
 		},
@@ -3041,6 +3129,359 @@ export function ImportPage({
 		};
 	}, [rows, selectedRows]);
 
+	/**
+	 * Fatura anterior, para apurar como ela foi paga.
+	 *
+	 * Buscada só em importação de fatura de cartão: é o arquivo desta fatura que
+	 * revela quanto da anterior ficou pendente.
+	 */
+	const [previousInvoice, setPreviousInvoice] =
+		useState<InvoiceSnapshot | null>(null);
+
+	/**
+	 * Cartão desta importação.
+	 *
+	 * O seletor de conta/cartão vem primeiro: é por ele que o cartão é escolhido
+	 * no fluxo normal, e ignorá-lo deixava a conferência do mês anterior sem
+	 * cartão — e portanto invisível — em toda importação que não chegasse com o
+	 * cartão já na URL.
+	 */
+	const invoiceCardId = useMemo(() => {
+		const decoded = accountCardValue
+			? decodeAccountCard(accountCardValue)
+			: null;
+		if (decoded?.type === "card") return decoded.id;
+		return (
+			linkedCardId ?? initialCardId ?? activeInvoiceContext?.cardId ?? null
+		);
+	}, [
+		accountCardValue,
+		activeInvoiceContext?.cardId,
+		initialCardId,
+		linkedCardId,
+	]);
+	const invoiceTargetPeriod =
+		invoicePeriod ??
+		initialInvoicePeriod ??
+		activeInvoiceContext?.invoicePeriod ??
+		null;
+
+	/**
+	 * Estado da fatura sendo importada.
+	 *
+	 * Reprocessar um arquivo já processado é o caso comum — serve para aplicar
+	 * melhorias posteriores. Sem saber que a fatura já está paga, o diálogo
+	 * perguntava de novo "esta fatura já foi paga?", como se nada tivesse
+	 * acontecido.
+	 */
+	const [currentInvoice, setCurrentInvoice] = useState<InvoiceSnapshot | null>(
+		null,
+	);
+
+	useEffect(() => {
+		if (!invoiceCardId || !invoiceTargetPeriod) {
+			setPreviousInvoice(null);
+			setCurrentInvoice(null);
+			return;
+		}
+
+		let cancelled = false;
+
+		void Promise.all([
+			fetchInvoiceSnapshotAction({
+				cardId: invoiceCardId,
+				period: addMonthsToPeriod(invoiceTargetPeriod, -1),
+			}),
+			fetchInvoiceSnapshotAction({
+				cardId: invoiceCardId,
+				period: invoiceTargetPeriod,
+			}),
+		]).then(([previous, current]) => {
+			if (cancelled) return;
+			setPreviousInvoice(previous);
+			setCurrentInvoice(current);
+		});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [invoiceCardId, invoiceTargetPeriod]);
+
+	/** Liquidação da fatura anterior, apurada pelas linhas de rotativo deste arquivo. */
+	const previousInvoiceSettlement = useMemo(() => {
+		if (!previousInvoice) return null;
+
+		/**
+		 * O resumo do arquivo manda quando existe.
+		 *
+		 * O PDF do Nubank declara a fatura anterior e quanto dela recebeu, então
+		 * o carrego é a diferença entre os dois — sem depender de o parser ter
+		 * emitido linha de pagamento, e sem inferir nada.
+		 */
+		const declaredPrevious = statement?.invoice?.previousInvoiceTotal ?? null;
+		const declaredPayment =
+			statement?.invoice?.previousInvoicePaymentReceived ?? null;
+
+		if (declaredPrevious != null && declaredPayment != null) {
+			return resolvePreviousInvoiceSettlement({
+				previousTotal: previousInvoice.total,
+				carriedOver: Math.max(0, declaredPrevious - declaredPayment),
+				filePaymentsTotal: declaredPayment,
+			});
+		}
+
+		return resolvePreviousInvoiceSettlement({
+			previousTotal: previousInvoice.total,
+			carriedOver: sumInvoiceRolloverCarry(rows),
+			filePaymentsTotal: sumInvoicePaymentRowsFromFile(rows),
+		});
+	}, [
+		previousInvoice,
+		rows,
+		statement?.invoice?.previousInvoiceTotal,
+		statement?.invoice?.previousInvoicePaymentReceived,
+	]);
+
+	const rolloverCharges = useMemo(
+		() => sumInvoiceRolloverCharges(rows),
+		[rows],
+	);
+
+	/**
+	 * Pagamento da fatura reaberto para correção.
+	 *
+	 * Fatura já paga não pergunta nada por padrão. Marcando aqui, a pergunta
+	 * volta — para trocar a data ou desfazer a baixa quando o registro estiver
+	 * errado.
+	 */
+	const [invoicePaymentReopened, setInvoicePaymentReopened] = useState(false);
+
+	// Trocar de fatura fecha a reabertura: ela vale para um pagamento só.
+	useEffect(() => {
+		setInvoicePaymentReopened(false);
+	}, [invoiceCardId, invoiceTargetPeriod]);
+
+	/** Correção pontual da fatura anterior, aberta pelo botão Ajustar. */
+	const [fixPreviousOpen, setFixPreviousOpen] = useState(false);
+	const [isFixingPrevious, startFixPrevious] = useTransition();
+
+	/** Limites do cartão hoje, para comparar com o que a fatura declara. */
+	const [cardLimits, setCardLimits] = useState<CardLimitsSnapshot | null>(null);
+	const [cardLimitsConfirmed, setCardLimitsConfirmed] = useState(true);
+
+	useEffect(() => {
+		if (!invoiceCardId) {
+			setCardLimits(null);
+			return;
+		}
+
+		let cancelled = false;
+		void fetchCardLimitsAction(invoiceCardId).then((snapshot) => {
+			if (cancelled) return;
+			setCardLimits(snapshot);
+		});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [invoiceCardId]);
+
+	// Trocar de cartão invalida a confirmação anterior.
+	useEffect(() => {
+		setCardLimitsConfirmed(true);
+	}, [invoiceCardId]);
+
+	const fileCreditLimit = statement?.invoice?.creditLimitTotal ?? null;
+	const fileGuaranteedLimit = statement?.invoice?.creditLimitGuaranteed ?? null;
+
+	/** O que muda nos limites ao confirmar, uma linha por item. */
+	const cardLimitsChangeLines = useMemo(() => {
+		if (fileCreditLimit == null || !cardLimits) return [];
+
+		const lines: string[] = [];
+
+		if (Math.abs(fileCreditLimit - cardLimits.limit) > 0.01) {
+			lines.push(
+				`O limite total vai de ${formatCurrency(cardLimits.limit)} para ${formatCurrency(fileCreditLimit)}.`,
+			);
+		}
+
+		const guaranteedDiffers =
+			fileGuaranteedLimit != null &&
+			(cardLimits.guaranteedLimit == null ||
+				Math.abs(fileGuaranteedLimit - cardLimits.guaranteedLimit) > 0.01);
+
+		if (guaranteedDiffers && fileGuaranteedLimit != null) {
+			lines.push(
+				cardLimits.guaranteedLimit == null
+					? `O limite garantido passa a ser ${formatCurrency(fileGuaranteedLimit)}.`
+					: `O limite garantido vai de ${formatCurrency(cardLimits.guaranteedLimit)} para ${formatCurrency(fileGuaranteedLimit)}.`,
+			);
+		}
+
+		return lines;
+	}, [cardLimits, fileCreditLimit, fileGuaranteedLimit]);
+
+	/** Pagamentos do arquivo, distribuídos entre a fatura anterior e esta. */
+	const invoicePaymentAllocation = useMemo(() => {
+		if (!previousInvoiceSettlement) return null;
+
+		return allocateInvoicePayments({
+			payments: collectInvoicePaymentRowsFromFile(rows),
+			paidOnPrevious: previousInvoiceSettlement.paidOnPrevious,
+		});
+	}, [previousInvoiceSettlement, rows]);
+
+	/** Conferência ponto a ponto da fatura anterior. */
+	const previousInvoiceReview = useMemo(() => {
+		if (!previousInvoiceSettlement || !previousInvoice) return null;
+
+		return buildPreviousInvoiceReview({
+			settlement: previousInvoiceSettlement,
+			registeredStatus: previousInvoice.paymentStatus,
+			registeredPaymentAmount: previousInvoice.paymentTransactionAmount,
+			registeredPaymentDate: previousInvoice.paymentTransactionDate,
+			/*
+			 * Data que liquidou a fatura anterior.
+			 *
+			 * Com vários pagamentos no mês, o mais recente pode ser amortização
+			 * desta fatura — usá-lo acusava divergência onde não havia. A alocação
+			 * diz qual pagamento de fato abateu a anterior. O PDF, que não traz as
+			 * linhas, cai na data declarada na seção "Pagamentos".
+			 */
+			filePaymentDate:
+				invoicePaymentAllocation?.previousSettlementDate ??
+				statement?.invoice?.paymentDate ??
+				findInvoicePaymentDateFromFile(rows, isInvoicePaymentDescription),
+			formatMoney: formatCurrency,
+			formatDate: (isoDate) => formatDateOnly(isoDate) ?? isoDate,
+		});
+	}, [
+		invoicePaymentAllocation,
+		previousInvoice,
+		previousInvoiceSettlement,
+		rows,
+		statement?.invoice?.paymentDate,
+	]);
+
+	/**
+	 * Abates desta fatura declarados no arquivo, e o que deles falta registrar.
+	 *
+	 * A revisão já mostrava "amortizou esta fatura" e ninguém gravava nada: o
+	 * dinheiro saía da conta num mês e o extrato só mostrava a saída no
+	 * vencimento do mês seguinte, num valor que nunca saiu de uma vez.
+	 */
+	const invoiceAmortizations = useMemo(
+		() =>
+			invoicePaymentAllocation
+				? collectInvoiceAmortizations(invoicePaymentAllocation.payments)
+				: [],
+		[invoicePaymentAllocation],
+	);
+
+	const amortizationNeedsWrite = useMemo(
+		() =>
+			invoiceAmortizations.length > 0 &&
+			invoiceAmortizationsDiffer(
+				invoiceAmortizations,
+				currentInvoice?.amortizations ?? [],
+			),
+		[invoiceAmortizations, currentInvoice?.amortizations],
+	);
+
+	const amortizationChangeLines = useMemo(() => {
+		if (!amortizationNeedsWrite) return [];
+
+		return invoiceAmortizations.map(
+			(entry) =>
+				`${formatCurrency(entry.amount)} pagos em ${formatDateOnly(entry.date) ?? entry.date} passam a constar como pagamento desta fatura.`,
+		);
+	}, [amortizationNeedsWrite, invoiceAmortizations]);
+
+	/**
+	 * Confirmação de registrar o abate.
+	 *
+	 * Marcada por padrão — é dinheiro que saiu da conta e não está lançado —, mas
+	 * visível e recusável como as demais.
+	 */
+	const [amortizationConfirmed, setAmortizationConfirmed] = useState(true);
+
+	useEffect(() => {
+		setAmortizationConfirmed(true);
+	}, [invoicePeriod]);
+
+	/** O que a importação mudaria na fatura anterior, uma linha por item. */
+	const previousSettlementChangeLines = useMemo(() => {
+		if (
+			!previousInvoiceSettlement ||
+			!previousInvoice ||
+			!previousInvoiceReview
+		)
+			return [];
+
+		const lines: string[] = [];
+		const { changes } = previousInvoiceReview;
+
+		if (changes.status) {
+			const statusLabel =
+				previousInvoiceSettlement.paymentStatus ===
+				INVOICE_PAYMENT_STATUS.PARTIAL
+					? "paga parcialmente"
+					: previousInvoiceSettlement.paymentStatus ===
+							INVOICE_PAYMENT_STATUS.PAID
+						? "paga"
+						: "em aberto";
+			lines.push(`A fatura passa a constar como ${statusLabel}.`);
+		}
+
+		if (
+			changes.debitAmount &&
+			previousInvoice.paymentTransactionAmount != null
+		) {
+			lines.push(
+				`O débito na conta vai de ${formatCurrency(
+					previousInvoice.paymentTransactionAmount,
+				)} para ${formatCurrency(previousInvoiceSettlement.paidOnPrevious)}.`,
+			);
+		}
+
+		if (changes.paymentDate && statement?.invoice?.paymentDate) {
+			const novaData =
+				formatDateOnly(statement.invoice.paymentDate) ??
+				statement.invoice.paymentDate;
+			const dataAtual = previousInvoice.paymentTransactionDate
+				? (formatDateOnly(previousInvoice.paymentTransactionDate) ??
+					previousInvoice.paymentTransactionDate)
+				: null;
+			lines.push(
+				dataAtual
+					? `A data do pagamento vai de ${dataAtual} para ${novaData}.`
+					: `A data do pagamento passa a ser ${novaData}.`,
+			);
+		}
+
+		return lines;
+	}, [
+		previousInvoice,
+		previousInvoiceReview,
+		previousInvoiceSettlement,
+		statement?.invoice?.paymentDate,
+	]);
+
+	/**
+	 * Confirmação de reescrever a fatura anterior.
+	 *
+	 * Vem marcada porque os números saem do próprio arquivo, mas fica visível e
+	 * desmarcável: é mês fechado, e o usuário pode preferir ajustar à mão.
+	 */
+	const [previousSettlementConfirmed, setPreviousSettlementConfirmed] =
+		useState(true);
+
+	// Trocar de arquivo ou de fatura invalida a confirmação anterior.
+	useEffect(() => {
+		setPreviousSettlementConfirmed(true);
+	}, [previousInvoice?.period]);
+
 	const returnToInvoiceHref = useMemo(() => {
 		const decoded = accountCardValue
 			? decodeAccountCard(accountCardValue)
@@ -3105,8 +3546,15 @@ export function ImportPage({
 			statement?.isCreditCard,
 	);
 
+	/** Fatura já quitada não recebe baixa de novo, mesmo que o toggle esteja ligado. */
+	const invoiceAlreadyPaid =
+		currentInvoice?.paymentStatus === INVOICE_PAYMENT_STATUS.PAID;
+
 	const shouldPayInvoiceOnImport =
-		canAskInvoicePayment && payInvoiceOnImport && Boolean(paymentAccountId);
+		canAskInvoicePayment &&
+		(!invoiceAlreadyPaid || invoicePaymentReopened) &&
+		payInvoiceOnImport &&
+		Boolean(paymentAccountId);
 
 	const returnToAccountStatementHref = useMemo(() => {
 		const decoded = accountCardValue
@@ -3238,7 +3686,22 @@ export function ImportPage({
 		canAskInvoicePayment && payInvoiceOnImport && !paymentAccountId;
 
 	/** Sem nada a mudar e sem marcar o pagamento, confirmar não faria nada. */
-	const nothingToConfirm = !hasPendingImportWork && !shouldPayInvoiceOnImport;
+	/**
+	 * Ajustes que o reprocessamento aplica fora dos lançamentos.
+	 *
+	 * Reprocessar uma fatura já conferida e já paga não mexe em lançamento
+	 * nenhum, mas pode corrigir a fatura anterior e os limites do cartão — que é
+	 * justamente o motivo de reprocessar. Sem contar isso, o botão de confirmar
+	 * ficava desabilitado com trabalho pendente na tela.
+	 */
+	const hasSideAdjustments =
+		(previousInvoiceReview?.hasChanges === true &&
+			previousSettlementConfirmed) ||
+		(amortizationConfirmed && amortizationNeedsWrite) ||
+		(cardLimitsConfirmed && cardLimitsChangeLines.length > 0);
+
+	const nothingToConfirm =
+		!hasPendingImportWork && !shouldPayInvoiceOnImport && !hasSideAdjustments;
 
 	const canConfirmImport =
 		canProceedToImport &&
@@ -3391,59 +3854,108 @@ export function ImportPage({
 					? buildAccountStatementHref(initialAccountId, importedInvoicePeriod)
 					: null;
 
+		/**
+		 * A action tem algo a fazer?
+		 *
+		 * Reprocessar um mês já fechado pode não ter lançamento, remoção nem
+		 * liquidação — só a atualização de limites, que roda fora dela. Chamar a
+		 * action nesse caso volta "Selecione ao menos uma transação".
+		 */
+		const settlementPayload =
+			previousInvoiceSettlement &&
+			previousInvoice &&
+			previousInvoiceReview?.hasChanges &&
+			previousSettlementConfirmed
+				? {
+						period: previousInvoice.period,
+						paidAmount: previousInvoiceSettlement.paidOnPrevious,
+						carriedOver: previousInvoiceSettlement.carriedOver,
+						paymentTransactionId: previousInvoice.paymentTransactionId,
+						paymentDate: previousInvoiceReview.changes.paymentDate
+							? (statement.invoice?.paymentDate ?? null)
+							: null,
+					}
+				: undefined;
+
+		const amortizationPayload =
+			amortizationConfirmed && amortizationNeedsWrite
+				? invoiceAmortizations
+				: undefined;
+
+		const hasActionWork =
+			selectedRows.length > 0 ||
+			shouldPayInvoiceOnImport ||
+			Boolean(settlementPayload) ||
+			Boolean(amortizationPayload) ||
+			rowsMarkedForRemoval.length > 0 ||
+			collectExistingAmountEdits(rows).length > 0 ||
+			collectExistingInstallmentEdits(rows).length > 0;
+
 		setIsImporting(true);
 		try {
-			const result = await importTransactionsAction({
-				rows: selectedRows.map((r) => ({
-					externalId: r.externalId,
-					date: r.date,
-					amount: r.amount,
-					description: r.description,
-					transactionType: r.transactionType,
-					categoryId: r.categoryId,
-					payerId: r.payerId,
-					kind: r.kind,
-					invoicePaymentCardId: r.invoicePaymentCardId,
-					invoicePaymentPeriod: r.invoicePaymentPeriod,
-					transferPeerAccountId: r.transferPeerAccountId,
-					installmentImport:
-						r.installmentImport?.enabled &&
-						isValidInstallmentImport(r.installmentImport)
-							? {
-									enabled: true,
-									name: r.installmentImport.name,
-									currentInstallment: r.installmentImport.currentInstallment,
-									installmentCount: r.installmentImport.installmentCount,
-								}
-							: null,
-					recurrenceImport:
-						r.recurrenceImport?.enabled &&
-						isValidRecurrenceImport(r.recurrenceImport)
-							? {
-									enabled: true,
-									recurrenceCount: r.recurrenceImport.recurrenceCount,
-								}
-							: null,
-				})),
-				payerId,
-				accountId,
-				cardId,
-				paymentMethod,
-				invoicePeriod,
-				payInvoice: shouldPayInvoiceOnImport,
-				paymentDate: shouldPayInvoiceOnImport ? paymentDate : undefined,
-				paymentAccountId: shouldPayInvoiceOnImport
-					? (paymentAccountId ?? undefined)
-					: undefined,
-				sourceFileName: sourceFile?.name,
-				sourceFileSize: sourceFile?.size,
-				importBatchId: uploadImportBatchId ?? undefined,
-				sourceInvoiceTotalOverride: invoiceTotalOverrideConfirmed,
-				removeTransactionIds:
-					rowsMarkedForRemoval.length > 0 ? rowsMarkedForRemoval : undefined,
-				existingAmountEdits: collectExistingAmountEdits(rows),
-				existingInstallmentEdits: collectExistingInstallmentEdits(rows),
-			});
+			const result = hasActionWork
+				? await importTransactionsAction({
+						rows: selectedRows.map((r) => ({
+							externalId: r.externalId,
+							date: r.date,
+							amount: r.amount,
+							description: r.description,
+							transactionType: r.transactionType,
+							categoryId: r.categoryId,
+							payerId: r.payerId,
+							kind: r.kind,
+							invoicePaymentCardId: r.invoicePaymentCardId,
+							invoicePaymentPeriod: r.invoicePaymentPeriod,
+							transferPeerAccountId: r.transferPeerAccountId,
+							installmentImport:
+								r.installmentImport?.enabled &&
+								isValidInstallmentImport(r.installmentImport)
+									? {
+											enabled: true,
+											name: r.installmentImport.name,
+											currentInstallment:
+												r.installmentImport.currentInstallment,
+											installmentCount: r.installmentImport.installmentCount,
+										}
+									: null,
+							recurrenceImport:
+								r.recurrenceImport?.enabled &&
+								isValidRecurrenceImport(r.recurrenceImport)
+									? {
+											enabled: true,
+											recurrenceCount: r.recurrenceImport.recurrenceCount,
+										}
+									: null,
+						})),
+						payerId,
+						accountId,
+						cardId,
+						paymentMethod,
+						invoicePeriod,
+						payInvoice: shouldPayInvoiceOnImport,
+						paymentDate: shouldPayInvoiceOnImport ? paymentDate : undefined,
+						paymentAccountId: shouldPayInvoiceOnImport
+							? (paymentAccountId ?? undefined)
+							: undefined,
+						sourceFileName: sourceFile?.name,
+						sourceFileSize: sourceFile?.size,
+						importBatchId: uploadImportBatchId ?? undefined,
+						sourceInvoiceTotalOverride: invoiceTotalOverrideConfirmed,
+						removeTransactionIds:
+							rowsMarkedForRemoval.length > 0
+								? rowsMarkedForRemoval
+								: undefined,
+						existingAmountEdits: collectExistingAmountEdits(rows),
+						existingInstallmentEdits: collectExistingInstallmentEdits(rows),
+						previousInvoiceSettlement: settlementPayload,
+						invoiceAmortizations: amortizationPayload,
+					})
+				: {
+						success: true as const,
+						imported: 0,
+						skipped: 0,
+						importBatchId: "",
+					};
 
 			if (!result.success) {
 				console.error("Falha ao importar lançamentos:", result.error);
@@ -3452,6 +3964,25 @@ export function ImportPage({
 			}
 
 			setConfirmOpen(false);
+
+			// Limite do cartão: fora da transação da importação de propósito. Não é
+			// registro financeiro, e uma falha aqui não deve derrubar a importação
+			// que já foi gravada — o limite continua ajustável na tela do cartão.
+			if (
+				cardLimitsConfirmed &&
+				invoiceCardId &&
+				fileCreditLimit != null &&
+				cardLimits &&
+				(Math.abs(fileCreditLimit - cardLimits.limit) > 0.01 ||
+					(fileGuaranteedLimit ?? null) !==
+						(cardLimits.guaranteedLimit ?? null))
+			) {
+				void updateCardLimitsFromInvoiceAction({
+					cardId: invoiceCardId,
+					limit: fileCreditLimit,
+					guaranteedLimit: fileGuaranteedLimit,
+				});
+			}
 
 			// Salva mapeamentos description → category (fire-and-forget)
 			saveCategoryMappings(
@@ -3661,6 +4192,9 @@ export function ImportPage({
 										</Alert>
 									) : null}
 									<UploadZone
+										onParsingChange={(parsing) =>
+											setImportProgress(parsing ? "parsing" : null)
+										}
 										onParsed={handleUploadParsed}
 										error={fileError}
 										onErrorClear={() => setFileError(null)}
@@ -3720,6 +4254,32 @@ export function ImportPage({
 								installmentCorrectionCount={installmentCorrectionCount}
 							/>
 
+							{previousInvoiceReview && previousInvoice ? (
+								<PreviousInvoiceSettlementCard
+									review={previousInvoiceReview}
+									previousPeriod={previousInvoice.period}
+									carriedOver={previousInvoiceSettlement?.carriedOver ?? 0}
+									payments={invoicePaymentAllocation?.payments ?? []}
+									onFix={
+										previousInvoice.paymentTransactionId &&
+										statement?.invoice?.paymentDate
+											? () => setFixPreviousOpen(true)
+											: undefined
+									}
+								/>
+							) : null}
+
+							{fileCreditLimit != null && cardLimits ? (
+								<CardLimitsCard
+									fileLimit={fileCreditLimit}
+									fileGuaranteedLimit={fileGuaranteedLimit}
+									registeredLimit={cardLimits.limit}
+									registeredGuaranteedLimit={cardLimits.guaranteedLimit}
+									confirmed={cardLimitsConfirmed}
+									onConfirmedChange={setCardLimitsConfirmed}
+								/>
+							) : null}
+
 							{importInvoiceReconciliation && invoiceSourceTotal ? (
 								<InvoiceTotalReconciliationBanner
 									reconciliation={importInvoiceReconciliation}
@@ -3731,6 +4291,7 @@ export function ImportPage({
 									}
 									crossPeriodCount={crossPeriodReviewStats.count}
 									crossPeriodDisplayTotal={crossPeriodReviewStats.displayTotal}
+									sourceFile={sourceFile}
 								/>
 							) : null}
 
@@ -3946,9 +4507,50 @@ export function ImportPage({
 					canConfirmImport && !invoicePaymentBlocked && !nothingToConfirm
 				}
 				nothingToConfirm={nothingToConfirm}
+				cardLimits={
+					cardLimitsChangeLines.length > 0
+						? {
+								changeLines: cardLimitsChangeLines,
+								confirmed: cardLimitsConfirmed,
+								onConfirmedChange: setCardLimitsConfirmed,
+							}
+						: null
+				}
+				invoiceAmortization={
+					amortizationNeedsWrite
+						? {
+								changeLines: amortizationChangeLines,
+								confirmed: amortizationConfirmed,
+								onConfirmedChange: setAmortizationConfirmed,
+							}
+						: null
+				}
+				previousInvoice={
+					previousInvoiceReview && previousInvoice
+						? {
+								previousPeriodLabel: displayPeriod(previousInvoice.period),
+								checks: previousInvoiceReview.checks,
+								allOk: previousInvoiceReview.allOk,
+								hasChanges: previousInvoiceReview.hasChanges,
+								changeLines: previousSettlementChangeLines,
+								confirmed: previousSettlementConfirmed,
+								onConfirmedChange: setPreviousSettlementConfirmed,
+							}
+						: null
+				}
 				invoicePayment={
 					canAskInvoicePayment
 						? {
+								// Fatura já quitada: informa, não pergunta.
+								alreadyPaid:
+									currentInvoice?.paymentStatus === INVOICE_PAYMENT_STATUS.PAID
+										? {
+												date: currentInvoice.paymentTransactionDate,
+												amount: currentInvoice.paymentTransactionAmount,
+												reopened: invoicePaymentReopened,
+												onReopenedChange: setInvoicePaymentReopened,
+											}
+										: null,
 								dueDate: invoiceDueDate,
 								paid: payInvoiceOnImport,
 								onPaidChange: setPayInvoiceOnImport,
@@ -3966,6 +4568,53 @@ export function ImportPage({
 				}
 				onConfirm={() => void handleImport()}
 			/>
+			<ImportProgressDialog step={importProgress} />
+
+			{previousInvoice?.paymentTransactionId &&
+			statement?.invoice?.paymentDate ? (
+				<PreviousInvoiceFixDialog
+					open={fixPreviousOpen}
+					onOpenChange={setFixPreviousOpen}
+					isPending={isFixingPrevious}
+					target={{
+						periodLabel: displayPeriod(previousInvoice.period),
+						cardName: selectedAccountCardSummary?.label ?? "Cartão",
+						registeredTotal: previousInvoice.total,
+						registeredPaymentDate: previousInvoice.paymentTransactionDate,
+						suggestedPaymentDate: statement.invoice.paymentDate,
+					}}
+					onConfirm={(paymentDate) => {
+						const transactionId = previousInvoice.paymentTransactionId;
+						if (!transactionId) return;
+
+						startFixPrevious(async () => {
+							const result = await updatePreviousInvoicePaymentDateAction({
+								transactionId,
+								paymentDate,
+							});
+
+							if (!result.success) {
+								toast.error(
+									result.error ?? "Não foi possível corrigir a data.",
+								);
+								return;
+							}
+
+							toast.success("Data do pagamento corrigida.");
+							setFixPreviousOpen(false);
+							// Recarrega o snapshot para o bloco refletir a correção.
+							if (invoiceCardId && invoiceTargetPeriod) {
+								const snapshot = await fetchInvoiceSnapshotAction({
+									cardId: invoiceCardId,
+									period: invoiceTargetPeriod,
+								});
+								setPreviousInvoice(snapshot);
+							}
+						});
+					}}
+				/>
+			) : null}
+
 			{periodMismatch ? (
 				<ImportInvoicePeriodMismatchDialog
 					open

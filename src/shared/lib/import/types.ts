@@ -20,6 +20,23 @@ export type InvoiceImportMetadata = {
 	paymentDate: string | null; // YYYY-MM-DD
 	totalAmount: number | null;
 	totalAmountSource?: InvoiceSourceTotalKind | null;
+	/**
+	 * Resumo do arquivo sobre a fatura ANTERIOR.
+	 *
+	 * O PDF do Nubank declara os dois valores no bloco "Resumo da fatura atual":
+	 * quanto era a fatura passada e quanto dela foi pago. Com isso o pagamento
+	 * parcial é conferido sem inferência — o carrego é a diferença entre eles.
+	 */
+	previousInvoiceTotal?: number | null;
+	previousInvoicePaymentReceived?: number | null;
+	/**
+	 * Limites lidos do bloco "Limites disponíveis".
+	 *
+	 * O total é utilizado + disponível. O garantido é a parcela lastreada por
+	 * investimento, que o usuário controla aportando ou resgatando.
+	 */
+	creditLimitTotal?: number | null;
+	creditLimitGuaranteed?: number | null;
 };
 
 export type ImportStatement = {

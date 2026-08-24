@@ -4,6 +4,7 @@ import {
 	dedupeImportedTransactionsByFingerprint,
 	expandImportExternalIdsForLookup,
 	importExternalIdCollidesWithStored,
+	importOccurrenceCollidesWithStored,
 	makeSyntheticExternalId,
 	parseBrazilianAmount,
 	parseCnabDate,
@@ -11,6 +12,8 @@ import {
 	parsePortugueseLongDate,
 	parsePortugueseShortDate,
 	parseSlashDateDMY,
+	planImportRecordInsertion,
+	replaceAmbiguousImportExternalIds,
 	stripImportExternalIdSuffix,
 	uniquifyImportedExternalIds,
 } from "./helpers";
@@ -224,5 +227,284 @@ describe("expandImportExternalIdsForLookup", () => {
 		expect(expandImportExternalIdsForLookup(["abc#2", "def"]).sort()).toEqual(
 			["abc", "abc#2", "def"].sort(),
 		);
+	});
+});
+
+describe("importOccurrenceCollidesWithStored", () => {
+	const CLARO_FIT_ID = "698e65bc-3e73-4aa0-831f-a3e68ee7fad1";
+
+	it("não bloqueia a parcela do mês quando outra parcela da série já está gravada", () => {
+		// Caso real da fatura de março: o arquivo traz "Claro - Parcela 1/12" com o
+		// mesmo FITID que já estava em 5/12 (julho), porque o Nubank reaproveita o
+		// id da compra. Barrar por id descartava a 1/12 e março nunca fechava.
+		const collides = importOccurrenceCollidesWithStored(
+			{
+				externalId: CLARO_FIT_ID,
+				installmentCount: 12,
+				currentInstallment: 1,
+			},
+			[
+				{
+					externalId: CLARO_FIT_ID,
+					installmentCount: 12,
+					currentInstallment: 5,
+				},
+			],
+		);
+
+		expect(collides).toBe(false);
+	});
+
+	it("bloqueia a mesma ocorrência da mesma série", () => {
+		const collides = importOccurrenceCollidesWithStored(
+			{
+				externalId: CLARO_FIT_ID,
+				installmentCount: 12,
+				currentInstallment: 5,
+			},
+			[
+				{
+					externalId: CLARO_FIT_ID,
+					installmentCount: 12,
+					currentInstallment: 5,
+				},
+			],
+		);
+
+		expect(collides).toBe(true);
+	});
+
+	it("bloqueia cobrança avulsa repetida, inclusive com sufixo #2", () => {
+		expect(
+			importOccurrenceCollidesWithStored(
+				{
+					externalId: "fit-1",
+					installmentCount: null,
+					currentInstallment: null,
+				},
+				[
+					{
+						externalId: "fit-1#2",
+						installmentCount: null,
+						currentInstallment: null,
+					},
+				],
+			),
+		).toBe(true);
+	});
+
+	it("não bloqueia quando só um dos lados é parcela", () => {
+		expect(
+			importOccurrenceCollidesWithStored(
+				{ externalId: "fit-1", installmentCount: 12, currentInstallment: 1 },
+				[
+					{
+						externalId: "fit-1",
+						installmentCount: null,
+						currentInstallment: null,
+					},
+				],
+			),
+		).toBe(false);
+	});
+
+	it("ignora ocorrências de outro id", () => {
+		expect(
+			importOccurrenceCollidesWithStored(
+				{
+					externalId: "fit-1",
+					installmentCount: null,
+					currentInstallment: null,
+				},
+				[
+					{
+						externalId: "fit-outro",
+						installmentCount: null,
+						currentInstallment: null,
+					},
+				],
+			),
+		).toBe(false);
+	});
+});
+
+describe("planImportRecordInsertion", () => {
+	const CLARO_FIT_ID = "698e65bc-3e73-4aa0-831f-a3e68ee7fad1";
+	const CLARO_5_DE_12 = {
+		externalId: CLARO_FIT_ID,
+		installmentCount: 12,
+		currentInstallment: 5,
+	};
+
+	it("grava a parcela do mês sem o id quando outra parcela da série já é dona dele", () => {
+		// O índice único (user_id, ofx_fit_id) só admite um dono. Inserir com o id
+		// repetido estourava 23505 e derrubava a importação inteira; pular a linha
+		// deixava a fatura sem ela. O caminho certo é gravar sem o id.
+		const plan = planImportRecordInsertion(
+			{ externalId: CLARO_FIT_ID, installmentCount: 12, currentInstallment: 1 },
+			{
+				storedOccurrences: [CLARO_5_DE_12],
+				storedExternalIds: [CLARO_FIT_ID],
+			},
+		);
+
+		expect(plan).toBe("insert_without_external_id");
+	});
+
+	it("pula quando é a mesma ocorrência já gravada", () => {
+		const plan = planImportRecordInsertion(CLARO_5_DE_12, {
+			storedOccurrences: [CLARO_5_DE_12],
+			storedExternalIds: [CLARO_FIT_ID],
+		});
+
+		expect(plan).toBe("skip");
+	});
+
+	it("grava com o id quando a cobrança é inédita", () => {
+		const plan = planImportRecordInsertion(
+			{
+				externalId: "fit-novo",
+				installmentCount: null,
+				currentInstallment: null,
+			},
+			{ storedOccurrences: [CLARO_5_DE_12], storedExternalIds: [CLARO_FIT_ID] },
+		);
+
+		expect(plan).toBe("insert");
+	});
+
+	it("pula cobrança avulsa já gravada, mesmo com sufixo #2", () => {
+		const plan = planImportRecordInsertion(
+			{
+				externalId: "fit-1#2",
+				installmentCount: null,
+				currentInstallment: null,
+			},
+			{
+				storedOccurrences: [
+					{
+						externalId: "fit-1",
+						installmentCount: null,
+						currentInstallment: null,
+					},
+				],
+				storedExternalIds: ["fit-1"],
+			},
+		);
+
+		expect(plan).toBe("skip");
+	});
+});
+
+describe("importOccurrenceCollidesWithStored: sufixo dentro do mesmo arquivo", () => {
+	const avulso = (externalId: string) => ({
+		externalId,
+		installmentCount: null,
+		currentInstallment: null,
+	});
+
+	it("com sameFile, o sufixo de id sintético distingue duas cobranças", () => {
+		// Caso real da fatura de maio: duas linhas "Ec *Ec*Conectcar | 13,70 |
+		// 2026-04-13" — dois pedágios no mesmo dia pelo mesmo valor. O id
+		// sintético é igual, e `uniquifyImportedExternalIds` sufixa a segunda.
+		// Comparar a base fazia a segunda parecer repetição e abria um furo de
+		// R$ 13,70 no total projetado.
+		expect(
+			importOccurrenceCollidesWithStored(
+				avulso("2026-04-13|ec *ec*conectcar|13.7#2"),
+				[avulso("2026-04-13|ec *ec*conectcar|13.7")],
+				{ sameFile: true },
+			),
+		).toBe(false);
+	});
+
+	it("com sameFile, id igual continua colidindo", () => {
+		expect(
+			importOccurrenceCollidesWithStored(avulso("fit-1"), [avulso("fit-1")], {
+				sameFile: true,
+			}),
+		).toBe(true);
+	});
+
+	it("com sameFile, FITID repetido segue sendo repetição do parser", () => {
+		// FITID não tem "|": é id do banco. O mesmo id em duas linhas é o parser
+		// emitindo a transação duas vezes, não duas cobranças.
+		expect(
+			importOccurrenceCollidesWithStored(
+				avulso("pix-fitid#2"),
+				[avulso("pix-fitid")],
+				{ sameFile: true },
+			),
+		).toBe(true);
+	});
+
+	it("sem a opção, a base decide — reimportar o arquivo não duplica", () => {
+		expect(
+			importOccurrenceCollidesWithStored(avulso("fit-1#2"), [avulso("fit-1")]),
+		).toBe(true);
+	});
+});
+
+describe("replaceAmbiguousImportExternalIds", () => {
+	const linha = (
+		description: string,
+		amount: number,
+		externalId: string | null,
+	) => ({
+		externalId,
+		date: "2026-06-02",
+		amount,
+		description,
+		transactionType: "expense" as const,
+	});
+
+	it("troca o id que o arquivo repete em cobranças diferentes", () => {
+		// Caso real da fatura de junho: o Nubank emite um FITID só para o bloco
+		// todo do rotativo. As três linhas casavam com o único lançamento que
+		// conseguiu guardar esse id e saíam da conferência como "já cadastrado em
+		// outro período", abrindo um furo de R$ 6.135,89.
+		const FITID = "6a07939b-fc2e-4aeb-96a8-03a403e249ad";
+
+		const rows = replaceAmbiguousImportExternalIds([
+			linha("Valor pendente do mês anterior (rotativo)", 5525.23, FITID),
+			linha("Juros de pagamento parcial da fatura (rotativo)", 575.4, FITID),
+			linha("IOF de pagamento parcial da fatura (rotativo)", 35.26, FITID),
+		]);
+
+		expect(rows.every((row) => row.externalId !== FITID)).toBe(true);
+		expect(new Set(rows.map((row) => row.externalId)).size).toBe(3);
+		// O id derivado da linha é estável entre reimportações.
+		expect(rows[0].externalId).toBe(
+			"2026-06-02|5525.23|valor pendente do mês anterior (rotativo)",
+		);
+	});
+
+	it("preserva id repetido em linhas de conteúdo igual", () => {
+		// Aqui o id repetido é repetição do parser ou duas cobranças idênticas —
+		// tratado adiante por uniquify/dedupe, não aqui.
+		const rows = replaceAmbiguousImportExternalIds([
+			linha("Ec *Ec*Conectcar", 13.7, "fit-1"),
+			linha("Ec *Ec*Conectcar", 13.7, "fit-1"),
+		]);
+
+		expect(rows.map((row) => row.externalId)).toEqual(["fit-1", "fit-1"]);
+	});
+
+	it("preserva id único", () => {
+		const rows = replaceAmbiguousImportExternalIds([
+			linha("Padaria", 10, "fit-1"),
+			linha("Posto", 20, "fit-2"),
+		]);
+
+		expect(rows.map((row) => row.externalId)).toEqual(["fit-1", "fit-2"]);
+	});
+
+	it("não mexe em linha sem id", () => {
+		const rows = replaceAmbiguousImportExternalIds([
+			linha("Padaria", 10, null),
+			linha("Posto", 20, null),
+		]);
+
+		expect(rows.map((row) => row.externalId)).toEqual([null, null]);
 	});
 });

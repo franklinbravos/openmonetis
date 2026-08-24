@@ -21,8 +21,10 @@ import {
 	importBatches,
 	transactions,
 } from "@/db/schema";
-import { updateInvoicePaymentStatusAction } from "@/features/invoices/actions";
-import { upsertInvoicePaymentStatus } from "@/features/invoices/lib/upsert-invoice-payment";
+import {
+	registerInvoiceAmortizationsAction,
+	updateInvoicePaymentStatusAction,
+} from "@/features/invoices/actions";
 import {
 	buildTransactionRecords,
 	fetchOwnedCategoryIds,
@@ -40,7 +42,12 @@ import {
 } from "@/features/transactions/lib/import-amount-edit";
 import { IMPORT_BATCH_STATUS } from "@/features/transactions/lib/import-batch-status";
 import type { ImportDuplicateSnapshot } from "@/features/transactions/lib/import-duplicate-match";
-import { getInstallmentBasePeriod } from "@/features/transactions/lib/import-installments";
+import {
+	buildInstallmentOccurrenceKey,
+	buildInstallmentSeriesKey,
+	getInstallmentBasePeriod,
+	resolveInstallmentPurchaseDate,
+} from "@/features/transactions/lib/import-installments";
 import { isPeriodLockedTransaction } from "@/features/transactions/lib/import-move-period";
 import {
 	buildInvoicePaymentNote,
@@ -52,7 +59,10 @@ import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants
 import { db } from "@/shared/lib/db";
 import {
 	expandImportExternalIdsForLookup,
+	type ImportOccurrenceIdentity,
 	importExternalIdCollidesWithStored,
+	importOccurrenceCollidesWithStored,
+	planImportRecordInsertion,
 } from "@/shared/lib/import/helpers";
 import { isInvoicePaymentDescription } from "@/shared/lib/import/invoice-total";
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
@@ -61,6 +71,8 @@ import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { periodSchema, uuidSchema } from "@/shared/lib/schemas/common";
 import { deleteS3Object } from "@/shared/lib/storage/presign";
+import { toDbColumnNames } from "@/shared/lib/supabase/drizzle-bridge";
+import { callRpc } from "@/shared/lib/supabase/rpc";
 import {
 	TRANSFER_CATEGORY_NAME,
 	TRANSFER_CONDITION,
@@ -69,7 +81,7 @@ import {
 	TRANSFER_PAYMENT_METHOD,
 } from "@/shared/lib/transfers/constants";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
-import { parseLocalDateString } from "@/shared/utils/date";
+import { parseLocalDateString, toDateOnlyString } from "@/shared/utils/date";
 
 const installmentImportSchema = z
 	.object({
@@ -157,6 +169,56 @@ const existingInstallmentEditSchema = z.object({
 	installmentCount: z.number().int().positive(),
 });
 
+/**
+ * Liquidação da fatura anterior, deduzida do arquivo desta.
+ *
+ * Chega da revisão já conferida pelo usuário: quanto foi pago na fatura
+ * anterior e quanto dela rolou para esta. Aplicar isso na importação corrige o
+ * registro do mês anterior, que ficava marcado como pago por inteiro e com um
+ * débito na conta por um valor que nunca saiu dela.
+ */
+const previousInvoiceSettlementSchema = z.object({
+	period: z
+		.string()
+		.regex(/^\d{4}-\d{2}$/, "Período da fatura anterior inválido."),
+	paidAmount: z.number().nonnegative(),
+	carriedOver: z.number().nonnegative(),
+	paymentTransactionId: uuidSchema("Lançamento").nullable().optional(),
+	/** Data em que o banco recebeu, declarada no arquivo. */
+	paymentDate: z
+		.string()
+		.regex(/^\d{4}-\d{2}-\d{2}$/, "Data do pagamento inválida.")
+		.nullable()
+		.optional(),
+});
+
+/**
+ * Status da fatura anterior a partir do que sobrou dela.
+ *
+ * Nada carregado significa quitada; carregado sem pagamento, pendente. A
+ * tolerância de um centavo absorve o arredondamento do banco.
+ */
+function resolveSettlementStatus(settlement: {
+	paidAmount: number;
+	carriedOver: number;
+}): string {
+	if (settlement.carriedOver <= 0.01) return INVOICE_PAYMENT_STATUS.PAID;
+	if (settlement.paidAmount <= 0.01) return INVOICE_PAYMENT_STATUS.PENDING;
+	return INVOICE_PAYMENT_STATUS.PARTIAL;
+}
+
+/**
+ * Pagamentos do arquivo que abateram a fatura sendo importada.
+ *
+ * Só o arquivo do mês seguinte revela um abate feito antes do vencimento. Até
+ * aqui a revisão o exibia e ninguém o gravava: o dinheiro saía da conta e o
+ * extrato só mostrava a saída no vencimento, num valor que nunca saiu de uma vez.
+ */
+const invoiceAmortizationSchema = z.object({
+	date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data do pagamento inválida."),
+	amount: z.number().positive(),
+});
+
 const importSchema = z
 	.object({
 		rows: z.array(importRowSchema),
@@ -182,11 +244,19 @@ const importSchema = z
 		removeTransactionIds: z.array(z.string().uuid()).optional(),
 		existingAmountEdits: z.array(existingAmountEditSchema).optional(),
 		existingInstallmentEdits: z.array(existingInstallmentEditSchema).optional(),
+		previousInvoiceSettlement: previousInvoiceSettlementSchema.optional(),
+		invoiceAmortizations: z.array(invoiceAmortizationSchema).optional(),
 	})
 	.superRefine((data, ctx) => {
+		// A liquidação da fatura anterior é trabalho por si só: reprocessar um mês
+		// já conferido não mexe em lançamento nenhum e ainda assim corrige o
+		// status, o valor e a data do débito do mês passado. O mesmo vale para a
+		// amortização, que é um lançamento novo na conta.
 		if (
 			data.rows.length === 0 &&
 			!data.payInvoice &&
+			!data.previousInvoiceSettlement &&
+			!(data.invoiceAmortizations?.length ?? 0) &&
 			!(data.removeTransactionIds?.length ?? 0) &&
 			!(data.existingAmountEdits?.length ?? 0) &&
 			!(data.existingInstallmentEdits?.length ?? 0)
@@ -940,6 +1010,21 @@ export async function importTransactionsAction(
 		parsed.data.existingInstallmentEdits ?? [],
 	);
 
+	/**
+	 * Liquidação da fatura anterior, se a revisão apurou uma.
+	 *
+	 * Só vale para importação de fatura de cartão: é o arquivo desta fatura que
+	 * revela quanto da anterior ficou pendente.
+	 */
+	const previousSettlement =
+		cardId && invoicePeriod
+			? (parsed.data.previousInvoiceSettlement ?? null)
+			: null;
+
+	/** Abates desta fatura declarados no arquivo, se houver. */
+	const invoiceAmortizations =
+		cardId && invoicePeriod ? (parsed.data.invoiceAmortizations ?? []) : [];
+
 	let validatedInstallmentEdits: ExistingInstallmentEdit[] = [];
 	if (existingInstallmentEdits.length > 0) {
 		const installmentEditValidation = await validateExistingInstallmentEdits(
@@ -1370,6 +1455,93 @@ export async function importTransactionsAction(
 			? ("Cartão de crédito" as const)
 			: ("Pix" as const);
 
+	/**
+	 * Ocorrências de série já gravadas neste cartão.
+	 *
+	 * Importar a parcela N/M expande a série e grava as anteriores nas faturas
+	 * passadas. Sem esta checagem, reprocessar uma fatura recriava as parcelas
+	 * anteriores por cima das que já existiam — duplicata silenciosa e cumulativa
+	 * numa fatura já fechada, uma cópia por reprocessamento.
+	 */
+	const hasInstallmentExpansion = rows.some(
+		(row) => row.kind === "transaction" && row.installmentImport?.enabled,
+	);
+	const existingInstallmentKeys = new Set<string>();
+	/**
+	 * Série já gravada, por identidade da compra.
+	 *
+	 * A parcela que faltava tem que entrar na série das irmãs. Cunhar um
+	 * `seriesId` novo deixava a linha solta e a tela mostrava cada parcela como
+	 * uma compra separada.
+	 */
+	const existingSeriesIdByKey = new Map<string, string>();
+	/**
+	 * Data de compra mais antiga já gravada para cada série.
+	 *
+	 * A série compartilha uma data só. A parcela nova chega com a data da linha
+	 * do arquivo, que pode ser do ciclo; a mais antiga entre as duas é a compra
+	 * de verdade, porque a compra nunca acontece depois do ciclo que a cobra.
+	 */
+	const existingSeriesPurchaseDateByKey = new Map<string, string>();
+
+	if (hasInstallmentExpansion && cardId) {
+		const existingOccurrences = await db
+			.select({
+				name: transactions.name,
+				period: transactions.period,
+				currentInstallment: transactions.currentInstallment,
+				installmentCount: transactions.installmentCount,
+				seriesId: transactions.seriesId,
+				purchaseDate: transactions.purchaseDate,
+			})
+			.from(transactions)
+			.where(
+				and(
+					eq(transactions.userId, dataOwnerUserId),
+					eq(transactions.cardId, cardId),
+					isNotNull(transactions.installmentCount),
+				),
+			);
+
+		for (const occurrence of existingOccurrences) {
+			existingInstallmentKeys.add(
+				buildInstallmentOccurrenceKey({
+					name: occurrence.name,
+					period: occurrence.period,
+					currentInstallment: occurrence.currentInstallment,
+					installmentCount: occurrence.installmentCount,
+				}),
+			);
+
+			if (!occurrence.seriesId || occurrence.currentInstallment == null) {
+				continue;
+			}
+
+			const seriesKey = buildInstallmentSeriesKey({
+				name: occurrence.name,
+				installmentCount: occurrence.installmentCount,
+				firstPeriod: getInstallmentBasePeriod(
+					occurrence.period,
+					occurrence.currentInstallment,
+				),
+			});
+
+			if (!existingSeriesIdByKey.has(seriesKey)) {
+				existingSeriesIdByKey.set(seriesKey, occurrence.seriesId);
+			}
+
+			// A ponte devolve data como string, não Date — `toDateOnlyString`
+			// aceita as duas formas.
+			const storedPurchaseDate = toDateOnlyString(occurrence.purchaseDate);
+			if (storedPurchaseDate) {
+				const known = existingSeriesPurchaseDateByKey.get(seriesKey);
+				if (!known || storedPurchaseDate < known) {
+					existingSeriesPurchaseDateByKey.set(seriesKey, storedPurchaseDate);
+				}
+			}
+		}
+	}
+
 	const regularRecords: TransactionInsert[] = rows.flatMap((row, rowIndex) => {
 		if (row.kind !== "transaction") return [];
 
@@ -1384,13 +1556,34 @@ export async function importTransactionsAction(
 				invoicePeriod,
 				installment.currentInstallment,
 			);
+			const seriesKey = buildInstallmentSeriesKey({
+				name: installment.name,
+				installmentCount: installment.installmentCount,
+				firstPeriod,
+			});
+			// O Nubank carimba a data do ciclo em cada parcela; outros cartões
+			// repetem a data da compra. Sem normalizar, a série toda herdava uma
+			// data posterior à própria fatura em que aparece.
+			const resolvedPurchaseDate = resolveInstallmentPurchaseDate({
+				chargeDate: row.date,
+				invoicePeriod,
+				currentInstallment: installment.currentInstallment,
+			});
+			// A série tem uma data só, e entre as candidatas vale a mais antiga.
+			const knownPurchaseDate = existingSeriesPurchaseDateByKey.get(seriesKey);
+			const seriesPurchaseDate =
+				knownPurchaseDate && knownPurchaseDate < resolvedPurchaseDate
+					? knownPurchaseDate
+					: resolvedPurchaseDate;
 			const totalAmount = row.amount * installment.installmentCount;
-			const seriesId = randomUUID();
+			// Reaproveita a série já gravada desta compra; só cunha id novo
+			// quando a série ainda não existe.
+			const seriesId = existingSeriesIdByKey.get(seriesKey) ?? randomUUID();
 			const amountSign: 1 | -1 = row.transactionType === "expense" ? -1 : 1;
 
 			return buildTransactionRecords({
 				data: {
-					purchaseDate: row.date,
+					purchaseDate: seriesPurchaseDate,
 					period: firstPeriod,
 					name: installment.name,
 					transactionType:
@@ -1410,7 +1603,7 @@ export async function importTransactionsAction(
 				},
 				userId: dataOwnerUserId,
 				period: firstPeriod,
-				purchaseDate,
+				purchaseDate: parseLocalDateString(seriesPurchaseDate),
 				dueDate: null,
 				boletoPaymentDate: null,
 				shares: [
@@ -1422,15 +1615,27 @@ export async function importTransactionsAction(
 				amountSign,
 				shouldNullifySettled: true,
 				seriesId,
-			}).map((record) => ({
-				...record,
-				isSettled: record.isSettled ?? false,
-				ofxFitId:
-					record.currentInstallment === installment.currentInstallment
-						? row.externalId
-						: null,
-				importBatchId,
-			}));
+			})
+				.filter(
+					(record) =>
+						!existingInstallmentKeys.has(
+							buildInstallmentOccurrenceKey({
+								name: record.name ?? installment.name,
+								period: record.period ?? firstPeriod,
+								currentInstallment: record.currentInstallment ?? null,
+								installmentCount: record.installmentCount ?? null,
+							}),
+						),
+				)
+				.map((record) => ({
+					...record,
+					isSettled: record.isSettled ?? false,
+					ofxFitId:
+						record.currentInstallment === installment.currentInstallment
+							? row.externalId
+							: null,
+					importBatchId,
+				}));
 		}
 
 		if (row.recurrenceImport?.enabled) {
@@ -1629,116 +1834,157 @@ export async function importTransactionsAction(
 	let inserted: { id: string }[] = [];
 
 	try {
-		inserted = await db.transaction(async (tx) => {
-			if (removeIds.length > 0) {
-				await tx
-					.delete(transactions)
-					.where(
-						and(
-							eq(transactions.userId, dataOwnerUserId),
-							inArray(transactions.id, removeIds),
-						),
-					);
-			}
+		const allRecords = [
+			...regularRecords,
+			...transferRecords,
+			...invoicePaymentRecords.map(
+				({ settleCardId, settlePeriod, ...record }) => record,
+			),
+		];
 
-			if (validatedAmountEdits.length > 0) {
-				await applyExistingAmountCorrectionsT(
-					tx,
-					dataOwnerUserId,
-					validatedAmountEdits,
+		const fitIdsInBatch = [
+			...new Set(
+				allRecords
+					.map((record) => record.ofxFitId)
+					.filter((fitId): fitId is string => Boolean(fitId)),
+			),
+		];
+
+		const storedOccurrences: ImportOccurrenceIdentity[] = [];
+		const storedFitIds = new Set<string>();
+		if (fitIdsInBatch.length > 0) {
+			const duplicateRows = await db
+				.select({
+					ofxFitId: transactions.ofxFitId,
+					installmentCount: transactions.installmentCount,
+					currentInstallment: transactions.currentInstallment,
+				})
+				.from(transactions)
+				.where(
+					and(
+						eq(transactions.userId, dataOwnerUserId),
+						inArray(transactions.ofxFitId, fitIdsInBatch),
+					),
 				);
+
+			for (const row of duplicateRows) {
+				if (!row.ofxFitId) continue;
+				storedFitIds.add(row.ofxFitId);
+				storedOccurrences.push({
+					externalId: row.ofxFitId,
+					installmentCount: row.installmentCount,
+					currentInstallment: row.currentInstallment,
+				});
 			}
+		}
 
-			if (validatedInstallmentEdits.length > 0) {
-				await applyExistingInstallmentCorrectionsT(
-					tx,
-					dataOwnerUserId,
-					validatedInstallmentEdits,
-				);
-			}
+		const seenOccurrencesInBatch: ImportOccurrenceIdentity[] = [];
+		const seenFitIdsInBatch = new Set<string>();
+		const recordsToInsert = allRecords.flatMap((record) => {
+			if (!record.ofxFitId) return [record];
 
-			const allRecords = [
-				...regularRecords,
-				...transferRecords,
-				...invoicePaymentRecords.map(
-					({ settleCardId, settlePeriod, ...record }) => record,
-				),
-			];
+			// Pagamento de fatura e transferência não têm campos de parcela.
+			const identity: ImportOccurrenceIdentity = {
+				externalId: record.ofxFitId,
+				installmentCount:
+					"installmentCount" in record
+						? (record.installmentCount ?? null)
+						: null,
+				currentInstallment:
+					"currentInstallment" in record
+						? (record.currentInstallment ?? null)
+						: null,
+			};
 
-			const fitIdsInBatch = [
-				...new Set(
-					allRecords
-						.map((record) => record.ofxFitId)
-						.filter((fitId): fitId is string => Boolean(fitId)),
-				),
-			];
-
-			const existingFitIds = new Set<string>();
-			if (fitIdsInBatch.length > 0) {
-				const duplicateRows = await tx
-					.select({ ofxFitId: transactions.ofxFitId })
-					.from(transactions)
-					.where(
-						and(
-							eq(transactions.userId, dataOwnerUserId),
-							inArray(transactions.ofxFitId, fitIdsInBatch),
-						),
-					);
-
-				for (const row of duplicateRows) {
-					if (row.ofxFitId) {
-						existingFitIds.add(row.ofxFitId);
-					}
-				}
-			}
-
-			const seenFitIdsInBatch = new Set<string>();
-			const recordsToInsert = allRecords.filter((record) => {
-				if (!record.ofxFitId) return true;
-				if (
-					importExternalIdCollidesWithStored(record.ofxFitId, existingFitIds)
-				) {
-					return false;
-				}
-				if (
-					importExternalIdCollidesWithStored(record.ofxFitId, seenFitIdsInBatch)
-				) {
-					return false;
-				}
-				seenFitIdsInBatch.add(record.ofxFitId);
-				return true;
+			// Contra o banco vale a base do id: reimportar o mesmo arquivo com a
+			// numeração do sufixo trocada não deve duplicar.
+			const plan = planImportRecordInsertion(identity, {
+				storedOccurrences,
+				storedExternalIds: storedFitIds,
 			});
 
-			const insertedRows =
-				recordsToInsert.length > 0
-					? await tx
-							.insert(transactions)
-							.values(recordsToInsert)
-							.returning({ id: transactions.id })
-					: [];
+			if (plan === "skip") return [];
 
-			for (const record of invoicePaymentRecords) {
-				await upsertInvoicePaymentStatus(tx, {
-					userId: dataOwnerUserId,
-					cardId: record.settleCardId,
-					period: record.settlePeriod,
-					paymentStatus: INVOICE_PAYMENT_STATUS.PAID,
-				});
-
-				await tx
-					.update(transactions)
-					.set({ isSettled: true })
-					.where(
-						and(
-							eq(transactions.userId, dataOwnerUserId),
-							eq(transactions.cardId, record.settleCardId),
-							eq(transactions.period, record.settlePeriod),
-						),
-					);
+			// Dentro do lote o id é comparado inteiro: o sufixo "#2" existe
+			// porque as duas linhas são idênticas e são duas cobranças reais —
+			// dois pedágios no mesmo dia pelo mesmo valor, por exemplo.
+			if (
+				importOccurrenceCollidesWithStored(identity, seenOccurrencesInBatch, {
+					sameFile: true,
+				})
+			) {
+				return [];
 			}
 
-			return insertedRows;
+			seenOccurrencesInBatch.push(identity);
+
+			// O id já tem dono: no banco, ou numa linha anterior deste mesmo
+			// lote. A cobrança é distinta e precisa existir, então entra sem o
+			// id — o índice único admite um só dono por (usuário, id).
+			if (
+				plan === "insert_without_external_id" ||
+				seenFitIdsInBatch.has(record.ofxFitId)
+			) {
+				return [{ ...record, ofxFitId: null }];
+			}
+
+			seenFitIdsInBatch.add(record.ofxFitId);
+			return [record];
 		});
+
+		// Uma chamada, uma transação. `db.transaction()` do bridge não abre
+		// transação nenhuma — é a API do Supabase, HTTP stateless — então as seis
+		// escritas ficavam soltas e uma falha no meio deixava metade aplicada.
+		// A decisão de o que apagar, corrigir e inserir continua toda aqui em
+		// TypeScript; a RPC apenas aplica o resultado de forma atômica.
+		const insertedRows = await callRpc<{ inserted_id: string }>(
+			"apply_invoice_import",
+			{
+				p_user_id: dataOwnerUserId,
+				p_delete_ids: removeIds,
+				p_amount_edits: validatedAmountEdits.map((edit) => ({
+					id: edit.transactionId,
+					valor: formatDecimalForDbRequired(
+						amountEditToSignedStored(edit.amount, edit.transactionType),
+					),
+				})),
+				p_installment_edits: validatedInstallmentEdits.map((edit) => ({
+					id: edit.transactionId,
+					parcela_atual: edit.currentInstallment,
+					qtde_parcela: edit.installmentCount,
+				})),
+				p_rows: recordsToInsert.map((record) =>
+					toDbColumnNames(transactions, record as Record<string, unknown>),
+				),
+				p_invoice_payments: invoicePaymentRecords.map((record) => ({
+					cartao_id: record.settleCardId,
+					periodo: record.settlePeriod,
+					status_pagamento: INVOICE_PAYMENT_STATUS.PAID,
+				})),
+				p_previous_settlement: previousSettlement
+					? {
+							cartao_id: cardId,
+							periodo: previousSettlement.period,
+							status_pagamento: resolveSettlementStatus(previousSettlement),
+							valor_pago:
+								resolveSettlementStatus(previousSettlement) ===
+								INVOICE_PAYMENT_STATUS.PARTIAL
+									? formatDecimalForDbRequired(previousSettlement.paidAmount)
+									: null,
+							lancamento_id: previousSettlement.paymentTransactionId ?? null,
+							data_lancamento: previousSettlement.paymentDate ?? null,
+							// O débito na conta é saída de dinheiro: sinal negativo.
+							valor_lancamento: formatDecimalForDbRequired(
+								-Math.abs(previousSettlement.paidAmount),
+							),
+						}
+					: null,
+			},
+		);
+
+		inserted = insertedRows.map((row: { inserted_id: string }) => ({
+			id: row.inserted_id,
+		}));
 	} catch (error) {
 		console.error("importTransactionsAction", error);
 		if (isPostgresUniqueViolation(error)) {
@@ -1764,6 +2010,29 @@ export async function importTransactionsAction(
 	}
 	if (hasTransferRows) {
 		await revalidateForEntity("accounts", userId);
+	}
+
+	/*
+	 * Antes da baixa, de propósito: a baixa desconta o que já está registrado
+	 * para gravar só o que falta pagar. Na ordem inversa, os dois débitos
+	 * somariam mais do que saiu da conta.
+	 */
+	if (cardId && invoicePeriod && invoiceAmortizations.length > 0) {
+		const amortizationResult = await registerInvoiceAmortizationsAction({
+			cardId,
+			period: invoicePeriod,
+			accountId: paymentAccountId ?? null,
+			payments: invoiceAmortizations,
+		});
+
+		if (!amortizationResult.success) {
+			return {
+				success: false,
+				error:
+					amortizationResult.error ||
+					"Lançamentos importados, mas não foi possível registrar o pagamento antecipado da fatura.",
+			};
+		}
 	}
 
 	if (payInvoice && cardId && invoicePeriod) {

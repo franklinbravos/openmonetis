@@ -86,12 +86,43 @@ jobs:
             type=registry,ref=${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:buildcache,mode=max
           platforms: linux/amd64
 
-      - name: Resumo para o Coolify
+      # O recurso no Coolify acompanha a tag `latest`. Publicar outra tag
+      # (rebuild pontual via workflow_dispatch) não deve promover nada.
+      - name: Disparar deploy no Coolify
+        if: ${{ env.IMAGE_TAG == 'latest' }}
+        env:
+          COOLIFY_WEBHOOK: ${{ secrets.COOLIFY_WEBHOOK }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${COOLIFY_WEBHOOK:-}" || -z "${COOLIFY_TOKEN:-}" ]]; then
+            echo "::notice::COOLIFY_WEBHOOK/COOLIFY_TOKEN ausentes — deploy automático ignorado."
+            exit 0
+          fi
+
+          # Sem --retry de propósito: repetir o disparo enfileira um segundo
+          # deploy do mesmo commit em vez de corrigir a falha.
+          status="$(curl --silent --show-error --location \
+            --max-time 60 \
+            --output /tmp/coolify-deploy.json \
+            --write-out '%{http_code}' \
+            --header "Authorization: Bearer ${COOLIFY_TOKEN}" \
+            "${COOLIFY_WEBHOOK}" || echo 000)"
+
+          echo "Resposta do Coolify (HTTP ${status}):"
+          cat /tmp/coolify-deploy.json || true
+          echo ""
+
+          if [[ "${status}" -lt 200 || "${status}" -ge 300 ]]; then
+            echo "::error::Coolify recusou o disparo do deploy (HTTP ${status}). A imagem foi publicada; refaça o deploy pela interface."
+            exit 1
+          fi
+
+          echo "::notice::Deploy disparado no Coolify."
+
+      - name: Resumo
+        if: always()
         run: |
           echo "Imagem publicada: ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
           echo "Digest: ${{ steps.build.outputs.digest }}"
-          echo ""
-          echo "No Coolify: Docker Image → porta 3000 → Redeploy"
-
-      - name: Image digest
-        run: echo "${{ steps.build.outputs.digest }}"

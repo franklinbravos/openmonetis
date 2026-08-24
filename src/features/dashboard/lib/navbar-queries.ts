@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ilike } from "drizzle-orm";
 import { cacheLife, cacheTag } from "next/cache";
 import { payers, user } from "@/db/schema";
 import { fetchPendingInboxCount } from "@/features/inbox/queries";
@@ -72,13 +72,20 @@ async function fetchViewerAvatarUrl(
 		return null;
 	}
 
-	const familyPayer = await db.query.payers.findFirst({
-		columns: { avatarUrl: true },
+	// `lower(email) = x` não é traduzível para PostgREST. `ilike` compara sem
+	// diferenciar caixa; a igualdade é reconfirmada aqui porque `%`, `_` e `*`
+	// no e-mail viram curinga e casariam a pessoa errada.
+	const candidates = await db.query.payers.findMany({
+		columns: { avatarUrl: true, email: true },
 		where: and(
 			eq(payers.userId, dataOwnerUserId),
-			eq(sql`lower(${payers.email})`, normalizedEmail),
+			ilike(payers.email, normalizedEmail),
 		),
 	});
+
+	const familyPayer = candidates.find(
+		(candidate) => candidate.email?.trim().toLowerCase() === normalizedEmail,
+	);
 
 	return familyPayer?.avatarUrl ?? null;
 }

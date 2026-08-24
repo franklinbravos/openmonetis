@@ -52,6 +52,7 @@ import { cn } from "@/shared/utils/ui";
 
 const STATUS_DOT_FILL_CLASS: Record<PeriodCarouselStatus, string> = {
 	paid: "fill-emerald-600",
+	partial: "fill-emerald-600/45",
 	overdue: "fill-destructive",
 	closed: "fill-amber-500",
 	open: "fill-primary",
@@ -60,6 +61,7 @@ const STATUS_DOT_FILL_CLASS: Record<PeriodCarouselStatus, string> = {
 
 const STATUS_DOT_RING_CLASS: Record<PeriodCarouselStatus, string> = {
 	paid: "stroke-emerald-600/15",
+	partial: "stroke-emerald-600/10",
 	overdue: "stroke-destructive/15",
 	closed: "stroke-amber-500/15",
 	open: "stroke-primary/15",
@@ -72,6 +74,7 @@ const CHART_Y_MAX = 32;
 
 const STATUS_STROKE_CLASS: Record<PeriodCarouselStatus, string> = {
 	paid: "stroke-emerald-600",
+	partial: "stroke-emerald-600/50",
 	overdue: "stroke-destructive",
 	closed: "stroke-amber-500",
 	open: "stroke-primary",
@@ -92,6 +95,17 @@ function amountToChartY(amount: number, min: number, max: number): number {
 	const normalized = (amount - min) / (max - min);
 	// SVG: Y cresce para baixo — valores maiores ficam mais altos (Y menor).
 	return CHART_Y_MAX - normalized * (CHART_Y_MAX - CHART_Y_MIN);
+}
+
+/**
+ * Valor que o ponto do gráfico representa.
+ *
+ * Na fatura paga em parte é o que saiu da conta, não o total: a linha desenha o
+ * dinheiro que se moveu, e plotar o total faria maio subir como se tudo tivesse
+ * sido pago — justo o mês em que não foi.
+ */
+function resolveChartAmount(month: PeriodCarouselMonth): number {
+	return month.paidAmount ?? month.amount;
 }
 
 function buildCurveSegment(start: ChartPoint, end: ChartPoint): string {
@@ -137,7 +151,7 @@ function PeriodMonthCarousel({
 		const chartRowRect = chartRow?.getBoundingClientRect();
 		const chartRowTop = chartRowRect ? chartRowRect.top - trackRect.top : 22;
 
-		const amounts = months.map((month) => month.amount);
+		const amounts = months.map(resolveChartAmount);
 		const minAmount = Math.min(...amounts);
 		const maxAmount = Math.max(...amounts);
 
@@ -152,7 +166,7 @@ function PeriodMonthCarousel({
 			points.push({
 				period: month.period,
 				x: columnRect.left + columnRect.width / 2 - trackRect.left,
-				y: amountToChartY(month.amount, minAmount, maxAmount),
+				y: amountToChartY(resolveChartAmount(month), minAmount, maxAmount),
 			});
 		}
 
@@ -330,9 +344,13 @@ function PeriodMonthCarousel({
 						const monthExpenses = month.expenses ?? 0;
 						const monthBalance = month.amount;
 						const periodLabel = formatShortPeriodLabel(month.period);
+						/** Só vem preenchido na fatura paga em parte. */
+						const paidAmount = month.paidAmount ?? null;
 						const ariaLabel = isAccountVariant
 							? `${periodLabel}: entradas ${formatCurrency(monthIncomes)}, saídas ${formatCurrency(monthExpenses)}, saldo ${formatCurrency(monthBalance)}`
-							: `${periodLabel}: ${formatCurrency(month.amount)}`;
+							: paidAmount != null
+								? `${periodLabel}: ${formatCurrency(paidAmount)} pagos de ${formatCurrency(month.amount)}`
+								: `${periodLabel}: ${formatCurrency(month.amount)}`;
 
 						return (
 							<div
@@ -360,7 +378,9 @@ function PeriodMonthCarousel({
 									disabled={isPending}
 									onClick={() => onNavigate(month.period)}
 									className={cn(
-										"relative z-10 flex w-full flex-col items-center gap-0 rounded-lg border px-1 py-2 transition-colors",
+										// `h-full`: o mês pago em parte tem uma linha a mais, e sem
+										// isto só o card dele cresce, deixando a fileira irregular.
+										"relative z-10 flex h-full w-full flex-col items-center gap-0 rounded-lg border px-1 py-2 transition-colors",
 										"border-border/70 hover:border-primary/40 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 										isFuture &&
 											!isSelected &&
@@ -461,18 +481,28 @@ function PeriodMonthCarousel({
 											</div>
 										</div>
 									) : (
-										<span
-											className={cn(
-												"max-w-full truncate text-[0.6875rem] tabular-nums sm:text-xs",
-												isSelected
-													? "font-semibold text-foreground"
-													: isFuture
-														? "font-medium text-muted-foreground/55"
-														: "font-medium text-muted-foreground",
-											)}
-										>
-											{formatCurrency(month.amount)}
-										</span>
+										<>
+											<span
+												className={cn(
+													"max-w-full truncate text-[0.6875rem] tabular-nums sm:text-xs",
+													isSelected
+														? "font-semibold text-foreground"
+														: isFuture
+															? "font-medium text-muted-foreground/55"
+															: "font-medium text-muted-foreground",
+												)}
+											>
+												{formatCurrency(paidAmount ?? month.amount)}
+											</span>
+											{/* Fatura paga em parte: o número em destaque é o que
+											    saiu da conta, e o total da fatura fica logo abaixo.
+											    Sem isso o mês parecia pago por inteiro. */}
+											{paidAmount != null ? (
+												<span className="max-w-full truncate text-[0.625rem] text-muted-foreground tabular-nums">
+													de {formatCurrency(month.amount)}
+												</span>
+											) : null}
+										</>
 									)}
 								</button>
 							</div>

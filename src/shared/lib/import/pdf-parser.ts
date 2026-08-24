@@ -575,6 +575,65 @@ function resolveNubankTransactionYear(
 		: billingWindow.toYear;
 }
 
+/**
+ * Data do pagamento, resolvendo o ano.
+ *
+ * O PDF traz só dia e mês. O pagamento antecede o vencimento, então quando o
+ * ano do vencimento colocaria a data depois dele, o ano certo é o anterior —
+ * caso da fatura de janeiro paga em dezembro.
+ */
+function resolvePaymentDateBeforeDueDate(
+	day: string,
+	monthAbbr: string,
+	dueDate: string,
+): string | null {
+	const dueYear = Number.parseInt(dueDate.slice(0, 4), 10);
+	const sameYear = parsePortugueseShortDate(day, monthAbbr, dueYear);
+	if (!sameYear) return null;
+	if (sameYear <= dueDate) return sameYear;
+
+	return parsePortugueseShortDate(day, monthAbbr, dueYear - 1);
+}
+
+/**
+ * Limites do bloco "Limites disponíveis".
+ *
+ * O bloco traz duas colunas — utilizado e disponível — por linha:
+ *
+ *   Limite total                         R$ 11.398,09   R$ 14.576,95
+ *   Pré-aprovado                          R$ 2.799,99    R$ 2.800,00
+ *   Nu Limite Garantido e limite extra    R$ 8.598,10   R$ 11.776,95
+ *
+ * O limite de cada linha é a soma das duas colunas; as sub-linhas somam o total.
+ */
+function parseNubankCreditLimits(text: string): {
+	total: number | null;
+	guaranteed: number | null;
+} {
+	const readLine = (label: RegExp): number | null => {
+		const match = text.match(
+			new RegExp(
+				`${label.source}\\s+R\\$\\s*([\\d.]+,\\d{2})\\s+R\\$\\s*([\\d.]+,\\d{2})`,
+				"i",
+			),
+		);
+		if (!match) return null;
+
+		return roundToCents(
+			parseBrazilianAmount(match[1]) + parseBrazilianAmount(match[2]),
+		);
+	};
+
+	return {
+		total: readLine(/Limite total/),
+		guaranteed: readLine(/Nu Limite Garantido(?:\s+e\s+limite\s+extra)?/),
+	};
+}
+
+function roundToCents(value: number): number {
+	return Math.round(value * 100) / 100;
+}
+
 function parseNubankInvoiceMetadata(
 	text: string,
 	transactions: ImportedTransaction[],
@@ -583,24 +642,44 @@ function parseNubankInvoiceMetadata(
 	const dueDate = parseNubankDueDate(text);
 
 	const totalMatch = text.match(/Total a pagar\s+R\$\s*([\d.]+,\d{2})/i);
+
+	// Bloco "Resumo da fatura atual": o banco declara a fatura anterior e quanto
+	// dela recebeu. Com os dois, o pagamento parcial é conferido sem inferência.
+	// O sinal do pagamento vem como menos ASCII ou Unicode.
+	const previousInvoiceMatch = text.match(
+		/Fatura anterior\s+R\$\s*([\d.]+,\d{2})/i,
+	);
+	const previousPaymentMatch = text.match(
+		/Pagamento recebido\s+[-−–]?\s*R\$\s*([\d.]+,\d{2})/i,
+	);
+	const creditLimits = parseNubankCreditLimits(text);
 	const parsedTotal = totalMatch ? parseBrazilianAmount(totalMatch[1]) : null;
 	const transactionTotal = transactions.reduce(
 		(total, transaction) => total + transaction.amount,
 		0,
 	);
 
-	const paymentSection = text.slice(
-		text.search(/Pagamentos e Financiamentos/i),
-	);
-	const paymentMatch = paymentSection.match(
-		/(\d{2}\s+[A-Z]{3})\s+.+?\s+R\$\s*([\d.]+,\d{2})/,
+	/**
+	 * Linha do pagamento: "13 ABR Pagamento em 13 ABR −R$ 10.430,51".
+	 *
+	 * Casar a linha inteira, em vez de fatiar por título de seção: o título varia
+	 * ("Pagamentos", "Pagamentos e Financiamentos"), a palavra aparece antes no
+	 * documento, e `slice(-1)` de um índice não encontrado cortava o texto no
+	 * último caractere. O resultado era a data do vencimento no lugar da data do
+	 * pagamento.
+	 *
+	 * O menos é obrigatório: pagamento é crédito, e exigi-lo evita casar com
+	 * linha de compra que mencione a palavra.
+	 */
+	const paymentMatch = text.match(
+		/(\d{2})\s+([A-Z]{3})\s+Pagamento[^\n]*?[-−–]\s*R\$\s*[\d.]+,\d{2}/i,
 	);
 	const paymentDate =
 		dueDate && paymentMatch
-			? parsePortugueseShortDate(
-					paymentMatch[1].split(/\s+/)[0],
-					paymentMatch[1].split(/\s+/)[1],
-					Number.parseInt(dueDate.slice(0, 4), 10),
+			? resolvePaymentDateBeforeDueDate(
+					paymentMatch[1],
+					paymentMatch[2],
+					dueDate,
 				)
 			: null;
 
@@ -617,6 +696,14 @@ function parseNubankInvoiceMetadata(
 
 	return {
 		period,
+		previousInvoiceTotal: previousInvoiceMatch
+			? parseBrazilianAmount(previousInvoiceMatch[1])
+			: null,
+		previousInvoicePaymentReceived: previousPaymentMatch
+			? parseBrazilianAmount(previousPaymentMatch[1])
+			: null,
+		creditLimitTotal: creditLimits.total,
+		creditLimitGuaranteed: creditLimits.guaranteed,
 		dueDate,
 		isPaid,
 		paymentDate,

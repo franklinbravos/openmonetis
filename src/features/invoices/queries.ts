@@ -1,17 +1,27 @@
-import { and, asc, eq, isNotNull, type SQL, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, isNotNull, type SQL, sql } from "drizzle-orm";
 import { cards, importBatches, invoices, transactions } from "@/db/schema";
 import { resolveInvoicePeriodCarouselStatus } from "@/features/invoices/lib/period-carousel-status";
 import { fetchTransactionsWithRelations } from "@/features/transactions/queries";
 import type { PeriodCarouselMonth } from "@/shared/components/month-picker/period-carousel-types";
-import { buildInvoicePaymentNote } from "@/shared/lib/accounts/constants";
+import {
+	ACCOUNT_AUTO_INVOICE_NOTE_PREFIX,
+	buildInvoicePaymentNote,
+	isInvoiceAmortizationNote,
+	parseInvoicePaymentNotePeriod,
+} from "@/shared/lib/accounts/constants";
 import { db } from "@/shared/lib/db";
-import { resolveInvoiceDisplayTotal } from "@/shared/lib/import/invoice-total";
+import {
+	resolveInvoiceDisplayTotal,
+	roundMoney,
+} from "@/shared/lib/import/invoice-total";
 import {
 	INVOICE_PAYMENT_STATUS,
+	INVOICE_STATUS_VALUES,
 	type InvoicePaymentStatus,
 } from "@/shared/lib/invoices";
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { callRpc, callRpcOne } from "@/shared/lib/supabase/rpc";
+import { parseLocalDateString, toDateOnlyString } from "@/shared/utils/date";
 import { safeToNumber as toNumber } from "@/shared/utils/number";
 import {
 	addMonthsToPeriod,
@@ -84,30 +94,50 @@ export async function fetchInvoiceData(
 	]);
 
 	const totalAmount = toNumber(totalRow?.total);
+	/*
+	 * Os três status contam: `parcial` fica de fora e a fatura aparece "Em
+	 * aberto" — sem o valor pago e sem a data, mesmo com os dois gravados. Era o
+	 * que fazia a fatura de maio parecer não paga na tela enquanto cada
+	 * lançamento dela aparecia liquidado.
+	 */
 	const isInvoiceStatus = (
 		value: string | null | undefined,
 	): value is InvoicePaymentStatus =>
-		!!value && ["pendente", "pago"].includes(value);
+		!!value && (INVOICE_STATUS_VALUES as string[]).includes(value);
 
 	const invoiceStatus = isInvoiceStatus(invoiceRow?.paymentStatus)
 		? invoiceRow?.paymentStatus
 		: INVOICE_PAYMENT_STATUS.PENDING;
 
-	// Buscar data do pagamento se a fatura estiver paga
+	// Pagamento parcial também tem data: é o dia em que saiu o que foi pago.
 	let paymentDate: Date | null = null;
-	if (invoiceStatus === INVOICE_PAYMENT_STATUS.PAID) {
+	if (invoiceStatus !== INVOICE_PAYMENT_STATUS.PENDING) {
 		const invoiceNote = buildInvoicePaymentNote(cardId, selectedPeriod);
-		const paymentLancamento = await db.query.transactions.findFirst({
+		const paymentRows = await db.query.transactions.findMany({
 			columns: {
 				purchaseDate: true,
+				note: true,
 			},
 			where: and(
 				eq(transactions.userId, dataOwnerUserId),
-				eq(transactions.note, invoiceNote),
+				ilike(transactions.note, `${invoiceNote}%`),
 			),
+			orderBy: [asc(transactions.purchaseDate)],
 		});
-		paymentDate = paymentLancamento?.purchaseDate
-			? new Date(paymentLancamento.purchaseDate)
+		/*
+		 * A data exibida é a do pagamento que liquidou a fatura, não a do mais
+		 * antigo: é dela que sai o "em atraso". Uma amortização feita semanas
+		 * antes do vencimento é sempre pontual e esconderia um atraso no
+		 * pagamento final. Sem pagamento principal, a amortização mais antiga é
+		 * a única data que existe.
+		 */
+		const settlingRow =
+			paymentRows.find((row) => row.note === invoiceNote) ?? paymentRows[0];
+		// A ponte devolve `date` como string; `new Date` a leria como UTC e o dia
+		// voltaria um no fuso de São Paulo.
+		const paymentDateOnly = toDateOnlyString(settlingRow?.purchaseDate);
+		paymentDate = paymentDateOnly
+			? parseLocalDateString(paymentDateOnly)
 			: null;
 	}
 
@@ -121,36 +151,48 @@ export async function fetchCardInvoiceMonthSummaries(
 	dueDay: string,
 ): Promise<PeriodCarouselMonth[]> {
 	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
-	const [invoiceRows, amountRows, sourceTotalRows] = await Promise.all([
-		db.query.invoices.findMany({
-			columns: {
-				period: true,
-				paymentStatus: true,
-			},
-			where: and(
-				eq(invoices.userId, dataOwnerUserId),
-				eq(invoices.cardId, cardId),
-			),
-		}),
-		callRpc<InvoiceMonthSummaryRow>("get_card_invoice_month_summaries", {
-			p_user_id: dataOwnerUserId,
-			p_card_id: cardId,
-		}),
-		// Total declarado no arquivo importado: é o que o banco cobrou de fato.
-		db.query.importBatches.findMany({
-			columns: {
-				invoicePeriod: true,
-				sourceInvoiceTotal: true,
-				createdAt: true,
-			},
-			where: and(
-				eq(importBatches.userId, dataOwnerUserId),
-				eq(importBatches.cardId, cardId),
-				isNotNull(importBatches.sourceInvoiceTotal),
-			),
-			orderBy: [asc(importBatches.createdAt)],
-		}),
-	]);
+	const [invoiceRows, amountRows, paymentRows, sourceTotalRows] =
+		await Promise.all([
+			db.query.invoices.findMany({
+				columns: {
+					period: true,
+					paymentStatus: true,
+				},
+				where: and(
+					eq(invoices.userId, dataOwnerUserId),
+					eq(invoices.cardId, cardId),
+				),
+			}),
+			callRpc<InvoiceMonthSummaryRow>("get_card_invoice_month_summaries", {
+				p_user_id: dataOwnerUserId,
+				p_card_id: cardId,
+			}),
+			// Pagamentos de fatura deste cartão, para apurar o pago por período.
+			db.query.transactions.findMany({
+				columns: { amount: true, note: true },
+				where: and(
+					eq(transactions.userId, dataOwnerUserId),
+					ilike(
+						transactions.note,
+						`${ACCOUNT_AUTO_INVOICE_NOTE_PREFIX}${cardId}:%`,
+					),
+				),
+			}),
+			// Total declarado no arquivo importado: é o que o banco cobrou de fato.
+			db.query.importBatches.findMany({
+				columns: {
+					invoicePeriod: true,
+					sourceInvoiceTotal: true,
+					createdAt: true,
+				},
+				where: and(
+					eq(importBatches.userId, dataOwnerUserId),
+					eq(importBatches.cardId, cardId),
+					isNotNull(importBatches.sourceInvoiceTotal),
+				),
+				orderBy: [asc(importBatches.createdAt)],
+			}),
+		]);
 
 	// Percorrido em ordem crescente: o lote mais recente de cada período vence.
 	const sourceTotalByPeriod = new Map<string, number>();
@@ -171,12 +213,29 @@ export async function fetchCardInvoiceMonthSummaries(
 	const invoiceByPeriod = new Map<string, InvoicePaymentStatus>();
 	for (const row of invoiceRows) {
 		if (!row.period) continue;
+		// `parcial` incluído: sem ele a fatura rolada caía no cálculo por data e
+		// aparecia como vencida no carrossel.
 		if (
 			row.paymentStatus === INVOICE_PAYMENT_STATUS.PAID ||
+			row.paymentStatus === INVOICE_PAYMENT_STATUS.PARTIAL ||
 			row.paymentStatus === INVOICE_PAYMENT_STATUS.PENDING
 		) {
 			invoiceByPeriod.set(row.period, row.paymentStatus);
 		}
+	}
+
+	/*
+	 * Pago por período, agrupado pela nota — não pela coluna `periodo`, que na
+	 * amortização é o mês em que o dinheiro saiu, anterior ao da fatura abatida.
+	 */
+	const paidByPeriod = new Map<string, number>();
+	for (const row of paymentRows) {
+		const period = parseInvoicePaymentNotePeriod(row.note);
+		if (!period) continue;
+		paidByPeriod.set(
+			period,
+			(paidByPeriod.get(period) ?? 0) + Math.abs(toNumber(row.amount)),
+		);
 	}
 
 	const knownPeriods = new Set<string>([
@@ -201,6 +260,12 @@ export async function fetchCardInvoiceMonthSummaries(
 			registeredTotal: amountByPeriod.get(period) ?? 0,
 			sourceTotal: sourceTotalByPeriod.get(period) ?? null,
 		}),
+		// Só na fatura paga em parte: no mês quitado o pago é o próprio total, e
+		// no futuro seria R$ 0,00.
+		paidAmount:
+			invoiceByPeriod.get(period) === INVOICE_PAYMENT_STATUS.PARTIAL
+				? roundMoney(paidByPeriod.get(period) ?? 0)
+				: null,
 		status: resolveInvoicePeriodCarouselStatus(
 			period,
 			invoiceByPeriod.get(period),
@@ -212,4 +277,61 @@ export async function fetchCardInvoiceMonthSummaries(
 
 export async function fetchCardTransactions(filters: SQL[]) {
 	return fetchTransactionsWithRelations({ filters });
+}
+
+export type InvoicePaymentEntry = {
+	id: string;
+	date: string | null;
+	amount: number;
+	/** Conta debitada — é dela que o dinheiro saiu. */
+	accountId: string | null;
+	/**
+	 * Amortização: pagamento que abateu a fatura antes de ela vencer, declarado
+	 * no arquivo do mês seguinte. Sai da conta num mês e abate a fatura de
+	 * outro, então merece a distinção na tela.
+	 */
+	isAmortization: boolean;
+};
+
+/**
+ * Pagamentos registrados para uma fatura.
+ *
+ * Uma fatura pode receber mais de um pagamento no mês — antecipação para
+ * liberar limite, ou uma parte na data e o resto depois. Todos compartilham a
+ * mesma anotação `AUTO_FATURA:<cartão>:<período>`, então a leitura precisa ser
+ * de lista: buscar só o primeiro esconderia os demais e o valor exibido não
+ * fecharia com o que saiu da conta.
+ */
+export async function fetchInvoicePayments(
+	userId: string,
+	cardId: string,
+	period: string,
+): Promise<InvoicePaymentEntry[]> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+
+	// Prefixo, não igualdade: as amortizações levam a mesma nota com sufixo
+	// `:AMORT:<data>`, e o período tem tamanho fixo, então o único texto que
+	// pode continuar o prefixo é esse sufixo.
+	const rows = await db.query.transactions.findMany({
+		columns: {
+			id: true,
+			amount: true,
+			purchaseDate: true,
+			accountId: true,
+			note: true,
+		},
+		where: and(
+			eq(transactions.userId, dataOwnerUserId),
+			ilike(transactions.note, `${buildInvoicePaymentNote(cardId, period)}%`),
+		),
+		orderBy: [asc(transactions.purchaseDate)],
+	});
+
+	return rows.map((row) => ({
+		id: row.id,
+		date: toDateOnlyString(row.purchaseDate),
+		amount: Math.abs(Number.parseFloat(String(row.amount ?? "0")) || 0),
+		accountId: row.accountId ?? null,
+		isAmortization: isInvoiceAmortizationNote(row.note),
+	}));
 }
