@@ -79,7 +79,13 @@ const registerUploadSchema = z.object({
 	accountId: uuidSchema("Conta").nullable().optional(),
 	sourceInvoiceTotal: z.number().positive().nullable().optional(),
 	sourceInvoiceTotalKind: z
-		.enum(["ofx_ledger", "pdf_header", "pdf_lines_fallback", "lines_fallback"])
+		.enum([
+			"ofx_ledger",
+			"pdf_summary",
+			"pdf_header",
+			"pdf_lines_fallback",
+			"lines_fallback",
+		])
 		.nullable()
 		.optional(),
 	sourceFileRows: z.array(sourceFileRowSchema).max(2000).optional(),
@@ -89,7 +95,13 @@ const syncSourceTotalSchema = z.object({
 	batchId: z.string().uuid(),
 	sourceInvoiceTotal: z.number().positive().nullable(),
 	sourceInvoiceTotalKind: z
-		.enum(["ofx_ledger", "pdf_header", "pdf_lines_fallback", "lines_fallback"])
+		.enum([
+			"ofx_ledger",
+			"pdf_summary",
+			"pdf_header",
+			"pdf_lines_fallback",
+			"lines_fallback",
+		])
 		.nullable(),
 	sourceFileRows: z.array(sourceFileRowSchema).max(2000).optional(),
 });

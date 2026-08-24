@@ -1,4 +1,3 @@
-import { derivePeriodFromDate } from "@/shared/utils/period";
 import {
 	buildPeriodFromTransactions,
 	getPortugueseMonthNumberFromAbbr,
@@ -10,12 +9,21 @@ import {
 	parseSlashDateDMY,
 } from "./helpers";
 import { resolveNubankInvoicePeriod } from "./nubank-invoice-period";
+import {
+	isInterCardInvoice,
+	parseInterCardPdf,
+} from "./pdf/inter-card-invoice";
+import {
+	buildInvoiceMetadataFromDueDate,
+	resolvePdfTotalMetadata,
+	sumImportedTransactionAmounts,
+} from "./pdf/invoice-metadata";
+import { parseNubankInvoiceSummary } from "./pdf/nubank-summary";
 import { openPdfDocumentWithPassword } from "./pdf-password";
 import type {
 	ImportedTransaction,
 	ImportStatement,
 	InvoiceImportMetadata,
-	InvoiceSourceTotalKind,
 } from "./types";
 
 async function openPdfDocument(
@@ -287,12 +295,9 @@ function parseItauCardInvoiceMetadata(
 	const dueDateMatch = text.match(/vencimento[:\s]+(\d{1,2}\/\d{1,2}\/\d{4})/i);
 	const dueDate = dueDateMatch ? parseSlashDateDMY(dueDateMatch[1]) : null;
 
-	const totalMatch = text.match(/total desta fatura[^R]*R\$\s*([\d.]+,\d{2})/i);
+	const totalMatch = text.match(/total desta fatura\s+R\$\s*([\d.]+,\d{2})/i);
 	const parsedTotal = totalMatch ? parseBrazilianAmount(totalMatch[1]) : null;
-	const transactionTotal = transactions.reduce(
-		(total, transaction) => total + transaction.amount,
-		0,
-	);
+	const transactionTotal = sumImportedTransactionAmounts(transactions);
 
 	const paymentMatch = text.match(
 		/pagamento\s+efetuado[^0-9]*(\d{1,2}\/\d{1,2}\/\d{4})/i,
@@ -343,131 +348,6 @@ function parseItauCardPdf(text: string): ImportStatement {
 		transactions: deduped,
 		invoice: parseItauCardInvoiceMetadata(text, deduped),
 	};
-}
-
-function isInterCardInvoice(text: string): boolean {
-	return (
-		/Despesas da fatura|Resumo da fatura/i.test(text) &&
-		/CARTÃO\s+\d{4}\*{4}\d{4}/i.test(text)
-	);
-}
-
-const INTER_CARD_PAYMENT_RE =
-	/P\s*AGTO\s*DEBITO|PAGAMENTO\s+(?:EM\s+)?DEBITO|DEBITO\s+AUTOMATICO/i;
-
-function isInterCardPaymentForCurrentInvoice(
-	paymentDate: string,
-	dueDate: string,
-): boolean {
-	const payment = new Date(`${paymentDate}T12:00:00`);
-	const due = new Date(`${dueDate}T12:00:00`);
-
-	if (Number.isNaN(payment.getTime()) || Number.isNaN(due.getTime())) {
-		return false;
-	}
-
-	// Na fatura Inter, a linha "P AGTO DEBITO AUTOMATICO" costuma registrar o
-	// pagamento da fatura anterior (data no mês anterior ao vencimento atual).
-	// Só tratamos como pagamento desta fatura quando a data é do mesmo mês do
-	// vencimento ou posterior a ele.
-	return (
-		payment >= due ||
-		(payment.getFullYear() === due.getFullYear() &&
-			payment.getMonth() === due.getMonth())
-	);
-}
-
-function buildInvoiceMetadataFromDueDate(
-	dueDate: string | null,
-	options: {
-		isPaid?: boolean;
-		paymentDate?: string | null;
-		totalAmount?: number | null;
-		totalAmountSource?: InvoiceSourceTotalKind | null;
-	},
-): InvoiceImportMetadata | null {
-	if (!dueDate) return null;
-
-	return {
-		period: derivePeriodFromDate(dueDate),
-		dueDate,
-		isPaid: options.isPaid ?? false,
-		paymentDate: options.paymentDate ?? null,
-		totalAmount: options.totalAmount ?? null,
-		totalAmountSource: options.totalAmountSource ?? null,
-	};
-}
-
-function resolvePdfTotalMetadata(
-	parsedTotal: number | null,
-	transactionTotal: number,
-): Pick<InvoiceImportMetadata, "totalAmount" | "totalAmountSource"> {
-	if (parsedTotal != null) {
-		return {
-			totalAmount: parsedTotal,
-			totalAmountSource: "pdf_header",
-		};
-	}
-
-	if (transactionTotal > 0) {
-		return {
-			totalAmount: transactionTotal,
-			totalAmountSource: "pdf_lines_fallback",
-		};
-	}
-
-	return {
-		totalAmount: null,
-		totalAmountSource: null,
-	};
-}
-
-function parseInterCardInvoiceMetadata(
-	text: string,
-	transactions: ImportedTransaction[],
-): InvoiceImportMetadata | null {
-	const dueDateMatch = text.match(
-		/Data de Vencimento\s+(\d{1,2}\/\d{1,2}\/\d{4})/i,
-	);
-	const dueDate = dueDateMatch ? parseSlashDateDMY(dueDateMatch[1]) : null;
-
-	const paymentMatch = text.match(
-		/(\d{1,2}) de ([a-zç.]+)\s+(\d{4})\s+[^+]{0,120}P\s*AGTO\s*DEBITO[\s\S]*?\+\s*R\$\s*([\d.]+,\d{2})/i,
-	);
-	const parsedPaymentDate = paymentMatch
-		? parsePortugueseAbbrevDotDate(
-				paymentMatch[1],
-				paymentMatch[2],
-				paymentMatch[3],
-			)
-		: null;
-	const isCurrentInvoicePayment =
-		parsedPaymentDate !== null &&
-		dueDate !== null &&
-		isInterCardPaymentForCurrentInvoice(parsedPaymentDate, dueDate);
-	const paymentDate = isCurrentInvoicePayment ? parsedPaymentDate : null;
-	const paymentAmount = paymentMatch
-		? parseBrazilianAmount(paymentMatch[4])
-		: null;
-
-	const totalMatch = text.match(
-		/Total(?:\s+da\s+fatura)?\s+[^R]*R\$\s*([\d.]+,\d{2})/i,
-	);
-	const parsedTotal = totalMatch ? parseBrazilianAmount(totalMatch[1]) : null;
-	const transactionTotal = transactions.reduce(
-		(total, transaction) => total + transaction.amount,
-		0,
-	);
-
-	const isPaid =
-		isCurrentInvoicePayment ||
-		/fatura\s+paga|pagamento\s+efetuado|pago em/i.test(text);
-
-	return buildInvoiceMetadataFromDueDate(dueDate, {
-		isPaid,
-		paymentDate,
-		...resolvePdfTotalMetadata(parsedTotal, transactionTotal),
-	});
 }
 
 /** Fatura Nubank: usa o ano do cabeçalho FATURA (antes do ciclo de compras). */
@@ -641,6 +521,16 @@ function parseNubankInvoiceMetadata(
 ): InvoiceImportMetadata | null {
 	const dueDate = parseNubankDueDate(text);
 
+	/**
+	 * O resumo do banco, lido como livro que se fecha.
+	 *
+	 * Enquanto ele fecha, é a fonte mais forte que a fatura oferece: o próprio
+	 * banco declarando anterior, pagamentos, créditos, compras e total, tudo
+	 * conciliado. As regexes soltas continuam como reserva para PDF antigo ou
+	 * layout que o recorte não reconheça.
+	 */
+	const summary = parseNubankInvoiceSummary(text);
+
 	const totalMatch = text.match(/Total a pagar\s+R\$\s*([\d.]+,\d{2})/i);
 
 	// Bloco "Resumo da fatura atual": o banco declara a fatura anterior e quanto
@@ -654,10 +544,7 @@ function parseNubankInvoiceMetadata(
 	);
 	const creditLimits = parseNubankCreditLimits(text);
 	const parsedTotal = totalMatch ? parseBrazilianAmount(totalMatch[1]) : null;
-	const transactionTotal = transactions.reduce(
-		(total, transaction) => total + transaction.amount,
-		0,
-	);
+	const transactionTotal = sumImportedTransactionAmounts(transactions);
 
 	/**
 	 * Linha do pagamento: "13 ABR Pagamento em 13 ABR −R$ 10.430,51".
@@ -692,16 +579,36 @@ function parseNubankInvoiceMetadata(
 
 	if (!dueDate && !period) return null;
 
-	const totalMetadata = resolvePdfTotalMetadata(parsedTotal, transactionTotal);
+	/*
+	 * Resumo que fecha manda no total, sem passar pela heurística.
+	 *
+	 * `resolvePdfTotalMetadata` decide por razão entre cabeçalho e soma das linhas
+	 * — regra criada para um bug do Inter e que erra sempre que a fatura tem
+	 * crédito, rotativo ou parcelamento, porque aí o total declarado legitimamente
+	 * não é a soma das linhas. Uma conciliação fechada ao centavo é prova; razão
+	 * 2× é palpite.
+	 */
+	const totalMetadata =
+		summary?.balances && summary.totalDue != null
+			? {
+					totalAmount: summary.totalDue,
+					totalAmountSource: "pdf_summary" as const,
+				}
+			: resolvePdfTotalMetadata(parsedTotal, transactionTotal);
 
 	return {
 		period,
-		previousInvoiceTotal: previousInvoiceMatch
-			? parseBrazilianAmount(previousInvoiceMatch[1])
-			: null,
-		previousInvoicePaymentReceived: previousPaymentMatch
-			? parseBrazilianAmount(previousPaymentMatch[1])
-			: null,
+		previousInvoiceTotal:
+			summary?.previousInvoice ??
+			(previousInvoiceMatch
+				? parseBrazilianAmount(previousInvoiceMatch[1])
+				: null),
+		previousInvoicePaymentReceived:
+			summary && summary.paymentsReceived > 0
+				? summary.paymentsReceived
+				: previousPaymentMatch
+					? parseBrazilianAmount(previousPaymentMatch[1])
+					: null,
 		creditLimitTotal: creditLimits.total,
 		creditLimitGuaranteed: creditLimits.guaranteed,
 		dueDate,
@@ -709,66 +616,6 @@ function parseNubankInvoiceMetadata(
 		paymentDate,
 		totalAmount: totalMetadata.totalAmount,
 		totalAmountSource: totalMetadata.totalAmountSource,
-	};
-}
-
-function parseInterCardPdf(text: string): ImportStatement {
-	if (!isInterCardInvoice(text)) {
-		throw new Error("Fatura de cartão do Banco Inter não reconhecida.");
-	}
-
-	const cardMatch = text.match(/(\d{4})\*{4}(\d{4})/);
-	const accountNumber = cardMatch ? `${cardMatch[1]}****${cardMatch[2]}` : null;
-
-	const sectionStart = text.search(/Despesas da fatura/i);
-	const afterStart = sectionStart >= 0 ? text.slice(sectionStart) : text;
-	const endRel = afterStart.search(/Próxima fatura/i);
-	const section =
-		endRel >= 0 ? afterStart.slice(0, endRel) : afterStart.slice(0, 2500);
-
-	const txnRe =
-		/(\d{1,2}) de ([a-zç.]+)\s+(\d{4})\s+(.+?)\s+-\s+(\+\s*)?R\$\s*([\d.]+,\d{2})/gi;
-
-	const transactions: ImportedTransaction[] = [];
-
-	for (const match of section.matchAll(txnRe)) {
-		if (match[5]) continue;
-
-		const date = parsePortugueseAbbrevDotDate(match[1], match[2], match[3]);
-		if (!date) continue;
-
-		const description = match[4].replace(/\s+/g, " ").trim();
-		if (
-			!description ||
-			INTER_CARD_PAYMENT_RE.test(description) ||
-			/Total CARTÃO/i.test(description)
-		) {
-			continue;
-		}
-
-		const amount = parseBrazilianAmount(match[6]);
-		if (amount <= 0) continue;
-
-		transactions.push({
-			externalId: makeSyntheticExternalId([date, description, String(amount)]),
-			date,
-			amount,
-			description,
-			transactionType: "expense",
-		});
-	}
-
-	if (transactions.length === 0) {
-		throw new Error("Nenhuma transação encontrada na fatura do cartão Inter.");
-	}
-
-	return {
-		source: "Banco Inter",
-		accountNumber,
-		period: buildPeriodFromTransactions(transactions),
-		isCreditCard: true,
-		transactions,
-		invoice: parseInterCardInvoiceMetadata(text, transactions),
 	};
 }
 

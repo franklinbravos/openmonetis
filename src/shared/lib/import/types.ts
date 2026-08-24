@@ -9,6 +9,8 @@ export type ImportedTransaction = {
 
 export type InvoiceSourceTotalKind =
 	| "ofx_ledger"
+	/** Resumo da fatura conciliado: a conta do banco fecha ao centavo. */
+	| "pdf_summary"
 	| "pdf_header"
 	| "pdf_lines_fallback"
 	| "lines_fallback";

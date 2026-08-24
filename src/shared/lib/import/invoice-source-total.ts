@@ -75,6 +75,8 @@ export function invoiceSourceTotalKindLabel(
 	switch (source) {
 		case "ofx_ledger":
 			return "OFX";
+		case "pdf_summary":
+			return "PDF (resumo conferido)";
 		case "pdf_header":
 			return "PDF";
 		case "pdf_lines_fallback":
