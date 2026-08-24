@@ -7,6 +7,7 @@ import {
 	importOccurrenceCollidesWithStored,
 	makeSyntheticExternalId,
 	parseBrazilianAmount,
+	parseBrazilianAmountOrNull,
 	parseCnabDate,
 	parsePortugueseAbbrevDotDate,
 	parsePortugueseLongDate,
@@ -506,5 +507,89 @@ describe("replaceAmbiguousImportExternalIds", () => {
 		]);
 
 		expect(rows.map((row) => row.externalId)).toEqual([null, null]);
+	});
+});
+
+describe("parseBrazilianAmountOrNull", () => {
+	it("lê o formato brasileiro", () => {
+		expect(parseBrazilianAmountOrNull("1.234,56")).toBe(1234.56);
+		expect(parseBrazilianAmountOrNull("R$ 1.234,56")).toBe(1234.56);
+		expect(parseBrazilianAmountOrNull("-1.234,56")).toBe(-1234.56);
+		expect(parseBrazilianAmountOrNull("89,90")).toBe(89.9);
+	});
+
+	it("lê o formato americano pelo último separador", () => {
+		expect(parseBrazilianAmountOrNull("1,234.56")).toBe(1234.56);
+		expect(parseBrazilianAmountOrNull("1,234,567.89")).toBe(1234567.89);
+	});
+
+	it("só com pontos, três casas é milhar e duas é decimal", () => {
+		expect(parseBrazilianAmountOrNull("1.234")).toBe(1234);
+		expect(parseBrazilianAmountOrNull("89.90")).toBe(89.9);
+		expect(parseBrazilianAmountOrNull("89.9")).toBe(89.9);
+	});
+
+	it("reconhece as três formas de negativo do extrato", () => {
+		// Sem isto a linha caía em zero e era descartada em silêncio.
+		expect(parseBrazilianAmountOrNull("(1.234,56)")).toBe(-1234.56);
+		expect(parseBrazilianAmountOrNull("1.234,56-")).toBe(-1234.56);
+		expect(parseBrazilianAmountOrNull("−1.234,56")).toBe(-1234.56);
+		expect(parseBrazilianAmountOrNull("–1.234,56")).toBe(-1234.56);
+	});
+
+	it("devolve null no ilegível, em vez de zero", () => {
+		expect(parseBrazilianAmountOrNull("")).toBeNull();
+		expect(parseBrazilianAmountOrNull("   ")).toBeNull();
+		expect(parseBrazilianAmountOrNull("abc")).toBeNull();
+		expect(parseBrazilianAmountOrNull("R$")).toBeNull();
+		expect(parseBrazilianAmountOrNull("1.2a4,56")).toBeNull();
+	});
+
+	it("zero de verdade continua sendo zero", () => {
+		expect(parseBrazilianAmountOrNull("0,00")).toBe(0);
+		expect(parseBrazilianAmountOrNull("R$ 0,00")).toBe(0);
+	});
+
+	it("parseBrazilianAmount mantém o contrato antigo de zero", () => {
+		expect(parseBrazilianAmount("abc")).toBe(0);
+		expect(parseBrazilianAmount("1.234,56")).toBe(1234.56);
+	});
+});
+
+describe("datas impossíveis não passam", () => {
+	it("parseSlashDateDMY recusa dia que não existe no mês", () => {
+		expect(parseSlashDateDMY("31/02/2026")).toBeNull();
+		expect(parseSlashDateDMY("30/02/2026")).toBeNull();
+		expect(parseSlashDateDMY("31/04/2026")).toBeNull();
+		expect(parseSlashDateDMY("00/01/2026")).toBeNull();
+		expect(parseSlashDateDMY("01/13/2026")).toBeNull();
+	});
+
+	it("parseSlashDateDMY aceita data válida, inclusive 29/02 bissexto", () => {
+		expect(parseSlashDateDMY("05/07/2026")).toBe("2026-07-05");
+		expect(parseSlashDateDMY("29/02/2024")).toBe("2024-02-29");
+		expect(parseSlashDateDMY("29/02/2026")).toBeNull();
+	});
+
+	it("parseCnabDate recusa data impossível", () => {
+		expect(parseCnabDate("31022026")).toBeNull();
+		expect(parseCnabDate("05072026")).toBe("2026-07-05");
+	});
+
+	it("parsePortugueseLongDate recusa data impossível", () => {
+		expect(parsePortugueseLongDate("31", "fevereiro", "2026")).toBeNull();
+		expect(parsePortugueseLongDate("05", "julho", "2026")).toBe("2026-07-05");
+	});
+
+	it("parsePortugueseAbbrevDotDate recusa data impossível", () => {
+		expect(parsePortugueseAbbrevDotDate("31", "fev.", "2026")).toBeNull();
+		expect(parsePortugueseAbbrevDotDate("05", "jul.", "2026")).toBe(
+			"2026-07-05",
+		);
+	});
+
+	it("parsePortugueseShortDate recusa data impossível", () => {
+		expect(parsePortugueseShortDate("31", "fev", 2026)).toBeNull();
+		expect(parsePortugueseShortDate("05", "jul", 2026)).toBe("2026-07-05");
 	});
 });

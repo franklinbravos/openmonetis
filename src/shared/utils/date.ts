@@ -86,6 +86,17 @@ function parseDateOnlyParts(value: string): DateOnlyParts | null {
 	return { year, month, day };
 }
 
+/**
+ * A data existe no calendário?
+ *
+ * Os parsers de importação montam `YYYY-MM-DD` por concatenação, então
+ * `31/02/2026` sai como `"2026-02-31"` sem reclamar. Daqui para frente é este
+ * teste que decide, e ele é o mesmo que `parseLocalDateString` já usa.
+ */
+export function isValidDateOnly(value: string): boolean {
+	return parseDateOnlyParts(value) !== null;
+}
+
 function getTimeZoneParts(
 	date: Date,
 	timeZone: string,

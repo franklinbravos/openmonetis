@@ -1,3 +1,4 @@
+import { isValidDateOnly } from "@/shared/utils/date";
 import { fixUtf8Mojibake } from "@/shared/utils/string";
 
 const PT_MONTHS: Record<string, number> = {
@@ -31,31 +32,97 @@ const PT_MONTHS_ABBR: Record<string, number> = {
 	dez: 12,
 };
 
-export function parseBrazilianAmount(raw: string): number {
-	const trimmed = raw.trim().replace(/\s/g, "");
-	const isNegative = trimmed.startsWith("-");
+/**
+ * Valor monetário de arquivo bancário, ou `null` quando não dá para ler.
+ *
+ * O `null` é o ponto: a versão que devolvia `0` fazia a linha desaparecer, porque
+ * os parsers descartam valor zero (`if (amount === 0) continue`). Extrato com
+ * parênteses negativos, menos à direita ou menos Unicode perdia lançamento sem
+ * deixar rastro.
+ *
+ * O separador decimal é o último `,` ou `.` que aparece — é o que distingue
+ * `1.234,56` de `1,234.56`. Só de pontos, três casas depois do último ponto são
+ * milhar (`1.234` = mil duzentos e trinta e quatro); uma ou duas são decimal.
+ */
+export function parseBrazilianAmountOrNull(raw: string): number | null {
+	const compact = raw
+		.trim()
+		.replace(/\s/g, "")
+		.replace(/[−–—]/g, "-")
+		.replace(/R\$/gi, "");
 
-	const normalized = trimmed
-		.replace(/^-/, "")
-		.replace(/^R\$/i, "")
-		.replace(/\./g, "")
-		.replace(",", ".");
+	if (compact.length === 0) return null;
+
+	// Negativo pode vir de três formas: sinal na frente, atrás, ou parênteses.
+	const isNegative =
+		compact.startsWith("-") ||
+		compact.endsWith("-") ||
+		(compact.startsWith("(") && compact.endsWith(")"));
+
+	const digitsAndSeparators = compact.replace(/[()-]/g, "");
+	if (!/^[\d.,]+$/.test(digitsAndSeparators)) return null;
+	if (!/\d/.test(digitsAndSeparators)) return null;
+
+	const lastComma = digitsAndSeparators.lastIndexOf(",");
+	const lastDot = digitsAndSeparators.lastIndexOf(".");
+
+	let decimalSeparator: "," | "." | null = null;
+	if (lastComma >= 0 && lastDot >= 0) {
+		decimalSeparator = lastComma > lastDot ? "," : ".";
+	} else if (lastComma >= 0) {
+		decimalSeparator = ",";
+	} else if (lastDot >= 0) {
+		const decimals = digitsAndSeparators.length - lastDot - 1;
+		decimalSeparator = decimals === 3 ? null : ".";
+	}
+
+	const normalized = decimalSeparator
+		? `${digitsAndSeparators
+				.slice(0, decimalSeparator === "," ? lastComma : lastDot)
+				.replace(/[.,]/g, "")}.${digitsAndSeparators
+				.slice((decimalSeparator === "," ? lastComma : lastDot) + 1)
+				.replace(/[.,]/g, "")}`
+		: digitsAndSeparators.replace(/[.,]/g, "");
 
 	const value = Number.parseFloat(normalized);
-	if (Number.isNaN(value)) return 0;
+	if (!Number.isFinite(value)) return null;
+
 	return isNegative ? -value : value;
+}
+
+/**
+ * Igual à anterior, mas com `0` no lugar de `null`.
+ *
+ * Mantida para quem já dependia desse contrato. Em caminho novo, prefira
+ * `parseBrazilianAmountOrNull` — o zero é indistinguível de "não consegui ler".
+ */
+export function parseBrazilianAmount(raw: string): number {
+	return parseBrazilianAmountOrNull(raw) ?? 0;
+}
+
+/**
+ * Só devolve a data se ela existir no calendário.
+ *
+ * Os parsers montam `YYYY-MM-DD` concatenando pedaços, então `31/02/2026`
+ * passava. Depois `parseLocalDateString` devolve `Date(NaN)`, o período derivado
+ * sai `"NaN-NaN"` e uma data inválida vai para uma coluna `date not null`.
+ */
+function asValidDateOnly(value: string): string | null {
+	return isValidDateOnly(value) ? value : null;
 }
 
 export function parseSlashDateDMY(raw: string): string | null {
 	const match = raw.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
 	if (!match) return null;
-	return `${match[3]}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`;
+	return asValidDateOnly(
+		`${match[3]}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`,
+	);
 }
 
 export function parseCnabDate(raw: string): string | null {
 	const match = raw.trim().match(/^(\d{2})(\d{2})(\d{4})$/);
 	if (!match) return null;
-	return `${match[3]}-${match[2]}-${match[1]}`;
+	return asValidDateOnly(`${match[3]}-${match[2]}-${match[1]}`);
 }
 
 export function parsePortugueseLongDate(
@@ -65,7 +132,9 @@ export function parsePortugueseLongDate(
 ): string | null {
 	const month = PT_MONTHS[monthName.toLowerCase()];
 	if (!month) return null;
-	return `${year}-${String(month).padStart(2, "0")}-${day.padStart(2, "0")}`;
+	return asValidDateOnly(
+		`${year}-${String(month).padStart(2, "0")}-${day.padStart(2, "0")}`,
+	);
 }
 
 export function parsePortugueseShortDate(
@@ -75,7 +144,9 @@ export function parsePortugueseShortDate(
 ): string | null {
 	const month = getPortugueseMonthNumberFromAbbr(monthAbbr);
 	if (!month) return null;
-	return `${year}-${String(month).padStart(2, "0")}-${day.padStart(2, "0")}`;
+	return asValidDateOnly(
+		`${year}-${String(month).padStart(2, "0")}-${day.padStart(2, "0")}`,
+	);
 }
 
 export function getPortugueseMonthNumberFromAbbr(
@@ -92,7 +163,9 @@ export function parsePortugueseAbbrevDotDate(
 ): string | null {
 	const month = PT_MONTHS_ABBR[monthAbbr.replace(/\./g, "").toLowerCase()];
 	if (!month) return null;
-	return `${year}-${String(month).padStart(2, "0")}-${day.padStart(2, "0")}`;
+	return asValidDateOnly(
+		`${year}-${String(month).padStart(2, "0")}-${day.padStart(2, "0")}`,
+	);
 }
 
 export function buildPeriodFromTransactions(
