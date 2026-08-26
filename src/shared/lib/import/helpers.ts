@@ -59,7 +59,10 @@ export function parseBrazilianAmountOrNull(raw: string): number | null {
 		compact.endsWith("-") ||
 		(compact.startsWith("(") && compact.endsWith(")"));
 
-	const digitsAndSeparators = compact.replace(/[()-]/g, "");
+	// O `+` explícito é comum em extrato ("Total de entradas +8.629,88") e não
+	// muda o valor — mas descartá-lo é obrigatório, senão a validação recusa a
+	// string inteira e o lançamento some.
+	const digitsAndSeparators = compact.replace(/[()+-]/g, "");
 	if (!/^[\d.,]+$/.test(digitsAndSeparators)) return null;
 	if (!/\d/.test(digitsAndSeparators)) return null;
 

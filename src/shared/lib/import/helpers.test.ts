@@ -545,6 +545,13 @@ describe("parseBrazilianAmountOrNull", () => {
 		expect(parseBrazilianAmountOrNull("1.2a4,56")).toBeNull();
 	});
 
+	it("aceita o mais explícito do extrato", () => {
+		// "Total de entradas +8.629,88" — sem isto a string inteira era recusada.
+		expect(parseBrazilianAmountOrNull("+8.629,88")).toBe(8629.88);
+		expect(parseBrazilianAmountOrNull("+ 8.629,88")).toBe(8629.88);
+		expect(parseBrazilianAmountOrNull("+0,00")).toBe(0);
+	});
+
 	it("zero de verdade continua sendo zero", () => {
 		expect(parseBrazilianAmountOrNull("0,00")).toBe(0);
 		expect(parseBrazilianAmountOrNull("R$ 0,00")).toBe(0);

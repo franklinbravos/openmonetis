@@ -18,6 +18,10 @@ import {
 	resolvePdfTotalMetadata,
 	sumImportedTransactionAmounts,
 } from "./pdf/invoice-metadata";
+import {
+	isNubankBankStatementPdf,
+	parseNubankBankStatementPdf,
+} from "./pdf/nubank-statement";
 import { parseNubankInvoiceSummary } from "./pdf/nubank-summary";
 import { openPdfDocumentWithPassword } from "./pdf-password";
 import type {
@@ -754,11 +758,15 @@ export function parsePdfText(text: string): ImportStatement {
 		return parseInterCardPdf(text);
 	}
 
+	if (isNubankBankStatementPdf(text)) {
+		return parseNubankBankStatementPdf(text);
+	}
+
 	if (/Período:|Saldo por transação/i.test(text)) {
 		return parseInterBankPdf(text);
 	}
 
 	throw new Error(
-		"PDF não reconhecido. Suportamos extratos e faturas do Banco Inter, faturas do Nubank e faturas de cartão Itaú.",
+		"PDF não reconhecido. Suportamos extratos e faturas do Banco Inter, extratos e faturas do Nubank e faturas de cartão Itaú.",
 	);
 }
