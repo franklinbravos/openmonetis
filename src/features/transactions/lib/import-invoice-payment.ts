@@ -5,6 +5,10 @@ const INVOICE_PAYMENT_PATTERNS = [
 	/pgto\s+fatura/i,
 	/pagamento\s+(efetuado\s+)?pagamento\s+fatura/i,
 	/^pagamento\s+fatura/i,
+	// Como o extrato do Nubank escreve: "Pagamento de fatura", com o "de" que os
+	// outros padrões não previam. Ancorado no início para não casar com estorno
+	// ou com "referente a pagamento de fatura".
+	/^pagamento\s+de\s+fatura/i,
 	/pagto\s+fatura/i,
 	/^pagamento\s+recebido$/i,
 ];

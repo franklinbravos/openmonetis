@@ -79,6 +79,19 @@ describe("parseNubankBankStatementPdf", () => {
 		expect(transactions[2].description).not.toContain("Tem alguma dúvida");
 	});
 
+	it("descarta o cabeçalho de página, que grudava na descrição seguinte", () => {
+		// Nome do titular + CPF + agência + conta abrem cada página, no meio das
+		// movimentações. Sem removê-los, viravam prefixo do lançamento seguinte.
+		const comCabecalho = `${EXTRATO}
+Franklin Diogo Aparecido Bravos Querino dos Santos •••.532.298-••   0001 CPF   Agência   Conta 472152010-3 09 JAN 2026   Total de entradas   + 52,45  Transferência Recebida Maria Luiza 52,45 `;
+		const { transactions } = parseNubankStatementMovements(comCabecalho);
+		const ultima = transactions.at(-1);
+
+		expect(ultima?.description).toBe("Transferência Recebida Maria Luiza");
+		expect(ultima?.description).not.toContain("Franklin Diogo");
+		expect(ultima?.description).not.toContain("472152010-3");
+	});
+
 	it("descarta o rodapé repetido a cada página", () => {
 		const { transactions } = parseNubankStatementMovements(EXTRATO);
 

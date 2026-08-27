@@ -35,7 +35,9 @@ const PAGE_NOISE_PATTERNS = [
 	/Tem alguma d[úu]vida\?[\s\S]*?Atendimento 24h\./gi,
 	/Caso a solu[çc][ãa]o fornecida[\s\S]*?em dias [úu]teis\./gi,
 	/Extrato gerado dia[\s\S]*?\d+ de \d+/gi,
-	/•+\.\d{3}\.\d{3}-•+\s+\d{4}\s+CPF\s+Ag[êe]ncia\s+Conta/gi,
+	// Cabeçalho de página: nome do titular, CPF, agência e conta. Sem consumir o
+	// nome e o número da conta, eles grudam na descrição do lançamento seguinte.
+	/(^|\n)[^\n]{0,120}?•+\.\d{3}\.\d{3}-•+\s+\d{4}\s+CPF\s+Ag[êe]ncia\s+Conta\s+[\d-]+/g,
 	/a \d{2} DE [A-ZÇ]+ DE \d{4}\s+\d{2} DE [A-ZÇ]+ DE \d{4}\s+VALORES EM R\$/gi,
 ];
 

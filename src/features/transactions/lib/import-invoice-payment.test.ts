@@ -8,6 +8,12 @@ import {
 describe("import-invoice-payment", () => {
 	it("reconhece pagamento recebido da fatura Nubank", () => {
 		expect(isInvoicePaymentDescription("Pagamento recebido")).toBe(true);
+		// Como o extrato do Nubank escreve. Sem isto, o pagamento da fatura entrava
+		// no extrato como despesa comum e não liquidava fatura nenhuma.
+		expect(isInvoicePaymentDescription("Pagamento de fatura")).toBe(true);
+		expect(isInvoicePaymentDescription("Pagamento de fatura Nubank")).toBe(
+			true,
+		);
 	});
 
 	it("exclui pagamento recebido na importação de fatura de cartão", () => {
@@ -47,5 +53,19 @@ describe("import-invoice-payment", () => {
 			invoicePaymentCardId: null,
 			invoicePaymentPeriod: null,
 		});
+	});
+});
+
+describe("pagamento de fatura: o que NÃO é", () => {
+	it("não casa com estorno nem com menção no meio da frase", () => {
+		expect(isInvoicePaymentDescription("Estorno de pagamento de fatura")).toBe(
+			false,
+		);
+		expect(
+			isInvoicePaymentDescription("Débito referente a pagamento de fatura"),
+		).toBe(false);
+		expect(isInvoicePaymentDescription("Pagamento de boleto efetuado")).toBe(
+			false,
+		);
 	});
 });
