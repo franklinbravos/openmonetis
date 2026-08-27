@@ -985,7 +985,7 @@ export function ReviewTable({
 									<TableHead>Descrição</TableHead>
 									<TableHead className="w-12 text-center">Pessoa</TableHead>
 									<TableHead className="w-44">Categoria / Fatura</TableHead>
-									<TableHead className="w-28">Tipo</TableHead>
+									<TableHead className="w-32">Tipo</TableHead>
 									<TableHead className="w-28 text-right">Valor</TableHead>
 								</TableRow>
 							</TableHeader>
@@ -1155,11 +1155,19 @@ export function ReviewTable({
 											<TableCell className="text-muted-foreground text-sm">
 												{formatDate(row.date)}
 											</TableCell>
-											<TableCell className="max-w-[200px] min-w-0 whitespace-normal text-sm">
+											{/*
+											 * A descrição é o que distingue uma linha da outra, então é
+											 * ela que precisa de espaço — não os selects. Antes a célula
+											 * era travada em 200px e o campo era um input de uma linha:
+											 * "Transferência recebida pelo Pix FULANO - CNPJ - BANCO"
+											 * aparecia como "Transferência", igual em toda linha.
+											 */}
+											<TableCell className="min-w-[18rem] whitespace-normal text-sm">
 												<div className="min-w-0 space-y-2">
 													<ReviewDescriptionField
 														row={row}
 														index={index}
+														fullWidth
 														isCard={isCard}
 														invoicePeriod={invoicePeriod}
 														categoryOptions={categoryOptions}
@@ -1202,7 +1210,7 @@ export function ReviewTable({
 													/>
 												</div>
 											</TableCell>
-											<TableCell>
+											<TableCell className="w-44 max-w-[11rem]">
 												{row.kind === "invoice_payment" ? (
 													<ReviewInvoicePaymentFields
 														row={row}
@@ -1240,7 +1248,7 @@ export function ReviewTable({
 													/>
 												)}
 											</TableCell>
-											<TableCell>
+											<TableCell className="w-32 max-w-[8rem]">
 												<ReviewRowKindSelect
 													row={row}
 													index={index}
@@ -2330,7 +2338,10 @@ function ReviewDescriptionField({
 						tabIndex={excludeFromTabOrder ? -1 : undefined}
 						className={cn(
 							fieldClassName,
-							"min-h-10 min-w-0 flex-1 resize-none wrap-break-word leading-snug",
+							// `field-sizing-content` cresce com o texto: descrição de extrato
+							// passa de 130 caracteres e duas linhas fixas cortavam o fim,
+							// que é onde ficam agência e conta. `rows` vira o piso.
+							"min-h-10 min-w-0 flex-1 resize-none wrap-break-word leading-snug field-sizing-content",
 						)}
 					/>
 				) : (
