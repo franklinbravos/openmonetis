@@ -1629,6 +1629,7 @@ export function ImportPage({
 			selectedCardOption,
 			triggerImportAiAnalysis,
 			accountOptions,
+			applyInvoicePaymentAmountMatches,
 		],
 	);
 
