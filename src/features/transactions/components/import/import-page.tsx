@@ -1373,6 +1373,7 @@ export function ImportPage({
 								t.transactionType,
 								accountOptions,
 								resolvedAccountId,
+								normalizedStatement.accountHolder,
 							);
 					const guessedCardId = treatAsInvoicePayment
 						? guessInvoicePaymentCardId(t.description, cardOptions)

@@ -261,6 +261,28 @@ export function parseNubankStatementMovements(
 	return { transactions, groups };
 }
 
+/**
+ * Titular do extrato: nome e documento mascarado do cabeçalho.
+ *
+ * O cabeçalho abre cada página com "<nome> •••.532.298-•• 0001 CPF Agência
+ * Conta <número>". O mesmo mascaramento aparece na descrição de um Pix entre
+ * contas próprias, e é o que permite reconhecê-lo sem depender de cadastro.
+ */
+export function parseStatementHolder(
+	text: string,
+): { name: string | null; document: string | null } | null {
+	const match = text.match(
+		/([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]{5,80}?)\s*(•+\.\d{3}\.\d{3}-•+)\s+\d{4}\s+CPF/,
+	);
+	if (!match) return null;
+
+	const name = normalizeImportedText(match[1] ?? "");
+	const document = (match[2] ?? "").trim();
+
+	if (!name && !document) return null;
+	return { name: name || null, document: document || null };
+}
+
 function parseStatementPeriod(
 	text: string,
 ): { from: string; to: string } | null {
@@ -297,6 +319,7 @@ export function parseNubankBankStatementPdf(text: string): ImportStatement {
 		accountNumber: accountMatch?.[1] ?? null,
 		period: parseStatementPeriod(text),
 		isCreditCard: false,
+		accountHolder: parseStatementHolder(text),
 		transactions,
 	};
 }

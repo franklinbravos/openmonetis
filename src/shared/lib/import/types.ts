@@ -46,6 +46,15 @@ export type ImportStatement = {
 	accountNumber: string | null; // ACCTID
 	period: { from: string; to: string } | null; // YYYY-MM-DD
 	isCreditCard: boolean; // true = CREDITCARDMSGSRSV1
+	/**
+	 * Titular da conta, quando o arquivo declara.
+	 *
+	 * Serve para reconhecer transferência entre contas próprias: um Pix cuja
+	 * contraparte é o próprio titular não é receita nem despesa, é dinheiro
+	 * mudando de bolso. O documento vem mascarado (`•••.532.298-••`) e é o mesmo
+	 * mascaramento nos dois lugares, o que o torna comparável.
+	 */
+	accountHolder?: { name: string | null; document: string | null } | null;
 	transactions: ImportedTransaction[];
 	invoice?: InvoiceImportMetadata | null;
 };
