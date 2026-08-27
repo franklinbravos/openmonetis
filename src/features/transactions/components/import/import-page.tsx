@@ -61,6 +61,7 @@ import {
 	syncImportBatchContextAction,
 	syncImportBatchSourceTotalAction,
 } from "@/features/transactions/actions/import-batch-history-action";
+import { matchInvoicePaymentsByAmountAction } from "@/features/transactions/actions/invoice-payment-match";
 import {
 	fetchInvoiceSnapshotAction,
 	type InvoiceSnapshot,
@@ -1148,6 +1149,45 @@ export function ImportPage({
 		[selectedCardOption],
 	);
 
+	/** Preenche cartão e fatura dos pagamentos que o valor identifica sozinho. */
+	const applyInvoicePaymentAmountMatches = useCallback(
+		async (builtRows: ReviewRow[]) => {
+			const pending = builtRows
+				.map((row, index) => ({ row, index }))
+				.filter(
+					({ row }) =>
+						row.kind === "invoice_payment" && !row.invoicePaymentCardId,
+				);
+
+			if (pending.length === 0) return;
+
+			const matches = await matchInvoicePaymentsByAmountAction(
+				pending.map(({ row, index }) => ({
+					key: String(index),
+					amount: row.amount,
+					date: row.date,
+				})),
+			);
+
+			setRows((previous) =>
+				previous.map((row, index) => {
+					const match = matches[String(index)];
+					if (!match) return row;
+					if (row.kind !== "invoice_payment") return row;
+					// Não sobrescreve escolha que o usuário já fez enquanto buscávamos.
+					if (row.invoicePaymentCardId) return row;
+
+					return {
+						...row,
+						invoicePaymentCardId: match.cardId,
+						invoicePaymentPeriod: match.period,
+					};
+				}),
+			);
+		},
+		[],
+	);
+
 	const processParsedStatement = useCallback(
 		async (
 			stmt: ImportStatement,
@@ -1517,6 +1557,17 @@ export function ImportPage({
 				);
 
 				setRows(sanitizedRows);
+
+				/*
+				 * Vincula o pagamento de fatura ao cartão pelo valor.
+				 *
+				 * O extrato descreve só "Pagamento de fatura", sem cartão nem
+				 * período, e o palpite por nome não tem o que casar. O valor tem: o
+				 * total da fatura identifica qual foi. Roda depois de a revisão já
+				 * estar na tela, porque é conveniência — se demorar ou falhar, o
+				 * usuário escolhe à mão como antes.
+				 */
+				void applyInvoicePaymentAmountMatches(sanitizedRows);
 
 				void triggerImportAiAnalysis(
 					sanitizedRows.filter((row) => !isInvoiceExtraReviewRow(row)),

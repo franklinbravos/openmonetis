@@ -87,3 +87,65 @@ export function guessInvoicePaymentPeriod(
 
 	return deriveCreditCardPeriod(paymentDate, card.closingDay, card.dueDay);
 }
+
+export type InvoiceAmountCandidate = {
+	cardId: string;
+	period: string;
+	/** Total da fatura, em módulo. */
+	total: number;
+	/** Vencimento efetivo do período, `YYYY-MM-DD`, quando o cartão declara. */
+	dueDate: string | null;
+};
+
+/**
+ * Acha a fatura que um pagamento do extrato quitou, pelo valor.
+ *
+ * A descrição do extrato do Nubank é só "Pagamento de fatura" — sem nome de
+ * cartão, sem período. Mas o valor é uma chave forte: o pagamento de janeiro é
+ * R$ 6.003,17, que é exatamente o total daquela fatura.
+ *
+ * Só devolve quando não há dúvida. Dois cartões com o mesmo total no mesmo mês é
+ * ambiguidade, e chutar seria pior do que perguntar — o vínculo errado liquida a
+ * fatura errada. Quando o empate é entre períodos do MESMO cartão, aí sim há
+ * desempate: vence o vencimento mais próximo da data do pagamento.
+ */
+export function matchInvoicePaymentByAmount(input: {
+	amount: number;
+	paymentDate: string;
+	candidates: InvoiceAmountCandidate[];
+	/** Tolerância do arredondamento do banco. */
+	tolerance?: number;
+}): { cardId: string; period: string } | null {
+	const tolerance = input.tolerance ?? 0.02;
+	const amount = Math.abs(input.amount);
+
+	const matches = input.candidates.filter(
+		(candidate) => Math.abs(Math.abs(candidate.total) - amount) <= tolerance,
+	);
+
+	if (matches.length === 0) return null;
+	if (matches.length === 1) {
+		const only = matches[0];
+		return only ? { cardId: only.cardId, period: only.period } : null;
+	}
+
+	// Cartões diferentes com o mesmo valor: não dá para saber qual foi.
+	const distinctCards = new Set(matches.map((match) => match.cardId));
+	if (distinctCards.size > 1) return null;
+
+	const closest = matches.reduce((best, candidate) => {
+		if (!best.dueDate) return candidate;
+		if (!candidate.dueDate) return best;
+		return distanceInDays(candidate.dueDate, input.paymentDate) <
+			distanceInDays(best.dueDate, input.paymentDate)
+			? candidate
+			: best;
+	});
+
+	return { cardId: closest.cardId, period: closest.period };
+}
+
+function distanceInDays(left: string, right: string): number {
+	const toTime = (value: string) => Date.parse(`${value}T00:00:00Z`);
+	return Math.abs(toTime(left) - toTime(right)) / 86_400_000;
+}

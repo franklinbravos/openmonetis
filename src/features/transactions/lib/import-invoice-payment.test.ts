@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	isInvoicePaymentDescription,
+	matchInvoicePaymentByAmount,
 	sanitizeExcludedCardInvoicePaymentRow,
 	shouldExcludeInvoicePaymentFromCardImport,
 } from "./import-invoice-payment";
@@ -67,5 +68,139 @@ describe("pagamento de fatura: o que NÃO é", () => {
 		expect(isInvoicePaymentDescription("Pagamento de boleto efetuado")).toBe(
 			false,
 		);
+	});
+});
+
+describe("matchInvoicePaymentByAmount", () => {
+	const NUBANK = "cartao-nubank";
+	const INTER = "cartao-inter";
+
+	it("acha a fatura pelo valor quando a descrição não diz nada", () => {
+		// Caso real: "Pagamento de fatura" de R$ 6.003,17 em 12/01, que é
+		// exatamente o total da fatura Nubank de janeiro.
+		expect(
+			matchInvoicePaymentByAmount({
+				amount: 6003.17,
+				paymentDate: "2026-01-12",
+				candidates: [
+					{
+						cardId: NUBANK,
+						period: "2026-01",
+						total: 6003.17,
+						dueDate: "2026-01-12",
+					},
+					{
+						cardId: NUBANK,
+						period: "2026-02",
+						total: 7301.59,
+						dueDate: "2026-02-12",
+					},
+					{
+						cardId: INTER,
+						period: "2026-01",
+						total: 360.57,
+						dueDate: "2026-01-10",
+					},
+				],
+			}),
+		).toEqual({ cardId: NUBANK, period: "2026-01" });
+	});
+
+	it("absorve o centavo de arredondamento do banco", () => {
+		expect(
+			matchInvoicePaymentByAmount({
+				amount: 6003.18,
+				paymentDate: "2026-01-12",
+				candidates: [
+					{
+						cardId: NUBANK,
+						period: "2026-01",
+						total: 6003.17,
+						dueDate: "2026-01-12",
+					},
+				],
+			}),
+		).toEqual({ cardId: NUBANK, period: "2026-01" });
+	});
+
+	it("não chuta entre cartões diferentes com o mesmo valor", () => {
+		// Vínculo errado liquida a fatura errada. Melhor perguntar.
+		expect(
+			matchInvoicePaymentByAmount({
+				amount: 500,
+				paymentDate: "2026-01-12",
+				candidates: [
+					{
+						cardId: NUBANK,
+						period: "2026-01",
+						total: 500,
+						dueDate: "2026-01-12",
+					},
+					{
+						cardId: INTER,
+						period: "2026-01",
+						total: 500,
+						dueDate: "2026-01-10",
+					},
+				],
+			}),
+		).toBeNull();
+	});
+
+	it("empate no mesmo cartão vence o vencimento mais próximo", () => {
+		expect(
+			matchInvoicePaymentByAmount({
+				amount: 500,
+				paymentDate: "2026-02-12",
+				candidates: [
+					{
+						cardId: NUBANK,
+						period: "2026-01",
+						total: 500,
+						dueDate: "2026-01-12",
+					},
+					{
+						cardId: NUBANK,
+						period: "2026-02",
+						total: 500,
+						dueDate: "2026-02-12",
+					},
+					{
+						cardId: NUBANK,
+						period: "2026-03",
+						total: 500,
+						dueDate: "2026-03-12",
+					},
+				],
+			}),
+		).toEqual({ cardId: NUBANK, period: "2026-02" });
+	});
+
+	it("pagamento parcial não casa com nada", () => {
+		// Metade da fatura não é a fatura; aí o usuário escolhe.
+		expect(
+			matchInvoicePaymentByAmount({
+				amount: 3000,
+				paymentDate: "2026-01-12",
+				candidates: [
+					{
+						cardId: NUBANK,
+						period: "2026-01",
+						total: 6003.17,
+						dueDate: "2026-01-12",
+					},
+				],
+			}),
+		).toBeNull();
+	});
+
+	it("sem candidatos, devolve null", () => {
+		expect(
+			matchInvoicePaymentByAmount({
+				amount: 100,
+				paymentDate: "2026-01-12",
+				candidates: [],
+			}),
+		).toBeNull();
 	});
 });
