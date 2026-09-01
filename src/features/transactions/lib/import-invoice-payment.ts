@@ -11,6 +11,11 @@ const INVOICE_PAYMENT_PATTERNS = [
 	/^pagamento\s+de\s+fatura/i,
 	/pagto\s+fatura/i,
 	/^pagamento\s+recebido$/i,
+	// Como o extrato do Inter escreve o débito automático da fatura do cartão:
+	// "Pagamento efetuado: Debito Automatico Fatura Cartao Inter". Não começa com
+	// "pagamento de fatura", então nenhum dos padrões acima o alcançava e ele
+	// entrava como despesa comum.
+	/d[ée]bito\s+autom[áa]tico\s+fatura\s+cart[ãa]o/i,
 ];
 
 export function isInvoicePaymentDescription(description: string): boolean {

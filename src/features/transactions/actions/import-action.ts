@@ -329,6 +329,7 @@ export async function fetchImportDuplicateSnapshots(fitIds: string[]) {
 			installmentCount: transactions.installmentCount,
 			payerId: transactions.payerId,
 			categoryId: transactions.categoryId,
+			note: transactions.note,
 		})
 		.from(transactions)
 		.where(
@@ -349,6 +350,7 @@ export async function fetchImportDuplicateSnapshots(fitIds: string[]) {
 				installmentCount: row.installmentCount,
 				payerId: row.payerId,
 				categoryId: row.categoryId,
+				note: row.note,
 			})),
 		);
 }
@@ -368,6 +370,7 @@ const mapImportDuplicateSnapshotRows = (
 		period?: string | null;
 		condition?: string | null;
 		recurrenceCount?: number | null;
+		note?: string | null;
 	}>,
 ): ImportDuplicateSnapshot[] =>
 	rows.map((row) => ({
@@ -384,6 +387,7 @@ const mapImportDuplicateSnapshotRows = (
 		period: row.period ?? null,
 		condition: row.condition ?? null,
 		recurrenceCount: row.recurrenceCount ?? null,
+		note: row.note ?? null,
 	}));
 
 export async function fetchInvoicePeriodDuplicateSnapshots(
@@ -408,6 +412,7 @@ export async function fetchInvoicePeriodDuplicateSnapshots(
 			period: transactions.period,
 			condition: transactions.condition,
 			recurrenceCount: transactions.recurrenceCount,
+			note: transactions.note,
 		})
 		.from(transactions)
 		.where(
@@ -440,6 +445,7 @@ export async function fetchCardInstallmentDuplicateSnapshots(cardId: string) {
 			period: transactions.period,
 			condition: transactions.condition,
 			recurrenceCount: transactions.recurrenceCount,
+			note: transactions.note,
 		})
 		.from(transactions)
 		.where(
@@ -477,6 +483,7 @@ export async function fetchAccountImportDuplicateSnapshots(
 			installmentCount: transactions.installmentCount,
 			payerId: transactions.payerId,
 			categoryId: transactions.categoryId,
+			note: transactions.note,
 		})
 		.from(transactions)
 		.where(
@@ -502,6 +509,7 @@ export async function fetchAccountImportDuplicateSnapshots(
 				installmentCount: row.installmentCount,
 				payerId: row.payerId,
 				categoryId: row.categoryId,
+				note: row.note,
 			})),
 		);
 }

@@ -648,3 +648,42 @@ describe("duas linhas idênticas no mesmo arquivo", () => {
 		expect(states.map((state) => state.isDuplicate)).toEqual([false, true]);
 	});
 });
+
+describe("buildImportDuplicateValidation — fatura do cadastro casado", () => {
+	const CARD = "23233748-6eed-472f-9ffc-9fde3a5502c9";
+	const row = {
+		date: "2026-01-12",
+		amount: 6003.17,
+		description: "Pagamento de fatura",
+		transactionType: "expense" as const,
+	};
+	const pagamento = {
+		id: "existing-pagto",
+		ofxFitId: "nu-1",
+		name: "Pagamento fatura - Nubank",
+		amount: "-6003.17",
+		purchaseDate: new Date(2026, 0, 12),
+		transactionType: "Despesa",
+		currentInstallment: null,
+		installmentCount: null,
+		payerId: "payer-1",
+		categoryId: "cat-1",
+	};
+
+	it("lê da anotação a fatura que o pagamento cadastrado liquida", () => {
+		const validation = buildImportDuplicateValidation(row, {
+			...pagamento,
+			note: `AUTO_FATURA:${CARD}:2026-01`,
+		});
+
+		expect(validation.existingInvoiceCardId).toBe(CARD);
+		expect(validation.existingInvoicePeriod).toBe("2026-01");
+	});
+
+	it("acusa cadastro sem vínculo, que é despesa comum disfarçada de conferido", () => {
+		const validation = buildImportDuplicateValidation(row, pagamento);
+
+		expect(validation.existingInvoiceCardId).toBeNull();
+		expect(validation.existingInvoicePeriod).toBeNull();
+	});
+});

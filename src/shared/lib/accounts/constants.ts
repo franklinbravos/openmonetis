@@ -42,6 +42,16 @@ export const isInvoiceAmortizationNote = (note: string | null | undefined) =>
 	note?.includes(INVOICE_AMORTIZATION_NOTE_MARKER) ?? false;
 
 /**
+ * `AUTO_FATURA:<cartão>:<período>`, seguido do que mais a nota carregar.
+ *
+ * A nota não termina no período: a importação anexa uma linha `Extrato: <nome
+ * original>`, e a amortização anexa `:AMORT:<data>`. Ler por `split(":")` fazia
+ * o período de uma nota multilinha sair como `"2026-01\nExtrato"` e ser
+ * descartado — o pagamento existia e nenhuma fatura o via.
+ */
+const INVOICE_PAYMENT_NOTE_PATTERN = /^AUTO_FATURA:([^:\s]+):(\d{4}-\d{2})/;
+
+/**
  * Período da fatura que a nota de pagamento aponta.
  *
  * É a nota, e não a coluna `periodo` do lançamento, que diz a qual fatura o
@@ -50,12 +60,17 @@ export const isInvoiceAmortizationNote = (note: string | null | undefined) =>
  */
 export const parseInvoicePaymentNotePeriod = (
 	note: string | null | undefined,
-): string | null => {
-	if (!note?.startsWith(ACCOUNT_AUTO_INVOICE_NOTE_PREFIX)) return null;
-	// `AUTO_FATURA:<cartão>:<período>` — o id do cartão é um uuid, sem `:`.
-	const period = note.split(":")[2];
-	return period && /^\d{4}-\d{2}$/.test(period) ? period : null;
-};
+): string | null => note?.match(INVOICE_PAYMENT_NOTE_PATTERN)?.[2] ?? null;
+
+/**
+ * Cartão da fatura que a nota de pagamento aponta.
+ *
+ * Mesma razão do período: quem sabe a qual fatura o pagamento pertence é a
+ * nota. A coluna `cartao_id` do pagamento é nula — ele sai da conta corrente.
+ */
+export const parseInvoicePaymentNoteCardId = (
+	note: string | null | undefined,
+): string | null => note?.match(INVOICE_PAYMENT_NOTE_PATTERN)?.[1] ?? null;
 
 export const INVOICE_ADJUSTMENT_NAME = "Ajuste de fatura";
 

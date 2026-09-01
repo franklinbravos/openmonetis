@@ -164,17 +164,20 @@ function getReviewRowClassifiedClassName(row: ReviewRow): string {
 function ReviewVerifiedDuplicateDescription({
 	row,
 	index,
+	cardOptions,
 	onEditDuplicate,
 	onUndoDuplicate,
 }: {
 	row: ReviewRow;
 	index: number;
+	cardOptions: SelectOption[];
 	onEditDuplicate: (index: number) => void;
 	onUndoDuplicate: (index: number) => void;
 }) {
 	return (
-		<div className="flex min-w-0 items-center gap-1.5">
+		<div className="flex min-w-0 flex-wrap items-center gap-1.5">
 			<p className="min-w-0 flex-1 truncate font-medium">{row.description}</p>
+			<ReviewVerifiedInvoicePaymentBadge row={row} cardOptions={cardOptions} />
 			<Badge variant="success" className="shrink-0 text-[10px]">
 				Conferido
 			</Badge>
@@ -431,8 +434,79 @@ function ReviewVerifiedExistingType({
 
 	return (
 		<ReviewVerifiedExistingValue className={fullWidth ? "w-full" : undefined}>
-			{transactionType === "income" ? "Receita" : "Despesa"}
+			{/*
+			 * Pagamento de fatura e transferência não são "Despesa": o dinheiro sai
+			 * da conta, mas liquida uma fatura ou muda de bolso. Mostrar o tipo bruto
+			 * fazia a linha parecer uma despesa comum já conferida.
+			 */}
+			{getReviewRowKindLabel(row as ReviewRow)}
 		</ReviewVerifiedExistingValue>
+	);
+}
+
+/**
+ * Diz, na linha conferida, que ela é pagamento de fatura — e de qual fatura.
+ *
+ * Numa linha conferida nada é gravado: o que vale é o vínculo que o cadastro já
+ * tem, lido da anotação `AUTO_FATURA`. Sem cartão e mês visíveis, "Conferido"
+ * escondia dois casos bem diferentes — o pagamento certo, e um lançamento que
+ * entrou como despesa comum e não abate fatura nenhuma.
+ */
+function ReviewVerifiedInvoicePaymentBadge({
+	row,
+	cardOptions,
+}: {
+	row: ReviewRow;
+	cardOptions: SelectOption[];
+}) {
+	if (row.kind !== "invoice_payment") return null;
+
+	const labelFor = (cardId: string | null, period: string | null) => {
+		const cardLabel = cardId
+			? (cardOptions.find((option) => option.value === cardId)?.label ?? null)
+			: null;
+		if (!cardLabel || !period) return null;
+		return `${cardLabel} · ${displayPeriod(period)}`;
+	};
+
+	// Cartão e mês vêm em par: o cartão registrado com o mês adivinhado seria uma
+	// fatura que não existe.
+	const registered = labelFor(
+		row.duplicateValidation?.existingInvoiceCardId ?? null,
+		row.duplicateValidation?.existingInvoicePeriod ?? null,
+	);
+
+	if (registered) {
+		return (
+			<Badge variant="outline" className="shrink-0 gap-1 text-[10px]">
+				<RiBankCardLine className="size-3" aria-hidden />
+				{`Fatura ${registered}`}
+			</Badge>
+		);
+	}
+
+	// O cadastro casado não aponta fatura nenhuma: é uma despesa comum.
+	const guessed = labelFor(row.invoicePaymentCardId, row.invoicePaymentPeriod);
+
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<Badge
+					variant="outline"
+					className="shrink-0 gap-1 border-amber-500/40 bg-amber-500/5 text-[10px] text-amber-800 dark:text-amber-300"
+				>
+					<RiBankCardLine className="size-3" aria-hidden />
+					Fatura — cadastro sem vínculo
+				</Badge>
+			</TooltipTrigger>
+			<TooltipContent className="max-w-72">
+				O arquivo diz que esta linha é pagamento de fatura, mas o lançamento já
+				cadastrado está como despesa comum, sem vínculo com nenhuma fatura.
+				{guessed
+					? ` Pelo valor e pela data, ela liquida a fatura ${guessed}.`
+					: ""}
+			</TooltipContent>
+		</Tooltip>
 	);
 }
 
@@ -1014,7 +1088,7 @@ export function ReviewTable({
 												<TableCell className="text-muted-foreground text-sm">
 													{formatDate(row.date)}
 												</TableCell>
-												<TableCell className="max-w-[280px] min-w-0 whitespace-normal text-sm">
+												<TableCell className="min-w-[18rem] whitespace-normal text-sm">
 													<div className="space-y-1">
 														<p className="font-medium">{row.description}</p>
 														<ReviewInvoiceExtraStatus row={row} />
@@ -1037,6 +1111,7 @@ export function ReviewTable({
 												<TableCell>
 													<ReviewVerifiedExistingType
 														transactionType={row.transactionType}
+														rowKind={row.kind}
 													/>
 												</TableCell>
 												<TableCell className="text-right text-sm">
@@ -1080,7 +1155,7 @@ export function ReviewTable({
 												<TableCell className="text-muted-foreground text-sm">
 													{formatDate(row.date)}
 												</TableCell>
-												<TableCell className="max-w-[280px] min-w-0 whitespace-normal text-sm">
+												<TableCell className="min-w-[18rem] whitespace-normal text-sm">
 													{isImportRowLinked(row) ? (
 														<div className="space-y-1">
 															<p className="font-medium">{row.description}</p>
@@ -1090,6 +1165,7 @@ export function ReviewTable({
 														<ReviewVerifiedDuplicateDescription
 															row={row}
 															index={index}
+															cardOptions={cardOptions}
 															onEditDuplicate={onEditDuplicate}
 															onUndoDuplicate={onUndoDuplicate}
 														/>
@@ -1121,6 +1197,7 @@ export function ReviewTable({
 												<TableCell>
 													<ReviewVerifiedExistingType
 														transactionType={row.transactionType}
+														rowKind={row.kind}
 													/>
 												</TableCell>
 												<TableCell className="text-right text-sm">
@@ -1626,6 +1703,7 @@ function ReviewMobileCard({
 						<ReviewVerifiedDuplicateDescription
 							row={row}
 							index={index}
+							cardOptions={cardOptions}
 							onEditDuplicate={onEditDuplicate}
 							onUndoDuplicate={onUndoDuplicate}
 						/>

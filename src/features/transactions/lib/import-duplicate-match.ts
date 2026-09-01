@@ -1,5 +1,9 @@
 import type { ReviewInstallmentImport } from "@/features/transactions/lib/import-installments";
 import {
+	parseInvoicePaymentNoteCardId,
+	parseInvoicePaymentNotePeriod,
+} from "@/shared/lib/accounts/constants";
+import {
 	buildImportTransactionFingerprint,
 	importExternalIdCollidesWithStored,
 	importExternalIdsPointToSameCharge,
@@ -24,6 +28,8 @@ export type ImportDuplicateSnapshot = {
 	period?: string | null;
 	condition?: string | null;
 	recurrenceCount?: number | null;
+	/** Anotação do cadastro: é ela que diz a qual fatura um pagamento pertence. */
+	note?: string | null;
 };
 
 export type ImportDuplicateMatchOptions = {
@@ -106,6 +112,14 @@ export type ImportDuplicateValidation = {
 	existingName?: string;
 	/** Parcela do cadastro casado, no formato "1/5". */
 	existingInstallmentLabel?: string | null;
+	/**
+	 * Fatura que o pagamento já cadastrado liquida, lida da anotação.
+	 *
+	 * Numa linha conferida o que vale é o vínculo registrado, não o palpite da
+	 * importação: é ele que o usuário precisa ver para saber se está certo.
+	 */
+	existingInvoiceCardId?: string | null;
+	existingInvoicePeriod?: string | null;
 };
 
 type ImportRowForMatch = Pick<
@@ -604,6 +618,8 @@ export function buildImportDuplicateValidation(
 			existing.currentInstallment,
 			existing.installmentCount,
 		),
+		existingInvoiceCardId: parseInvoicePaymentNoteCardId(existing.note),
+		existingInvoicePeriod: parseInvoicePaymentNotePeriod(existing.note),
 	};
 }
 

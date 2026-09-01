@@ -3,6 +3,7 @@ import {
 	buildInvoiceAmortizationNote,
 	buildInvoicePaymentNote,
 	isInvoiceAmortizationNote,
+	parseInvoicePaymentNoteCardId,
 	parseInvoicePaymentNotePeriod,
 } from "@/shared/lib/accounts/constants";
 
@@ -33,6 +34,38 @@ describe("notas de pagamento de fatura", () => {
 		expect(
 			parseInvoicePaymentNotePeriod(buildInvoicePaymentNote(CARD, "2026-06")),
 		).toBe("2026-06");
+	});
+
+	it("o cartão também vem da nota — a coluna do pagamento é nula", () => {
+		// O pagamento sai da conta corrente, então `cartao_id` não diz nada. Quem
+		// aponta a fatura liquidada é a anotação.
+		expect(
+			parseInvoicePaymentNoteCardId(buildInvoicePaymentNote(CARD, "2026-06")),
+		).toBe(CARD);
+		expect(
+			parseInvoicePaymentNoteCardId(
+				buildInvoiceAmortizationNote(CARD, "2026-06", "2026-05-18"),
+			),
+		).toBe(CARD);
+		expect(parseInvoicePaymentNoteCardId("AUTO_REEMBOLSO:abc")).toBeNull();
+		expect(parseInvoicePaymentNoteCardId(null)).toBeNull();
+	});
+
+	it("a nota continua legível com o nome do extrato anexado", () => {
+		// A importação anexa uma linha com o nome original. Lida por `split(":")`,
+		// o período saía como "2026-01\nExtrato" e o pagamento ficava invisível
+		// para a fatura — foi o que sumiu com R$ 6.003,17 de janeiro.
+		const comExtrato = `${buildInvoicePaymentNote(CARD, "2026-01")}\nExtrato: Pagamento de fatura`;
+
+		expect(parseInvoicePaymentNotePeriod(comExtrato)).toBe("2026-01");
+		expect(parseInvoicePaymentNoteCardId(comExtrato)).toBe(CARD);
+
+		const amortizacaoComExtrato = `${buildInvoiceAmortizationNote(CARD, "2026-05", "2026-05-18")}\nExtrato: Pagamento de fatura`;
+
+		expect(parseInvoicePaymentNotePeriod(amortizacaoComExtrato)).toBe(
+			"2026-05",
+		);
+		expect(parseInvoicePaymentNoteCardId(amortizacaoComExtrato)).toBe(CARD);
 	});
 
 	it("ignora nota que não é de pagamento de fatura", () => {

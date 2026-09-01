@@ -17,6 +17,21 @@ describe("import-invoice-payment", () => {
 		);
 	});
 
+	it("reconhece o débito automático da fatura, como o Inter escreve", () => {
+		// O extrato do Inter não diz "pagamento de fatura" em nenhum lugar: diz
+		// "Pagamento efetuado: Debito Automatico Fatura Cartao Inter".
+		expect(
+			isInvoicePaymentDescription(
+				'Pagamento efetuado: "Debito Automatico Fatura Cartao Inter"',
+			),
+		).toBe(true);
+		expect(
+			isInvoicePaymentDescription("Débito Automático Fatura Cartão Inter"),
+		).toBe(true);
+		// Não é qualquer coisa com "fatura" e "cartão".
+		expect(isInvoicePaymentDescription("Anuidade cartão fatura")).toBe(false);
+	});
+
 	it("exclui pagamento recebido na importação de fatura de cartão", () => {
 		expect(
 			shouldExcludeInvoicePaymentFromCardImport({
