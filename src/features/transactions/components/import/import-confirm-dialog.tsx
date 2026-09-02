@@ -20,8 +20,8 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/shared/components/ui/select";
-import { Switch } from "@/shared/components/ui/switch";
 import { Skeleton } from "@/shared/components/ui/skeleton";
+import { Switch } from "@/shared/components/ui/switch";
 import { formatCurrency } from "@/shared/utils/currency";
 import { formatDateOnly } from "@/shared/utils/date";
 import { cn } from "@/shared/utils/ui";
@@ -383,14 +383,20 @@ export function ImportConfirmDialog({
 								<BalanceGroupLabel>Abertura do mês</BalanceGroupLabel>
 								<BalanceRow
 									label={`Saldo no cadastro em ${formatDateOnly(accountBalance.adjustmentDate) ?? accountBalance.adjustmentDate}`}
-									value={formatCurrency(accountBalance.previousBalanceInCadastro)}
+									value={formatCurrency(
+										accountBalance.previousBalanceInCadastro,
+									)}
 								/>
 								{Math.abs(accountBalance.adjustmentAmount) > 0.01 ? (
 									<li className="flex items-start justify-between gap-3">
-										<span className="text-muted-foreground">Ajuste de saldo</span>
+										<span className="text-muted-foreground">
+											Ajuste de saldo
+										</span>
 										<span className="text-right font-medium tabular-nums">
 											{accountBalance.adjustmentAmount > 0 ? "+" : "−"}
-											{formatCurrency(Math.abs(accountBalance.adjustmentAmount))}
+											{formatCurrency(
+												Math.abs(accountBalance.adjustmentAmount),
+											)}
 											<span className="block font-normal text-[11px] text-muted-foreground">
 												{accountBalance.adjustmentAmount > 0
 													? "lançado como receita"
@@ -406,8 +412,8 @@ export function ImportConfirmDialog({
 								{accountBalance.relocatedAdjustmentCount > 0 ? (
 									<li className="text-[11px] text-muted-foreground leading-relaxed">
 										{accountBalance.relocatedAdjustmentCount} ajuste
-										{accountBalance.relocatedAdjustmentCount !== 1 ? "s" : ""} de
-										saldo no mês do extrato será
+										{accountBalance.relocatedAdjustmentCount !== 1 ? "s" : ""}{" "}
+										de saldo no mês do extrato será
 										{accountBalance.relocatedAdjustmentCount !== 1 ? "ão" : ""}{" "}
 										movido
 										{accountBalance.relocatedAdjustmentCount !== 1 ? "s" : ""}{" "}
@@ -421,7 +427,9 @@ export function ImportConfirmDialog({
 								<BalanceGroupLabel>Movimento do mês</BalanceGroupLabel>
 								<BalanceRow
 									label="Líquido (extrato)"
-									value={formatCurrency(accountBalance.statementMonthNetFromFile)}
+									value={formatCurrency(
+										accountBalance.statementMonthNetFromFile,
+									)}
 								/>
 								<BalanceRow
 									label="Líquido (cadastro)"
@@ -429,7 +437,8 @@ export function ImportConfirmDialog({
 										accountBalance.statementMonthNetInCadastro,
 									)}
 								/>
-								{accountBalance.yieldAmount > 0.01 && accountBalance.yieldDate ? (
+								{accountBalance.yieldAmount > 0.01 &&
+								accountBalance.yieldDate ? (
 									<li className="flex items-center justify-between gap-3">
 										<span className="text-muted-foreground">
 											Rendimento em{" "}
@@ -444,7 +453,9 @@ export function ImportConfirmDialog({
 								{Math.abs(accountBalance.outOfMonthRowAmount) > 0.01 ||
 								Math.abs(accountBalance.unmatchedInMonthAmount) > 0.01 ? (
 									<>
-										<BalanceGroupLabel>De onde vem a diferença</BalanceGroupLabel>
+										<BalanceGroupLabel>
+											De onde vem a diferença
+										</BalanceGroupLabel>
 										{Math.abs(accountBalance.outOfMonthRowAmount) > 0.01 ? (
 											<BalanceRow
 												label={`${accountBalance.outOfMonthRowCount} lançamento${accountBalance.outOfMonthRowCount !== 1 ? "s" : ""} com data de outro mês`}
@@ -454,12 +465,19 @@ export function ImportConfirmDialog({
 											/>
 										) : null}
 										{Math.abs(accountBalance.unmatchedInMonthAmount) > 0.01 ? (
-											<BalanceRow
-												label="Lançamentos do mês que não estão no extrato"
-												value={formatSignedAmount(
-													accountBalance.unmatchedInMonthAmount,
-												)}
-											/>
+											<>
+												<BalanceRow
+													label="Lançamentos do mês que não estão no extrato"
+													value={formatSignedAmount(
+														accountBalance.unmatchedInMonthAmount,
+													)}
+												/>
+												<li className="text-[11px] text-muted-foreground leading-relaxed">
+													Costuma ser perna de transferência sintetizada ao
+													importar a conta do outro lado — apague a linha
+													excedente no extrato da conta antes de confirmar.
+												</li>
+											</>
 										) : null}
 									</>
 								) : null}

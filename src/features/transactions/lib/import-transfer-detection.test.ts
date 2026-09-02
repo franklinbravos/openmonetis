@@ -29,6 +29,12 @@ describe("isBravosInterPixTransferDescription", () => {
 			isBravosInterPixTransferDescription("Pix recebido de João Silva"),
 		).toBe(false);
 	});
+
+	it("identifica o formato curto do Mercado Pago", () => {
+		expect(
+			isBravosInterPixTransferDescription("Pix recebido BRAVOS COMPANY"),
+		).toBe(true);
+	});
 });
 
 describe("findBravosInterPjAccount", () => {
@@ -180,6 +186,18 @@ describe("transferência entre contas próprias", () => {
 				?.transferPeerAccountId,
 		).toBe("conta-inter");
 	});
+
+	it("reconhece Pix da Bravos Company no extrato Mercado Pago", () => {
+		expect(
+			guessImportTransfer(
+				"Pix recebido BRAVOS COMPANY",
+				"income",
+				CONTAS,
+				"conta-mp",
+				TITULAR,
+			),
+		).toEqual({ kind: "transfer", transferPeerAccountId: "conta-inter" });
+	});
 });
 
 describe("aplicação e resgate em investimento", () => {
@@ -202,12 +220,7 @@ describe("aplicação e resgate em investimento", () => {
 
 	it("classifica aplicação como transferência para conta de investimento", () => {
 		expect(
-			guessImportTransfer(
-				APLICACAO_CDB,
-				"expense",
-				CONTAS,
-				"conta-inter",
-			),
+			guessImportTransfer(APLICACAO_CDB, "expense", CONTAS, "conta-inter"),
 		).toEqual({
 			kind: "transfer",
 			transferPeerAccountId: "conta-inter-inv",

@@ -10,6 +10,8 @@ const BRAVOS_PIX_TRANSFER_PATTERNS = [
 	/transfer[eê]ncia\s+recebida\s+pelo\s+pix.*banco\s+inter.*bravos\s+company/i,
 	/pix.*bravos\s+company.*banco\s+inter/i,
 	/pix.*46\.268\.915\s*\/?\s*0001-83.*banco\s+inter/i,
+	// Mercado Pago imprime só o nome da contraparte, sem CNPJ nem banco.
+	/pix\s+recebido\s+bravos\s+company\b/i,
 ];
 
 const INVESTMENT_ACCOUNT_LABEL_PATTERNS = [
@@ -267,11 +269,8 @@ export function guessImportTransfer(
 		return {
 			kind: "transfer",
 			transferPeerAccountId:
-				findInvestmentPeerAccount(
-					description,
-					accountOptions,
-					importAccountId,
-				)?.value ?? null,
+				findInvestmentPeerAccount(description, accountOptions, importAccountId)
+					?.value ?? null,
 		};
 	}
 
