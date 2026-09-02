@@ -1,5 +1,5 @@
 import type { SelectOption } from "@/features/transactions/components/types";
-import { deriveCreditCardPeriod } from "@/features/transactions/lib/form-helpers";
+import { deriveInvoicePaymentPeriod } from "@/features/transactions/lib/form-helpers";
 
 const INVOICE_PAYMENT_PATTERNS = [
 	/pgto\s+fatura/i,
@@ -90,7 +90,7 @@ export function guessInvoicePaymentPeriod(
 	const card = cardOptions.find((option) => option.value === cardId);
 	if (!card) return null;
 
-	return deriveCreditCardPeriod(paymentDate, card.closingDay, card.dueDay);
+	return deriveInvoicePaymentPeriod(paymentDate, card.closingDay, card.dueDay);
 }
 
 export type InvoiceAmountCandidate = {

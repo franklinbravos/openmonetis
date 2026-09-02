@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseInterCardInvoiceTotal } from "./pdf/inter-card-invoice";
 import { resolvePdfTotalMetadata } from "./pdf/invoice-metadata";
-import { parsePdf, parsePdfText } from "./pdf-parser";
+import { extractPdfText, parsePdf, parsePdfText } from "./pdf-parser";
 
 /** Texto extraído pelo pdf.js (linhas concatenadas), espelhando fatura Inter real. */
 const INTER_CARD_JUL_2026_FIXTURE = `
@@ -62,5 +62,25 @@ describe("parseInterCardPdf", () => {
 		expect(result.source).toBe("Banco Inter");
 		expect(result.invoice?.totalAmount).toBe(78);
 		expect(result.transactions.length).toBeGreaterThan(0);
+	});
+});
+
+describe("parseInterBankStatementPdf via parsePdfText", () => {
+	it("importa extrato de conta com saldos quando PDF local existe", async () => {
+		const samplePath =
+			"/Users/franklinbravos/Documents/Extratos e Faturas/Extrato-01-08-2026-a-31-08-2026-PDF.pdf";
+		if (!existsSync(samplePath)) return;
+
+		const text = await extractPdfText(readFileSync(samplePath).buffer);
+		const result = parsePdfText(text);
+
+		expect(result.source).toBe("Banco Inter");
+		expect(result.isCreditCard).toBe(false);
+		expect(result.transactions).toHaveLength(31);
+		expect(result.accountBalances).toMatchObject({
+			openingBalance: 1017.81,
+			closingBalance: 0.82,
+			balances: true,
+		});
 	});
 });

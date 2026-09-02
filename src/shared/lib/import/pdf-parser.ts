@@ -10,6 +10,10 @@ import {
 } from "./helpers";
 import { resolveNubankInvoicePeriod } from "./nubank-invoice-period";
 import {
+	isInterBankStatementPdf,
+	parseInterBankStatementPdf,
+} from "./pdf/inter-bank-statement";
+import {
 	isInterCardInvoice,
 	parseInterCardPdf,
 } from "./pdf/inter-card-invoice";
@@ -55,88 +59,6 @@ export async function extractPdfText(
 	}
 
 	return pages.join("\n");
-}
-
-function parseInterBankPdf(text: string): ImportStatement {
-	if (!/Período:/i.test(text) && !/Saldo por transação/i.test(text)) {
-		throw new Error("PDF de extrato do Banco Inter não reconhecido.");
-	}
-
-	const accountMatch = text.match(/Conta:\s*([\d-]+)/i);
-	const accountNumber = accountMatch?.[1]?.replace(/\D/g, "") ?? null;
-
-	const periodMatch = text.match(
-		/Período:\s*(\d{1,2}\/\d{1,2}\/\d{4})\s*a\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
-	);
-	const period =
-		periodMatch?.[1] && periodMatch[2]
-			? {
-					from: parseSlashDateDMY(periodMatch[1]),
-					to: parseSlashDateDMY(periodMatch[2]),
-				}
-			: null;
-
-	const transactionsStart = text.search(/Saldo por transação/i);
-	const footerStart = text.search(/Fale com a gente/i);
-	const section = text.slice(
-		transactionsStart >= 0 ? transactionsStart : 0,
-		footerStart >= 0 ? footerStart : undefined,
-	);
-
-	const transactions: ImportedTransaction[] = [];
-
-	const dayHeaderRe =
-		/(\d{1,2}) de ([A-Za-zçãéôÇÃÉÔ]+) de (\d{4})\s+Saldo do dia:\s*-?R\$\s*[\d.]+,\d{2}/gi;
-	const txnRe = /(.+?)\s+(-?R\$\s*[\d.]+,\d{2})\s+-?R\$\s*[\d.]+,\d{2}/g;
-
-	const dayMatches = [...section.matchAll(dayHeaderRe)];
-
-	for (let index = 0; index < dayMatches.length; index++) {
-		const dayMatch = dayMatches[index];
-		const date = parsePortugueseLongDate(dayMatch[1], dayMatch[2], dayMatch[3]);
-		if (!date) continue;
-
-		const blockStart = (dayMatch.index ?? 0) + dayMatch[0].length;
-		const blockEnd = dayMatches[index + 1]?.index ?? section.length;
-		const block = section.slice(blockStart, blockEnd);
-
-		for (const txnMatch of block.matchAll(txnRe)) {
-			const description = txnMatch[1].trim();
-			if (!description) continue;
-
-			const amountSigned = parseBrazilianAmount(txnMatch[2]);
-			if (amountSigned === 0) continue;
-
-			transactions.push({
-				externalId: makeSyntheticExternalId([
-					date,
-					String(Math.abs(amountSigned)),
-					description,
-				]),
-				date,
-				amount: Math.abs(amountSigned),
-				description,
-				transactionType: amountSigned > 0 ? "income" : "expense",
-			});
-		}
-	}
-
-	if (transactions.length === 0) {
-		throw new Error("Nenhuma transação encontrada no PDF.");
-	}
-
-	const resolvedPeriod =
-		period?.from && period.to
-			? { from: period.from, to: period.to }
-			: buildPeriodFromTransactions(transactions);
-
-	return {
-		source: "Banco Inter",
-		accountNumber,
-		period: resolvedPeriod,
-		isCreditCard: false,
-		transactions,
-	};
 }
 
 function isItauCardInvoice(text: string): boolean {
@@ -762,8 +684,8 @@ export function parsePdfText(text: string): ImportStatement {
 		return parseNubankBankStatementPdf(text);
 	}
 
-	if (/Período:|Saldo por transação/i.test(text)) {
-		return parseInterBankPdf(text);
+	if (isInterBankStatementPdf(text)) {
+		return parseInterBankStatementPdf(text);
 	}
 
 	throw new Error(

@@ -65,6 +65,45 @@ export function deriveCreditCardPeriod(
 	return period;
 }
 
+/**
+ * Período da fatura quitada por um pagamento no extrato de conta.
+ *
+ * Não reutiliza {@link deriveCreditCardPeriod}: compra depois do fechamento
+ * entra na fatura *seguinte*; pagamento depois do fechamento quita a fatura
+ * *corrente* (vencimento neste mês), ou a do mês seguinte quando o
+ * vencimento cai no início do mês posterior ao fechamento (dueDay < closingDay).
+ *
+ * @example
+ * deriveInvoicePaymentPeriod("2026-08-10", "5", "15")  // "2026-08"
+ * deriveInvoicePaymentPeriod("2026-03-25", "22", "1")  // "2026-04"
+ */
+export function deriveInvoicePaymentPeriod(
+	paymentDate: string,
+	closingDay: string | null | undefined,
+	dueDay?: string | null | undefined,
+): string {
+	const basePeriod = derivePeriodFromDate(paymentDate);
+	if (!closingDay) return basePeriod;
+
+	const closingDayNum = Number.parseInt(closingDay, 10);
+	if (Number.isNaN(closingDayNum)) return basePeriod;
+
+	const paymentDayNum = Number.parseInt(paymentDate.split("-")[2] ?? "1", 10);
+	const dueDayNum = Number.parseInt(dueDay ?? "", 10);
+
+	let period = basePeriod;
+
+	if (
+		!Number.isNaN(dueDayNum) &&
+		dueDayNum < closingDayNum &&
+		paymentDayNum >= closingDayNum
+	) {
+		period = getNextPeriod(basePeriod);
+	}
+
+	return period;
+}
+
 function getPaymentReferenceDate(
 	paymentMethod: string,
 	purchaseDate: string,

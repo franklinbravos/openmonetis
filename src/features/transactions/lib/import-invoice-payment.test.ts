@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	guessInvoicePaymentPeriod,
 	isInvoicePaymentDescription,
 	matchInvoicePaymentByAmount,
 	sanitizeExcludedCardInvoicePaymentRow,
@@ -83,6 +84,39 @@ describe("pagamento de fatura: o que NÃO é", () => {
 		expect(isInvoicePaymentDescription("Pagamento de boleto efetuado")).toBe(
 			false,
 		);
+	});
+});
+
+describe("guessInvoicePaymentPeriod", () => {
+	const cardOptions = [
+		{
+			value: "nubank",
+			label: "Nubank",
+			closingDay: "5",
+			dueDay: "15",
+		},
+		{
+			value: "nubank-fim-mes",
+			label: "Nubank fim do mês",
+			closingDay: "22",
+			dueDay: "1",
+		},
+	];
+
+	it("pagamento em 10/08 sugere fatura de agosto, não de setembro", () => {
+		expect(
+			guessInvoicePaymentPeriod("2026-08-10", cardOptions, "nubank"),
+		).toBe("2026-08");
+	});
+
+	it("pagamento após fechamento com vencimento no mês seguinte", () => {
+		expect(
+			guessInvoicePaymentPeriod("2026-03-25", cardOptions, "nubank-fim-mes"),
+		).toBe("2026-04");
+	});
+
+	it("sem cartão identificado, devolve null", () => {
+		expect(guessInvoicePaymentPeriod("2026-08-10", cardOptions, null)).toBeNull();
 	});
 });
 
