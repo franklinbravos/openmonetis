@@ -1,3 +1,4 @@
+import { ActionError } from "@/shared/lib/actions/action-error";
 import {
 	buildPeriodFromTransactions,
 	getPortugueseMonthNumberFromAbbr,
@@ -22,6 +23,10 @@ import {
 	resolvePdfTotalMetadata,
 	sumImportedTransactionAmounts,
 } from "./pdf/invoice-metadata";
+import {
+	isMercadoPagoBankStatementPdf,
+	parseMercadoPagoBankStatementPdf,
+} from "./pdf/mercado-pago-statement";
 import {
 	isNubankBankStatementPdf,
 	parseNubankBankStatementPdf,
@@ -668,6 +673,12 @@ export async function parsePdf(
 }
 
 export function parsePdfText(text: string): ImportStatement {
+	if (text.replace(/\s+/g, "").length < 50) {
+		throw new ActionError(
+			"Não foi possível extrair texto deste PDF. Ele pode ser um arquivo digitalizado (sem texto selecionável).",
+		);
+	}
+
 	if (isItauCardInvoice(text)) {
 		return parseItauCardPdf(text);
 	}
@@ -684,11 +695,15 @@ export function parsePdfText(text: string): ImportStatement {
 		return parseNubankBankStatementPdf(text);
 	}
 
+	if (isMercadoPagoBankStatementPdf(text)) {
+		return parseMercadoPagoBankStatementPdf(text);
+	}
+
 	if (isInterBankStatementPdf(text)) {
 		return parseInterBankStatementPdf(text);
 	}
 
-	throw new Error(
-		"PDF não reconhecido. Suportamos extratos e faturas do Banco Inter, extratos e faturas do Nubank e faturas de cartão Itaú.",
+	throw new ActionError(
+		"PDF não reconhecido. Suportamos extratos e faturas do Banco Inter, extratos e faturas do Nubank, extrato de conta do Mercado Pago e faturas de cartão Itaú.",
 	);
 }

@@ -36,7 +36,7 @@ export type InterBankStatementParseResult = {
 export function isInterBankStatementPdf(text: string): boolean {
 	return (
 		!/Resumo da fatura|DESPESAS DO M[ÊE]S/i.test(text) &&
-		(/Período:/i.test(text) || /Saldo por transação/i.test(text))
+		(/Saldo por transação/i.test(text) || /Saldo do dia:/i.test(text))
 	);
 }
 
@@ -79,10 +79,7 @@ export function parseInterBankStatementMovements(
 		String.raw`(\d{1,2}) de ([A-Za-zçãéôÇÃÉÔ]+) de (\d{4})\s+Saldo do dia:\s*${AMOUNT}`,
 		"gi",
 	);
-	const txnRe = new RegExp(
-		String.raw`(.+?)\s+(${AMOUNT})\s+(${AMOUNT})`,
-		"g",
-	);
+	const txnRe = new RegExp(String.raw`(.+?)\s+(${AMOUNT})\s+(${AMOUNT})`, "g");
 
 	const dayMatches = [...section.matchAll(dayHeaderRe)];
 
@@ -140,7 +137,9 @@ export function parseInterBankStatementBalances(
 	const netFromMovements = roundMoney(
 		movements.reduce((total, movement) => total + movement.signedAmount, 0),
 	);
-	const residual = roundMoney(openingBalance + netFromMovements - closingBalance);
+	const residual = roundMoney(
+		openingBalance + netFromMovements - closingBalance,
+	);
 
 	const headerMatches =
 		headerBalance == null ||
@@ -152,8 +151,7 @@ export function parseInterBankStatementBalances(
 		yield: 0,
 		periodFrom: period.from,
 		periodTo: period.to,
-		balances:
-			Math.abs(residual) <= SOURCE_ROUNDING_TOLERANCE && headerMatches,
+		balances: Math.abs(residual) <= SOURCE_ROUNDING_TOLERANCE && headerMatches,
 	};
 }
 

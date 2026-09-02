@@ -52,7 +52,7 @@ Listar, filtrar, criar, editar, excluir, pagar, parcelar, antecipar, estornar e 
 
 ## Importação de Lançamentos
 
-Importar extratos/arquivos (OFX, CNAB, PDF de fatura, XLS, CSV Inter) e revisar antes de gravar. Na conferência de fatura, a revisão permite editar o valor de cada linha — de linhas do arquivo ainda não importadas e de lançamentos já cadastrados do período — para que o total registrado bata com o total do arquivo.
+Importar extratos/arquivos (OFX, CNAB, PDF de fatura, PDF de extrato Mercado Pago/Nubank/Inter, XLS, CSV Inter) e revisar antes de gravar. Na conferência de fatura, a revisão permite editar o valor de cada linha — de linhas do arquivo ainda não importadas e de lançamentos já cadastrados do período — para que o total registrado bata com o total do arquivo.
 
 **Flow:**
 

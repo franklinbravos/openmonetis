@@ -26,6 +26,20 @@ describe("isInterBankStatementPdf", () => {
 			),
 		).toBe(false);
 	});
+
+	it("não reivindica extrato do Mercado Pago", () => {
+		expect(
+			isInterBankStatementPdf(
+				"DETALHE DOS MOVIMENTOS ID da operação De 01-08-2026 al 31-08-2026 Periodo:",
+			),
+		).toBe(false);
+	});
+
+	it("não reivindica só por Período acentuado", () => {
+		expect(
+			isInterBankStatementPdf("Período: 01/08/2026 a 31/08/2026 Saldo total"),
+		).toBe(false);
+	});
 });
 
 describe("parseInterBankStatementMovements", () => {

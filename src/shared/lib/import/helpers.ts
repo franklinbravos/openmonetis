@@ -122,6 +122,14 @@ export function parseSlashDateDMY(raw: string): string | null {
 	);
 }
 
+export function parseDashDateDMY(raw: string): string | null {
+	const match = raw.trim().match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+	if (!match) return null;
+	return asValidDateOnly(
+		`${match[3]}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`,
+	);
+}
+
 export function parseCnabDate(raw: string): string | null {
 	const match = raw.trim().match(/^(\d{2})(\d{2})(\d{4})$/);
 	if (!match) return null;

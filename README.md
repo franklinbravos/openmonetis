@@ -241,7 +241,8 @@ Faturas e extratos suportados em `.pdf`:
 | Banco | Tipo |
 |-------|------|
 | Banco Inter | Extrato de conta e fatura de cartão |
-| Nubank | Fatura de cartão (PDF) e extrato de conta (OFX) |
+| Mercado Pago | Extrato de conta (PDF) |
+| Nubank | Fatura de cartão (PDF) e extrato de conta (OFX e PDF) |
 | Itaú | Fatura de cartão (ex.: Itaucard Samsung) |
 
 Para desenvolvimento local, use `samples/finance/` (ignorada pelo Git) com extratos e faturas de exemplo — veja `samples/finance/README.md`.

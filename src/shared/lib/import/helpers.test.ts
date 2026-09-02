@@ -9,6 +9,7 @@ import {
 	parseBrazilianAmount,
 	parseBrazilianAmountOrNull,
 	parseCnabDate,
+	parseDashDateDMY,
 	parsePortugueseAbbrevDotDate,
 	parsePortugueseLongDate,
 	parsePortugueseShortDate,
@@ -54,6 +55,23 @@ describe("parseSlashDateDMY", () => {
 	it("retorna null para formato inválido", () => {
 		expect(parseSlashDateDMY("2024-01-15")).toBeNull();
 		expect(parseSlashDateDMY("")).toBeNull();
+	});
+});
+
+describe("parseDashDateDMY", () => {
+	it("converte dd-mm-aaaa para YYYY-MM-DD", () => {
+		expect(parseDashDateDMY("31-08-2026")).toBe("2026-08-31");
+		expect(parseDashDateDMY("03-08-2026")).toBe("2026-08-03");
+	});
+
+	it("recusa data impossível no calendário", () => {
+		expect(parseDashDateDMY("31-02-2026")).toBeNull();
+		expect(parseDashDateDMY("00-08-2026")).toBeNull();
+	});
+
+	it("retorna null para formato inválido", () => {
+		expect(parseDashDateDMY("2026-08-31")).toBeNull();
+		expect(parseDashDateDMY("")).toBeNull();
 	});
 });
 
