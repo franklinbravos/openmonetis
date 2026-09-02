@@ -76,6 +76,22 @@ export const INVOICE_ADJUSTMENT_NAME = "Ajuste de fatura";
 
 export const ACCOUNT_BALANCE_ADJUSTMENT_NAME = "Ajuste de saldo";
 
+/**
+ * O ajuste de saldo é andaime, não movimento — não entra em relatório.
+ *
+ * Ele existe para impor a abertura que o extrato declara enquanto os meses
+ * anteriores não foram importados, e some quando eles entram. Contá-lo como
+ * receita ou despesa inventa dinheiro: na conta Nubank, importar agosto sem os
+ * meses de trás produz um ajuste de R$ 39.905,96 que nunca entrou na conta.
+ *
+ * Casa pelo nome, e não por anotação, para valer também nos ajustes que já
+ * estavam gravados.
+ */
+export const isAccountBalanceAdjustmentName = (
+	name: string | null | undefined,
+): boolean =>
+	name?.trim().toLowerCase() === ACCOUNT_BALANCE_ADJUSTMENT_NAME.toLowerCase();
+
 export const REFUND_NOTE_PREFIX = "AUTO_REEMBOLSO:";
 
 export const buildRefundNote = (originalTransactionId: string) =>

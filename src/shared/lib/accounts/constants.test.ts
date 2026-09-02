@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	buildInvoiceAmortizationNote,
 	buildInvoicePaymentNote,
+	isAccountBalanceAdjustmentName,
 	isInvoiceAmortizationNote,
 	parseInvoicePaymentNoteCardId,
 	parseInvoicePaymentNotePeriod,
@@ -75,5 +76,24 @@ describe("notas de pagamento de fatura", () => {
 		expect(
 			parseInvoicePaymentNotePeriod(`AUTO_FATURA:${CARD}:junho`),
 		).toBeNull();
+	});
+});
+
+describe("ajuste de saldo", () => {
+	it("é reconhecido pelo nome, inclusive nos que já estavam gravados", () => {
+		// Casa pelo nome porque a anotação do ajuste é texto humano ("O saldo era
+		// X mas o correto é Y"), diferente a cada gravação.
+		expect(isAccountBalanceAdjustmentName("Ajuste de saldo")).toBe(true);
+		expect(isAccountBalanceAdjustmentName("  ajuste de saldo  ")).toBe(true);
+		expect(isAccountBalanceAdjustmentName("AJUSTE DE SALDO")).toBe(true);
+	});
+
+	it("não confunde com lançamento de verdade", () => {
+		expect(isAccountBalanceAdjustmentName("Ajuste de saldo devedor")).toBe(
+			false,
+		);
+		expect(isAccountBalanceAdjustmentName("Saldo inicial")).toBe(false);
+		expect(isAccountBalanceAdjustmentName(null)).toBe(false);
+		expect(isAccountBalanceAdjustmentName("")).toBe(false);
 	});
 });

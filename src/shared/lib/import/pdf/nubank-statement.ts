@@ -1,3 +1,4 @@
+import type { AccountStatementBalances } from "@/shared/lib/import/account-statement-balances";
 import {
 	makeSyntheticExternalId,
 	normalizeImportedText,
@@ -13,7 +14,6 @@ import type {
 	ImportedTransaction,
 	ImportStatement,
 } from "@/shared/lib/import/types";
-import type { AccountStatementBalances } from "@/shared/lib/import/account-statement-balances";
 
 /**
  * Extrato de conta do Nubank em PDF.
@@ -133,7 +133,7 @@ function tokenizeMovements(section: string): Token[] {
 	const tokenRe = new RegExp(
 		String.raw`(?<date>(\d{2})\s+([A-ZÇ]{3})\s+(\d{4}))` +
 			String.raw`|(?<group>Total de (entradas|sa[íi]das)\s*([+-])?\s*(${AMOUNT}))` +
-			String.raw`|(?<amount>${AMOUNT})`,
+			`|(?<amount>${AMOUNT})`,
 		"gi",
 	);
 
@@ -326,6 +326,8 @@ export function parseNubankBankStatementPdf(text: string): ImportStatement {
 					openingBalance: balanceBlock.openingBalance,
 					closingBalance: balanceBlock.closingBalance,
 					yield: balanceBlock.yield,
+					totalIn: balanceBlock.totalIn,
+					totalOut: balanceBlock.totalOut,
 					periodFrom: period.from,
 					periodTo: period.to,
 					balances: balanceBlock.balances,

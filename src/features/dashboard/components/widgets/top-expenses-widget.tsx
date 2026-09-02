@@ -10,6 +10,7 @@ import type {
 import { EstablishmentLogo } from "@/shared/components/entity-avatar";
 import MoneyValues from "@/shared/components/money-values";
 import { WidgetEmptyState } from "@/shared/components/widgets/widget-empty-state";
+import { isAccountBalanceAdjustmentName } from "@/shared/lib/accounts/constants";
 import { formatTransactionDate } from "@/shared/utils/date";
 
 type TopExpensesWidgetProps = {
@@ -20,6 +21,10 @@ const shouldIncludeExpense = (expense: TopExpense) => {
 	const normalizedName = expense.name.trim().toLowerCase();
 
 	if (normalizedName === "saldo inicial") {
+		return false;
+	}
+
+	if (isAccountBalanceAdjustmentName(expense.name)) {
 		return false;
 	}
 

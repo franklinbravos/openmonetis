@@ -1,4 +1,4 @@
-import { ACCOUNT_BALANCE_ADJUSTMENT_NAME } from "@/shared/lib/accounts/constants";
+import { isAccountBalanceAdjustmentName } from "@/shared/lib/accounts/constants";
 import {
 	addMonthsToPeriod,
 	derivePeriodFromDate,
@@ -11,6 +11,9 @@ export type AccountStatementBalances = {
 	openingBalance: number;
 	closingBalance: number;
 	yield?: number;
+	/** Entradas e saídas declaradas no bloco de saldos, em módulo. */
+	totalIn?: number | null;
+	totalOut?: number | null;
 	periodFrom: string;
 	periodTo: string;
 	/** O bloco do arquivo fecha: inicial + rendimento + entradas − saídas = final. */
@@ -28,14 +31,34 @@ export function getPreviousPeriodLastDate(statementPeriod: string): string {
 	return getPeriodPurchaseDateBounds(previousPeriod).end;
 }
 
+/**
+ * Onde o ajuste de saldo fica ao importar um extrato: na véspera do mês.
+ *
+ * O ajuste é andaime, não lançamento: ele existe só para impor a abertura que o
+ * banco declara, enquanto os meses anteriores ainda não foram importados. Por
+ * isso mora sempre no **último dia do mês anterior** ao extrato — o ponto em
+ * que o cadastro precisa valer o que o banco diz.
+ *
+ * E é o que faz a importação para trás funcionar sozinha: importar agosto põe o
+ * ajuste em 31/07; importar julho depois encontra esse ajuste no próprio mês do
+ * extrato, empurra-o para 30/06 e recalcula o valor pela abertura de julho.
+ * Julho e agosto passam a ser movimento real, e o andaime recua um mês. Repetindo
+ * mês a mês, o ajuste encolhe até sumir quando o primeiro extrato entrar.
+ */
+export function resolveBalanceAdjustmentPlacement(statementPeriod: string): {
+	period: string;
+	date: string;
+} {
+	return {
+		period: addMonthsToPeriod(statementPeriod, -1),
+		date: getPreviousPeriodLastDate(statementPeriod),
+	};
+}
+
 export function isAccountBalanceAdjustmentLabel(
 	label: string | null | undefined,
 ): boolean {
-	if (!label) return false;
-	return (
-		label.trim().toLowerCase() ===
-		ACCOUNT_BALANCE_ADJUSTMENT_NAME.toLowerCase()
-	);
+	return isAccountBalanceAdjustmentName(label);
 }
 
 export function shouldRelocateBalanceAdjustmentRow(

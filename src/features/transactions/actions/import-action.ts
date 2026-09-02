@@ -22,14 +22,14 @@ import {
 	transactions,
 } from "@/db/schema";
 import {
+	type AccountStatementBalancePreview,
+	applyAccountStatementBalanceReconciliation,
+	previewAccountStatementBalanceReconciliation,
+} from "@/features/accounts/lib/statement-balance-reconciliation";
+import {
 	registerInvoiceAmortizationsAction,
 	updateInvoicePaymentStatusAction,
 } from "@/features/invoices/actions";
-import {
-	applyAccountStatementBalanceReconciliation,
-	previewAccountStatementBalanceReconciliation,
-	type AccountStatementBalancePreview,
-} from "@/features/accounts/lib/statement-balance-reconciliation";
 import {
 	buildTransactionRecords,
 	fetchOwnedCategoryIds,
@@ -63,18 +63,19 @@ import { getUserId } from "@/shared/lib/auth/server";
 import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants";
 import { db } from "@/shared/lib/db";
 import {
+	deriveStatementPeriodFromBalances,
+	getPreviousPeriodLastDate,
+	shouldRelocateBalanceAdjustmentRow,
+} from "@/shared/lib/import/account-statement-balances";
+import {
 	expandImportExternalIdsForLookup,
 	type ImportOccurrenceIdentity,
 	importExternalIdCollidesWithStored,
 	importOccurrenceCollidesWithStored,
 	planImportRecordInsertion,
 } from "@/shared/lib/import/helpers";
-import {
-	deriveStatementPeriodFromBalances,
-	getPreviousPeriodLastDate,
-	shouldRelocateBalanceAdjustmentRow,
-} from "@/shared/lib/import/account-statement-balances";
 import { isInvoicePaymentDescription } from "@/shared/lib/import/invoice-total";
+import { resolveImportRowPeriod } from "@/shared/lib/import/period";
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
@@ -234,6 +235,8 @@ const accountStatementBalancesSchema = z.object({
 	openingBalance: z.number(),
 	closingBalance: z.number(),
 	yield: z.number().optional(),
+	totalIn: z.number().nullable().optional(),
+	totalOut: z.number().nullable().optional(),
 	periodFrom: z
 		.string()
 		.regex(/^\d{4}-\d{2}-\d{2}$/, "Início do extrato inválido."),
@@ -283,11 +286,7 @@ const importSchema = z
 			!(data.removeTransactionIds?.length ?? 0) &&
 			!(data.existingAmountEdits?.length ?? 0) &&
 			!(data.existingInstallmentEdits?.length ?? 0) &&
-			!(
-				data.accountStatementBalances &&
-				data.accountId &&
-				!data.cardId
-			)
+			!(data.accountStatementBalances && data.accountId && !data.cardId)
 		) {
 			ctx.addIssue({
 				code: "custom",
@@ -1844,9 +1843,11 @@ export async function importTransactionsAction(
 
 		if (row.recurrenceImport?.enabled) {
 			const recurrence = row.recurrenceImport;
-			const period =
-				invoicePeriod ??
-				`${purchaseDate.getFullYear()}-${String(purchaseDate.getMonth() + 1).padStart(2, "0")}`;
+			const period = resolveImportRowPeriod({
+				date: purchaseDate,
+				invoicePeriod,
+				isCardImport: Boolean(cardId),
+			});
 			const seriesId = randomUUID();
 			const amountSign: 1 | -1 = row.transactionType === "expense" ? -1 : 1;
 
@@ -1891,9 +1892,11 @@ export async function importTransactionsAction(
 			}));
 		}
 
-		let period =
-			invoicePeriod ??
-			`${purchaseDate.getFullYear()}-${String(purchaseDate.getMonth() + 1).padStart(2, "0")}`;
+		let period = resolveImportRowPeriod({
+			date: purchaseDate,
+			invoicePeriod,
+			isCardImport: Boolean(cardId),
+		});
 		let resolvedPurchaseDate = purchaseDate;
 
 		if (
@@ -1957,9 +1960,11 @@ export async function importTransactionsAction(
 			transferAccountsById.get(toAccountId) ?? "Conta destino";
 		const transferId = randomUUID();
 		const purchaseDate = parseLocalDateString(row.date);
-		const period =
-			invoicePeriod ??
-			`${purchaseDate.getFullYear()}-${String(purchaseDate.getMonth() + 1).padStart(2, "0")}`;
+		const period = resolveImportRowPeriod({
+			date: purchaseDate,
+			invoicePeriod,
+			isCardImport: Boolean(cardId),
+		});
 		const transferNote = `de ${fromAccountName} -> ${toAccountName}`;
 		const payerIdValue = payerIdsByRow[rowIndex];
 		if (!payerIdValue) return [];
@@ -2221,11 +2226,7 @@ export async function importTransactionsAction(
 	}
 
 	await revalidateForEntity("transactions", userId);
-	if (
-		accountId &&
-		!cardId &&
-		accountStatementBalances
-	) {
+	if (accountId && !cardId && accountStatementBalances) {
 		const reconciliation = await applyAccountStatementBalanceReconciliation({
 			viewerUserId: userId,
 			dataOwnerUserId,

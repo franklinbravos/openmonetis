@@ -4,6 +4,7 @@ import { mapTransactionsData } from "@/features/transactions/lib/page-helpers";
 import {
 	ACCOUNT_AUTO_INVOICE_NOTE_PREFIX,
 	INITIAL_BALANCE_NOTE,
+	isAccountBalanceAdjustmentName,
 } from "@/shared/lib/accounts/constants";
 import {
 	type CategoryType,
@@ -97,6 +98,11 @@ export async function fetchCategoryDetails(
 			row.note === INITIAL_BALANCE_NOTE &&
 			row.financialAccount?.excludeInitialBalanceFromIncome
 		) {
+			return false;
+		}
+
+		// Ajuste de saldo é andaime de conciliação, não gasto da categoria.
+		if (isAccountBalanceAdjustmentName(row.name)) {
 			return false;
 		}
 

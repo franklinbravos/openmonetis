@@ -112,10 +112,39 @@ export type ImportInvoiceAmortizationPrompt = {
 	onConfirmedChange: (confirmed: boolean) => void;
 };
 
+function formatSignedAmount(amount: number): string {
+	return `${amount > 0 ? "+" : "−"}${formatCurrency(Math.abs(amount))}`;
+}
+
+function BalanceGroupLabel({ children }: { children: React.ReactNode }) {
+	return (
+		<li className="pt-1 font-medium text-[11px] text-muted-foreground uppercase tracking-wide first:pt-0">
+			{children}
+		</li>
+	);
+}
+
+function BalanceRow({ label, value }: { label: string; value: string }) {
+	return (
+		<li className="flex items-center justify-between gap-3">
+			<span className="text-muted-foreground">{label}</span>
+			<span className="font-medium tabular-nums">{value}</span>
+		</li>
+	);
+}
+
 /** Conferência de saldo do extrato de conta (PDF com bloco de saldos). */
 export type ImportAccountBalancePrompt = {
+	statementFrom: string;
+	statementTo: string;
 	openingBalance: number;
 	closingBalance: number;
+	totalIn: number | null;
+	totalOut: number | null;
+	previousBalanceInCadastro: number;
+	outOfMonthRowCount: number;
+	outOfMonthRowAmount: number;
+	unmatchedInMonthAmount: number;
 	adjustmentAmount: number;
 	adjustmentDate: string;
 	yieldAmount: number;
@@ -299,29 +328,36 @@ export function ImportConfirmDialog({
 						</div>
 
 						<ul className="space-y-1.5 text-xs">
-							<li className="flex items-center justify-between gap-3">
-								<span className="text-muted-foreground">
-									Saldo inicial (extrato)
-								</span>
-								<span className="font-medium tabular-nums">
-									{formatCurrency(accountBalance.openingBalance)}
-								</span>
-							</li>
-							<li className="flex items-center justify-between gap-3">
-								<span className="text-muted-foreground">
-									Saldo final (extrato)
-								</span>
-								<span className="font-medium tabular-nums">
-									{formatCurrency(accountBalance.closingBalance)}
-								</span>
-							</li>
+							<BalanceGroupLabel>No extrato</BalanceGroupLabel>
+							<BalanceRow
+								label={`Saldo inicial em ${formatDateOnly(accountBalance.statementFrom) ?? accountBalance.statementFrom}`}
+								value={formatCurrency(accountBalance.openingBalance)}
+							/>
+							{accountBalance.totalIn != null ? (
+								<BalanceRow
+									label="Entradas"
+									value={`+${formatCurrency(accountBalance.totalIn)}`}
+								/>
+							) : null}
+							{accountBalance.totalOut != null ? (
+								<BalanceRow
+									label="Saídas"
+									value={`−${formatCurrency(accountBalance.totalOut)}`}
+								/>
+							) : null}
+							<BalanceRow
+								label={`Saldo final em ${formatDateOnly(accountBalance.statementTo) ?? accountBalance.statementTo}`}
+								value={formatCurrency(accountBalance.closingBalance)}
+							/>
+
+							<BalanceGroupLabel>Abertura do mês</BalanceGroupLabel>
+							<BalanceRow
+								label={`Saldo no cadastro em ${formatDateOnly(accountBalance.adjustmentDate) ?? accountBalance.adjustmentDate}`}
+								value={formatCurrency(accountBalance.previousBalanceInCadastro)}
+							/>
 							{Math.abs(accountBalance.adjustmentAmount) > 0.01 ? (
-								<li className="flex items-start justify-between gap-3 border-border/60 border-t pt-1.5">
-									<span className="text-muted-foreground">
-										Ajuste de saldo em{" "}
-										{formatDateOnly(accountBalance.adjustmentDate) ??
-											accountBalance.adjustmentDate}
-									</span>
+								<li className="flex items-start justify-between gap-3">
+									<span className="text-muted-foreground">Ajuste de saldo</span>
 									<span className="text-right font-medium tabular-nums">
 										{accountBalance.adjustmentAmount > 0 ? "+" : "−"}
 										{formatCurrency(Math.abs(accountBalance.adjustmentAmount))}
@@ -337,6 +373,32 @@ export function ImportConfirmDialog({
 									Saldo de abertura já confere — nenhum ajuste necessário.
 								</li>
 							)}
+							{accountBalance.relocatedAdjustmentCount > 0 ? (
+								<li className="text-[11px] text-muted-foreground leading-relaxed">
+									{accountBalance.relocatedAdjustmentCount} ajuste
+									{accountBalance.relocatedAdjustmentCount !== 1 ? "s" : ""} de
+									saldo no mês do extrato será
+									{accountBalance.relocatedAdjustmentCount !== 1 ? "ão" : ""}{" "}
+									movido
+									{accountBalance.relocatedAdjustmentCount !== 1 ? "s" : ""}{" "}
+									para{" "}
+									{formatDateOnly(accountBalance.adjustmentDate) ??
+										accountBalance.adjustmentDate}
+									.
+								</li>
+							) : null}
+
+							<BalanceGroupLabel>Movimento do mês</BalanceGroupLabel>
+							<BalanceRow
+								label="Líquido (extrato)"
+								value={formatCurrency(accountBalance.statementMonthNetFromFile)}
+							/>
+							<BalanceRow
+								label="Líquido (cadastro)"
+								value={formatCurrency(
+									accountBalance.statementMonthNetInCadastro,
+								)}
+							/>
 							{accountBalance.yieldAmount > 0.01 && accountBalance.yieldDate ? (
 								<li className="flex items-center justify-between gap-3">
 									<span className="text-muted-foreground">
@@ -349,45 +411,47 @@ export function ImportConfirmDialog({
 									</span>
 								</li>
 							) : null}
-							{accountBalance.relocatedAdjustmentCount > 0 ? (
-								<li className="text-muted-foreground">
-									{accountBalance.relocatedAdjustmentCount} ajuste
-									{accountBalance.relocatedAdjustmentCount !== 1 ? "s" : ""} de
-									saldo no mês do extrato será
-									{accountBalance.relocatedAdjustmentCount !== 1
-										? "ão"
-										: ""}{" "}
-									movido
-									{accountBalance.relocatedAdjustmentCount !== 1 ? "s" : ""} para{" "}
-									{formatDateOnly(accountBalance.adjustmentDate) ??
-										accountBalance.adjustmentDate}
-									.
-								</li>
+							{Math.abs(accountBalance.outOfMonthRowAmount) > 0.01 ||
+							Math.abs(accountBalance.unmatchedInMonthAmount) > 0.01 ? (
+								<>
+									<BalanceGroupLabel>De onde vem a diferença</BalanceGroupLabel>
+									{Math.abs(accountBalance.outOfMonthRowAmount) > 0.01 ? (
+										<BalanceRow
+											label={`${accountBalance.outOfMonthRowCount} lançamento${accountBalance.outOfMonthRowCount !== 1 ? "s" : ""} com data de outro mês`}
+											value={formatSignedAmount(
+												accountBalance.outOfMonthRowAmount,
+											)}
+										/>
+									) : null}
+									{Math.abs(accountBalance.unmatchedInMonthAmount) > 0.01 ? (
+										<BalanceRow
+											label="Lançamentos do mês que não estão no extrato"
+											value={formatSignedAmount(
+												accountBalance.unmatchedInMonthAmount,
+											)}
+										/>
+									) : null}
+								</>
 							) : null}
+
 							<li className="flex items-center justify-between gap-3 border-border/60 border-t pt-1.5">
 								<span className="text-muted-foreground">
-									Líquido do mês (extrato)
+									Saldo final projetado
 								</span>
-								<span className="font-medium tabular-nums">
-									{formatCurrency(accountBalance.statementMonthNetFromFile)}
-								</span>
-							</li>
-							<li className="flex items-center justify-between gap-3">
-								<span className="text-muted-foreground">
-									Líquido do mês (cadastro)
-								</span>
-								<span className="font-medium tabular-nums">
-									{formatCurrency(accountBalance.statementMonthNetInCadastro)}
+								<span
+									className={cn(
+										"font-medium tabular-nums",
+										accountBalance.closingMatches
+											? undefined
+											: "text-amber-800 dark:text-amber-400",
+									)}
+								>
+									{formatCurrency(accountBalance.projectedClosingBalance)}
 								</span>
 							</li>
 							{!accountBalance.closingMatches ? (
-								<li className="border-amber-500/30 border-t pt-1.5 text-amber-800 dark:text-amber-400">
-									Projetado após importar:{" "}
-									<span className="font-medium tabular-nums">
-										{formatCurrency(accountBalance.projectedClosingBalance)}
-									</span>
-									{" — "}
-									diferença de{" "}
+								<li className="text-amber-800 text-xs leading-relaxed dark:text-amber-400">
+									Diferença de{" "}
 									{formatCurrency(
 										Math.abs(
 											accountBalance.projectedClosingBalance -

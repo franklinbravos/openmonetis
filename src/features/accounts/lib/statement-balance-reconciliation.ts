@@ -1,31 +1,31 @@
 import { and, eq } from "drizzle-orm";
 import { categories, transactions } from "@/db/schema";
-import { fetchAccountSummary } from "@/features/accounts/statement-queries";
 import { upsertAccountBalanceAdjustmentInTx } from "@/features/accounts/lib/balance-adjustment";
+import { fetchAccountSummary } from "@/features/accounts/statement-queries";
 import {
 	ACCOUNT_BALANCE_ADJUSTMENT_NAME,
 	INITIAL_BALANCE_CONDITION,
 } from "@/shared/lib/accounts/constants";
+import { db } from "@/shared/lib/db";
 import type { AccountStatementBalances } from "@/shared/lib/import/account-statement-balances";
 import {
 	computeStatementMonthNetFromFileRows,
 	computeStatementYieldGap,
 	deriveStatementPeriodFromBalances,
-	getPreviousPeriodLastDate,
+	isAccountBalanceAdjustmentLabel,
+	resolveBalanceAdjustmentPlacement,
 	shouldRelocateBalanceAdjustmentRow,
 } from "@/shared/lib/import/account-statement-balances";
-import { derivePeriodFromDate } from "@/shared/utils/period";
 import {
 	roundMoney,
 	SOURCE_ROUNDING_TOLERANCE,
 } from "@/shared/lib/import/invoice-total";
-import { db } from "@/shared/lib/db";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
-import { parseLocalDateString } from "@/shared/utils/date";
+import { parseLocalDateString, toDateOnlyString } from "@/shared/utils/date";
 import { safeToNumber } from "@/shared/utils/number";
 import {
-	addMonthsToPeriod,
+	derivePeriodFromDate,
 	getPeriodPurchaseDateBounds,
 } from "@/shared/utils/period";
 
@@ -44,8 +44,36 @@ export type AccountStatementBalancePreview = {
 	statementPeriod: string;
 	previousPeriod: string;
 	adjustmentDate: string;
+	/** Intervalo que o arquivo cobre, como o extrato declara. */
+	statementFrom: string;
+	statementTo: string;
 	openingBalance: number;
 	closingBalance: number;
+	/** Entradas e saídas declaradas no extrato, em módulo. */
+	totalIn: number | null;
+	totalOut: number | null;
+	/**
+	 * Saldo da conta no cadastro no fim do mês anterior, antes de qualquer
+	 * ajuste — é dele que sai o valor do ajuste, e sem mostrá-lo o número do
+	 * ajuste aparece do nada.
+	 */
+	previousBalanceInCadastro: number;
+	/**
+	 * Lançamentos arquivados no período do extrato mas datados em outro mês.
+	 *
+	 * É a causa mais comum de o líquido do cadastro não bater com o do arquivo:
+	 * a importação antiga carimbava o período do arquivo em toda linha.
+	 */
+	outOfMonthRowCount: number;
+	outOfMonthRowAmount: number;
+	/**
+	 * O que sobra da diferença depois dos lançamentos datados em outro mês:
+	 * lançamentos com data do mês que o extrato não traz.
+	 *
+	 * Com os dois, a diferença fecha — `extrato + fora do mês + fora do
+	 * extrato = cadastro` —, e cada parcela aponta para um conserto diferente.
+	 */
+	unmatchedInMonthAmount: number;
 	/** Valor do lançamento de ajuste (positivo = receita, negativo = despesa). */
 	adjustmentAmount: number;
 	yieldAmount: number;
@@ -109,70 +137,89 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 	if (!input.balances.balances) return null;
 
 	const statementPeriod = deriveStatementPeriodFromBalances(input.balances);
-	const previousPeriod = addMonthsToPeriod(statementPeriod, -1);
-	const previousPeriodLastDate = getPreviousPeriodLastDate(statementPeriod);
+	const { period: previousPeriod, date: previousPeriodLastDate } =
+		resolveBalanceAdjustmentPlacement(statementPeriod);
 	const adminPayerId = await getAdminPayerId(input.viewerUserId);
 	if (!adminPayerId) return null;
 
-	const yieldAmount = computeStatementYieldGap(
-		input.balances,
-		input.fileRows,
-	);
+	const yieldAmount = computeStatementYieldGap(input.balances, input.fileRows);
 	const yieldDate =
 		yieldAmount > SOURCE_ROUNDING_TOLERANCE
 			? getPeriodPurchaseDateBounds(statementPeriod).start
 			: null;
 
-	const [misplacedAdjustments, existingPreviousAdjustment, previousSummary, statementSummary] =
-		await Promise.all([
-			db.query.transactions.findMany({
-				columns: { id: true, amount: true },
-				where: and(
-					eq(transactions.userId, input.dataOwnerUserId),
-					eq(transactions.accountId, input.accountId),
-					eq(transactions.period, statementPeriod),
-					eq(transactions.name, ACCOUNT_BALANCE_ADJUSTMENT_NAME),
-					eq(transactions.payerId, adminPayerId),
-				),
-			}),
-			db.query.transactions.findFirst({
-				columns: { amount: true },
-				where: and(
-					eq(transactions.userId, input.dataOwnerUserId),
-					eq(transactions.accountId, input.accountId),
-					eq(transactions.period, previousPeriod),
-					eq(transactions.name, ACCOUNT_BALANCE_ADJUSTMENT_NAME),
-				),
-			}),
-			fetchAccountSummary(
-				input.viewerUserId,
-				input.accountId,
-				previousPeriod,
+	const [
+		misplacedAdjustments,
+		existingPreviousAdjustment,
+		previousSummary,
+		statementSummary,
+		statementPeriodRows,
+	] = await Promise.all([
+		db.query.transactions.findMany({
+			columns: { id: true, amount: true },
+			where: and(
+				eq(transactions.userId, input.dataOwnerUserId),
+				eq(transactions.accountId, input.accountId),
+				eq(transactions.period, statementPeriod),
+				eq(transactions.name, ACCOUNT_BALANCE_ADJUSTMENT_NAME),
+				eq(transactions.payerId, adminPayerId),
 			),
-			fetchAccountSummary(
-				input.viewerUserId,
-				input.accountId,
+		}),
+		db.query.transactions.findFirst({
+			columns: { amount: true },
+			where: and(
+				eq(transactions.userId, input.dataOwnerUserId),
+				eq(transactions.accountId, input.accountId),
+				eq(transactions.period, previousPeriod),
+				eq(transactions.name, ACCOUNT_BALANCE_ADJUSTMENT_NAME),
+			),
+		}),
+		fetchAccountSummary(input.viewerUserId, input.accountId, previousPeriod),
+		fetchAccountSummary(input.viewerUserId, input.accountId, statementPeriod),
+		db.query.transactions.findMany({
+			columns: {
+				amount: true,
+				purchaseDate: true,
+				name: true,
+			},
+			where: and(
+				eq(transactions.userId, input.dataOwnerUserId),
+				eq(transactions.accountId, input.accountId),
+				eq(transactions.period, statementPeriod),
+				// Só o que está realizado entra no saldo — e é o saldo que se
+				// confere. Contar o não realizado faria a explicação da diferença
+				// não fechar com a própria diferença.
+				eq(transactions.isSettled, true),
+			),
+		}),
+	]);
+
+	// O ajuste de saldo tem relocação própria; contá-lo aqui duplicaria.
+	const movementRows = statementPeriodRows.filter(
+		(row) => !isAccountBalanceAdjustmentLabel(row.name),
+	);
+	const outOfMonthRows = movementRows.filter(
+		(row) =>
+			derivePeriodFromDate(toDateOnlyString(row.purchaseDate)) !==
+			statementPeriod,
+	);
+	const sumRows = (rows: typeof movementRows) =>
+		roundMoney(
+			rows.reduce((total, row) => total + safeToNumber(row.amount), 0),
+		);
+	const outOfMonthRowAmount = sumRows(outOfMonthRows);
+	const inMonthRowAmount = sumRows(
+		movementRows.filter(
+			(row) =>
+				derivePeriodFromDate(toDateOnlyString(row.purchaseDate)) ===
 				statementPeriod,
-			),
-		]);
+		),
+	);
 
 	const relocatedFromDb = misplacedAdjustments.reduce(
 		(total, row) => total + safeToNumber(row.amount),
 		0,
 	);
-	const relocatedFromImport = input.importedRows.reduce((total, row) => {
-		if (
-			!shouldRelocateBalanceAdjustmentRow(
-				row.date,
-				row.description,
-				statementPeriod,
-			)
-		) {
-			return total;
-		}
-		return total + signedRowAmount(row);
-	}, 0);
-
 	const importNetInStatement = input.importedRows.reduce((total, row) => {
 		if (
 			shouldRelocateBalanceAdjustmentRow(
@@ -193,12 +240,19 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 	const basePreviousBalance = roundMoney(
 		previousSummary.currentBalance - existingPreviousAdjustmentAmount,
 	);
-	const adjustmentAmount =
+	/*
+	 * Base do ajuste: o saldo do mês anterior sem o ajuste que já existe lá —
+	 * senão o ajuste antigo entraria na conta do novo. Quando há ajuste no mês
+	 * do extrato para relocar, a base é o saldo corrente, porque esse ajuste
+	 * ainda não pertence ao mês anterior.
+	 */
+	const previousBalanceInCadastro =
 		misplacedAdjustments.length > 0
-			? roundMoney(
-					input.balances.openingBalance - previousSummary.currentBalance,
-				)
-			: roundMoney(input.balances.openingBalance - basePreviousBalance);
+			? roundMoney(previousSummary.currentBalance)
+			: basePreviousBalance;
+	const adjustmentAmount = roundMoney(
+		input.balances.openingBalance - previousBalanceInCadastro,
+	);
 
 	const statementMonthNetFromFile = computeStatementMonthNetFromFileRows(
 		input.fileRows,
@@ -226,8 +280,21 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 		statementPeriod,
 		previousPeriod,
 		adjustmentDate: previousPeriodLastDate,
+		statementFrom: input.balances.periodFrom,
+		statementTo: input.balances.periodTo,
 		openingBalance: input.balances.openingBalance,
 		closingBalance: input.balances.closingBalance,
+		totalIn: input.balances.totalIn ?? null,
+		totalOut: input.balances.totalOut ?? null,
+		previousBalanceInCadastro,
+		outOfMonthRowCount: outOfMonthRows.length,
+		outOfMonthRowAmount,
+		unmatchedInMonthAmount: roundMoney(
+			inMonthRowAmount +
+				importNetInStatement +
+				yieldAmount -
+				statementMonthNetFromFile,
+		),
 		adjustmentAmount,
 		yieldAmount,
 		yieldDate,
@@ -272,8 +339,13 @@ export async function applyAccountStatementBalanceReconciliation(input: {
 	}
 
 	const statementPeriod = deriveStatementPeriodFromBalances(input.balances);
-	const previousPeriod = addMonthsToPeriod(statementPeriod, -1);
-	const previousPeriodLastDate = getPreviousPeriodLastDate(statementPeriod);
+	/*
+	 * O ajuste do mês do extrato é empurrado para a véspera e recalculado. É o
+	 * que permite importar para trás: agosto deixa o ajuste em 31/07, julho o
+	 * encontra ali e o manda para 30/06, e assim por diante.
+	 */
+	const { period: previousPeriod, date: previousPeriodLastDate } =
+		resolveBalanceAdjustmentPlacement(statementPeriod);
 	const yieldGap = computeStatementYieldGap(input.balances, input.importedRows);
 
 	try {
@@ -308,7 +380,8 @@ export async function applyAccountStatementBalanceReconciliation(input: {
 					),
 				});
 
-				const statementStart = getPeriodPurchaseDateBounds(statementPeriod).start;
+				const statementStart =
+					getPeriodPurchaseDateBounds(statementPeriod).start;
 
 				await tx.insert(transactions).values({
 					condition: INITIAL_BALANCE_CONDITION,
