@@ -3,8 +3,8 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { categories, financialAccounts, transactions } from "@/db/schema";
+import { upsertAccountBalanceAdjustmentInTx } from "@/features/accounts/lib/balance-adjustment";
 import {
-	ACCOUNT_BALANCE_ADJUSTMENT_NAME,
 	INITIAL_BALANCE_CATEGORY_NAME,
 	INITIAL_BALANCE_CONDITION,
 	INITIAL_BALANCE_NOTE,
@@ -32,13 +32,13 @@ import {
 	TRANSFER_PAYMENT_METHOD,
 } from "@/shared/lib/transfers/constants";
 import {
-	formatCurrency,
 	formatDecimalForDbRequired,
 } from "@/shared/utils/currency";
 import {
 	getBusinessTodayDate,
 	getTodayInfo,
 	parseLocalDateString,
+	toDateOnlyString,
 } from "@/shared/utils/date";
 import { derivePeriodFromDate } from "@/shared/utils/period";
 import { normalizeFilePath } from "@/shared/utils/string";
@@ -448,6 +448,10 @@ const adjustAccountBalanceSchema = z.object({
 		.regex(PERIOD_FORMAT_REGEX, "Período inválido."),
 	currentBalance: z.number({ message: "Saldo atual inválido." }),
 	targetBalance: z.number({ message: "Saldo correto inválido." }),
+	purchaseDate: z
+		.string()
+		.regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.")
+		.optional(),
 });
 
 type AdjustAccountBalanceInput = z.infer<typeof adjustAccountBalanceSchema>;
@@ -584,72 +588,22 @@ export async function adjustAccountBalanceAction(
 				throw new ActionError("Conta não encontrada.");
 			}
 
-			const existing = await tx.query.transactions.findFirst({
-				columns: { id: true, amount: true },
-				where: and(
-					eq(transactions.userId, dataOwnerUserId),
-					eq(transactions.accountId, data.accountId),
-					eq(transactions.period, data.period),
-					eq(transactions.name, ACCOUNT_BALANCE_ADJUSTMENT_NAME),
-				),
-			});
-
-			const existingAmount = Number(existing?.amount ?? 0);
-			const baseBalance = data.currentBalance - existingAmount;
-			const adjustmentAmount =
-				Math.round((data.targetBalance - baseBalance) * 100) / 100;
-
-			if (adjustmentAmount === 0) {
-				if (existing) {
-					await tx.delete(transactions).where(eq(transactions.id, existing.id));
-					message = "Ajuste de saldo removido.";
-				} else {
-					message = "Nada a ajustar — o saldo já está correto.";
-				}
-				return;
+			const purchaseDate =
+				data.purchaseDate ?? toDateOnlyString(getBusinessTodayDate());
+			if (!purchaseDate) {
+				throw new ActionError("Data do ajuste inválida.");
 			}
 
-			const isExpense = adjustmentAmount < 0;
-			const categoryName = isExpense ? "Outras despesas" : "Outras receitas";
-
-			const category = await tx.query.categories.findFirst({
-				columns: { id: true },
-				where: and(
-					eq(categories.userId, dataOwnerUserId),
-					eq(categories.name, categoryName),
-				),
-			});
-
-			const amount = formatDecimalForDbRequired(adjustmentAmount);
-			const note = `O saldo era ${formatCurrency(baseBalance)} mas o correto é ${formatCurrency(data.targetBalance)}.`;
-
-			const payload = {
-				condition: INITIAL_BALANCE_CONDITION,
-				name: ACCOUNT_BALANCE_ADJUSTMENT_NAME,
-				paymentMethod: INITIAL_BALANCE_PAYMENT_METHOD,
-				note,
-				amount,
-				purchaseDate: getBusinessTodayDate(),
-				transactionType: isExpense
-					? ("Despesa" as const)
-					: ("Receita" as const),
-				period: data.period,
-				isSettled: true,
-				userId: dataOwnerUserId,
+			const result = await upsertAccountBalanceAdjustmentInTx(tx, {
+				dataOwnerUserId,
 				accountId: data.accountId,
-				cardId: null,
-				categoryId: category?.id ?? null,
-				payerId: adminPayerId,
-			};
-
-			if (existing) {
-				await tx
-					.update(transactions)
-					.set(payload)
-					.where(eq(transactions.id, existing.id));
-			} else {
-				await tx.insert(transactions).values(payload);
-			}
+				period: data.period,
+				purchaseDate,
+				currentBalance: data.currentBalance,
+				targetBalance: data.targetBalance,
+				adminPayerId,
+			});
+			message = result.message;
 		});
 
 		revalidateForEntity("accounts", user.id);

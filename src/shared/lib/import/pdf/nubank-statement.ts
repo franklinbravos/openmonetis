@@ -13,6 +13,7 @@ import type {
 	ImportedTransaction,
 	ImportStatement,
 } from "@/shared/lib/import/types";
+import type { AccountStatementBalances } from "@/shared/lib/import/account-statement-balances";
 
 /**
  * Extrato de conta do Nubank em PDF.
@@ -313,13 +314,31 @@ export function parseNubankBankStatementPdf(text: string): ImportStatement {
 	}
 
 	const accountMatch = text.match(/Conta\s+(\d{6,}-\d)/i);
+	const period = parseStatementPeriod(text);
+	const balanceBlock = parseNubankStatementBalances(text);
+
+	const accountBalances: AccountStatementBalances | null =
+		balanceBlock &&
+		period &&
+		balanceBlock.openingBalance != null &&
+		balanceBlock.closingBalance != null
+			? {
+					openingBalance: balanceBlock.openingBalance,
+					closingBalance: balanceBlock.closingBalance,
+					yield: balanceBlock.yield,
+					periodFrom: period.from,
+					periodTo: period.to,
+					balances: balanceBlock.balances,
+				}
+			: null;
 
 	return {
 		source: "Nubank",
 		accountNumber: accountMatch?.[1] ?? null,
-		period: parseStatementPeriod(text),
+		period,
 		isCreditCard: false,
 		accountHolder: parseStatementHolder(text),
+		accountBalances,
 		transactions,
 	};
 }

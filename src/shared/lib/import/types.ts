@@ -56,5 +56,7 @@ export type ImportStatement = {
 	 */
 	accountHolder?: { name: string | null; document: string | null } | null;
 	transactions: ImportedTransaction[];
+	/** Saldos do topo do extrato de conta, quando o PDF os declara. */
+	accountBalances?: import("./account-statement-balances").AccountStatementBalances | null;
 	invoice?: InvoiceImportMetadata | null;
 };

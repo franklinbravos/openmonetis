@@ -26,6 +26,11 @@ import {
 	updateInvoicePaymentStatusAction,
 } from "@/features/invoices/actions";
 import {
+	applyAccountStatementBalanceReconciliation,
+	previewAccountStatementBalanceReconciliation,
+	type AccountStatementBalancePreview,
+} from "@/features/accounts/lib/statement-balance-reconciliation";
+import {
 	buildTransactionRecords,
 	fetchOwnedCategoryIds,
 	fetchOwnedPayerIds,
@@ -64,6 +69,11 @@ import {
 	importOccurrenceCollidesWithStored,
 	planImportRecordInsertion,
 } from "@/shared/lib/import/helpers";
+import {
+	deriveStatementPeriodFromBalances,
+	getPreviousPeriodLastDate,
+	shouldRelocateBalanceAdjustmentRow,
+} from "@/shared/lib/import/account-statement-balances";
 import { isInvoicePaymentDescription } from "@/shared/lib/import/invoice-total";
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
@@ -82,6 +92,7 @@ import {
 } from "@/shared/lib/transfers/constants";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 import { parseLocalDateString, toDateOnlyString } from "@/shared/utils/date";
+import { addMonthsToPeriod } from "@/shared/utils/period";
 
 const installmentImportSchema = z
 	.object({
@@ -219,6 +230,17 @@ const invoiceAmortizationSchema = z.object({
 	amount: z.number().positive(),
 });
 
+const accountStatementBalancesSchema = z.object({
+	openingBalance: z.number(),
+	closingBalance: z.number(),
+	yield: z.number().optional(),
+	periodFrom: z
+		.string()
+		.regex(/^\d{4}-\d{2}-\d{2}$/, "Início do extrato inválido."),
+	periodTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fim do extrato inválido."),
+	balances: z.boolean(),
+});
+
 const importSchema = z
 	.object({
 		rows: z.array(importRowSchema),
@@ -246,6 +268,7 @@ const importSchema = z
 		existingInstallmentEdits: z.array(existingInstallmentEditSchema).optional(),
 		previousInvoiceSettlement: previousInvoiceSettlementSchema.optional(),
 		invoiceAmortizations: z.array(invoiceAmortizationSchema).optional(),
+		accountStatementBalances: accountStatementBalancesSchema.optional(),
 	})
 	.superRefine((data, ctx) => {
 		// A liquidação da fatura anterior é trabalho por si só: reprocessar um mês
@@ -259,7 +282,12 @@ const importSchema = z
 			!(data.invoiceAmortizations?.length ?? 0) &&
 			!(data.removeTransactionIds?.length ?? 0) &&
 			!(data.existingAmountEdits?.length ?? 0) &&
-			!(data.existingInstallmentEdits?.length ?? 0)
+			!(data.existingInstallmentEdits?.length ?? 0) &&
+			!(
+				data.accountStatementBalances &&
+				data.accountId &&
+				!data.cardId
+			)
 		) {
 			ctx.addIssue({
 				code: "custom",
@@ -869,6 +897,132 @@ async function applyExistingInstallmentCorrectionsT(
 	}
 }
 
+const importRowSnapshotSchema = z.object({
+	date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida."),
+	description: z.string(),
+	amount: z.number().positive(),
+	transactionType: z.enum(["income", "expense"]),
+});
+
+const previewBalanceReconciliationSchema = z.object({
+	accountId: uuidSchema("FinancialAccount"),
+	balances: accountStatementBalancesSchema,
+	fileRows: z.array(importRowSnapshotSchema),
+	importedRows: z.array(importRowSnapshotSchema).default([]),
+});
+
+export async function previewImportBalanceReconciliationAction(
+	input: z.infer<typeof previewBalanceReconciliationSchema>,
+): Promise<
+	| { success: true; preview: AccountStatementBalancePreview }
+	| { success: false; error: string }
+> {
+	try {
+		const userId = await getUserId();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
+		const data = previewBalanceReconciliationSchema.parse(input);
+
+		if (!(await validateContaOwnership(userId, data.accountId))) {
+			return { success: false, error: "Conta não encontrada." };
+		}
+
+		const preview = await previewAccountStatementBalanceReconciliation({
+			viewerUserId: userId,
+			dataOwnerUserId,
+			accountId: data.accountId,
+			balances: data.balances,
+			fileRows: data.fileRows,
+			importedRows: data.importedRows,
+		});
+
+		if (!preview) {
+			return {
+				success: false,
+				error: "O extrato não traz saldos conferíveis para ajuste automático.",
+			};
+		}
+
+		return { success: true, preview };
+	} catch (error) {
+		console.error("previewImportBalanceReconciliationAction", error);
+		return {
+			success: false,
+			error: "Não foi possível calcular o ajuste de saldo.",
+		};
+	}
+}
+
+async function finalizeAccountStatementBalanceImport(input: {
+	userId: string;
+	dataOwnerUserId: string;
+	accountId: string;
+	balances: NonNullable<ImportInput["accountStatementBalances"]>;
+	importBatchId: string;
+	sourceFileName?: string;
+	sourceFileSize?: number;
+	importedRows: Array<{
+		date: string;
+		description: string;
+		amount: number;
+		transactionType: "income" | "expense";
+	}>;
+}): Promise<ImportResult> {
+	const reconciliation = await applyAccountStatementBalanceReconciliation({
+		viewerUserId: input.userId,
+		dataOwnerUserId: input.dataOwnerUserId,
+		accountId: input.accountId,
+		balances: input.balances,
+		importedRows: input.importedRows,
+	});
+
+	if (!reconciliation.success) {
+		return reconciliation;
+	}
+
+	await revalidateForEntity("transactions", input.userId);
+	await revalidateForEntity("accounts", input.userId);
+
+	const batchPayload = {
+		sourceFileName: input.sourceFileName ?? "Importação sem arquivo",
+		sourceFileSize: input.sourceFileSize ?? null,
+		cardId: null,
+		invoicePeriod: null,
+		accountId: input.accountId,
+		importedCount: 0,
+		skippedCount: 0,
+		status: IMPORT_BATCH_STATUS.IMPORTED,
+		draftData: null,
+	};
+
+	const existingBatch = await db.query.importBatches.findFirst({
+		columns: { id: true },
+		where: and(
+			eq(importBatches.userId, input.dataOwnerUserId),
+			eq(importBatches.id, input.importBatchId),
+		),
+	});
+
+	if (existingBatch) {
+		await db
+			.update(importBatches)
+			.set(batchPayload)
+			.where(eq(importBatches.id, input.importBatchId));
+	} else {
+		await db.insert(importBatches).values({
+			id: input.importBatchId,
+			userId: input.dataOwnerUserId,
+			...batchPayload,
+		});
+	}
+
+	return {
+		success: true,
+		imported: 0,
+		skipped: 0,
+		importBatchId: input.importBatchId,
+	};
+}
+
 export async function importTransactionsAction(
 	input: ImportInput,
 ): Promise<ImportResult> {
@@ -885,6 +1039,13 @@ export async function importTransactionsAction(
 
 	const { rows, payerId, accountId, cardId, paymentMethod, invoicePeriod } =
 		parsed.data;
+	const accountStatementBalances = parsed.data.accountStatementBalances;
+	const statementPeriodForBalance = accountStatementBalances
+		? deriveStatementPeriodFromBalances(accountStatementBalances)
+		: null;
+	const previousPeriodLastDate = statementPeriodForBalance
+		? getPreviousPeriodLastDate(statementPeriodForBalance)
+		: null;
 	const { payInvoice, paymentDate, paymentAccountId, removeTransactionIds } =
 		parsed.data;
 
@@ -1183,7 +1344,9 @@ export async function importTransactionsAction(
 		}
 
 		if (!payInvoice && removeIds.length === 0) {
-			return { success: true, imported: 0, skipped: 0, importBatchId: "" };
+			if (!(accountId && !cardId && accountStatementBalances)) {
+				return { success: true, imported: 0, skipped: 0, importBatchId: "" };
+			}
 		}
 
 		if (!payInvoice && removeIds.length > 0) {
@@ -1256,6 +1419,39 @@ export async function importTransactionsAction(
 		}
 
 		if (!payInvoice) {
+			if (accountId && !cardId && accountStatementBalances) {
+				const importBatchId = parsed.data.importBatchId ?? randomUUID();
+
+				if (parsed.data.importBatchId) {
+					const existingUploadBatch = await db.query.importBatches.findFirst({
+						columns: { id: true },
+						where: and(
+							eq(importBatches.userId, dataOwnerUserId),
+							eq(importBatches.id, parsed.data.importBatchId),
+						),
+					});
+
+					if (!existingUploadBatch) {
+						return {
+							success: false,
+							error:
+								"Registro de upload não encontrado. Envie o arquivo novamente.",
+						};
+					}
+				}
+
+				return finalizeAccountStatementBalanceImport({
+					userId,
+					dataOwnerUserId,
+					accountId,
+					balances: accountStatementBalances,
+					importBatchId,
+					sourceFileName: parsed.data.sourceFileName,
+					sourceFileSize: parsed.data.sourceFileSize,
+					importedRows: [],
+				});
+			}
+
 			return { success: true, imported: 0, skipped: 0, importBatchId: "" };
 		}
 
@@ -1695,9 +1891,25 @@ export async function importTransactionsAction(
 			}));
 		}
 
-		const period =
+		let period =
 			invoicePeriod ??
 			`${purchaseDate.getFullYear()}-${String(purchaseDate.getMonth() + 1).padStart(2, "0")}`;
+		let resolvedPurchaseDate = purchaseDate;
+
+		if (
+			accountId &&
+			!cardId &&
+			statementPeriodForBalance &&
+			previousPeriodLastDate &&
+			shouldRelocateBalanceAdjustmentRow(
+				row.date,
+				row.description,
+				statementPeriodForBalance,
+			)
+		) {
+			resolvedPurchaseDate = parseLocalDateString(previousPeriodLastDate);
+			period = addMonthsToPeriod(statementPeriodForBalance, -1);
+		}
 
 		return [
 			{
@@ -1710,7 +1922,7 @@ export async function importTransactionsAction(
 					? -row.amount
 					: row.amount
 				).toFixed(2),
-				purchaseDate,
+				purchaseDate: resolvedPurchaseDate,
 				period,
 				isSettled,
 				userId: dataOwnerUserId,
@@ -2009,6 +2221,32 @@ export async function importTransactionsAction(
 	}
 
 	await revalidateForEntity("transactions", userId);
+	if (
+		accountId &&
+		!cardId &&
+		accountStatementBalances
+	) {
+		const reconciliation = await applyAccountStatementBalanceReconciliation({
+			viewerUserId: userId,
+			dataOwnerUserId,
+			accountId,
+			balances: accountStatementBalances,
+			importedRows: rows
+				.filter((row) => row.kind === "transaction")
+				.map((row) => ({
+					date: row.date,
+					description: row.description,
+					amount: row.amount,
+					transactionType: row.transactionType,
+				})),
+		});
+
+		if (!reconciliation.success) {
+			return reconciliation;
+		}
+
+		await revalidateForEntity("accounts", userId);
+	}
 	if (
 		hasInvoicePayments ||
 		payInvoice ||

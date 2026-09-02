@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { existsSync, readFileSync } from "node:fs";
+import { extractPdfText } from "../pdf-parser";
 import {
 	isNubankBankStatementPdf,
 	parseNubankBankStatementPdf,
@@ -37,6 +39,11 @@ describe("parseNubankBankStatementPdf", () => {
 		expect(statement.accountNumber).toBe("472152010-3");
 		expect(statement.isCreditCard).toBe(false);
 		expect(statement.period).toEqual({ from: "2026-01-01", to: "2026-01-31" });
+		expect(statement.accountBalances).toMatchObject({
+			openingBalance: 241.06,
+			closingBalance: 1216.95,
+			balances: true,
+		});
 	});
 
 	it("o sinal vem do grupo, não do valor", () => {
@@ -168,5 +175,25 @@ describe("parseNubankStatementBalances", () => {
 
 	it("sem o bloco, devolve null", () => {
 		expect(parseNubankStatementBalances("Nubank sem saldos")).toBeNull();
+	});
+});
+
+describe("extrato Nubank agosto/2026 (amostra local)", () => {
+	it("lê 67 lançamentos e saldos do PDF real", async () => {
+		const samplePath =
+			"/Users/franklinbravos/Documents/Extratos e Faturas/NU_4721520103_01AGO2026_31AGO2026.pdf";
+		if (!existsSync(samplePath)) return;
+
+		const text = await extractPdfText(readFileSync(samplePath).buffer);
+		const statement = parseNubankBankStatementPdf(text);
+		const { groups } = parseNubankStatementMovements(text);
+
+		expect(statement.transactions).toHaveLength(67);
+		expect(groups.every((group) => group.balances)).toBe(true);
+		expect(statement.accountBalances).toMatchObject({
+			openingBalance: 1272.08,
+			closingBalance: 65.96,
+			balances: true,
+		});
 	});
 });

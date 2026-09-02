@@ -45,6 +45,7 @@ import {
 	importTransactionsAction,
 	linkImportToExistingAction,
 	moveImportTransactionToPeriodAction,
+	previewImportBalanceReconciliationAction,
 	undoImportAction,
 } from "@/features/transactions/actions/import-action";
 import {
@@ -80,6 +81,7 @@ import {
 	type ImportAiAnalysisStatus,
 } from "@/features/transactions/components/import/import-ai-analysis-banner";
 import { ImportConfirmDialog } from "@/features/transactions/components/import/import-confirm-dialog";
+import type { ImportAccountBalancePrompt } from "@/features/transactions/components/import/import-confirm-dialog";
 import { ImportFileHistory } from "@/features/transactions/components/import/import-file-history";
 import { ImportInvoicePeriodMismatchDialog } from "@/features/transactions/components/import/import-invoice-period-mismatch-dialog";
 import { ImportLinkDialog } from "@/features/transactions/components/import/import-link-dialog";
@@ -477,6 +479,8 @@ export function ImportPage({
 		number | null
 	>(null);
 	const [confirmOpen, setConfirmOpen] = useState(false);
+	const [accountBalancePreview, setAccountBalancePreview] =
+		useState<ImportAccountBalancePrompt | null>(null);
 	const [payInvoiceOnImport, setPayInvoiceOnImport] = useState(false);
 	const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 	const [fileError, setFileError] = useState<string | null>(null);
@@ -3683,8 +3687,16 @@ export function ImportPage({
 		amountCorrectionCount > 0 ||
 		installmentCorrectionCount > 0;
 
+	const hasAccountBalanceReconciliation = Boolean(
+		statement?.accountBalances?.balances &&
+			!statement.isCreditCard &&
+			accountCardValue?.startsWith("account:"),
+	);
+
 	const canImport =
-		(hasPendingImportWork || canAskInvoicePayment) &&
+		(hasPendingImportWork ||
+			canAskInvoicePayment ||
+			hasAccountBalanceReconciliation) &&
 		!!accountCardValue &&
 		uncategorizedCount === 0 &&
 		withoutPayerCount === 0 &&
@@ -3767,7 +3779,10 @@ export function ImportPage({
 		(cardLimitsConfirmed && cardLimitsChangeLines.length > 0);
 
 	const nothingToConfirm =
-		!hasPendingImportWork && !shouldPayInvoiceOnImport && !hasSideAdjustments;
+		!hasPendingImportWork &&
+		!shouldPayInvoiceOnImport &&
+		!hasSideAdjustments &&
+		!hasAccountBalanceReconciliation;
 
 	const canConfirmImport =
 		canProceedToImport &&
@@ -3955,7 +3970,8 @@ export function ImportPage({
 			Boolean(amortizationPayload) ||
 			rowsMarkedForRemoval.length > 0 ||
 			collectExistingAmountEdits(rows).length > 0 ||
-			collectExistingInstallmentEdits(rows).length > 0;
+			collectExistingInstallmentEdits(rows).length > 0 ||
+			hasAccountBalanceReconciliation;
 
 		setIsImporting(true);
 		try {
@@ -4015,6 +4031,10 @@ export function ImportPage({
 						existingInstallmentEdits: collectExistingInstallmentEdits(rows),
 						previousInvoiceSettlement: settlementPayload,
 						invoiceAmortizations: amortizationPayload,
+						accountStatementBalances:
+							!cardId && statement?.accountBalances
+								? statement.accountBalances
+								: undefined,
 					})
 				: {
 						success: true as const,
@@ -4129,6 +4149,58 @@ export function ImportPage({
 		if (invoiceDueDate) setPaymentDate(invoiceDueDate);
 		setConfirmOpen(true);
 	};
+
+	useEffect(() => {
+		if (!confirmOpen) {
+			setAccountBalancePreview(null);
+			return;
+		}
+
+		const decoded = accountCardValue
+			? decodeAccountCard(accountCardValue)
+			: null;
+		const accountId = decoded?.type === "account" ? decoded.id : null;
+		const balances = statement?.accountBalances;
+
+		if (!accountId || !balances || statement?.isCreditCard) {
+			setAccountBalancePreview(null);
+			return;
+		}
+
+		let cancelled = false;
+
+		void previewImportBalanceReconciliationAction({
+			accountId,
+			balances,
+			fileRows: rows
+				.filter(
+					(row) =>
+						row.kind === "transaction" ||
+						row.kind === "transfer",
+				)
+				.map((row) => ({
+					date: row.date,
+					description: row.description,
+					amount: row.amount,
+					transactionType: row.transactionType,
+				})),
+			importedRows: selectedRows
+				.filter((row) => row.kind === "transaction")
+				.map((row) => ({
+					date: row.date,
+					description: row.description,
+					amount: row.amount,
+					transactionType: row.transactionType,
+				})),
+		}).then((result) => {
+			if (cancelled) return;
+			setAccountBalancePreview(result.success ? result.preview : null);
+		});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [confirmOpen, accountCardValue, statement, rows, selectedRows]);
 
 	const currentStep = !statement ? "upload" : isImporting ? "done" : "review";
 
@@ -4516,6 +4588,13 @@ export function ImportPage({
 											<p className="text-muted-foreground text-sm">
 												Selecione ao menos um lançamento para importar.
 											</p>
+										) : hasAccountBalanceReconciliation &&
+										  importRecordCount === 0 ? (
+											<p className="text-muted-foreground text-sm">
+												Todos os lançamentos já estão conferidos. Ao
+												confirmar, o saldo da conta será ajustado conforme o
+												extrato.
+											</p>
 										) : canProceedToImport &&
 											importInvoiceReconciliation &&
 											!invoiceTotalBalanced ? (
@@ -4535,9 +4614,12 @@ export function ImportPage({
 										>
 											{isImporting
 												? "Processando…"
-												: importRecordCount > 0
-													? `Processar arquivo (${importRecordCount} lançamento${importRecordCount !== 1 ? "s" : ""})`
-													: "Processar arquivo"}
+												: hasAccountBalanceReconciliation &&
+													  importRecordCount === 0
+													? "Atualizar saldo da conta"
+													: importRecordCount > 0
+														? `Processar arquivo (${importRecordCount} lançamento${importRecordCount !== 1 ? "s" : ""})`
+														: "Processar arquivo"}
 										</Button>
 									</div>
 								</div>
@@ -4591,6 +4673,7 @@ export function ImportPage({
 							}
 						: null
 				}
+				accountBalance={accountBalancePreview}
 				previousInvoice={
 					previousInvoiceReview && previousInvoice
 						? {
