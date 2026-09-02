@@ -12,6 +12,14 @@ const BRAVOS_PIX_TRANSFER_PATTERNS = [
 	/pix.*46\.268\.915\s*\/?\s*0001-83.*banco\s+inter/i,
 ];
 
+const INVESTMENT_ACCOUNT_LABEL_PATTERNS = [
+	/invest/i,
+	/\bcdb\b/i,
+	/renda\s*fixa/i,
+	/aplic/i,
+	/tesouro/i,
+];
+
 export type ImportTransferGuess = {
 	kind: "transfer";
 	/**
@@ -102,6 +110,86 @@ export function isBravosInterPixTransferDescription(
 	);
 }
 
+/**
+ * Aplicação ou resgate entre conta corrente e investimento no mesmo banco.
+ *
+ * Ex.: `Aplicacao: "CDB CREDITO BANCO INTER S A"` no extrato da conta corrente
+ * move patrimônio para a carteira de investimento — não é despesa do mês.
+ */
+export function isInvestmentMovementDescription(description: string): boolean {
+	const text = normalizeImportedText(description);
+
+	if (/^aplicacao\b/i.test(text) || /^aplicação\b/i.test(text)) {
+		return true;
+	}
+
+	if (/^resgate\b/i.test(text)) {
+		return true;
+	}
+
+	const normalized = normalizeForCompare(text);
+	return /\b(compra|venda)\b.*\b(cdb|lci|lca)\b/i.test(normalized);
+}
+
+function inferBankHintFromDescription(description: string): string | null {
+	const normalized = normalizeForCompare(description);
+
+	if (/\bbanco\s*inter\b|\binter\b/.test(normalized)) return "inter";
+	if (/\bnubank\b|\bnu\s*pagamentos\b/.test(normalized)) return "nubank";
+	if (/\bmercado\s*pago\b/.test(normalized)) return "mercadopago";
+	if (/\bita[uú]\b/.test(normalized)) return "itau";
+	if (/\bbradesco\b/.test(normalized)) return "bradesco";
+
+	return null;
+}
+
+function accountMatchesBankHint(
+	option: SelectOption,
+	bankHint: string,
+): boolean {
+	const text = accountSearchText(option);
+	return text.includes(bankHint) || option.logo === bankHint;
+}
+
+/** Conta de investimento cadastrada que casa com a movimentação do extrato. */
+export function findInvestmentPeerAccount(
+	description: string,
+	accountOptions: SelectOption[],
+	importAccountId: string | null,
+): SelectOption | null {
+	const candidates = accountOptions.filter(
+		(option) => option.value !== importAccountId,
+	);
+	if (candidates.length === 0) return null;
+
+	const investmentCandidates = candidates.filter((option) =>
+		INVESTMENT_ACCOUNT_LABEL_PATTERNS.some((pattern) =>
+			pattern.test(normalizeForCompare(option.label)),
+		),
+	);
+
+	let pool =
+		investmentCandidates.length > 0 ? investmentCandidates : candidates;
+
+	const bankHint = inferBankHintFromDescription(description);
+	if (bankHint) {
+		const bankMatches = pool.filter((option) =>
+			accountMatchesBankHint(option, bankHint),
+		);
+		if (bankMatches.length === 1) return bankMatches[0] ?? null;
+		if (bankMatches.length > 1) pool = bankMatches;
+	}
+
+	if (pool.length === 1) return pool[0] ?? null;
+	if (pool.length > 1) return null;
+
+	return findPeerAccountByInstitution(
+		description,
+		accountOptions,
+		importAccountId,
+	);
+}
+
 function accountSearchText(option: SelectOption): string {
 	return [option.label, option.slug, option.logo]
 		.filter(Boolean)
@@ -168,6 +256,18 @@ export function guessImportTransfer(
 			kind: "transfer",
 			transferPeerAccountId:
 				findPeerAccountByInstitution(
+					description,
+					accountOptions,
+					importAccountId,
+				)?.value ?? null,
+		};
+	}
+
+	if (isInvestmentMovementDescription(description)) {
+		return {
+			kind: "transfer",
+			transferPeerAccountId:
+				findInvestmentPeerAccount(
 					description,
 					accountOptions,
 					importAccountId,

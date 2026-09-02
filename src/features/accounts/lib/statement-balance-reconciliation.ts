@@ -91,9 +91,22 @@ function signedRowAmount(row: ImportRowSnapshot): number {
 	return row.transactionType === "expense" ? -row.amount : row.amount;
 }
 
-/** Linhas que entram no líquido da conta (exclui pagamento de fatura). */
+/**
+ * Linhas do arquivo que movimentam o saldo da conta.
+ *
+ * Pagamento de fatura entra: o dinheiro sai da conta corrente como qualquer
+ * outra despesa, e o extrato o registra como registra as demais. Deixá-lo de
+ * fora fazia o líquido do arquivo discordar do próprio extrato — no extrato
+ * Inter de agosto/2026, o débito automático da fatura de R$ 78,00 sumia e o
+ * líquido dava −R$ 938,99 contra os −R$ 1.016,99 que os saldos declaram.
+ *
+ * Fora fica só o que não é dinheiro saindo ou entrando na conta: linha de
+ * excesso da conciliação de fatura (`invoice_extra`).
+ */
 export function isAccountStatementMovementImportRow(kind: string): boolean {
-	return kind === "transaction" || kind === "transfer";
+	return (
+		kind === "transaction" || kind === "transfer" || kind === "invoice_payment"
+	);
 }
 
 /**

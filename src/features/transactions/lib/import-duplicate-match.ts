@@ -10,6 +10,10 @@ import {
 	stripImportExternalIdSuffix,
 } from "@/shared/lib/import/helpers";
 import type { ImportedTransaction } from "@/shared/lib/import/types";
+import {
+	TRANSFER_ESTABLISHMENT_ENTRADA,
+	TRANSFER_ESTABLISHMENT_SAIDA,
+} from "@/shared/lib/transfers/constants";
 import { formatCurrency } from "@/shared/utils/currency";
 import { formatDateOnly, toDateOnlyString } from "@/shared/utils/date";
 import { detectInstallmentFromName } from "@/shared/utils/installment-detection";
@@ -25,6 +29,8 @@ export type ImportDuplicateSnapshot = {
 	installmentCount: number | null;
 	payerId: string | null;
 	categoryId: string | null;
+	accountId?: string | null;
+	transferId?: string | null;
 	period?: string | null;
 	condition?: string | null;
 	recurrenceCount?: number | null;
@@ -120,6 +126,8 @@ export type ImportDuplicateValidation = {
 	 */
 	existingInvoiceCardId?: string | null;
 	existingInvoicePeriod?: string | null;
+	/** O cadastro casado já é perna de transferência entre contas. */
+	existingIsTransfer?: boolean;
 };
 
 type ImportRowForMatch = Pick<
@@ -358,8 +366,54 @@ function mapDbTransactionType(value: string): "income" | "expense" {
 	return value === "Receita" ? "income" : "expense";
 }
 
-function isTransferDbTransactionType(value: string): boolean {
+export function isTransferDbTransactionType(value: string): boolean {
 	return value === TRANSFER_TRANSACTION_TYPE;
+}
+
+/** Conta da outra ponta, indexada pelo id da perna já cadastrada. */
+export function buildTransferPeerAccountMap(
+	snapshots: ImportDuplicateSnapshot[],
+): Map<string, string | null> {
+	const legsByTransferId = new Map<string, ImportDuplicateSnapshot[]>();
+
+	for (const snapshot of snapshots) {
+		if (!snapshot.transferId || !snapshot.accountId) continue;
+		const legs = legsByTransferId.get(snapshot.transferId) ?? [];
+		legs.push(snapshot);
+		legsByTransferId.set(snapshot.transferId, legs);
+	}
+
+	const peerByTransactionId = new Map<string, string | null>();
+
+	for (const legs of legsByTransferId.values()) {
+		if (legs.length < 2) continue;
+
+		for (const leg of legs) {
+			if (!leg.accountId) continue;
+			const peer = legs.find(
+				(candidate) =>
+					candidate.id !== leg.id &&
+					candidate.accountId &&
+					candidate.accountId !== leg.accountId,
+			);
+			peerByTransactionId.set(leg.id, peer?.accountId ?? null);
+		}
+	}
+
+	return peerByTransactionId;
+}
+
+export function inferImportRowTransferFromDuplicate(
+	validation: ImportDuplicateValidation | null,
+	transferPeerByTransactionId: Map<string, string | null>,
+): { kind: "transfer"; transferPeerAccountId: string | null } | null {
+	if (!validation?.existingIsTransfer) return null;
+
+	return {
+		kind: "transfer",
+		transferPeerAccountId:
+			transferPeerByTransactionId.get(validation.existingTransactionId) ?? null,
+	};
 }
 
 function amountsMatchForImportDuplicate(
@@ -392,6 +446,27 @@ function formatInstallmentLabel(
 	return `${current}/${total}`;
 }
 
+/**
+ * A perna de transferência não tem nome do banco para comparar.
+ *
+ * Quando o app reconhece uma transferência, ele substitui a descrição do extrato
+ * por "Saída/Entrada - Transf. entre contas". Ao importar depois o extrato da
+ * conta do outro lado, a mesma movimentação chega com o nome do banco, não casa
+ * com nada, e um par novo nasce para o mesmo dinheiro — cada extrato criando o
+ * seu. No extrato Inter de agosto/2026 isso duplicou R$ 1.410,00 em três
+ * transferências.
+ *
+ * Data e valor bastam aqui: são os dois campos que o banco declara e que o app
+ * não reescreve.
+ */
+function isTransferLegSnapshot(existing: ImportDuplicateSnapshot): boolean {
+	const name = existing.name.trim().toLowerCase();
+	return (
+		name === TRANSFER_ESTABLISHMENT_SAIDA.toLowerCase() ||
+		name === TRANSFER_ESTABLISHMENT_ENTRADA.toLowerCase()
+	);
+}
+
 export function scoreImportAgainstSnapshot(
 	row: ImportRowForMatch,
 	existing: ImportDuplicateSnapshot,
@@ -403,19 +478,24 @@ export function scoreImportAgainstSnapshot(
 	const importedIdentity = resolveImportMatchIdentity(row);
 	const existingIdentity = resolveExistingMatchIdentity(existing);
 
+	const dateMatches = Boolean(
+		importedDate && existingDate && importedDate === existingDate,
+	);
+	const amountMatches = amountsMatchForImportDuplicate(
+		importedType,
+		importedAmount,
+		existing.transactionType,
+		Number(existing.amount),
+	);
+
 	return {
-		date: Boolean(
-			importedDate && existingDate && importedDate === existingDate,
-		),
-		amount: amountsMatchForImportDuplicate(
-			importedType,
-			importedAmount,
-			existing.transactionType,
-			Number(existing.amount),
-		),
+		date: dateMatches,
+		amount: amountMatches,
 		description:
-			importedIdentity.baseName === existingIdentity.baseName &&
-			installmentsAreCompatible(importedIdentity, existingIdentity),
+			isTransferLegSnapshot(existing) && dateMatches && amountMatches
+				? true
+				: importedIdentity.baseName === existingIdentity.baseName &&
+					installmentsAreCompatible(importedIdentity, existingIdentity),
 	};
 }
 
@@ -547,7 +627,12 @@ export function buildImportDuplicateValidation(
 		});
 	}
 
-	if (importedIdentity.baseName !== existingIdentity.baseName) {
+	// Divergir do nome genérico da perna não é divergência: foi o app que o
+	// escreveu, apagando o nome que o banco tinha dado à linha.
+	if (
+		importedIdentity.baseName !== existingIdentity.baseName &&
+		!isTransferLegSnapshot(existing)
+	) {
 		mismatches.push({
 			field: "description",
 			label: "Descrição",
@@ -620,6 +705,7 @@ export function buildImportDuplicateValidation(
 		),
 		existingInvoiceCardId: parseInvoicePaymentNoteCardId(existing.note),
 		existingInvoicePeriod: parseInvoicePaymentNotePeriod(existing.note),
+		existingIsTransfer: isTransferDbTransactionType(existing.transactionType),
 	};
 }
 

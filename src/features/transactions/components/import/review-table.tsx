@@ -606,12 +606,14 @@ function ReviewLinkSuggestionStatus({
 	row,
 	index,
 	categoryOptions,
+	accountOptions,
 	onLinkDuplicate,
 	onDismissLinkSuggestion,
 }: {
 	row: ReviewRow;
 	index: number;
 	categoryOptions: SelectOption[];
+	accountOptions: SelectOption[];
 	onLinkDuplicate: (index: number) => void;
 	onDismissLinkSuggestion: (index: number) => void;
 }) {
@@ -626,21 +628,57 @@ function ReviewLinkSuggestionStatus({
 	const existingCategoryLabel = categoryOptions.find(
 		(option) => option.value === validation.existingCategoryId,
 	)?.label;
+	const peerAccountLabel = row.transferPeerAccountId
+		? accountOptions.find((option) => option.value === row.transferPeerAccountId)
+				?.label
+		: null;
 
 	return (
 		<div className="min-w-0 space-y-2">
-			<Badge
-				variant="outline"
-				className="w-fit border-sky-500/40 text-[10px] text-sky-700 dark:text-sky-300"
-			>
-				Possível vínculo
-			</Badge>
+			<div className="flex flex-wrap items-center gap-1.5">
+				<Badge
+					variant="outline"
+					className="w-fit border-sky-500/40 text-[10px] text-sky-700 dark:text-sky-300"
+				>
+					Possível vínculo
+				</Badge>
+				{validation.existingIsTransfer || row.kind === "transfer" ? (
+					<Badge
+						variant="outline"
+						className="w-fit border-info/40 text-[10px] text-info"
+					>
+						Transferência
+					</Badge>
+				) : null}
+			</div>
 			<p className="break-words text-sky-800 text-xs whitespace-normal dark:text-sky-300">
-				{matchedFields.length > 0
-					? `${matchedFields.join(" e ")} batem com um lançamento existente.`
-					: "Dois campos batem com um lançamento existente."}
+				{validation.existingIsTransfer || row.kind === "transfer"
+					? matchedFields.length > 0
+						? `${matchedFields.join(" e ")} batem com uma transferência já cadastrada entre contas.`
+						: "Dois campos batem com uma transferência já cadastrada entre contas."
+					: matchedFields.length > 0
+						? `${matchedFields.join(" e ")} batem com um lançamento existente.`
+						: "Dois campos batem com um lançamento existente."}
 			</p>
-			{validation.existingCategoryId ? (
+			{validation.existingIsTransfer || row.kind === "transfer" ? (
+				<p className="text-muted-foreground text-xs leading-relaxed">
+					Vincular associa esta linha do extrato à perna existente — não cria
+					despesa nem receita nova
+					{peerAccountLabel ? (
+						<>
+							{" "}
+							(com contraparte{" "}
+							<span className="font-medium text-foreground">
+								{peerAccountLabel}
+							</span>
+							)
+						</>
+					) : (
+						""
+					)}
+					.
+				</p>
+			) : validation.existingCategoryId ? (
 				existingCategoryLabel && !row.categoryId ? (
 					<p className="text-muted-foreground text-xs">
 						Categoria no cadastro:{" "}
@@ -679,16 +717,31 @@ function ReviewLinkSuggestionStatus({
 	);
 }
 
-function ReviewLinkedStatus({ row }: { row: ReviewRow }) {
+function ReviewLinkedStatus({
+	row,
+	accountOptions,
+}: {
+	row: ReviewRow;
+	accountOptions: SelectOption[];
+}) {
 	if (!isImportRowLinked(row)) return null;
+
+	const peerAccountLabel = row.transferPeerAccountId
+		? accountOptions.find((option) => option.value === row.transferPeerAccountId)
+				?.label
+		: null;
 
 	return (
 		<div className="flex flex-wrap items-center gap-1.5">
 			<Badge variant="success" className="text-[10px]">
-				Vinculado ao cadastro
+				{row.kind === "transfer" ? "Transferência vinculada" : "Vinculado ao cadastro"}
 			</Badge>
 			<p className="text-emerald-700 text-xs dark:text-emerald-400">
-				As informações foram unidas ao lançamento existente.
+				{row.kind === "transfer"
+					? peerAccountLabel
+						? `Extrato associado à transferência existente com ${peerAccountLabel}.`
+						: "Extrato associado à transferência existente — nada novo será lançado."
+					: "As informações foram unidas ao lançamento existente."}
 			</p>
 		</div>
 	);
@@ -1159,7 +1212,10 @@ export function ReviewTable({
 													{isImportRowLinked(row) ? (
 														<div className="space-y-1">
 															<p className="font-medium">{row.description}</p>
-															<ReviewLinkedStatus row={row} />
+															<ReviewLinkedStatus
+																row={row}
+																accountOptions={transferAccountOptions}
+															/>
 														</div>
 													) : (
 														<ReviewVerifiedDuplicateDescription
@@ -1248,6 +1304,7 @@ export function ReviewTable({
 														isCard={isCard}
 														invoicePeriod={invoicePeriod}
 														categoryOptions={categoryOptions}
+														transferAccountOptions={transferAccountOptions}
 														onDescriptionChange={onDescriptionChange}
 														onUndoDuplicate={onUndoDuplicate}
 														onLinkDuplicate={onLinkDuplicate}
@@ -1697,7 +1754,10 @@ function ReviewMobileCard({
 					{isImportRowLinked(row) ? (
 						<div className="space-y-1">
 							<p className="min-w-0 font-medium">{row.description}</p>
-							<ReviewLinkedStatus row={row} />
+							<ReviewLinkedStatus
+								row={row}
+								accountOptions={transferAccountOptions}
+							/>
 						</div>
 					) : (
 						<ReviewVerifiedDuplicateDescription
@@ -1785,6 +1845,7 @@ function ReviewMobileCard({
 								isCard={isCard}
 								invoicePeriod={invoicePeriod}
 								categoryOptions={categoryOptions}
+								transferAccountOptions={transferAccountOptions}
 								onDescriptionChange={onDescriptionChange}
 								onUndoDuplicate={onUndoDuplicate}
 								onLinkDuplicate={onLinkDuplicate}
@@ -1826,6 +1887,7 @@ function ReviewMobileCard({
 								isCard={isCard}
 								invoicePeriod={invoicePeriod}
 								categoryOptions={categoryOptions}
+								transferAccountOptions={transferAccountOptions}
 								onDescriptionChange={onDescriptionChange}
 								onUndoDuplicate={onUndoDuplicate}
 								onLinkDuplicate={onLinkDuplicate}
@@ -2313,6 +2375,7 @@ function ReviewDescriptionField({
 	isCard,
 	invoicePeriod,
 	categoryOptions,
+	transferAccountOptions,
 	onDescriptionChange,
 	onUndoDuplicate,
 	onLinkDuplicate,
@@ -2327,6 +2390,7 @@ function ReviewDescriptionField({
 	| "row"
 	| "index"
 	| "categoryOptions"
+	| "transferAccountOptions"
 	| "onDescriptionChange"
 	| "onUndoDuplicate"
 	| "onLinkDuplicate"
@@ -2457,10 +2521,14 @@ function ReviewDescriptionField({
 						row={row}
 						index={index}
 						categoryOptions={categoryOptions}
+						accountOptions={transferAccountOptions}
 						onLinkDuplicate={onLinkDuplicate}
 						onDismissLinkSuggestion={onDismissLinkSuggestion}
 					/>
-					<ReviewLinkedStatus row={row} />
+					<ReviewLinkedStatus
+						row={row}
+						accountOptions={transferAccountOptions}
+					/>
 				</>
 			) : null}
 		</div>

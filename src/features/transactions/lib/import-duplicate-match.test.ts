@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildImportDuplicateValidation,
+	buildTransferPeerAccountMap,
 	collectImportLinkedExistingTransactionIds,
 	findInstallmentDuplicateSnapshot,
+	inferImportRowTransferFromDuplicate,
 	mergeImportDuplicateSnapshots,
 	resolveImportDuplicateMatches,
 	resolveSemanticImportMatches,
@@ -685,5 +687,148 @@ describe("buildImportDuplicateValidation — fatura do cadastro casado", () => {
 
 		expect(validation.existingInvoiceCardId).toBeNull();
 		expect(validation.existingInvoicePeriod).toBeNull();
+	});
+});
+
+describe("transferências na revisão de importação", () => {
+	it("marca cadastro casado como transferência", () => {
+		const validation = buildImportDuplicateValidation(
+			{
+				date: "2026-08-10",
+				amount: 500,
+				description: "Pix enviado para Nubank",
+				transactionType: "expense",
+			},
+			{
+				id: "tx-out",
+				ofxFitId: null,
+				name: "Saída - Transf. entre contas",
+				amount: "-500.00",
+				purchaseDate: "2026-08-10",
+				transactionType: "Transferência",
+				currentInstallment: null,
+				installmentCount: null,
+				payerId: "payer-1",
+				categoryId: "cat-transfer",
+			},
+			"link_suggestion",
+		);
+
+		expect(validation.existingIsTransfer).toBe(true);
+	});
+
+	it("resolve a contraparte a partir das duas pernas", () => {
+		const snapshots = [
+			{
+				id: "tx-out",
+				ofxFitId: null,
+				name: "Saída - Transf. entre contas",
+				amount: "-500.00",
+				purchaseDate: "2026-08-10",
+				transactionType: "Transferência",
+				currentInstallment: null,
+				installmentCount: null,
+				payerId: "payer-1",
+				categoryId: "cat-transfer",
+				accountId: "conta-inter",
+				transferId: "transfer-1",
+			},
+			{
+				id: "tx-in",
+				ofxFitId: null,
+				name: "Entrada - Transf. entre contas",
+				amount: "500.00",
+				purchaseDate: "2026-08-10",
+				transactionType: "Transferência",
+				currentInstallment: null,
+				installmentCount: null,
+				payerId: "payer-1",
+				categoryId: "cat-transfer",
+				accountId: "conta-nubank",
+				transferId: "transfer-1",
+			},
+		];
+
+		const peerMap = buildTransferPeerAccountMap(snapshots);
+		const validation = buildImportDuplicateValidation(
+			{
+				date: "2026-08-10",
+				amount: 500,
+				description: "Pix enviado",
+				transactionType: "expense",
+			},
+			snapshots[0],
+			"link_suggestion",
+		);
+
+		expect(inferImportRowTransferFromDuplicate(validation, peerMap)).toEqual({
+			kind: "transfer",
+			transferPeerAccountId: "conta-nubank",
+		});
+	});
+});
+
+describe("perna de transferência já cadastrada", () => {
+	const perna = {
+		id: "perna-1",
+		ofxFitId: "nubank-sintetico",
+		name: "Saída - Transf. entre contas",
+		amount: "-1000.00",
+		purchaseDate: new Date(2026, 7, 10),
+		transactionType: "Despesa",
+		currentInstallment: null,
+		installmentCount: null,
+		payerId: "payer-1",
+		categoryId: "cat-transf",
+	};
+	const linhaDoInter = {
+		date: "2026-08-10",
+		amount: 1000,
+		description:
+			'Pix enviado: "Cp :18236120-Franklin Diogo Aparecido Bravos Querino dos Santos"',
+		transactionType: "expense" as const,
+	};
+
+	it("casa por data e valor, apesar de o app ter trocado a descrição", () => {
+		// O extrato do Nubank criou a perna no Inter com nome genérico. Ao importar
+		// o extrato do Inter, a mesma saída chega com o nome do banco: sem casar,
+		// entrava de novo e duplicava o dinheiro.
+		expect(scoreImportAgainstSnapshot(linhaDoInter, perna)).toEqual({
+			date: true,
+			amount: true,
+			description: true,
+		});
+
+		const validation = buildImportDuplicateValidation(linhaDoInter, perna);
+
+		expect(validation.status).toBe("match");
+		expect(validation.mismatches).toEqual([]);
+	});
+
+	it("não casa quando o valor é outro", () => {
+		const outroValor = { ...linhaDoInter, amount: 999 };
+
+		expect(scoreImportAgainstSnapshot(outroValor, perna).description).toBe(
+			false,
+		);
+		expect(buildImportDuplicateValidation(outroValor, perna).status).not.toBe(
+			"match",
+		);
+	});
+
+	it("não casa quando a data é outra", () => {
+		const outraData = { ...linhaDoInter, date: "2026-08-11" };
+
+		expect(scoreImportAgainstSnapshot(outraData, perna).description).toBe(
+			false,
+		);
+	});
+
+	it("lançamento comum continua exigindo o nome", () => {
+		const comum = { ...perna, name: "Pix enviado: OUTRA PESSOA" };
+
+		expect(scoreImportAgainstSnapshot(linhaDoInter, comum).description).toBe(
+			false,
+		);
 	});
 });

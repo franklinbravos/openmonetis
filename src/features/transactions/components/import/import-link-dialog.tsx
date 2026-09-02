@@ -115,16 +115,21 @@ export function ImportLinkDialog({
 	const existingAmountLabel = validation?.mismatches.find(
 		(item) => item.field === "amount",
 	)?.existing;
+	const isTransferLink = validation?.existingIsTransfer === true;
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="sm:max-w-lg">
 				<DialogHeader>
-					<DialogTitle>Vincular lançamento</DialogTitle>
+					<DialogTitle>
+						{isTransferLink
+							? "Vincular transferência"
+							: "Vincular lançamento"}
+					</DialogTitle>
 					<DialogDescription>
-						Data e valor batem com um lançamento já cadastrado, mas a descrição
-						é diferente. Escolha qual card manter — a outra descrição será salva
-						na observação.
+						{isTransferLink
+							? "Data e valor batem com uma transferência já cadastrada entre contas. Escolha qual descrição manter — a outra vai para a observação. Nenhuma despesa ou receita nova será criada."
+							: "Data e valor batem com um lançamento já cadastrado, mas a descrição é diferente. Escolha qual card manter — a outra descrição será salva na observação."}
 					</DialogDescription>
 				</DialogHeader>
 

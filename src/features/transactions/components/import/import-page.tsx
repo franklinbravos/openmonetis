@@ -15,6 +15,7 @@ import {
 	CreateAccountInlineDialog,
 	type CreatedAccount,
 } from "@/features/accounts/components/create-account-inline-dialog";
+import { isAccountStatementMovementImportRow } from "@/features/accounts/lib/statement-balance-reconciliation";
 import {
 	CreateCategoryInlineDialog,
 	type CreatedCategory,
@@ -80,8 +81,8 @@ import {
 	type ImportAiAnalysisProgress,
 	type ImportAiAnalysisStatus,
 } from "@/features/transactions/components/import/import-ai-analysis-banner";
-import { ImportConfirmDialog } from "@/features/transactions/components/import/import-confirm-dialog";
 import type { ImportAccountBalancePrompt } from "@/features/transactions/components/import/import-confirm-dialog";
+import { ImportConfirmDialog } from "@/features/transactions/components/import/import-confirm-dialog";
 import { ImportFileHistory } from "@/features/transactions/components/import/import-file-history";
 import { ImportInvoicePeriodMismatchDialog } from "@/features/transactions/components/import/import-invoice-period-mismatch-dialog";
 import { ImportLinkDialog } from "@/features/transactions/components/import/import-link-dialog";
@@ -145,8 +146,10 @@ import {
 	buildInvoiceImportHistoryHref,
 } from "@/features/transactions/lib/import-continue-href";
 import {
+	buildTransferPeerAccountMap,
 	type ImportDuplicateSnapshot,
 	type ImportDuplicateValidation,
+	inferImportRowTransferFromDuplicate,
 	isImportLinkSuggestion,
 	isImportRowResolved,
 	isVerifiedImportDuplicate,
@@ -481,6 +484,11 @@ export function ImportPage({
 	const [confirmOpen, setConfirmOpen] = useState(false);
 	const [accountBalancePreview, setAccountBalancePreview] =
 		useState<ImportAccountBalancePrompt | null>(null);
+	const [accountBalancePreviewLoading, setAccountBalancePreviewLoading] =
+		useState(false);
+	const [accountBalancePreviewError, setAccountBalancePreviewError] = useState<
+		string | null
+	>(null);
 	const [payInvoiceOnImport, setPayInvoiceOnImport] = useState(false);
 	const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 	const [fileError, setFileError] = useState<string | null>(null);
@@ -1342,6 +1350,9 @@ export function ImportPage({
 						)
 					: accountImportSnapshots;
 
+				const transferPeerByTransactionId =
+					buildTransferPeerAccountMap(semanticCandidates);
+
 				setPeriodLockedExistingIds(
 					collectPeriodLockedTransactionIds(semanticCandidates),
 				);
@@ -1452,9 +1463,13 @@ export function ImportPage({
 					const duplicateValidation = duplicateState.duplicateValidation;
 					const isLinkSuggestion =
 						duplicateValidation?.status === "link_suggestion";
+					const duplicateTransfer = inferImportRowTransferFromDuplicate(
+						duplicateValidation,
+						transferPeerByTransactionId,
+					);
 
 					let resolvedCategoryId =
-						transferGuess || treatAsInvoicePayment
+						transferGuess || duplicateTransfer || treatAsInvoicePayment
 							? treatAsInvoicePayment
 								? pagamentosCategoryId
 								: null
@@ -1502,12 +1517,17 @@ export function ImportPage({
 						payerId: resolvedPayerId,
 						kind: transferGuess?.kind
 							? transferGuess.kind
-							: treatAsInvoicePayment
-								? ("invoice_payment" as const)
-								: ("transaction" as const),
+							: duplicateTransfer?.kind
+								? duplicateTransfer.kind
+								: treatAsInvoicePayment
+									? ("invoice_payment" as const)
+									: ("transaction" as const),
 						invoicePaymentCardId: guessedCardId,
 						invoicePaymentPeriod: guessedPeriod,
-						transferPeerAccountId: transferGuess?.transferPeerAccountId ?? null,
+						transferPeerAccountId:
+							transferGuess?.transferPeerAccountId ??
+							duplicateTransfer?.transferPeerAccountId ??
+							null,
 						installmentImport: transferGuess ? null : installmentImport,
 						recurrenceImport: null,
 						categoryId: resolvedCategoryId,
@@ -1745,6 +1765,9 @@ export function ImportPage({
 					)
 				: accountImportSnapshots;
 
+			const transferPeerByTransactionId =
+				buildTransferPeerAccountMap(semanticCandidates);
+
 			setPeriodLockedExistingIds(
 				collectPeriodLockedTransactionIds(semanticCandidates),
 			);
@@ -1786,6 +1809,10 @@ export function ImportPage({
 
 					const isLinkSuggestion =
 						duplicateState.duplicateValidation?.status === "link_suggestion";
+					const duplicateTransfer = inferImportRowTransferFromDuplicate(
+						duplicateState.duplicateValidation,
+						transferPeerByTransactionId,
+					);
 					let resolvedCategoryId = row.categoryId;
 					let resolvedPayerId = row.payerId;
 
@@ -1816,7 +1843,11 @@ export function ImportPage({
 								? false
 								: row.selected,
 						payerId: resolvedPayerId,
-						categoryId: resolvedCategoryId,
+						categoryId: duplicateTransfer ? null : resolvedCategoryId,
+						kind: duplicateTransfer?.kind ?? row.kind,
+						transferPeerAccountId:
+							duplicateTransfer?.transferPeerAccountId ??
+							row.transferPeerAccountId,
 					};
 				});
 
@@ -2408,17 +2439,32 @@ export function ImportPage({
 		setPaymentAccountId(initialPaymentAccountId);
 	}, [initialPaymentAccountId, paymentAccountId]);
 
-	// Pré-seleciona cartão ou conta com base no tipo detectado no OFX
+	// Pré-seleciona cartão ou conta conforme o arquivo — inclusive quando a rota
+	// já veio com cartão na URL e o usuário enviou um extrato de conta.
 	useEffect(() => {
-		if (!statement || accountCardValue) return;
-		if (statement.isCreditCard && cardOptions[0]) {
-			setAccountCardValue(encodeAccountCard("card", cardOptions[0].value));
-		} else if (!statement.isCreditCard && accountOptions[0]) {
-			setAccountCardValue(
-				encodeAccountCard("account", accountOptions[0].value),
-			);
+		if (!statement) return;
+
+		if (statement.isCreditCard) {
+			if (accountCardValue?.startsWith("card:")) return;
+			if (cardOptions[0]) {
+				setAccountCardValue(encodeAccountCard("card", cardOptions[0].value));
+			}
+			return;
 		}
-	}, [statement, cardOptions, accountOptions, accountCardValue]);
+
+		if (accountCardValue?.startsWith("account:")) return;
+
+		const accountId = initialAccountId ?? accountOptions[0]?.value ?? null;
+		if (accountId) {
+			setAccountCardValue(encodeAccountCard("account", accountId));
+		}
+	}, [
+		statement,
+		cardOptions,
+		accountOptions,
+		accountCardValue,
+		initialAccountId,
+	]);
 
 	const toggleRow = (index: number) => {
 		setRows((prev) =>
@@ -2781,6 +2827,9 @@ export function ImportPage({
 									selected: false,
 									payerId: resolvedPayerId,
 									duplicateValidation: null,
+									kind: validation.existingIsTransfer
+										? ("transfer" as const)
+										: currentRow.kind,
 								}
 							: currentRow,
 					),
@@ -3784,9 +3833,16 @@ export function ImportPage({
 		!hasSideAdjustments &&
 		!hasAccountBalanceReconciliation;
 
+	const balancePreviewReady =
+		!hasAccountBalanceReconciliation ||
+		(!accountBalancePreviewLoading &&
+			accountBalancePreview != null &&
+			!accountBalancePreviewError);
+
 	const canConfirmImport =
 		canProceedToImport &&
-		(invoiceTotalBalanced || invoiceTotalOverrideConfirmed);
+		(invoiceTotalBalanced || invoiceTotalOverrideConfirmed) &&
+		balancePreviewReady;
 
 	const canSaveDraft =
 		!!statement &&
@@ -4151,8 +4207,10 @@ export function ImportPage({
 	};
 
 	useEffect(() => {
-		if (!confirmOpen) {
+		if (!hasAccountBalanceReconciliation) {
 			setAccountBalancePreview(null);
+			setAccountBalancePreviewLoading(false);
+			setAccountBalancePreviewError(null);
 			return;
 		}
 
@@ -4164,20 +4222,23 @@ export function ImportPage({
 
 		if (!accountId || !balances || statement?.isCreditCard) {
 			setAccountBalancePreview(null);
+			setAccountBalancePreviewLoading(false);
+			setAccountBalancePreviewError(null);
 			return;
 		}
 
 		let cancelled = false;
+		setAccountBalancePreviewLoading(true);
+		setAccountBalancePreviewError(null);
 
 		void previewImportBalanceReconciliationAction({
 			accountId,
 			balances,
+			// Os dois lados usam o mesmo critério: tudo que move o saldo da conta,
+			// pagamento de fatura e transferência incluídos. Filtros diferentes aqui
+			// fazem o líquido do arquivo e o do cadastro medirem coisas diferentes.
 			fileRows: rows
-				.filter(
-					(row) =>
-						row.kind === "transaction" ||
-						row.kind === "transfer",
-				)
+				.filter((row) => isAccountStatementMovementImportRow(row.kind))
 				.map((row) => ({
 					date: row.date,
 					description: row.description,
@@ -4185,7 +4246,7 @@ export function ImportPage({
 					transactionType: row.transactionType,
 				})),
 			importedRows: selectedRows
-				.filter((row) => row.kind === "transaction")
+				.filter((row) => isAccountStatementMovementImportRow(row.kind))
 				.map((row) => ({
 					date: row.date,
 					description: row.description,
@@ -4194,13 +4255,26 @@ export function ImportPage({
 				})),
 		}).then((result) => {
 			if (cancelled) return;
-			setAccountBalancePreview(result.success ? result.preview : null);
+			setAccountBalancePreviewLoading(false);
+			if (result.success) {
+				setAccountBalancePreview(result.preview);
+				setAccountBalancePreviewError(null);
+				return;
+			}
+			setAccountBalancePreview(null);
+			setAccountBalancePreviewError(result.error);
 		});
 
 		return () => {
 			cancelled = true;
 		};
-	}, [confirmOpen, accountCardValue, statement, rows, selectedRows]);
+	}, [
+		hasAccountBalanceReconciliation,
+		accountCardValue,
+		statement,
+		rows,
+		selectedRows,
+	]);
 
 	const currentStep = !statement ? "upload" : isImporting ? "done" : "review";
 
@@ -4589,11 +4663,10 @@ export function ImportPage({
 												Selecione ao menos um lançamento para importar.
 											</p>
 										) : hasAccountBalanceReconciliation &&
-										  importRecordCount === 0 ? (
+											importRecordCount === 0 ? (
 											<p className="text-muted-foreground text-sm">
-												Todos os lançamentos já estão conferidos. Ao
-												confirmar, o saldo da conta será ajustado conforme o
-												extrato.
+												Todos os lançamentos já estão conferidos. Ao confirmar,
+												o saldo da conta será ajustado conforme o extrato.
 											</p>
 										) : canProceedToImport &&
 											importInvoiceReconciliation &&
@@ -4615,7 +4688,7 @@ export function ImportPage({
 											{isImporting
 												? "Processando…"
 												: hasAccountBalanceReconciliation &&
-													  importRecordCount === 0
+														importRecordCount === 0
 													? "Atualizar saldo da conta"
 													: importRecordCount > 0
 														? `Processar arquivo (${importRecordCount} lançamento${importRecordCount !== 1 ? "s" : ""})`
@@ -4674,6 +4747,9 @@ export function ImportPage({
 						: null
 				}
 				accountBalance={accountBalancePreview}
+				accountBalanceLoading={accountBalancePreviewLoading}
+				accountBalanceError={accountBalancePreviewError}
+				showAccountBalanceSection={hasAccountBalanceReconciliation}
 				previousInvoice={
 					previousInvoiceReview && previousInvoice
 						? {

@@ -356,6 +356,8 @@ export async function fetchImportDuplicateSnapshots(fitIds: string[]) {
 			installmentCount: transactions.installmentCount,
 			payerId: transactions.payerId,
 			categoryId: transactions.categoryId,
+			accountId: transactions.accountId,
+			transferId: transactions.transferId,
 			note: transactions.note,
 		})
 		.from(transactions)
@@ -377,6 +379,8 @@ export async function fetchImportDuplicateSnapshots(fitIds: string[]) {
 				installmentCount: row.installmentCount,
 				payerId: row.payerId,
 				categoryId: row.categoryId,
+				accountId: row.accountId,
+				transferId: row.transferId,
 				note: row.note,
 			})),
 		);
@@ -498,20 +502,24 @@ export async function fetchAccountImportDuplicateSnapshots(
 	const fromDate = parseLocalDateString(dateFrom);
 	const toDate = parseLocalDateString(dateTo);
 
-	return db
-		.select({
-			id: transactions.id,
-			ofxFitId: transactions.ofxFitId,
-			name: transactions.name,
-			amount: transactions.amount,
-			purchaseDate: transactions.purchaseDate,
-			transactionType: transactions.transactionType,
-			currentInstallment: transactions.currentInstallment,
-			installmentCount: transactions.installmentCount,
-			payerId: transactions.payerId,
-			categoryId: transactions.categoryId,
-			note: transactions.note,
-		})
+	const snapshotSelect = {
+		id: transactions.id,
+		ofxFitId: transactions.ofxFitId,
+		name: transactions.name,
+		amount: transactions.amount,
+		purchaseDate: transactions.purchaseDate,
+		transactionType: transactions.transactionType,
+		currentInstallment: transactions.currentInstallment,
+		installmentCount: transactions.installmentCount,
+		payerId: transactions.payerId,
+		categoryId: transactions.categoryId,
+		accountId: transactions.accountId,
+		transferId: transactions.transferId,
+		note: transactions.note,
+	} as const;
+
+	const accountRows = await db
+		.select(snapshotSelect)
 		.from(transactions)
 		.where(
 			and(
@@ -523,22 +531,49 @@ export async function fetchAccountImportDuplicateSnapshots(
 				gte(transactions.purchaseDate, fromDate),
 				lte(transactions.purchaseDate, toDate),
 			),
-		)
-		.then((rows) =>
-			rows.map((row) => ({
-				id: row.id,
-				ofxFitId: row.ofxFitId,
-				name: row.name,
-				amount: row.amount,
-				purchaseDate: row.purchaseDate,
-				transactionType: row.transactionType,
-				currentInstallment: row.currentInstallment,
-				installmentCount: row.installmentCount,
-				payerId: row.payerId,
-				categoryId: row.categoryId,
-				note: row.note,
-			})),
 		);
+
+	const transferIds = [
+		...new Set(
+			accountRows
+				.map((row) => row.transferId)
+				.filter((id): id is string => Boolean(id)),
+		),
+	];
+
+	let pairedLegRows: typeof accountRows = [];
+	if (transferIds.length > 0) {
+		pairedLegRows = await db
+			.select(snapshotSelect)
+			.from(transactions)
+			.where(
+				and(
+					eq(transactions.userId, dataOwnerUserId),
+					inArray(transactions.transferId, transferIds),
+				),
+			);
+	}
+
+	const byId = new Map<string, (typeof accountRows)[number]>();
+	for (const row of [...accountRows, ...pairedLegRows]) {
+		byId.set(row.id, row);
+	}
+
+	return [...byId.values()].map((row) => ({
+		id: row.id,
+		ofxFitId: row.ofxFitId,
+		name: row.name,
+		amount: row.amount,
+		purchaseDate: row.purchaseDate,
+		transactionType: row.transactionType,
+		currentInstallment: row.currentInstallment,
+		installmentCount: row.installmentCount,
+		payerId: row.payerId,
+		categoryId: row.categoryId,
+		accountId: row.accountId,
+		transferId: row.transferId,
+		note: row.note,
+	}));
 }
 
 const linkImportSchema = z.object({

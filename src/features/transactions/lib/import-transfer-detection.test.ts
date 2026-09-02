@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { SelectOption } from "@/features/transactions/components/types";
 import {
 	findBravosInterPjAccount,
+	findInvestmentPeerAccount,
 	guessImportTransfer,
 	isBravosInterPixTransferDescription,
+	isInvestmentMovementDescription,
 } from "./import-transfer-detection";
 
 const BRAVOS_PIX_DESCRIPTION =
@@ -177,5 +179,62 @@ describe("transferência entre contas próprias", () => {
 			guessImportTransfer(bravos, "income", CONTAS, "conta-nubank", null)
 				?.transferPeerAccountId,
 		).toBe("conta-inter");
+	});
+});
+
+describe("aplicação e resgate em investimento", () => {
+	const CONTAS = [
+		{ value: "conta-inter", label: "Inter", logo: "inter" },
+		{ value: "conta-inter-inv", label: "Inter Investimentos", logo: "inter" },
+		{ value: "conta-nubank", label: "Nubank", logo: "nubank" },
+	];
+
+	const APLICACAO_CDB = 'Aplicacao: "CDB CREDITO BANCO INTER S A"';
+	const RESGATE_CDB = 'Resgate: "CDB CREDITO BANCO INTER S A"';
+
+	it("identifica aplicação e resgate em CDB", () => {
+		expect(isInvestmentMovementDescription(APLICACAO_CDB)).toBe(true);
+		expect(isInvestmentMovementDescription(RESGATE_CDB)).toBe(true);
+		expect(isInvestmentMovementDescription("Pix enviado para João")).toBe(
+			false,
+		);
+	});
+
+	it("classifica aplicação como transferência para conta de investimento", () => {
+		expect(
+			guessImportTransfer(
+				APLICACAO_CDB,
+				"expense",
+				CONTAS,
+				"conta-inter",
+			),
+		).toEqual({
+			kind: "transfer",
+			transferPeerAccountId: "conta-inter-inv",
+		});
+	});
+
+	it("classifica resgate como transferência na entrada", () => {
+		expect(
+			guessImportTransfer(RESGATE_CDB, "income", CONTAS, "conta-inter"),
+		).toEqual({
+			kind: "transfer",
+			transferPeerAccountId: "conta-inter-inv",
+		});
+	});
+
+	it("pede a conta de investimento quando há ambiguidade", () => {
+		const ambiguo = [
+			{ value: "conta-inter", label: "Inter", logo: "inter" },
+			{ value: "inv-1", label: "Inter Investimentos", logo: "inter" },
+			{ value: "inv-2", label: "Inter CDB", logo: "inter" },
+		];
+
+		expect(
+			findInvestmentPeerAccount(APLICACAO_CDB, ambiguo, "conta-inter"),
+		).toBeNull();
+		expect(
+			guessImportTransfer(APLICACAO_CDB, "expense", ambiguo, "conta-inter"),
+		).toEqual({ kind: "transfer", transferPeerAccountId: null });
 	});
 });

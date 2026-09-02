@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { computeProjectedStatementClosingBalance } from "./statement-balance-reconciliation";
+import {
+	computeProjectedStatementClosingBalance,
+	isAccountStatementMovementImportRow,
+} from "./statement-balance-reconciliation";
 
 describe("computeProjectedStatementClosingBalance", () => {
 	it("projeta o fechamento a partir do saldo inicial do extrato, não do cadastro", () => {
@@ -43,5 +46,21 @@ describe("computeProjectedStatementClosingBalance", () => {
 		});
 
 		expect(projected).toBe(65.96);
+	});
+});
+
+describe("isAccountStatementMovementImportRow", () => {
+	it("pagamento de fatura move o saldo da conta e entra no líquido", () => {
+		// O extrato Inter de agosto/2026 debita R$ 78,00 de "Debito Automatico
+		// Fatura Cartao Inter". Deixando essa linha de fora, o líquido do arquivo
+		// dava −R$ 938,99 contra os −R$ 1.016,99 que os próprios saldos declaram:
+		// 1.017,81 − 1.016,99 = 0,82, o saldo final do extrato.
+		expect(isAccountStatementMovementImportRow("invoice_payment")).toBe(true);
+		expect(isAccountStatementMovementImportRow("transaction")).toBe(true);
+		expect(isAccountStatementMovementImportRow("transfer")).toBe(true);
+	});
+
+	it("linha de excesso da fatura não é movimento de conta", () => {
+		expect(isAccountStatementMovementImportRow("invoice_extra")).toBe(false);
 	});
 });

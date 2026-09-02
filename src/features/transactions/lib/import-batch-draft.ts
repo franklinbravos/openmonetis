@@ -29,6 +29,7 @@ const importDuplicateValidationDraftSchema = z.object({
 	existingTransactionId: z.string().uuid(),
 	existingPayerId: z.string().uuid().nullable(),
 	existingCategoryId: z.string().uuid().nullable(),
+	existingIsTransfer: z.boolean().optional(),
 });
 
 const reviewInstallmentImportSchema = z.object({

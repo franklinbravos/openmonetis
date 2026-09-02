@@ -4,6 +4,7 @@ import { Badge } from "@/shared/components/ui/badge";
 import { Card } from "@/shared/components/ui/card";
 import type { ImportStatement } from "@/shared/lib/import/types";
 import { resolveLogoSrc } from "@/shared/lib/logo";
+import { formatCurrency } from "@/shared/utils/currency";
 import {
 	formatDate,
 	formatDateOnly,
@@ -151,6 +152,11 @@ export function ImportSummary({
 		(Boolean(invoicePeriod) || (isPaidInvoiceImport && Boolean(paymentDate)));
 	const showStatementPeriodHighlight =
 		!isCardImport && Boolean(statement.period);
+	const statementBalances = statement.accountBalances;
+	const showStatementBalanceHighlight =
+		!isCardImport &&
+		Boolean(statementBalances?.balances) &&
+		statementBalances != null;
 
 	return (
 		<Card className="flex flex-col gap-2 p-4 text-sm shadow-none bg-primary/10 sm:gap-1 sm:p-5">
@@ -176,7 +182,9 @@ export function ImportSummary({
 					</div>
 				</div>
 
-				{(showInvoiceHighlight || showStatementPeriodHighlight) && (
+				{(showInvoiceHighlight ||
+					showStatementPeriodHighlight ||
+					showStatementBalanceHighlight) && (
 					<>
 						{showInvoiceHighlight ? (
 							<ImportSummaryInvoiceHighlight
@@ -189,6 +197,17 @@ export function ImportSummary({
 							<ImportSummaryStatementPeriodHighlight
 								period={statement.period}
 							/>
+						) : null}
+						{showStatementBalanceHighlight && statementBalances ? (
+							<div className="flex flex-col gap-1 rounded-md border border-primary/25 bg-background/70 px-3 py-2 shadow-xs">
+								<p className="font-semibold text-foreground text-sm">
+									Saldo do extrato
+								</p>
+								<p className="text-foreground/90 text-sm tabular-nums">
+									{formatCurrency(statementBalances.openingBalance)} →{" "}
+									{formatCurrency(statementBalances.closingBalance)}
+								</p>
+							</div>
 						) : null}
 					</>
 				)}
@@ -210,7 +229,9 @@ export function ImportSummary({
 			</div>
 
 			{/* Desktop: fatura ou período do extrato na segunda linha quando aplicável */}
-			{(showInvoiceHighlight || showStatementPeriodHighlight) && (
+			{(showInvoiceHighlight ||
+				showStatementPeriodHighlight ||
+				showStatementBalanceHighlight) && (
 				<>
 					{showInvoiceHighlight ? (
 						<ImportSummaryInvoiceHighlight
@@ -225,6 +246,17 @@ export function ImportSummary({
 							className="hidden md:flex md:flex-row md:items-center md:gap-4"
 							period={statement.period}
 						/>
+					) : null}
+					{showStatementBalanceHighlight && statementBalances ? (
+						<div className="hidden flex-col gap-1 rounded-md border border-primary/25 bg-background/70 px-3 py-2 shadow-xs md:flex md:flex-row md:items-center md:gap-4">
+							<p className="font-semibold text-foreground text-sm">
+								Saldo do extrato
+							</p>
+							<p className="text-foreground/90 text-sm tabular-nums">
+								{formatCurrency(statementBalances.openingBalance)} →{" "}
+								{formatCurrency(statementBalances.closingBalance)}
+							</p>
+						</div>
 					) : null}
 				</>
 			)}
