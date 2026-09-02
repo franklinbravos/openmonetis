@@ -22,9 +22,14 @@ const TRANSACTION_TYPE_EXPENSE = "Despesa";
 const TRANSACTION_TYPE_TRANSFER = "Transferência";
 
 export type PeriodTotals = {
+	/** Previsão do mês: inclui o que ainda não foi pago. */
 	receitas: number;
 	despesas: number;
+	/** O que de fato movimentou a conta — lançamento marcado como realizado. */
+	receitasRealizadas: number;
+	despesasRealizadas: number;
 	reembolsos: number;
+	reembolsosRealizados: number;
 	transferAdjustment: number;
 	balanco: number;
 };
@@ -32,6 +37,13 @@ export type PeriodTotals = {
 export type PeriodSummaryRow = {
 	period: string | null;
 	transactionType: string;
+	/**
+	 * Lançamento efetivado: é o que separa entrada de fato de previsão.
+	 *
+	 * Opcional porque a visão por data de compra (`get_purchase_date_overview`)
+	 * não usa a separação e não traz a coluna.
+	 */
+	isSettled?: boolean | null;
 	totalAmount: string | number | null;
 	refundAmount: string | number | null;
 	accountExcludeFromBalance: boolean | null;
@@ -40,6 +52,8 @@ export type PeriodSummaryRow = {
 type PeriodOverviewRow = {
 	periodo: string | null;
 	tipo_transacao: string | null;
+	/** Ausente enquanto a migration do RPC não foi aplicada. */
+	realizado?: boolean | null;
 	total_amount: string | number | null;
 	refund_amount: string | number | null;
 	conta_excluir_do_saldo: boolean | null;
@@ -53,7 +67,10 @@ type DashboardPeriodOverview = {
 const createEmptyTotals = (): PeriodTotals => ({
 	receitas: 0,
 	despesas: 0,
+	receitasRealizadas: 0,
+	despesasRealizadas: 0,
 	reembolsos: 0,
+	reembolsosRealizados: 0,
 	transferAdjustment: 0,
 	balanco: 0,
 });
@@ -109,13 +126,17 @@ export const buildPeriodTotals = (
 		const totals = ensurePeriodTotals(periodTotals, row.period);
 		const total = safeToNumber(row.totalAmount);
 		const refund = safeToNumber(row.refundAmount);
+		const isSettled = row.isSettled === true;
 
 		totals.reembolsos += Math.abs(refund);
+		if (isSettled) totals.reembolsosRealizados += Math.abs(refund);
 
 		if (row.transactionType === TRANSACTION_TYPE_INCOME) {
 			totals.receitas += total;
+			if (isSettled) totals.receitasRealizadas += total;
 		} else if (row.transactionType === TRANSACTION_TYPE_EXPENSE) {
 			totals.despesas += Math.abs(total);
+			if (isSettled) totals.despesasRealizadas += Math.abs(total);
 		} else if (
 			row.transactionType === TRANSACTION_TYPE_TRANSFER &&
 			row.accountExcludeFromBalance === false
@@ -150,10 +171,19 @@ export async function fetchDashboardPeriodOverview(
 		p_end_period: period,
 	});
 
+	/*
+	 * O RPC só separa efetivado de previsto depois da migration
+	 * `20260902100000_rpc_period_overview_realizado`. Sem ela a coluna nem vem, e
+	 * tratar tudo como não efetivado zeraria os dois cards — então a versão
+	 * antiga continua se comportando como antes, com um número só.
+	 */
+	const hasSettledFlag = rows.some((row) => row.realizado !== undefined);
+
 	const periodTotals = buildPeriodTotals(
 		rows.map((row) => ({
 			period: row.periodo,
 			transactionType: row.tipo_transacao ?? "",
+			isSettled: hasSettledFlag ? row.realizado : true,
 			totalAmount: row.total_amount,
 			refundAmount: row.refund_amount,
 			accountExcludeFromBalance: row.conta_excluir_do_saldo,
@@ -176,6 +206,10 @@ export async function fetchDashboardPeriodOverview(
 	for (const key of periodRange) {
 		const totals = ensurePeriodTotals(periodTotals, key);
 		const netExpenses = Math.max(0, totals.despesas - totals.reembolsos);
+		const netSettledExpenses = Math.max(
+			0,
+			totals.despesasRealizadas - totals.reembolsosRealizados,
+		);
 		totals.balanco =
 			totals.receitas -
 			totals.despesas +
@@ -183,6 +217,7 @@ export async function fetchDashboardPeriodOverview(
 			totals.transferAdjustment;
 		runningForecast += totals.balanco;
 		totals.despesas = netExpenses;
+		totals.despesasRealizadas = netSettledExpenses;
 		forecastByPeriod.set(key, runningForecast);
 	}
 
@@ -204,13 +239,20 @@ export async function fetchDashboardPeriodOverview(
 		metrics: {
 			period,
 			previousPeriod,
+			/*
+			 * O card mostra o que entrou de fato e, ao lado, a previsão do mês. O
+			 * total sozinho dizia "entradas do período" para dinheiro que ainda não
+			 * entrou — em setembro/2026, R$ 33.000,00 num mês sem nenhuma entrada.
+			 */
 			receitas: {
-				current: currentTotals.receitas,
-				previous: previousTotals.receitas,
+				current: currentTotals.receitasRealizadas,
+				previous: previousTotals.receitasRealizadas,
+				forecast: hasSettledFlag ? currentTotals.receitas : undefined,
 			},
 			despesas: {
-				current: currentTotals.despesas,
-				previous: previousTotals.despesas,
+				current: currentTotals.despesasRealizadas,
+				previous: previousTotals.despesasRealizadas,
+				forecast: hasSettledFlag ? currentTotals.despesas : undefined,
 			},
 			balanco: {
 				current: currentTotals.balanco,

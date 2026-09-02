@@ -18,6 +18,7 @@ import {
 	CardTitle,
 } from "@/shared/components/ui/card";
 import { Separator } from "@/shared/components/ui/separator";
+import { formatCurrency } from "@/shared/utils/currency";
 import { formatPercentage } from "@/shared/utils/percentage";
 import { formatPeriodForUrl } from "@/shared/utils/period";
 import { cn } from "@/shared/utils/ui";
@@ -34,7 +35,7 @@ const TREND_THRESHOLD = 0.005;
 const CARDS = [
 	{
 		label: "Receitas",
-		subtitle: "Entradas do período",
+		subtitle: "Entradas efetivadas no período",
 		key: "receitas",
 		icon: RiArrowRightDownLine,
 		invertTrend: false,
@@ -43,8 +44,9 @@ const CARDS = [
 			`/transactions?periodo=${formatPeriodForUrl(period)}&type=receita`,
 		helpTitle: "Como calculamos receitas",
 		helpLines: [
-			"Somamos os lançamentos do tipo Receita no período selecionado.",
-			"Consideramos lançamentos efetivados e não efetivados da pessoa principal (admin).",
+			"O valor em destaque soma só os lançamentos de Receita já efetivados no período — o que de fato entrou.",
+			'Logo abaixo, "Previsto" soma o mês inteiro, incluindo o que ainda não foi pago: recorrência lançada, compra em fatura aberta, boleto a vencer.',
+			"Consideramos os lançamentos da pessoa principal (admin).",
 			"Movimentações de contas marcadas como não consideradas no saldo total ficam fora deste card.",
 			"Não entram transferências internas nem lançamentos automáticos de fatura.",
 			"Reembolsos não entram como receita; eles abatem despesas e afetam o balanço líquido.",
@@ -53,7 +55,7 @@ const CARDS = [
 	},
 	{
 		label: "Despesas",
-		subtitle: "Saídas do período",
+		subtitle: "Saídas efetivadas no período",
 		key: "despesas",
 		icon: RiArrowRightUpLine,
 		invertTrend: true,
@@ -62,8 +64,9 @@ const CARDS = [
 			`/transactions?periodo=${formatPeriodForUrl(period)}&type=despesa`,
 		helpTitle: "Como calculamos despesas",
 		helpLines: [
-			"Somamos os lançamentos do tipo Despesa no período selecionado.",
-			"Consideramos lançamentos efetivados e não efetivados da pessoa principal (admin).",
+			"O valor em destaque soma só os lançamentos de Despesa já efetivados no período — o que de fato saiu.",
+			'Logo abaixo, "Previsto" soma o mês inteiro, incluindo o que ainda não foi pago: recorrência lançada, compra em fatura aberta, boleto a vencer.',
+			"Consideramos os lançamentos da pessoa principal (admin).",
 			"Movimentações de contas marcadas como não consideradas no saldo total ficam fora deste card.",
 			"Não entram transferências internas nem lançamentos automáticos de fatura.",
 			"Reembolsos do período reduzem o total de despesas, sem deixar o card negativo.",
@@ -199,6 +202,28 @@ export function DashboardMetricsCards({
 												amount={metric.current}
 											/>
 										</div>
+
+										{metric.forecast !== undefined ? (
+											<div className="flex flex-wrap items-center gap-1 text-xs">
+												<span className="text-muted-foreground">Previsto</span>
+												<MoneyValues
+													className="inline text-xs font-medium"
+													amount={metric.forecast}
+												/>
+												{Math.abs(metric.forecast - metric.current) > 0.005 ? (
+													<span className="text-muted-foreground/70">
+														· falta{" "}
+														{formatCurrency(
+															Math.abs(metric.forecast - metric.current),
+														)}
+													</span>
+												) : (
+													<span className="text-muted-foreground/70">
+														· tudo efetivado
+													</span>
+												)}
+											</div>
+										) : null}
 
 										<div className="text-xs text-muted-foreground gap-1 flex items-center">
 											<span className="text-muted-foreground/50">vs</span>
