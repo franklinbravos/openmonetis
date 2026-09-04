@@ -42,6 +42,7 @@ import { formatDateGroupLabel } from "@/shared/utils/date";
 import { cn } from "@/shared/utils/ui";
 import {
 	getMonthToolbarCreateSlotId,
+	monthToolbarCreateGroupClassName,
 	monthToolbarIconClassName,
 	monthToolbarMobileCellClassName,
 	monthToolbarMobileLabelClassName,
@@ -49,6 +50,7 @@ import {
 } from "../../lib/month-toolbar";
 import { TransactionsExport } from "../transactions-export";
 import { TransactionsImportButton } from "../transactions-import-button";
+import { TransactionQuickActionLayoutProvider } from "../quick-actions/transaction-quick-action-trigger";
 import type {
 	AccountCardFilterOption,
 	TransactionFilterOption,
@@ -367,23 +369,33 @@ export function TransactionsTable({
 
 	const createActions =
 		createSlot || onMassAdd ? (
-			<div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 max-sm:w-full sm:items-center">
-				{createSlot}
-				{onMassAdd ? (
-					<Button
-						onClick={onMassAdd}
-						variant="ghost"
-						className={monthToolbarMobileCellClassName}
-						aria-label="Adicionar múltiplos lançamentos"
-					>
-						<RiFlashlightFill
-							className={cn(monthToolbarIconClassName, "text-primary")}
-							aria-hidden
-						/>
-						<span className={monthToolbarMobileLabelClassName}>Múltiplos</span>
-					</Button>
-				) : null}
-			</div>
+			<TransactionQuickActionLayoutProvider
+				layout={monthToolbarCreateSlot ? "toolbar" : "default"}
+			>
+				<div
+					className={cn(
+						monthToolbarCreateSlot
+							? monthToolbarCreateGroupClassName
+							: "flex min-w-0 max-w-full flex-wrap items-center gap-2 max-sm:w-full sm:items-center",
+					)}
+				>
+					{createSlot}
+					{onMassAdd ? (
+						<Button
+							onClick={onMassAdd}
+							variant="ghost"
+							className={monthToolbarMobileCellClassName}
+							aria-label="Adicionar múltiplos lançamentos"
+						>
+							<RiFlashlightFill
+								className={cn(monthToolbarIconClassName, "text-primary")}
+								aria-hidden
+							/>
+							<span className={monthToolbarMobileLabelClassName}>Múltiplos</span>
+						</Button>
+					) : null}
+				</div>
+			</TransactionQuickActionLayoutProvider>
 		) : null;
 
 	const portaledCreateActions =

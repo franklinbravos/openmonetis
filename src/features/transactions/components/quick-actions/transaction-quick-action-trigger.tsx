@@ -6,11 +6,44 @@ import {
 	RiArrowRightDownLine,
 	RiArrowRightUpLine,
 } from "@remixicon/react";
-import type { ComponentProps } from "react";
+import {
+	createContext,
+	type ComponentProps,
+	type ReactNode,
+	useContext,
+} from "react";
 import { TRANSACTION_QUICK_ACTIONS } from "@/features/transactions/components/quick-actions/constants";
+import {
+	monthToolbarIconClassName,
+	monthToolbarMobileCellClassName,
+	monthToolbarMobileLabelClassName,
+} from "@/features/transactions/lib/month-toolbar";
 import { Button } from "@/shared/components/ui/button";
 import { cn } from "@/shared/utils/ui";
 import type { TransactionQuickActionKind } from "./constants";
+
+type TransactionQuickActionLayout = "default" | "toolbar";
+
+const TransactionQuickActionLayoutContext =
+	createContext<TransactionQuickActionLayout>("default");
+
+export function TransactionQuickActionLayoutProvider({
+	layout,
+	children,
+}: {
+	layout: TransactionQuickActionLayout;
+	children: ReactNode;
+}) {
+	return (
+		<TransactionQuickActionLayoutContext.Provider value={layout}>
+			{children}
+		</TransactionQuickActionLayoutContext.Provider>
+	);
+}
+
+function useTransactionQuickActionLayout() {
+	return useContext(TransactionQuickActionLayoutContext);
+}
 
 type QuickActionUi = {
 	Icon: RemixiconComponentType;
@@ -78,8 +111,29 @@ export function TransactionQuickActionTrigger({
 	className,
 	...props
 }: TransactionQuickActionTriggerProps) {
+	const layout = useTransactionQuickActionLayout();
 	const ui = QUICK_ACTION_UI[kind];
 	const Icon = ui.Icon;
+	const action = TRANSACTION_QUICK_ACTIONS[kind];
+
+	if (layout === "toolbar") {
+		return (
+			<Button
+				type="button"
+				variant="ghost"
+				className={cn(monthToolbarMobileCellClassName, className)}
+				{...props}
+			>
+				<Icon
+					className={cn(monthToolbarIconClassName, action.iconClassName)}
+					aria-hidden
+				/>
+				<span className={monthToolbarMobileLabelClassName}>
+					<QuickActionLabel label={ui.label} shortLabel={ui.shortLabel} />
+				</span>
+			</Button>
+		);
+	}
 
 	return (
 		<Button
