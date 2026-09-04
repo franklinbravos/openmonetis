@@ -81,20 +81,30 @@ export function CategorySelectContent({
 	icon,
 	depth = 0,
 	pathLabel,
+	truncateLabel = true,
 }: SelectItemContentProps & {
 	depth?: number;
 	pathLabel?: string | null;
+	truncateLabel?: boolean;
 }) {
 	return (
 		<span
-			className="flex min-w-0 items-center gap-2"
+			className={cn(
+				"flex items-center gap-2",
+				truncateLabel && "min-w-0",
+			)}
 			style={{ paddingLeft: depth > 0 ? `${depth * 0.75}rem` : undefined }}
 		>
 			<CategoryIcon name={icon} className="size-4 shrink-0" />
-			<span className="flex min-w-0 flex-col">
-				<span className="truncate">{label}</span>
+			<span className={cn("flex flex-col", truncateLabel && "min-w-0")}>
+				<span className={cn(truncateLabel && "truncate")}>{label}</span>
 				{pathLabel && depth > 0 ? (
-					<span className="truncate text-muted-foreground text-xs">
+					<span
+						className={cn(
+							"text-muted-foreground text-xs",
+							truncateLabel && "truncate",
+						)}
+					>
 						{pathLabel}
 					</span>
 				) : null}

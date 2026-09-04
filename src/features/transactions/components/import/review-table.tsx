@@ -103,6 +103,9 @@ import { getConditionIcon } from "@/shared/utils/icons";
 import { displayPeriod } from "@/shared/utils/period";
 import { cn } from "@/shared/utils/ui";
 
+const REVIEW_TABLE_DESCRIPTION_CELL_CLASS =
+	"max-w-0 align-top break-words whitespace-normal text-sm";
+
 function getInvoiceExtraRowClassName(row: ReviewRow) {
 	if (!isInvoiceExtraReviewRow(row)) return "";
 	return row.selected
@@ -161,6 +164,24 @@ function getReviewRowClassifiedClassName(row: ReviewRow): string {
 	return "border-emerald-500/40 bg-emerald-500/8 hover:bg-emerald-500/10";
 }
 
+function resolveReviewExistingCategoryId(row: ReviewRow): string | null {
+	if (isImportRowLinked(row)) {
+		return row.categoryId ?? null;
+	}
+
+	return row.duplicateValidation?.existingCategoryId ?? row.categoryId ?? null;
+}
+
+function shouldAllowReviewExistingCategoryEdit(row: ReviewRow): boolean {
+	if (row.kind !== "transaction") return false;
+	if (isImportRowLinked(row)) return true;
+
+	return (
+		isVerifiedImportDuplicate(row) &&
+		!row.duplicateValidation?.existingCategoryId
+	);
+}
+
 function ReviewVerifiedDuplicateDescription({
 	row,
 	index,
@@ -176,7 +197,7 @@ function ReviewVerifiedDuplicateDescription({
 }) {
 	return (
 		<div className="flex min-w-0 flex-wrap items-center gap-1.5">
-			<p className="min-w-0 flex-1 truncate font-medium">{row.description}</p>
+			<p className="min-w-0 flex-1 break-words font-medium">{row.description}</p>
 			<ReviewVerifiedInvoicePaymentBadge row={row} cardOptions={cardOptions} />
 			<Badge variant="success" className="shrink-0 text-[10px]">
 				Conferido
@@ -629,8 +650,9 @@ function ReviewLinkSuggestionStatus({
 		(option) => option.value === validation.existingCategoryId,
 	)?.label;
 	const peerAccountLabel = row.transferPeerAccountId
-		? accountOptions.find((option) => option.value === row.transferPeerAccountId)
-				?.label
+		? accountOptions.find(
+				(option) => option.value === row.transferPeerAccountId,
+			)?.label
 		: null;
 
 	return (
@@ -727,14 +749,17 @@ function ReviewLinkedStatus({
 	if (!isImportRowLinked(row)) return null;
 
 	const peerAccountLabel = row.transferPeerAccountId
-		? accountOptions.find((option) => option.value === row.transferPeerAccountId)
-				?.label
+		? accountOptions.find(
+				(option) => option.value === row.transferPeerAccountId,
+			)?.label
 		: null;
 
 	return (
 		<div className="flex flex-wrap items-center gap-1.5">
 			<Badge variant="success" className="text-[10px]">
-				{row.kind === "transfer" ? "Transferência vinculada" : "Vinculado ao cadastro"}
+				{row.kind === "transfer"
+					? "Transferência vinculada"
+					: "Vinculado ao cadastro"}
 			</Badge>
 			<p className="text-emerald-700 text-xs dark:text-emerald-400">
 				{row.kind === "transfer"
@@ -953,6 +978,9 @@ interface ReviewTableProps {
 	onRecurrenceCountChange: (index: number, recurrenceCount: number) => void;
 	onAmountChange: (index: number, amount: number) => void;
 	onMoveToInvoicePeriod: (index: number) => void;
+	linkSuggestionCount?: number;
+	isLinkingSuggestions?: boolean;
+	onLinkAllSuggestions?: () => void;
 }
 
 export function ReviewTable({
@@ -992,6 +1020,9 @@ export function ReviewTable({
 	onRecurrenceCountChange,
 	onAmountChange,
 	onMoveToInvoicePeriod,
+	linkSuggestionCount = 0,
+	isLinkingSuggestions = false,
+	onLinkAllSuggestions,
 }: ReviewTableProps) {
 	const [searchQuery, setSearchQuery] = useState("");
 	const [statusFilter, setStatusFilter] =
@@ -1039,6 +1070,9 @@ export function ReviewTable({
 					filteredCount={filteredEntries.length}
 					totalCount={rows.length}
 					statusCounts={statusCounts}
+					linkSuggestionCount={linkSuggestionCount}
+					isLinkingSuggestions={isLinkingSuggestions}
+					onLinkAllSuggestions={onLinkAllSuggestions}
 				/>
 
 				{filteredEntries.length === 0 ? (
@@ -1089,8 +1123,18 @@ export function ReviewTable({
 							onAmountChange={onAmountChange}
 						/>
 
-						<Table className="hidden md:table">
-							<TableHeader className="sticky top-0 z-10 bg-background">
+						<div className="[&_[data-slot=table-container]]:overflow-x-clip">
+							<Table className="hidden table-fixed md:table">
+								<colgroup>
+									<col className="w-10" />
+									<col className="w-24" />
+									<col className="w-[min(22rem,32%)]" />
+									<col className="w-12" />
+									<col className="w-44" />
+									<col className="w-32" />
+									<col className="w-28" />
+								</colgroup>
+								<TableHeader className="sticky top-0 z-10 bg-background">
 								<TableRow>
 									<TableHead className="w-10">
 										<Checkbox
@@ -1109,7 +1153,9 @@ export function ReviewTable({
 										/>
 									</TableHead>
 									<TableHead className="w-24">Data</TableHead>
-									<TableHead>Descrição</TableHead>
+									<TableHead className={REVIEW_TABLE_DESCRIPTION_CELL_CLASS}>
+										Descrição
+									</TableHead>
 									<TableHead className="w-12 text-center">Pessoa</TableHead>
 									<TableHead className="w-44">Categoria / Fatura</TableHead>
 									<TableHead className="w-32">Tipo</TableHead>
@@ -1141,9 +1187,9 @@ export function ReviewTable({
 												<TableCell className="text-muted-foreground text-sm">
 													{formatDate(row.date)}
 												</TableCell>
-												<TableCell className="min-w-[18rem] whitespace-normal text-sm">
+												<TableCell className={REVIEW_TABLE_DESCRIPTION_CELL_CLASS}>
 													<div className="space-y-1">
-														<p className="font-medium">{row.description}</p>
+														<p className="break-words font-medium">{row.description}</p>
 														<ReviewInvoiceExtraStatus row={row} />
 													</div>
 												</TableCell>
@@ -1188,7 +1234,11 @@ export function ReviewTable({
 											defaultPayerId,
 										);
 										const existingCategoryId =
-											row.duplicateValidation?.existingCategoryId ?? null;
+											resolveReviewExistingCategoryId(row);
+										const categoryRow = {
+											...row,
+											categoryId: existingCategoryId,
+										};
 
 										return (
 											<TableRow
@@ -1208,10 +1258,12 @@ export function ReviewTable({
 												<TableCell className="text-muted-foreground text-sm">
 													{formatDate(row.date)}
 												</TableCell>
-												<TableCell className="min-w-[18rem] whitespace-normal text-sm">
+												<TableCell className={REVIEW_TABLE_DESCRIPTION_CELL_CLASS}>
 													{isImportRowLinked(row) ? (
 														<div className="space-y-1">
-															<p className="font-medium">{row.description}</p>
+															<p className="break-words font-medium">
+																{row.description}
+															</p>
 															<ReviewLinkedStatus
 																row={row}
 																accountOptions={transferAccountOptions}
@@ -1245,10 +1297,20 @@ export function ReviewTable({
 													</div>
 												</TableCell>
 												<TableCell>
-													<ReviewVerifiedExistingCategory
-														categoryId={existingCategoryId}
-														categoryOptions={categoryOptions}
-													/>
+													{shouldAllowReviewExistingCategoryEdit(row) ? (
+														<ReviewCategorySelect
+															row={categoryRow}
+															index={index}
+															categoryOptions={categoryOptionsForRow}
+															onCategoryChange={onCategoryChange}
+															onCreateCategory={onCreateCategory}
+														/>
+													) : (
+														<ReviewVerifiedExistingCategory
+															categoryId={existingCategoryId}
+															categoryOptions={categoryOptions}
+														/>
+													)}
 												</TableCell>
 												<TableCell>
 													<ReviewVerifiedExistingType
@@ -1295,7 +1357,7 @@ export function ReviewTable({
 											 * "Transferência recebida pelo Pix FULANO - CNPJ - BANCO"
 											 * aparecia como "Transferência", igual em toda linha.
 											 */}
-											<TableCell className="min-w-[18rem] whitespace-normal text-sm">
+											<TableCell className={REVIEW_TABLE_DESCRIPTION_CELL_CLASS}>
 												<div className="min-w-0 space-y-2">
 													<ReviewDescriptionField
 														row={row}
@@ -1404,6 +1466,7 @@ export function ReviewTable({
 								})}
 							</TableBody>
 						</Table>
+						</div>
 					</>
 				)}
 			</div>
@@ -1419,6 +1482,9 @@ function ReviewImportFilters({
 	filteredCount,
 	totalCount,
 	statusCounts,
+	linkSuggestionCount = 0,
+	isLinkingSuggestions = false,
+	onLinkAllSuggestions,
 }: {
 	searchQuery: string;
 	onSearchQueryChange: (value: string) => void;
@@ -1427,6 +1493,9 @@ function ReviewImportFilters({
 	filteredCount: number;
 	totalCount: number;
 	statusCounts: Record<ImportReviewStatusFilter, number>;
+	linkSuggestionCount?: number;
+	isLinkingSuggestions?: boolean;
+	onLinkAllSuggestions?: () => void;
 }) {
 	const filtersActive = hasActiveImportReviewFilters(searchQuery, statusFilter);
 
@@ -1498,6 +1567,29 @@ function ReviewImportFilters({
 					);
 				})}
 			</div>
+
+			{linkSuggestionCount > 0 && onLinkAllSuggestions ? (
+				<div className="flex flex-col gap-2 rounded-md border border-sky-500/30 bg-sky-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+					<p className="text-sky-900 text-xs leading-relaxed dark:text-sky-100">
+						{linkSuggestionCount} lançamento
+						{linkSuggestionCount !== 1 ? "s" : ""} com possível vínculo. O sistema
+						confirma automaticamente quando data e valor batem; use o botão para
+						vincular o restante de uma vez (descrição do extrato prevalece).
+					</p>
+					<Button
+						type="button"
+						size="sm"
+						className="h-8 shrink-0 gap-1.5"
+						onClick={onLinkAllSuggestions}
+						disabled={isLinkingSuggestions}
+					>
+						<RiLinksLine className="size-3.5" aria-hidden />
+						{isLinkingSuggestions
+							? "Vinculando…"
+							: `Vincular sugestões (${linkSuggestionCount})`}
+					</Button>
+				</div>
+			) : null}
 
 			<div className="flex flex-wrap items-center justify-between gap-2 text-muted-foreground text-xs">
 				<p>
@@ -1725,8 +1817,11 @@ function ReviewMobileCard({
 
 	if (isVerifiedImportDuplicate(row) || isImportRowLinked(row)) {
 		const existingPayerId = resolveReviewExistingPayerId(row, defaultPayerId);
-		const existingCategoryId =
-			row.duplicateValidation?.existingCategoryId ?? null;
+		const existingCategoryId = resolveReviewExistingCategoryId(row);
+		const categoryRow = {
+			...row,
+			categoryId: existingCategoryId,
+		};
 
 		return (
 			<article
@@ -1786,11 +1881,22 @@ function ReviewMobileCard({
 							payerOptions={payerOptions}
 							compact
 						/>
-						<ReviewVerifiedExistingCategory
-							categoryId={existingCategoryId}
-							categoryOptions={categoryOptions}
-							compact
-						/>
+						{shouldAllowReviewExistingCategoryEdit(row) ? (
+							<ReviewCategorySelect
+								row={categoryRow}
+								index={index}
+								categoryOptions={categoryOptionsForRow}
+								onCategoryChange={onCategoryChange}
+								onCreateCategory={onCreateCategory}
+								compact
+							/>
+						) : (
+							<ReviewVerifiedExistingCategory
+								categoryId={existingCategoryId}
+								categoryOptions={categoryOptions}
+								compact
+							/>
+						)}
 					</div>
 				</div>
 			</article>
@@ -2483,7 +2589,7 @@ function ReviewDescriptionField({
 							// `field-sizing-content` cresce com o texto: descrição de extrato
 							// passa de 130 caracteres e duas linhas fixas cortavam o fim,
 							// que é onde ficam agência e conta. `rows` vira o piso.
-							"min-h-10 min-w-0 flex-1 resize-none wrap-break-word leading-snug field-sizing-content",
+							"min-h-10 min-w-0 max-w-full flex-1 resize-none wrap-break-word leading-snug field-sizing-content",
 						)}
 					/>
 				) : (

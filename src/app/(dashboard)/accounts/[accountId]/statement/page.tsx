@@ -5,6 +5,7 @@ import { AccountStatementCardMenu } from "@/features/accounts/components/account
 import { AddYieldDialog } from "@/features/accounts/components/add-yield-dialog";
 import { AdjustBalanceDialog } from "@/features/accounts/components/adjust-balance-dialog";
 import type { Account } from "@/features/accounts/components/types";
+import { fetchAllAccountsForUser } from "@/features/accounts/queries";
 import {
 	fetchAccountData,
 	fetchAccountStatementMonthSummaries,
@@ -100,6 +101,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 		estabelecimentos,
 		userPreferences,
 		statementMonthSummaries,
+		{ activeAccounts },
 	] = await Promise.all([
 		fetchTransactionFilterSources(userId),
 		loadLogoOptions(),
@@ -107,6 +109,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 		fetchRecentEstablishments(userId),
 		fetchUserPreferences(userId),
 		fetchAccountStatementMonthSummaries(userId, accountId),
+		fetchAllAccountsForUser(userId),
 	]);
 	const sluggedFilters = buildSluggedFilters(filterSources);
 	const slugMaps = buildSlugMaps(sluggedFilters);
@@ -264,6 +267,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 						}
 						attachmentMaxSizeMb={userPreferences?.attachmentMaxSizeMb ?? 50}
 						showImportButton={false}
+						transferAccounts={activeAccounts}
 					/>
 				</section>
 			</MonthToolbarSlotProvider>

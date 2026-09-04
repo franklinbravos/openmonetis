@@ -21,10 +21,7 @@ import type {
 import { resolveTransactionsImportHref } from "@/features/transactions/lib/import-continue-href";
 import { EmptyState } from "@/shared/components/feedback/empty-state";
 import { MonthToolbarPortal } from "@/shared/components/month-picker/month-toolbar-portal";
-import {
-	useMonthToolbarMobileColumns,
-	useResolvedMonthToolbarSlot,
-} from "@/shared/components/month-picker/month-toolbar-slot-context";
+import { useResolvedMonthToolbarSlot } from "@/shared/components/month-picker/month-toolbar-slot-context";
 import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent } from "@/shared/components/ui/card";
 import {
@@ -45,7 +42,6 @@ import { formatDateGroupLabel } from "@/shared/utils/date";
 import { cn } from "@/shared/utils/ui";
 import {
 	getMonthToolbarCreateSlotId,
-	getMonthToolbarMobileBarClassName,
 	monthToolbarIconClassName,
 	monthToolbarMobileCellClassName,
 	monthToolbarMobileLabelClassName,
@@ -368,11 +364,10 @@ export function TransactionsTable({
 		monthToolbarCreateSlotId,
 		"create",
 	);
-	const mobileToolbarColumns = useMonthToolbarMobileColumns();
 
 	const createActions =
 		createSlot || onMassAdd ? (
-			<div className={getMonthToolbarMobileBarClassName(mobileToolbarColumns)}>
+			<div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 max-sm:w-full sm:items-center">
 				{createSlot}
 				{onMassAdd ? (
 					<Button

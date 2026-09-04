@@ -151,6 +151,8 @@ export type ImportAccountBalancePrompt = {
 	yieldAmount: number;
 	yieldDate: string | null;
 	relocatedAdjustmentCount: number;
+	/** Lançamentos datados no mês do extrato mas arquivados em período posterior. */
+	misfiledForwardPeriodCount: number;
 	statementMonthNetFromFile: number;
 	statementMonthNetInCadastro: number;
 	projectedClosingBalance: number;
@@ -420,6 +422,29 @@ export function ImportConfirmDialog({
 										para{" "}
 										{formatDateOnly(accountBalance.adjustmentDate) ??
 											accountBalance.adjustmentDate}
+										.
+									</li>
+								) : null}
+								{accountBalance.misfiledForwardPeriodCount > 0 ? (
+									<li className="text-[11px] text-muted-foreground leading-relaxed">
+										{accountBalance.misfiledForwardPeriodCount} lançamento
+										{accountBalance.misfiledForwardPeriodCount !== 1
+											? "s"
+											: ""}{" "}
+										datado
+										{accountBalance.misfiledForwardPeriodCount !== 1
+											? "s"
+											: ""}{" "}
+										no mês do extrato será
+										{accountBalance.misfiledForwardPeriodCount !== 1
+											? "ão"
+											: ""}{" "}
+										{accountBalance.misfiledForwardPeriodCount !== 1
+											? "realocados"
+											: "realocado"}{" "}
+										para o período{" "}
+										{formatDateOnly(accountBalance.statementFrom) ??
+											accountBalance.statementFrom}
 										.
 									</li>
 								) : null}

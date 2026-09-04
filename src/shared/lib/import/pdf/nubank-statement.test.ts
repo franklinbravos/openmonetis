@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
 import { extractPdfText } from "../pdf-parser";
 import {
 	isNubankBankStatementPdf,

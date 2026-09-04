@@ -258,7 +258,7 @@ export function CategorySearchSelect({
 			</PopoverTrigger>
 			<PopoverContent
 				ref={popoverContentRef}
-				className="w-[var(--radix-popover-trigger-width)] overflow-hidden p-0"
+				className="w-max min-w-[max(var(--radix-popover-trigger-width),16rem)] max-w-[min(24rem,calc(100vw-2rem))] overflow-hidden p-0"
 				align="start"
 				onOpenAutoFocus={(event) => {
 					event.preventDefault();
@@ -289,6 +289,7 @@ export function CategorySearchSelect({
 												icon={option.icon}
 												depth={option.categoryDepth}
 												pathLabel={option.categoryPath}
+												truncateLabel={false}
 											/>
 											{isSelected ? (
 												<RiCheckLine

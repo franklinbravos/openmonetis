@@ -44,8 +44,9 @@ import {
 	fetchImportDuplicateSnapshots,
 	fetchInvoicePeriodDuplicateSnapshots,
 	importTransactionsAction,
-	linkImportToExistingAction,
+	linkImportSuggestionsBatchAction,
 	moveImportTransactionToPeriodAction,
+	updateImportExistingTransactionCategoryAction,
 	previewImportBalanceReconciliationAction,
 	undoImportAction,
 } from "@/features/transactions/actions/import-action";
@@ -86,6 +87,7 @@ import { ImportConfirmDialog } from "@/features/transactions/components/import/i
 import { ImportFileHistory } from "@/features/transactions/components/import/import-file-history";
 import { ImportInvoicePeriodMismatchDialog } from "@/features/transactions/components/import/import-invoice-period-mismatch-dialog";
 import { ImportLinkDialog } from "@/features/transactions/components/import/import-link-dialog";
+import type { ImportLinkMergeMode } from "@/features/transactions/components/import/import-link-dialog";
 import {
 	ImportProgressDialog,
 	type ImportProgressStep,
@@ -151,6 +153,7 @@ import {
 	type ImportDuplicateValidation,
 	inferImportRowTransferFromDuplicate,
 	isImportLinkSuggestion,
+	isImportRowLinked,
 	isImportRowResolved,
 	isVerifiedImportDuplicate,
 	mergeImportDuplicateSnapshots,
@@ -169,6 +172,12 @@ import {
 	isValidInstallmentImport,
 	isValidRecurrenceImport,
 } from "@/features/transactions/lib/import-installments";
+import {
+	buildImportLinkRequest,
+	collectImportLinkSuggestionIndexes,
+	resolveAutoLinkMergeDescription,
+	resolveLinkedReviewRowState,
+} from "@/features/transactions/lib/import-link-suggestions";
 import { applyInvoiceClosingToReviewRows } from "@/features/transactions/lib/import-invoice-closing";
 import {
 	collectInvoiceExtraRemovalTransactionIds,
@@ -376,6 +385,23 @@ function mapSelectOptionsToCategories(options: SelectOption[]): Category[] {
 		icon: option.icon ?? null,
 		parentId: option.parentId ?? null,
 	}));
+}
+
+function mapAccountStatementReconciliationRows(rows: ReviewRow[]) {
+	return rows
+		.filter((row) => isAccountStatementMovementImportRow(row.kind))
+		.map((row) => ({
+			date: row.date,
+			description: row.description,
+			amount: row.amount,
+			transactionType: row.transactionType,
+			existingTransactionId:
+				isImportRowResolved(row) || isImportRowLinked(row)
+					? (row.linkedTransactionId ??
+						row.duplicateValidation?.existingTransactionId ??
+						null)
+					: null,
+		}));
 }
 
 interface ImportPageProps {
@@ -623,6 +649,7 @@ export function ImportPage({
 	const [editDialogOpen, setEditDialogOpen] = useState(false);
 	const [linkDialogIndex, setLinkDialogIndex] = useState<number | null>(null);
 	const [isLinking, setIsLinking] = useState(false);
+	const autoLinkSignatureRef = useRef<string | null>(null);
 	const [editDialogOptions, setEditDialogOptions] =
 		useState<TransactionDialogOptions | null>(null);
 
@@ -785,6 +812,17 @@ export function ImportPage({
 			categoryGroupById.get(categoryId) ===
 				categoryGroupByTransactionType[transactionType],
 		[categoryGroupById],
+	);
+
+	const resolveImportCategoryLabel = useCallback(
+		(categoryId: string | null | undefined) => {
+			if (!categoryId) return "Sem categoria";
+			return (
+				mergedCategoryOptions.find((option) => option.value === categoryId)
+					?.label ?? "Sem categoria"
+			);
+		},
+		[mergedCategoryOptions],
 	);
 
 	const triggerImportAiAnalysis = useCallback(
@@ -2525,17 +2563,42 @@ export function ImportPage({
 		);
 	};
 
-	const handleCategoryChange = (index: number, categoryId: string | null) => {
-		setRows((prev) =>
-			prev.map((r, i) =>
-				i === index &&
-				r.kind === "transaction" &&
-				isCategoryCompatible(categoryId, r.transactionType)
-					? { ...r, categoryId }
-					: r,
-			),
-		);
-	};
+	const handleCategoryChange = useCallback(
+		async (index: number, categoryId: string | null) => {
+			const row = rows[index];
+			if (!row || row.kind !== "transaction") return;
+			if (!isCategoryCompatible(categoryId, row.transactionType)) return;
+
+			const existingTransactionId =
+				row.linkedTransactionId ??
+				row.duplicateValidation?.existingTransactionId;
+			const shouldPersistExistingCategory =
+				Boolean(existingTransactionId) &&
+				(isImportRowLinked(row) || isVerifiedImportDuplicate(row));
+
+			if (shouldPersistExistingCategory && existingTransactionId) {
+				const result = await updateImportExistingTransactionCategoryAction({
+					transactionId: existingTransactionId,
+					categoryId,
+				});
+				if (!result.success) {
+					toast.error(result.error);
+					return;
+				}
+			}
+
+			setRows((prev) =>
+				prev.map((r, i) =>
+					i === index &&
+					r.kind === "transaction" &&
+					isCategoryCompatible(categoryId, r.transactionType)
+						? { ...r, categoryId }
+						: r,
+				),
+			);
+		},
+		[rows, isCategoryCompatible],
+	);
 
 	const handleRowTypeChange = (
 		index: number,
@@ -2781,6 +2844,140 @@ export function ImportPage({
 		setLinkDialogIndex(index);
 	}, []);
 
+	const linkImportSuggestionsAtIndexes = useCallback(
+		async (
+			indexes: number[],
+			options?: {
+				mergeDescription?: ImportLinkMergeMode;
+				silent?: boolean;
+			},
+		): Promise<number> => {
+			if (indexes.length === 0) return 0;
+
+			const linkEntries = indexes.flatMap((index) => {
+				const row = rows[index];
+				const validation = row?.duplicateValidation;
+				if (!row || !validation || validation.status !== "link_suggestion") {
+					return [];
+				}
+
+				const resolvedPayerId =
+					validation.existingPayerId ?? row.payerId ?? payerId ?? defaultPayerId;
+				const mergeDescription =
+					options?.mergeDescription ??
+					resolveAutoLinkMergeDescription(validation);
+
+				return [
+					{
+						index,
+						request: buildImportLinkRequest({
+							row,
+							validation,
+							mergeDescription,
+							fallbackPayerId: resolvedPayerId,
+						}),
+						resolvedPayerId,
+						validation,
+					},
+				];
+			});
+
+			if (linkEntries.length === 0) return 0;
+
+			setIsLinking(true);
+			try {
+				const result = await linkImportSuggestionsBatchAction({
+					links: linkEntries.map((entry) => entry.request),
+				});
+
+				if (!result.success) {
+					toast.error(
+						result.linkedCount > 0
+							? `${result.linkedCount} vinculado(s), mas a operação parou: ${result.error}`
+							: result.error,
+					);
+					if (result.linkedCount === 0) return 0;
+				}
+
+				const linkedEntries = linkEntries.slice(0, result.linkedCount);
+				const linkedIndexSet = new Set(
+					linkedEntries.map((entry) => entry.index),
+				);
+
+				setRows((prev) =>
+					prev.map((currentRow, rowIndex) => {
+						if (!linkedIndexSet.has(rowIndex)) return currentRow;
+
+						const entry = linkedEntries.find(
+							(linkedEntry) => linkedEntry.index === rowIndex,
+						);
+						if (!entry) return currentRow;
+
+						return resolveLinkedReviewRowState({
+							row: currentRow,
+							validation: entry.validation,
+							resolvedPayerId: entry.resolvedPayerId,
+							isCategoryCompatible,
+						});
+					}),
+				);
+
+				if (!options?.silent) {
+					toast.success(
+						result.linkedCount === 1
+							? "Lançamento vinculado ao cadastro existente."
+							: `${result.linkedCount} lançamentos vinculados ao cadastro existente.`,
+					);
+				}
+
+				return result.linkedCount;
+			} finally {
+				setIsLinking(false);
+			}
+		},
+		[rows, payerId, defaultPayerId, isCategoryCompatible],
+	);
+
+	const handleLinkAllSuggestions = useCallback(() => {
+		const indexes = collectImportLinkSuggestionIndexes(rows);
+		void linkImportSuggestionsAtIndexes(indexes);
+	}, [rows, linkImportSuggestionsAtIndexes]);
+
+	useEffect(() => {
+		autoLinkSignatureRef.current = null;
+	}, [statement]);
+
+	useEffect(() => {
+		if (isChecking || isLinking || linkDialogIndex !== null) return;
+
+		const autoLinkableIndexes = collectImportLinkSuggestionIndexes(rows, {
+			autoLinkOnly: true,
+		});
+		if (autoLinkableIndexes.length === 0) return;
+
+		const signature = autoLinkableIndexes.join(",");
+		if (autoLinkSignatureRef.current === signature) return;
+		autoLinkSignatureRef.current = signature;
+
+		void linkImportSuggestionsAtIndexes(autoLinkableIndexes, {
+			silent: true,
+		}).then((linkedCount) => {
+			if (linkedCount > 0) {
+				toast.success(
+					linkedCount === 1
+						? "1 possível vínculo confirmado automaticamente."
+						: `${linkedCount} possíveis vínculos confirmados automaticamente.`,
+				);
+			}
+		});
+	}, [
+		rows,
+		isChecking,
+		isLinking,
+		linkDialogIndex,
+		linkImportSuggestionsAtIndexes,
+	]);
+
 	const handleDismissLinkSuggestion = useCallback((index: number) => {
 		setRows((prev) =>
 			prev.map((row, rowIndex) =>
@@ -2792,55 +2989,18 @@ export function ImportPage({
 	}, []);
 
 	const handleConfirmLinkDuplicate = useCallback(
-		async (mergeDescription: "import" | "existing") => {
+		async (mergeDescription: ImportLinkMergeMode) => {
 			if (linkDialogIndex === null) return;
 
-			const row = rows[linkDialogIndex];
-			const validation = row?.duplicateValidation;
-			if (!validation || validation.status !== "link_suggestion") return;
-
-			const resolvedPayerId =
-				validation.existingPayerId ?? row.payerId ?? payerId ?? defaultPayerId;
-
-			setIsLinking(true);
-			try {
-				const result = await linkImportToExistingAction({
-					existingTransactionId: validation.existingTransactionId,
-					importedDescription: row.description,
-					externalId: row.externalId,
-					mergeDescription,
-					fallbackPayerId: resolvedPayerId,
-				});
-
-				if (!result.success) {
-					toast.error(result.error);
-					return;
-				}
-
-				setRows((prev) =>
-					prev.map((currentRow, rowIndex) =>
-						rowIndex === linkDialogIndex
-							? {
-									...currentRow,
-									linked: true,
-									linkedTransactionId: validation.existingTransactionId,
-									selected: false,
-									payerId: resolvedPayerId,
-									duplicateValidation: null,
-									kind: validation.existingIsTransfer
-										? ("transfer" as const)
-										: currentRow.kind,
-								}
-							: currentRow,
-					),
-				);
+			const linkedCount = await linkImportSuggestionsAtIndexes(
+				[linkDialogIndex],
+				{ mergeDescription },
+			);
+			if (linkedCount > 0) {
 				setLinkDialogIndex(null);
-				toast.success("Lançamento vinculado ao cadastro existente.");
-			} finally {
-				setIsLinking(false);
 			}
 		},
-		[linkDialogIndex, rows, payerId, defaultPayerId],
+		[linkDialogIndex, linkImportSuggestionsAtIndexes],
 	);
 
 	const handleDescriptionChange = (index: number, description: string) => {
@@ -4091,6 +4251,10 @@ export function ImportPage({
 							!cardId && statement?.accountBalances
 								? statement.accountBalances
 								: undefined,
+						accountStatementFileRows:
+							!cardId && statement?.accountBalances
+								? mapAccountStatementReconciliationRows(rows)
+								: undefined,
 					})
 				: {
 						success: true as const,
@@ -4237,22 +4401,8 @@ export function ImportPage({
 			// Os dois lados usam o mesmo critério: tudo que move o saldo da conta,
 			// pagamento de fatura e transferência incluídos. Filtros diferentes aqui
 			// fazem o líquido do arquivo e o do cadastro medirem coisas diferentes.
-			fileRows: rows
-				.filter((row) => isAccountStatementMovementImportRow(row.kind))
-				.map((row) => ({
-					date: row.date,
-					description: row.description,
-					amount: row.amount,
-					transactionType: row.transactionType,
-				})),
-			importedRows: selectedRows
-				.filter((row) => isAccountStatementMovementImportRow(row.kind))
-				.map((row) => ({
-					date: row.date,
-					description: row.description,
-					amount: row.amount,
-					transactionType: row.transactionType,
-				})),
+			fileRows: mapAccountStatementReconciliationRows(rows),
+			importedRows: mapAccountStatementReconciliationRows(selectedRows),
 		}).then((result) => {
 			if (cancelled) return;
 			setAccountBalancePreviewLoading(false);
@@ -4584,6 +4734,9 @@ export function ImportPage({
 								onRecurrenceCountChange={handleRecurrenceCountChange}
 								onAmountChange={handleAmountChange}
 								onMoveToInvoicePeriod={handleMoveToInvoicePeriod}
+								linkSuggestionCount={linkSuggestionCount}
+								isLinkingSuggestions={isLinking}
+								onLinkAllSuggestions={handleLinkAllSuggestions}
 							/>
 
 							{/* Sticky footer */}
@@ -4884,6 +5037,16 @@ export function ImportPage({
 					importedDescription={rows[linkDialogIndex].description}
 					importedDate={rows[linkDialogIndex].date}
 					importedAmount={rows[linkDialogIndex].amount}
+					importedCategoryLabel={resolveImportCategoryLabel(
+						rows[linkDialogIndex].categoryId,
+					)}
+					existingCategoryLabel={resolveImportCategoryLabel(
+						rows[linkDialogIndex].duplicateValidation?.existingCategoryId,
+					)}
+					showCategory={
+						rows[linkDialogIndex].duplicateValidation?.existingIsTransfer !==
+						true
+					}
 					validation={rows[linkDialogIndex].duplicateValidation}
 					isPending={isLinking}
 					onConfirm={(mergeDescription) =>

@@ -104,9 +104,9 @@ describe("guessInvoicePaymentPeriod", () => {
 	];
 
 	it("pagamento em 10/08 sugere fatura de agosto, não de setembro", () => {
-		expect(
-			guessInvoicePaymentPeriod("2026-08-10", cardOptions, "nubank"),
-		).toBe("2026-08");
+		expect(guessInvoicePaymentPeriod("2026-08-10", cardOptions, "nubank")).toBe(
+			"2026-08",
+		);
 	});
 
 	it("pagamento após fechamento com vencimento no mês seguinte", () => {
@@ -116,7 +116,9 @@ describe("guessInvoicePaymentPeriod", () => {
 	});
 
 	it("sem cartão identificado, devolve null", () => {
-		expect(guessInvoicePaymentPeriod("2026-08-10", cardOptions, null)).toBeNull();
+		expect(
+			guessInvoicePaymentPeriod("2026-08-10", cardOptions, null),
+		).toBeNull();
 	});
 });
 

@@ -24,6 +24,9 @@ type ImportLinkDialogProps = {
 	importedDescription: string;
 	importedDate: string;
 	importedAmount: number;
+	importedCategoryLabel?: string;
+	existingCategoryLabel?: string;
+	showCategory?: boolean;
 	validation: ImportDuplicateValidation | null;
 	isPending: boolean;
 	onConfirm: (mergeDescription: ImportLinkMergeMode) => void;
@@ -34,6 +37,8 @@ function ImportLinkChoiceCard({
 	title,
 	dateLabel,
 	amountLabel,
+	categoryLabel,
+	showCategory = true,
 	description,
 	onSelect,
 }: {
@@ -41,6 +46,8 @@ function ImportLinkChoiceCard({
 	title: string;
 	dateLabel: string;
 	amountLabel: string;
+	categoryLabel?: string;
+	showCategory?: boolean;
 	description: string;
 	onSelect: () => void;
 }) {
@@ -72,6 +79,14 @@ function ImportLinkChoiceCard({
 			</div>
 			<p className="text-muted-foreground text-xs">{dateLabel}</p>
 			<p className="mt-1 font-medium">{amountLabel}</p>
+			{showCategory ? (
+				<p className="mt-1 text-muted-foreground text-xs">
+					Categoria:{" "}
+					<span className="font-medium text-foreground">
+						{categoryLabel ?? "Sem categoria"}
+					</span>
+				</p>
+			) : null}
 			<p className="mt-2 break-words font-medium text-foreground whitespace-normal">
 				{description}
 			</p>
@@ -92,6 +107,9 @@ export function ImportLinkDialog({
 	importedDescription,
 	importedDate,
 	importedAmount,
+	importedCategoryLabel,
+	existingCategoryLabel,
+	showCategory = true,
 	validation,
 	isPending,
 	onConfirm,
@@ -122,9 +140,7 @@ export function ImportLinkDialog({
 			<DialogContent className="sm:max-w-lg">
 				<DialogHeader>
 					<DialogTitle>
-						{isTransferLink
-							? "Vincular transferência"
-							: "Vincular lançamento"}
+						{isTransferLink ? "Vincular transferência" : "Vincular lançamento"}
 					</DialogTitle>
 					<DialogDescription>
 						{isTransferLink
@@ -139,6 +155,8 @@ export function ImportLinkDialog({
 						title="No extrato"
 						dateLabel={formatDateOnly(importedDate) ?? importedDate}
 						amountLabel={formatCurrency(importedAmount)}
+						categoryLabel={importedCategoryLabel}
+						showCategory={showCategory}
 						description={importedDescription}
 						onSelect={() => setMergeDescription("import")}
 					/>
@@ -149,6 +167,8 @@ export function ImportLinkDialog({
 							existingDateLabel ?? formatDateOnly(importedDate) ?? importedDate
 						}
 						amountLabel={existingAmountLabel ?? formatCurrency(importedAmount)}
+						categoryLabel={existingCategoryLabel}
+						showCategory={showCategory}
 						description={existingDescription}
 						onSelect={() => setMergeDescription("existing")}
 					/>

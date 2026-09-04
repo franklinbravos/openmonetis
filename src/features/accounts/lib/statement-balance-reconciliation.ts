@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, gte, lte } from "drizzle-orm";
 import { categories, transactions } from "@/db/schema";
 import { upsertAccountBalanceAdjustmentInTx } from "@/features/accounts/lib/balance-adjustment";
 import { fetchAccountSummary } from "@/features/accounts/statement-queries";
@@ -25,6 +25,7 @@ import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 import { parseLocalDateString, toDateOnlyString } from "@/shared/utils/date";
 import { safeToNumber } from "@/shared/utils/number";
 import {
+	comparePeriods,
 	derivePeriodFromDate,
 	getPeriodPurchaseDateBounds,
 } from "@/shared/utils/period";
@@ -38,6 +39,8 @@ type ImportRowSnapshot = {
 	description: string;
 	amount: number;
 	transactionType: "income" | "expense";
+	/** Lançamento já existente no cadastro (vinculado ou conferido como duplicata). */
+	existingTransactionId?: string | null;
 };
 
 export type AccountStatementBalancePreview = {
@@ -79,6 +82,8 @@ export type AccountStatementBalancePreview = {
 	yieldAmount: number;
 	yieldDate: string | null;
 	relocatedAdjustmentCount: number;
+	/** Lançamentos datados no mês do extrato mas arquivados em período posterior. */
+	misfiledForwardPeriodCount: number;
 	/** Líquido do mês segundo as linhas do arquivo. */
 	statementMonthNetFromFile: number;
 	/** Líquido do mês no cadastro após relocar ajustes e importar selecionados. */
@@ -89,6 +94,135 @@ export type AccountStatementBalancePreview = {
 
 function signedRowAmount(row: ImportRowSnapshot): number {
 	return row.transactionType === "expense" ? -row.amount : row.amount;
+}
+
+type DbMovementRow = {
+	id?: string;
+	amount: string | number;
+	purchaseDate: Date;
+	name: string | null;
+	period: string;
+};
+
+function sumDbMovementRows(rows: DbMovementRow[]): number {
+	return roundMoney(
+		rows.reduce((total, row) => total + safeToNumber(row.amount), 0),
+	);
+}
+
+function isPurchaseDateInStatementMonth(
+	purchaseDate: Date,
+	statementStart: string,
+	statementEnd: string,
+): boolean {
+	const date = toDateOnlyString(purchaseDate);
+	if (!date) return false;
+	return date >= statementStart && date <= statementEnd;
+}
+
+function isImportRowInStatementMonth(
+	row: Pick<ImportRowSnapshot, "date" | "description">,
+	statementPeriod: string,
+): boolean {
+	if (
+		shouldRelocateBalanceAdjustmentRow(
+			row.date,
+			row.description,
+			statementPeriod,
+		)
+	) {
+		return false;
+	}
+	return derivePeriodFromDate(row.date) === statementPeriod;
+}
+
+/**
+ * Líquido do mês no cadastro para fechar com o extrato.
+ *
+ * Linhas vinculadas ou conferidas saem do lote de importação, mas continuam
+ * valendo pelo valor do arquivo. Se o lançamento existente foi arquivado em
+ * outro mês (importação retroativa), ele some da busca por data — por isso
+ * somamos o arquivo nessas linhas e excluímos o id delas do movimento do banco.
+ */
+export function computeStatementMonthNetInCadastro(input: {
+	statementPeriod: string;
+	inMonthByDateRows: DbMovementRow[];
+	importRows: ImportRowSnapshot[];
+	fileRows: ImportRowSnapshot[];
+	yieldAmount: number;
+}): number {
+	const linkedExistingIds = new Set(
+		input.fileRows
+			.filter(
+				(row) =>
+					row.existingTransactionId &&
+					isImportRowInStatementMonth(row, input.statementPeriod),
+			)
+			.map((row) => row.existingTransactionId as string),
+	);
+
+	const linkedFileNet = roundMoney(
+		input.fileRows.reduce((total, row) => {
+			if (
+				!row.existingTransactionId ||
+				!isImportRowInStatementMonth(row, input.statementPeriod)
+			) {
+				return total;
+			}
+			return total + signedRowAmount(row);
+		}, 0),
+	);
+
+	const importNetInStatement = roundMoney(
+		input.importRows.reduce((total, row) => {
+			if (!isImportRowInStatementMonth(row, input.statementPeriod)) {
+				return total;
+			}
+			return total + signedRowAmount(row);
+		}, 0),
+	);
+
+	const dbNetExcludingLinked = sumDbMovementRows(
+		input.inMonthByDateRows.filter(
+			(row) => !row.id || !linkedExistingIds.has(row.id),
+		),
+	);
+
+	return roundMoney(
+		importNetInStatement + linkedFileNet + dbNetExcludingLinked + input.yieldAmount,
+	);
+}
+
+export function partitionStatementMonthDbRows(
+	rows: DbMovementRow[],
+	statementPeriod: string,
+	statementStart: string,
+	statementEnd: string,
+) {
+	const movementRows = rows.filter(
+		(row) => !isAccountBalanceAdjustmentLabel(row.name),
+	);
+	const inMonthByDateRows = movementRows.filter((row) =>
+		isPurchaseDateInStatementMonth(row.purchaseDate, statementStart, statementEnd),
+	);
+	const misfiledForwardPeriodRows = inMonthByDateRows.filter(
+		(row) => comparePeriods(row.period, statementPeriod) > 0,
+	);
+	const outOfMonthRows = movementRows.filter(
+		(row) =>
+			row.period === statementPeriod &&
+			!isPurchaseDateInStatementMonth(
+				row.purchaseDate,
+				statementStart,
+				statementEnd,
+			),
+	);
+
+	return {
+		inMonthByDateRows,
+		misfiledForwardPeriodRows,
+		outOfMonthRows,
+	};
 }
 
 /**
@@ -150,6 +284,7 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 	if (!input.balances.balances) return null;
 
 	const statementPeriod = deriveStatementPeriodFromBalances(input.balances);
+	const statementBounds = getPeriodPurchaseDateBounds(statementPeriod);
 	const { period: previousPeriod, date: previousPeriodLastDate } =
 		resolveBalanceAdjustmentPlacement(statementPeriod);
 	const adminPayerId = await getAdminPayerId(input.viewerUserId);
@@ -158,15 +293,14 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 	const yieldAmount = computeStatementYieldGap(input.balances, input.fileRows);
 	const yieldDate =
 		yieldAmount > SOURCE_ROUNDING_TOLERANCE
-			? getPeriodPurchaseDateBounds(statementPeriod).start
+			? statementBounds.start
 			: null;
 
 	const [
 		misplacedAdjustments,
 		existingPreviousAdjustment,
 		previousSummary,
-		statementSummary,
-		statementPeriodRows,
+		statementDateRangeRows,
 	] = await Promise.all([
 		db.query.transactions.findMany({
 			columns: { id: true, amount: true },
@@ -188,64 +322,47 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 			),
 		}),
 		fetchAccountSummary(input.viewerUserId, input.accountId, previousPeriod),
-		fetchAccountSummary(input.viewerUserId, input.accountId, statementPeriod),
 		db.query.transactions.findMany({
 			columns: {
+				id: true,
 				amount: true,
 				purchaseDate: true,
 				name: true,
+				period: true,
 			},
 			where: and(
 				eq(transactions.userId, input.dataOwnerUserId),
 				eq(transactions.accountId, input.accountId),
-				eq(transactions.period, statementPeriod),
-				// Só o que está realizado entra no saldo — e é o saldo que se
-				// confere. Contar o não realizado faria a explicação da diferença
-				// não fechar com a própria diferença.
 				eq(transactions.isSettled, true),
+				gte(
+					transactions.purchaseDate,
+					parseLocalDateString(statementBounds.start),
+				),
+				lte(transactions.purchaseDate, parseLocalDateString(statementBounds.end)),
 			),
 		}),
 	]);
 
-	// O ajuste de saldo tem relocação própria; contá-lo aqui duplicaria.
-	const movementRows = statementPeriodRows.filter(
-		(row) => !isAccountBalanceAdjustmentLabel(row.name),
-	);
-	const outOfMonthRows = movementRows.filter(
-		(row) =>
-			derivePeriodFromDate(toDateOnlyString(row.purchaseDate)) !==
+	const { inMonthByDateRows, misfiledForwardPeriodRows, outOfMonthRows } =
+		partitionStatementMonthDbRows(
+			statementDateRangeRows,
 			statementPeriod,
-	);
-	const sumRows = (rows: typeof movementRows) =>
-		roundMoney(
-			rows.reduce((total, row) => total + safeToNumber(row.amount), 0),
+			statementBounds.start,
+			statementBounds.end,
 		);
-	const outOfMonthRowAmount = sumRows(outOfMonthRows);
-	const inMonthRowAmount = sumRows(
-		movementRows.filter(
-			(row) =>
-				derivePeriodFromDate(toDateOnlyString(row.purchaseDate)) ===
-				statementPeriod,
-		),
-	);
+	const outOfMonthRowAmount = sumDbMovementRows(outOfMonthRows);
 
-	const relocatedFromDb = misplacedAdjustments.reduce(
-		(total, row) => total + safeToNumber(row.amount),
-		0,
+	const statementMonthNetFromFile = computeStatementMonthNetFromFileRows(
+		input.fileRows,
+		statementPeriod,
 	);
-	const importNetInStatement = input.importedRows.reduce((total, row) => {
-		if (
-			shouldRelocateBalanceAdjustmentRow(
-				row.date,
-				row.description,
-				statementPeriod,
-			)
-		) {
-			return total;
-		}
-		if (derivePeriodFromDate(row.date) !== statementPeriod) return total;
-		return total + signedRowAmount(row);
-	}, 0);
+	const statementMonthNetInCadastro = computeStatementMonthNetInCadastro({
+		statementPeriod,
+		inMonthByDateRows,
+		importRows: input.importedRows,
+		fileRows: input.fileRows,
+		yieldAmount,
+	});
 
 	const existingPreviousAdjustmentAmount = Number(
 		existingPreviousAdjustment?.amount ?? 0,
@@ -253,38 +370,15 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 	const basePreviousBalance = roundMoney(
 		previousSummary.currentBalance - existingPreviousAdjustmentAmount,
 	);
-	/*
-	 * Base do ajuste: o saldo do mês anterior sem o ajuste que já existe lá —
-	 * senão o ajuste antigo entraria na conta do novo. Quando há ajuste no mês
-	 * do extrato para relocar, a base é o saldo corrente, porque esse ajuste
-	 * ainda não pertence ao mês anterior.
-	 */
-	const previousBalanceInCadastro =
-		misplacedAdjustments.length > 0
-			? roundMoney(previousSummary.currentBalance)
-			: basePreviousBalance;
+	const previousBalanceInCadastro = basePreviousBalance;
 	const adjustmentAmount = roundMoney(
 		input.balances.openingBalance - previousBalanceInCadastro,
 	);
 
-	const statementMonthNetFromFile = computeStatementMonthNetFromFileRows(
-		input.fileRows,
-		statementPeriod,
+	const projectedClosingBalance = roundMoney(
+		input.balances.openingBalance +
+			statementMonthNetInCadastro,
 	);
-	const monthNetInDb = roundMoney(
-		statementSummary.currentBalance - statementSummary.openingBalance,
-	);
-	const statementMonthNetInCadastro = roundMoney(
-		monthNetInDb - relocatedFromDb + importNetInStatement + yieldAmount,
-	);
-	const projectedClosingBalance = computeProjectedStatementClosingBalance({
-		openingBalanceAfterAdjustment: input.balances.openingBalance,
-		statementOpeningBalanceInDb: statementSummary.openingBalance,
-		statementCurrentBalanceInDb: statementSummary.currentBalance,
-		relocatedFromStatementMonth: relocatedFromDb,
-		importNetInStatement,
-		yieldAmount,
-	});
 	const closingDelta = roundMoney(
 		projectedClosingBalance - input.balances.closingBalance,
 	);
@@ -303,10 +397,7 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 		outOfMonthRowCount: outOfMonthRows.length,
 		outOfMonthRowAmount,
 		unmatchedInMonthAmount: roundMoney(
-			inMonthRowAmount +
-				importNetInStatement +
-				yieldAmount -
-				statementMonthNetFromFile,
+			statementMonthNetInCadastro - statementMonthNetFromFile,
 		),
 		adjustmentAmount,
 		yieldAmount,
@@ -320,6 +411,7 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 					statementPeriod,
 				),
 			).length,
+		misfiledForwardPeriodCount: misfiledForwardPeriodRows.length,
 		statementMonthNetFromFile,
 		statementMonthNetInCadastro,
 		projectedClosingBalance,
@@ -333,6 +425,8 @@ export async function applyAccountStatementBalanceReconciliation(input: {
 	accountId: string;
 	balances: AccountStatementBalances;
 	importedRows: ImportRowSnapshot[];
+	/** Todas as linhas do extrato, com ids de lançamentos vinculados/conferidos. */
+	fileRows?: ImportRowSnapshot[];
 }): Promise<{ success: true } | { success: false; error: string }> {
 	if (!input.balances.balances) {
 		return {
@@ -359,6 +453,7 @@ export async function applyAccountStatementBalanceReconciliation(input: {
 	 */
 	const { period: previousPeriod, date: previousPeriodLastDate } =
 		resolveBalanceAdjustmentPlacement(statementPeriod);
+	const statementBounds = getPeriodPurchaseDateBounds(statementPeriod);
 	const yieldGap = computeStatementYieldGap(input.balances, input.importedRows);
 
 	try {
@@ -384,6 +479,43 @@ export async function applyAccountStatementBalanceReconciliation(input: {
 					.where(eq(transactions.id, adjustment.id));
 			}
 
+			const misfiledCandidates = await tx.query.transactions.findMany({
+				columns: {
+					id: true,
+					amount: true,
+					period: true,
+					purchaseDate: true,
+					name: true,
+				},
+				where: and(
+					eq(transactions.userId, input.dataOwnerUserId),
+					eq(transactions.accountId, input.accountId),
+					eq(transactions.isSettled, true),
+					gte(
+						transactions.purchaseDate,
+						parseLocalDateString(statementBounds.start),
+					),
+					lte(
+						transactions.purchaseDate,
+						parseLocalDateString(statementBounds.end),
+					),
+				),
+			});
+			const { misfiledForwardPeriodRows } = partitionStatementMonthDbRows(
+				misfiledCandidates,
+				statementPeriod,
+				statementBounds.start,
+				statementBounds.end,
+			);
+
+			for (const row of misfiledForwardPeriodRows) {
+				if (!row.id) continue;
+				await tx
+					.update(transactions)
+					.set({ period: statementPeriod })
+					.where(eq(transactions.id, row.id));
+			}
+
 			if (yieldGap > SOURCE_ROUNDING_TOLERANCE) {
 				const yieldCategory = await tx.query.categories.findFirst({
 					columns: { id: true },
@@ -393,8 +525,7 @@ export async function applyAccountStatementBalanceReconciliation(input: {
 					),
 				});
 
-				const statementStart =
-					getPeriodPurchaseDateBounds(statementPeriod).start;
+				const statementStart = statementBounds.start;
 
 				await tx.insert(transactions).values({
 					condition: INITIAL_BALANCE_CONDITION,
@@ -433,20 +564,57 @@ export async function applyAccountStatementBalanceReconciliation(input: {
 			});
 		});
 
-		const statementSummary = await fetchAccountSummary(
-			input.viewerUserId,
-			input.accountId,
+		const statementDateRangeRows = await db.query.transactions.findMany({
+			columns: {
+				id: true,
+				amount: true,
+				purchaseDate: true,
+				name: true,
+				period: true,
+			},
+			where: and(
+				eq(transactions.userId, input.dataOwnerUserId),
+				eq(transactions.accountId, input.accountId),
+				eq(transactions.isSettled, true),
+				gte(
+					transactions.purchaseDate,
+					parseLocalDateString(statementBounds.start),
+				),
+				lte(
+					transactions.purchaseDate,
+					parseLocalDateString(statementBounds.end),
+				),
+			),
+		});
+		const { inMonthByDateRows } = partitionStatementMonthDbRows(
+			statementDateRangeRows,
 			statementPeriod,
+			statementBounds.start,
+			statementBounds.end,
 		);
-
+		const reconciliationFileRows = input.fileRows ?? input.importedRows;
+		const yieldAmount = computeStatementYieldGap(
+			input.balances,
+			reconciliationFileRows,
+		);
+		const statementMonthNetInCadastro = computeStatementMonthNetInCadastro({
+			statementPeriod,
+			inMonthByDateRows,
+			importRows: [],
+			fileRows: reconciliationFileRows,
+			yieldAmount,
+		});
+		const projectedClosingBalance = roundMoney(
+			input.balances.openingBalance + statementMonthNetInCadastro,
+		);
 		const closingDelta = roundMoney(
-			statementSummary.currentBalance - input.balances.closingBalance,
+			projectedClosingBalance - input.balances.closingBalance,
 		);
 
 		if (Math.abs(closingDelta) > SOURCE_ROUNDING_TOLERANCE) {
 			return {
 				success: false,
-				error: `Saldo final do mês (${statementSummary.currentBalance.toFixed(2)}) não bate com o extrato (${input.balances.closingBalance.toFixed(2)}). Revise os lançamentos importados.`,
+				error: `Saldo final do mês (${projectedClosingBalance.toFixed(2)}) não bate com o extrato (${input.balances.closingBalance.toFixed(2)}). Revise os lançamentos importados.`,
 			};
 		}
 

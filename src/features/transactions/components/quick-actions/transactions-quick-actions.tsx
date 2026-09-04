@@ -4,7 +4,7 @@ import { TransferDialog } from "@/features/accounts/components/transfer-dialog";
 import type { AccountData } from "@/features/accounts/queries";
 import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
 import type { SelectOption } from "@/features/transactions/components/types";
-import { TransactionQuickActionButton } from "./transaction-quick-action-button";
+import { TransactionQuickActionTrigger } from "./transaction-quick-action-trigger";
 
 type TransactionsQuickActionsProps = {
 	payerOptions: SelectOption[];
@@ -39,7 +39,7 @@ export function TransactionsQuickActions({
 	lockCardSelection,
 	lockPaymentMethod,
 	attachmentMaxSizeMb,
-	transferAccounts,
+	transferAccounts = [],
 }: TransactionsQuickActionsProps) {
 	const sharedDialogProps = {
 		mode: "create" as const,
@@ -60,25 +60,25 @@ export function TransactionsQuickActions({
 	};
 
 	return (
-		<div className="quick-actions-root contents md:flex md:h-full md:min-w-0 md:flex-none md:items-stretch md:gap-0 md:divide-x md:divide-border md:self-stretch">
+		<>
 			<TransactionDialog
 				{...sharedDialogProps}
 				defaultTransactionType="Receita"
-				trigger={<TransactionQuickActionButton kind="income" />}
+				trigger={<TransactionQuickActionTrigger kind="income" />}
 			/>
 			<TransactionDialog
 				{...sharedDialogProps}
 				defaultTransactionType="Despesa"
-				trigger={<TransactionQuickActionButton kind="expense" />}
+				trigger={<TransactionQuickActionTrigger kind="expense" />}
 			/>
-			{transferAccounts && transferAccounts.length > 0 ? (
+			{transferAccounts.length > 0 ? (
 				<TransferDialog
 					accounts={transferAccounts}
 					currentPeriod={selectedPeriod}
 					fromAccountId={defaultAccountId ?? undefined}
-					trigger={<TransactionQuickActionButton kind="transfer" />}
+					trigger={<TransactionQuickActionTrigger kind="transfer" />}
 				/>
 			) : null}
-		</div>
+		</>
 	);
 }

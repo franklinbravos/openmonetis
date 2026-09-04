@@ -244,6 +244,14 @@ const accountStatementBalancesSchema = z.object({
 	balances: z.boolean(),
 });
 
+const importRowSnapshotSchema = z.object({
+	date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida."),
+	description: z.string(),
+	amount: z.number().positive(),
+	transactionType: z.enum(["income", "expense"]),
+	existingTransactionId: uuidSchema("Transaction").nullable().optional(),
+});
+
 const importSchema = z
 	.object({
 		rows: z.array(importRowSchema),
@@ -272,6 +280,9 @@ const importSchema = z
 		previousInvoiceSettlement: previousInvoiceSettlementSchema.optional(),
 		invoiceAmortizations: z.array(invoiceAmortizationSchema).optional(),
 		accountStatementBalances: accountStatementBalancesSchema.optional(),
+		accountStatementFileRows: z
+			.array(importRowSnapshotSchema)
+			.optional(),
 	})
 	.superRefine((data, ctx) => {
 		// A liquidação da fatura anterior é trabalho por si só: reprocessar um mês
@@ -603,72 +614,17 @@ export async function linkImportToExistingAction(
 		const userId = await getUserId();
 		const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
 		const data = linkImportSchema.parse(input);
-
-		const existing = await db.query.transactions.findFirst({
-			columns: {
-				id: true,
-				name: true,
-				note: true,
-				ofxFitId: true,
-				payerId: true,
-			},
-			where: and(
-				eq(transactions.userId, dataOwnerUserId),
-				eq(transactions.id, data.existingTransactionId),
-			),
-		});
-
-		if (!existing) {
-			return { success: false, error: "Lançamento não encontrado." };
-		}
-
 		const adminPayerId = await getAdminPayerId(userId);
-		let nextPayerId = existing.payerId;
+		const result = await performLinkImportToExisting(
+			dataOwnerUserId,
+			userId,
+			adminPayerId,
+			data,
+		);
 
-		if (!nextPayerId) {
-			const candidatePayerId = data.fallbackPayerId ?? adminPayerId;
-			if (candidatePayerId) {
-				const ownedPayerIds = await fetchOwnedPayerIds(userId, [
-					candidatePayerId,
-				]);
-				if (ownedPayerIds.has(candidatePayerId)) {
-					nextPayerId = candidatePayerId;
-				}
-			}
+		if (!result.success) {
+			return result;
 		}
-
-		let nextName = existing.name;
-		let nextNote = existing.note;
-		const imported = data.importedDescription.trim();
-		const registered = existing.name.trim();
-
-		if (data.mergeDescription === "import") {
-			nextName = data.importedDescription;
-			if (registered && registered !== imported) {
-				nextNote = appendReplacedNameToNote(
-					existing.note,
-					"Cadastro",
-					existing.name,
-				);
-			}
-		} else if (imported && imported !== registered) {
-			nextNote = appendReplacedNameToNote(existing.note, "Extrato", imported);
-		}
-
-		await db
-			.update(transactions)
-			.set({
-				name: nextName,
-				note: nextNote,
-				ofxFitId: existing.ofxFitId ?? data.externalId ?? null,
-				payerId: nextPayerId,
-			})
-			.where(
-				and(
-					eq(transactions.userId, dataOwnerUserId),
-					eq(transactions.id, data.existingTransactionId),
-				),
-			);
 
 		await revalidateForEntity("transactions", userId);
 
@@ -676,6 +632,198 @@ export async function linkImportToExistingAction(
 	} catch (error) {
 		console.error("linkImportToExistingAction", error);
 		return { success: false, error: "Não foi possível vincular o lançamento." };
+	}
+}
+
+const linkImportSuggestionsBatchSchema = z.object({
+	links: z.array(linkImportSchema).min(1).max(250),
+});
+
+async function performLinkImportToExisting(
+	dataOwnerUserId: string,
+	userId: string,
+	adminPayerId: string | null,
+	data: z.infer<typeof linkImportSchema>,
+): Promise<{ success: true } | { success: false; error: string }> {
+	const existing = await db.query.transactions.findFirst({
+		columns: {
+			id: true,
+			name: true,
+			note: true,
+			ofxFitId: true,
+			payerId: true,
+		},
+		where: and(
+			eq(transactions.userId, dataOwnerUserId),
+			eq(transactions.id, data.existingTransactionId),
+		),
+	});
+
+	if (!existing) {
+		return { success: false, error: "Lançamento não encontrado." };
+	}
+
+	let nextPayerId = existing.payerId;
+
+	if (!nextPayerId) {
+		const candidatePayerId = data.fallbackPayerId ?? adminPayerId;
+		if (candidatePayerId) {
+			const ownedPayerIds = await fetchOwnedPayerIds(userId, [candidatePayerId]);
+			if (ownedPayerIds.has(candidatePayerId)) {
+				nextPayerId = candidatePayerId;
+			}
+		}
+	}
+
+	let nextName = existing.name;
+	let nextNote = existing.note;
+	const imported = data.importedDescription.trim();
+	const registered = existing.name.trim();
+
+	if (data.mergeDescription === "import") {
+		nextName = data.importedDescription;
+		if (registered && registered !== imported) {
+			nextNote = appendReplacedNameToNote(
+				existing.note,
+				"Cadastro",
+				existing.name,
+			);
+		}
+	} else if (imported && imported !== registered) {
+		nextNote = appendReplacedNameToNote(existing.note, "Extrato", imported);
+	}
+
+	await db
+		.update(transactions)
+		.set({
+			name: nextName,
+			note: nextNote,
+			ofxFitId: existing.ofxFitId ?? data.externalId ?? null,
+			payerId: nextPayerId,
+		})
+		.where(
+			and(
+				eq(transactions.userId, dataOwnerUserId),
+				eq(transactions.id, data.existingTransactionId),
+			),
+		);
+
+	return { success: true };
+}
+
+export async function linkImportSuggestionsBatchAction(
+	input: z.infer<typeof linkImportSuggestionsBatchSchema>,
+): Promise<
+	| { success: true; linkedCount: number }
+	| { success: false; error: string; linkedCount: number }
+> {
+	try {
+		const userId = await getUserId();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
+		const data = linkImportSuggestionsBatchSchema.parse(input);
+		const adminPayerId = await getAdminPayerId(userId);
+		let linkedCount = 0;
+
+		for (const link of data.links) {
+			const result = await performLinkImportToExisting(
+				dataOwnerUserId,
+				userId,
+				adminPayerId,
+				link,
+			);
+			if (!result.success) {
+				return {
+					success: false,
+					error: result.error,
+					linkedCount,
+				};
+			}
+			linkedCount += 1;
+		}
+
+		await revalidateForEntity("transactions", userId);
+
+		return { success: true, linkedCount };
+	} catch (error) {
+		console.error("linkImportSuggestionsBatchAction", error);
+		return {
+			success: false,
+			error: "Não foi possível vincular os lançamentos.",
+			linkedCount: 0,
+		};
+	}
+}
+
+const updateImportExistingCategorySchema = z.object({
+	transactionId: uuidSchema("Lançamento"),
+	categoryId: uuidSchema("Categoria").nullable(),
+});
+
+export async function updateImportExistingTransactionCategoryAction(
+	input: z.infer<typeof updateImportExistingCategorySchema>,
+): Promise<{ success: true } | { success: false; error: string }> {
+	try {
+		const userId = await getUserId();
+		const { dataOwnerUserId } = await assertFinancialEditAccess(userId);
+		const data = updateImportExistingCategorySchema.parse(input);
+
+		const existing = await db.query.transactions.findFirst({
+			columns: {
+				id: true,
+				transactionType: true,
+				transferId: true,
+			},
+			where: and(
+				eq(transactions.userId, dataOwnerUserId),
+				eq(transactions.id, data.transactionId),
+			),
+		});
+
+		if (!existing) {
+			return { success: false, error: "Lançamento não encontrado." };
+		}
+
+		if (existing.transferId) {
+			return { success: false, error: "Transferências não usam categoria." };
+		}
+
+		if (data.categoryId) {
+			const ownedCategoryIds = await fetchOwnedCategoryIds(userId, [
+				data.categoryId,
+			]);
+			if (!ownedCategoryIds.has(data.categoryId)) {
+				return { success: false, error: "Categoria não encontrada." };
+			}
+
+			const category = await db.query.categories.findFirst({
+				columns: { type: true },
+				where: and(
+					eq(categories.userId, dataOwnerUserId),
+					eq(categories.id, data.categoryId),
+				),
+			});
+
+			if (!category || category.type !== existing.transactionType) {
+				return { success: false, error: "Categoria incompatível com o tipo." };
+			}
+		}
+
+		await db
+			.update(transactions)
+			.set({ categoryId: data.categoryId })
+			.where(
+				and(
+					eq(transactions.userId, dataOwnerUserId),
+					eq(transactions.id, data.transactionId),
+				),
+			);
+
+		await revalidateForEntity("transactions", userId);
+
+		return { success: true };
+	} catch (error) {
+		console.error("updateImportExistingTransactionCategoryAction", error);
+		return { success: false, error: "Não foi possível atualizar a categoria." };
 	}
 }
 
@@ -931,13 +1079,6 @@ async function applyExistingInstallmentCorrectionsT(
 	}
 }
 
-const importRowSnapshotSchema = z.object({
-	date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida."),
-	description: z.string(),
-	amount: z.number().positive(),
-	transactionType: z.enum(["income", "expense"]),
-});
-
 const previewBalanceReconciliationSchema = z.object({
 	accountId: uuidSchema("FinancialAccount"),
 	balances: accountStatementBalancesSchema,
@@ -999,6 +1140,14 @@ async function finalizeAccountStatementBalanceImport(input: {
 		description: string;
 		amount: number;
 		transactionType: "income" | "expense";
+		existingTransactionId?: string | null;
+	}>;
+	fileRows?: Array<{
+		date: string;
+		description: string;
+		amount: number;
+		transactionType: "income" | "expense";
+		existingTransactionId?: string | null;
 	}>;
 }): Promise<ImportResult> {
 	const reconciliation = await applyAccountStatementBalanceReconciliation({
@@ -1007,6 +1156,7 @@ async function finalizeAccountStatementBalanceImport(input: {
 		accountId: input.accountId,
 		balances: input.balances,
 		importedRows: input.importedRows,
+		fileRows: input.fileRows,
 	});
 
 	if (!reconciliation.success) {
@@ -1483,6 +1633,7 @@ export async function importTransactionsAction(
 					sourceFileName: parsed.data.sourceFileName,
 					sourceFileSize: parsed.data.sourceFileSize,
 					importedRows: [],
+					fileRows: parsed.data.accountStatementFileRows,
 				});
 			}
 
@@ -2267,14 +2418,8 @@ export async function importTransactionsAction(
 			dataOwnerUserId,
 			accountId,
 			balances: accountStatementBalances,
-			importedRows: rows
-				.filter((row) => row.kind === "transaction")
-				.map((row) => ({
-					date: row.date,
-					description: row.description,
-					amount: row.amount,
-					transactionType: row.transactionType,
-				})),
+			importedRows: [],
+			fileRows: parsed.data.accountStatementFileRows,
 		});
 
 		if (!reconciliation.success) {

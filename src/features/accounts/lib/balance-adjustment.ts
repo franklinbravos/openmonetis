@@ -6,7 +6,10 @@ import {
 	INITIAL_BALANCE_PAYMENT_METHOD,
 } from "@/shared/lib/accounts/constants";
 import type { db as DbType } from "@/shared/lib/db";
-import { formatCurrency, formatDecimalForDbRequired } from "@/shared/utils/currency";
+import {
+	formatCurrency,
+	formatDecimalForDbRequired,
+} from "@/shared/utils/currency";
 import { parseLocalDateString } from "@/shared/utils/date";
 
 type DbClient = typeof DbType;
