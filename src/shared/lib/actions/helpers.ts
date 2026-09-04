@@ -1,5 +1,6 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
+import { after } from "next/server";
 import { z } from "zod";
 import { ActionError } from "@/shared/lib/actions/action-error";
 import { FinancialAccessError } from "@/shared/lib/payers/financial-access";
@@ -76,10 +77,14 @@ export function revalidateForEntity(
 	entity: keyof typeof revalidateConfig,
 	userId: string,
 ): void {
-	revalidateConfig[entity].forEach((path) => revalidatePath(path));
+	// Adia invalidação para depois da resposta da Server Action. Com
+	// cacheComponents, revalidate síncrono na mesma request corrompe o payload
+	// RSC e o cliente recebe "unexpected response".
+	after(() => {
+		revalidateConfig[entity].forEach((path) => revalidatePath(path));
 
-	// Invalidate dashboard cache for financial mutations.
-	if (DASHBOARD_ENTITIES.has(entity)) {
-		revalidateTag(`dashboard-${userId}`, "max");
-	}
+		if (DASHBOARD_ENTITIES.has(entity)) {
+			revalidateTag(`dashboard-${userId}`, "max");
+		}
+	});
 }

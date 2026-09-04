@@ -148,6 +148,9 @@ function redirectLoopbackToCanonicalAppUrl(
 	request: NextRequest,
 ): NextResponse | null {
 	if (process.env.NODE_ENV !== "development") return null;
+	// Só redireciona GET: POST (Server Actions) perde o body no 307 e o cliente
+	// recebe "An unexpected response was received from the server".
+	if (request.method !== "GET") return null;
 
 	const appUrl =
 		process.env.APP_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
@@ -256,7 +259,15 @@ export default async function proxy(request: NextRequest) {
 		pathname.startsWith(route),
 	);
 
+	const isServerAction =
+		request.method === "POST" && request.headers.has("next-action");
+
 	if (!isAuthenticated && isProtectedRoute) {
+		// Redirect em Server Action devolve HTML → E394 no cliente.
+		if (isServerAction) {
+			return new NextResponse("Unauthorized", { status: 401 });
+		}
+
 		return redirectKeepingSession(
 			request,
 			"/login",

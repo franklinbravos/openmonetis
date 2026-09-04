@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { transferBetweenAccountsAction } from "@/features/accounts/actions";
 import type { AccountData } from "@/features/accounts/queries";
+import type { ActionResult } from "@/shared/lib/types/actions";
 import { AccountCardSelectContent } from "@/features/transactions/components/select-items";
 import { PeriodPicker } from "@/shared/components/period-picker";
 import { Button } from "@/shared/components/ui/button";
@@ -46,13 +47,14 @@ export function TransferDialog({
 	open,
 	onOpenChange,
 }: TransferDialogProps) {
+	const router = useRouter();
 	const [dialogOpen, setDialogOpen] = useControlledState(
 		open,
 		false,
 		onOpenChange,
 	);
 
-	const [isPending, startTransition] = useTransition();
+	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const isFromAccountFixed = Boolean(fromAccountId);
 	const [selectedFromAccountId, setSelectedFromAccountId] = useState(
@@ -100,7 +102,7 @@ export function TransferDialog({
 		(account) => account.id === selectedFromAccountId,
 	);
 
-	const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+	const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		setErrorMessage(null);
 
@@ -119,19 +121,41 @@ export function TransferDialog({
 			return;
 		}
 
-		startTransition(async () => {
-			const result = await transferBetweenAccountsAction({
-				fromAccountId: selectedFromAccountId,
-				toAccountId,
-				amount,
-				date: new Date(date),
-				period,
-			});
+		setIsSubmitting(true);
+		try {
+			const response = await fetch(
+				`${window.location.origin}/api/accounts/transfer`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					credentials: "include",
+					body: JSON.stringify({
+						fromAccountId: selectedFromAccountId,
+						toAccountId,
+						amount,
+						date,
+						period,
+					}),
+				},
+			);
+
+			const contentType = response.headers.get("content-type") ?? "";
+			if (!contentType.includes("application/json")) {
+				throw new Error("Não foi possível registrar a transferência.");
+			}
+
+			const result = (await response.json()) as ActionResult;
+
+			if (!response.ok && !result.success) {
+				setErrorMessage(result.error);
+				toast.error(result.error);
+				return;
+			}
 
 			if (result.success) {
 				toast.success(result.message);
 				setDialogOpen(false);
-				// Reset form
+				router.refresh();
 				setToAccountId("");
 				setAmount("");
 				setDate(getTodayDateString());
@@ -141,7 +165,14 @@ export function TransferDialog({
 
 			setErrorMessage(result.error);
 			toast.error(result.error);
-		});
+		} catch {
+			const message =
+				"Não foi possível registrar a transferência. Tente novamente.";
+			setErrorMessage(message);
+			toast.error(message);
+		} finally {
+			setIsSubmitting(false);
+		}
 	};
 
 	return (
@@ -305,20 +336,20 @@ export function TransferDialog({
 							type="button"
 							variant="outline"
 							onClick={() => setDialogOpen(false)}
-							disabled={isPending}
+							disabled={isSubmitting}
 						>
 							Cancelar
 						</Button>
 						<Button
 							type="submit"
 							disabled={
-								isPending ||
+								isSubmitting ||
 								accounts.length < 2 ||
 								!selectedFromAccountId ||
 								availableAccounts.length === 0
 							}
 						>
-							{isPending ? "Processando..." : "Confirmar transferência"}
+							{isSubmitting ? "Processando..." : "Confirmar transferência"}
 						</Button>
 					</DialogFooter>
 				</form>

@@ -5,6 +5,10 @@ import { z } from "zod";
 import { categories, financialAccounts, transactions } from "@/db/schema";
 import { upsertAccountBalanceAdjustmentInTx } from "@/features/accounts/lib/balance-adjustment";
 import {
+	type TransferBetweenAccountsInput,
+	transferBetweenAccounts,
+} from "@/features/accounts/lib/transfer-between-accounts";
+import {
 	INITIAL_BALANCE_CATEGORY_NAME,
 	INITIAL_BALANCE_CONDITION,
 	INITIAL_BALANCE_NOTE,
@@ -24,16 +28,7 @@ import { loadLogoOptions } from "@/shared/lib/logo/options";
 import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { noteSchema, uuidSchema } from "@/shared/lib/schemas/common";
-import {
-	TRANSFER_CATEGORY_NAME,
-	TRANSFER_CONDITION,
-	TRANSFER_ESTABLISHMENT_ENTRADA,
-	TRANSFER_ESTABLISHMENT_SAIDA,
-	TRANSFER_PAYMENT_METHOD,
-} from "@/shared/lib/transfers/constants";
-import {
-	formatDecimalForDbRequired,
-} from "@/shared/utils/currency";
+import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 import {
 	getBusinessTodayDate,
 	getTodayInfo,
@@ -304,138 +299,14 @@ export async function deleteAccountAction(
 }
 
 // Transfer between accounts
-const transferSchema = z.object({
-	fromAccountId: uuidSchema("Conta de origem"),
-	toAccountId: uuidSchema("Conta de destino"),
-	amount: z
-		.string()
-		.trim()
-		.transform((value) => (value.length === 0 ? "0" : value.replace(",", ".")))
-		.refine(
-			(value) => !Number.isNaN(Number.parseFloat(value)),
-			"Informe um valor válido.",
-		)
-		.transform((value) => Number.parseFloat(value))
-		.refine((value) => value > 0, "O valor deve ser maior que zero."),
-	date: z.coerce.date({ message: "Informe uma data válida." }),
-	period: z
-		.string({ message: "Informe o período." })
-		.trim()
-		.min(1, "Informe o período."),
-});
-
-type TransferInput = z.input<typeof transferSchema>;
+export type TransferInput = TransferBetweenAccountsInput;
 
 export async function transferBetweenAccountsAction(
 	input: TransferInput,
 ): Promise<ActionResult> {
 	try {
 		const user = await getUser();
-		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
-		const data = transferSchema.parse(input);
-
-		// Validate that accounts are different
-		if (data.fromAccountId === data.toAccountId) {
-			return {
-				success: false,
-				error: "A conta de origem e destino devem ser diferentes.",
-			};
-		}
-
-		// Generate a unique transfer ID to link both transactions
-		const transferId = crypto.randomUUID();
-		const adminPayerId = await getAdminPayerId(user.id);
-
-		if (!adminPayerId) {
-			throw new ActionError(
-				"Pessoa administrador não encontrada. Por favor, crie uma pessoa admin.",
-			);
-		}
-
-		await db.transaction(async (tx: typeof db) => {
-			// Verify both accounts exist and belong to the user
-			const [fromAccount, toAccount] = await Promise.all([
-				tx.query.financialAccounts.findFirst({
-					columns: { id: true, name: true },
-					where: and(
-						eq(financialAccounts.id, data.fromAccountId),
-						eq(financialAccounts.userId, dataOwnerUserId),
-					),
-				}),
-				tx.query.financialAccounts.findFirst({
-					columns: { id: true, name: true },
-					where: and(
-						eq(financialAccounts.id, data.toAccountId),
-						eq(financialAccounts.userId, dataOwnerUserId),
-					),
-				}),
-			]);
-
-			if (!fromAccount) {
-				throw new ActionError("Conta de origem não encontrada.");
-			}
-
-			if (!toAccount) {
-				throw new ActionError("Conta de destino não encontrada.");
-			}
-
-			// Get the transfer category and admin payer in parallel
-			const [transferCategory] = await Promise.all([
-				tx.query.categories.findFirst({
-					columns: { id: true },
-					where: and(
-						eq(categories.userId, dataOwnerUserId),
-						eq(categories.name, TRANSFER_CATEGORY_NAME),
-					),
-				}),
-			]);
-
-			if (!transferCategory) {
-				throw new ActionError(
-					`Categoria "${TRANSFER_CATEGORY_NAME}" não encontrada. Por favor, crie esta categoria antes de fazer transferências.`,
-				);
-			}
-
-			const transferNote = `de ${fromAccount.name} -> ${toAccount.name}`;
-
-			const sharedFields = {
-				condition: TRANSFER_CONDITION,
-				paymentMethod: TRANSFER_PAYMENT_METHOD,
-				note: transferNote,
-				purchaseDate: data.date,
-				transactionType: "Transferência" as const,
-				period: data.period,
-				isSettled: true,
-				userId: dataOwnerUserId,
-				categoryId: transferCategory.id,
-				payerId: adminPayerId,
-				transferId,
-			};
-
-			// Create both transactions in a single batch insert
-			await tx.insert(transactions).values([
-				{
-					...sharedFields,
-					name: TRANSFER_ESTABLISHMENT_SAIDA,
-					amount: formatDecimalForDbRequired(-Math.abs(data.amount)),
-					accountId: fromAccount.id,
-				},
-				{
-					...sharedFields,
-					name: TRANSFER_ESTABLISHMENT_ENTRADA,
-					amount: formatDecimalForDbRequired(Math.abs(data.amount)),
-					accountId: toAccount.id,
-				},
-			]);
-		});
-
-		revalidateForEntity("accounts", user.id);
-		revalidateForEntity("transactions", user.id);
-
-		return {
-			success: true,
-			message: "Transferência registrada com sucesso.",
-		};
+		return await transferBetweenAccounts(user.id, input);
 	} catch (error) {
 		return handleActionError(error);
 	}

@@ -3,7 +3,6 @@
 import {
 	RiArrowLeftRightLine,
 	RiArrowRightDownLine,
-	RiArrowRightLine,
 	RiArrowRightUpLine,
 	RiAttachment2,
 	RiCalendarEventLine,
@@ -30,6 +29,7 @@ import {
 import { resolveLogoSrc } from "@/shared/lib/logo";
 import { getAvatarSrc } from "@/shared/lib/payers/utils";
 import { resolveTransferAccountsPreview } from "@/shared/lib/transfers/utils";
+import { TransferAccountsPreviewBadge } from "../shared/transfer-accounts-preview";
 import { formatDate, formatDateGroupLabel } from "@/shared/utils/date";
 import { getConditionIcon, getPaymentMethodIcon } from "@/shared/utils/icons";
 import { cn } from "@/shared/utils/ui";
@@ -317,7 +317,10 @@ function TransactionMobileCard({
 					<div className="mt-2 flex items-center justify-between gap-2">
 						<div className="flex min-w-0 flex-wrap items-center gap-1.5">
 							{transferAccounts ? (
-								<TransferAccountsBadge accounts={transferAccounts} />
+								<TransferAccountsPreviewBadge
+									accounts={transferAccounts}
+									variant="compact"
+								/>
 							) : (
 								<>
 									<IconBadge
@@ -486,38 +489,6 @@ function AccountMiniAvatar({
 				{name.slice(0, 2)}
 			</AvatarFallback>
 		</Avatar>
-	);
-}
-
-function TransferAccountsBadge({
-	accounts,
-}: {
-	accounts: NonNullable<ReturnType<typeof resolveTransferAccountsPreview>>;
-}) {
-	const label = `${accounts.from.name} → ${accounts.to.name}`;
-
-	return (
-		<Tooltip>
-			<TooltipTrigger asChild>
-				<span className="inline-flex items-center gap-1 rounded-full border border-info/30 bg-info/5 p-0.5 text-info">
-					<span className="inline-flex size-5 shrink-0 overflow-hidden rounded-full">
-						<AccountMiniAvatar
-							name={accounts.from.name}
-							logo={resolveLogoSrc(accounts.from.logo)}
-						/>
-					</span>
-					<RiArrowRightLine className="size-3 shrink-0" aria-hidden />
-					<span className="inline-flex size-5 shrink-0 overflow-hidden rounded-full">
-						<AccountMiniAvatar
-							name={accounts.to.name}
-							logo={resolveLogoSrc(accounts.to.logo)}
-						/>
-					</span>
-					<span className="sr-only">{label}</span>
-				</span>
-			</TooltipTrigger>
-			<TooltipContent side="top">{label}</TooltipContent>
-		</Tooltip>
 	);
 }
 
