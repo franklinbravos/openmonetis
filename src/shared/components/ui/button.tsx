@@ -23,7 +23,7 @@ const buttonVariants = cva(
 					"hover:bg-accent hover:text-accent-foreground",
 				link: "text-primary underline-offset-4 hover:underline",
 				navbar:
-					"bg-transparent text-foreground/75 shadow-none hover:bg-accent hover:text-foreground focus-visible:outline-ring/40",
+					"bg-transparent text-muted-foreground shadow-none hover:bg-accent hover:text-foreground focus-visible:outline-ring/40",
 			},
 			size: {
 				default: "h-9 px-4 py-2 has-[>svg]:px-3",

@@ -16,21 +16,15 @@ export function NavbarShell({
 
 	return (
 		<header
-			className={`${positionClass} z-50 flex h-16 shrink-0 items-center bg-primary border-b border-b-primary dark:bg-card dark:border-b-border`}
+			className={`${positionClass} z-50 flex h-16 shrink-0 items-center border-b border-border bg-card/95 backdrop-blur supports-backdrop-filter:bg-card/80`}
 		>
 			<div className="relative z-10 mx-auto flex h-full w-full max-w-8xl items-center gap-4 px-4">
 				{logoHref ? (
 					<Link href={logoHref} className="shrink-0">
-						<Logo
-							variant="compact"
-							iconClassName="dark:brightness-100 dark:saturate-100"
-						/>
+						<Logo variant="compact" colorIcon />
 					</Link>
 				) : (
-					<Logo
-						variant="compact"
-						iconClassName="dark:brightness-100 dark:saturate-100"
-					/>
+					<Logo variant="compact" colorIcon />
 				)}
 				{children}
 			</div>

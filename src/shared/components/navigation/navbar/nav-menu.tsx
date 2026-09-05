@@ -33,10 +33,10 @@ import { NavPill } from "./nav-pill";
 import { MobileTools, NavToolsDropdown } from "./nav-tools";
 
 const triggerClass =
-	"h-9! px-2! py-0! bg-transparent! capitalize! [&_svg]:text-current! text-primary-foreground/75! hover:text-primary-foreground! hover:bg-primary-foreground/10! focus:text-primary-foreground! focus:bg-primary-foreground/10! focus-visible:ring-primary-foreground/20! data-[state=open]:text-primary-foreground! data-[state=open]:bg-primary-foreground/10! dark:text-foreground/75! dark:hover:text-foreground! dark:hover:bg-foreground/10! dark:focus:text-foreground! dark:focus:bg-foreground/10! dark:focus-visible:ring-foreground/20! dark:data-[state=open]:text-foreground! dark:data-[state=open]:bg-foreground/10!";
+	"h-9! px-2! py-0! bg-transparent! capitalize! [&_svg]:text-current! text-muted-foreground! hover:text-foreground! hover:bg-accent! focus:text-foreground! focus:bg-accent! focus-visible:ring-ring/40! data-[state=open]:text-foreground! data-[state=open]:bg-accent!";
 
 const triggerActiveClass =
-	"bg-primary-foreground/15! text-primary-foreground! dark:bg-foreground/15! dark:text-foreground!";
+	"bg-primary-subtle! text-primary! font-medium!";
 
 export function NavMenu({
 	financeLinks,
