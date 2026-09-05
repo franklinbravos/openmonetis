@@ -40,13 +40,13 @@ quieto. Se dois elementos disputam atenção, um dos dois está errado.
 
 ### Símbolo
 
-O símbolo é o **Sinal**: os glifos `+` e `−` fundidos em uma forma única e
-fechada. É literalmente o que o produto faz — registrar entradas e saídas — e
-sobrevive a 16 px porque é uma silhueta sólida, não um traçado fino.
+O símbolo é a **Moeda**: duas moedas empilhadas em perspectiva cilíndrica. É
+literalmente o que o produto guarda — valor acumulado — e sobrevive a 16 px porque
+é uma silhueta sólida, não um traçado fino.
 
-**Construção:** grid de 24×24, traço de 4 unidades, cantos com raio de 1 unidade.
-O braço horizontal atravessa; o vertical para no centro. A assimetria resultante
-é o que dá caráter — não corrija para simétrico.
+**Construção:** grid de 24×24. Moeda inferior (rx 8, ry 2,5) e superior (rx 6,5,
+ry 2,25), com faces superiores em elipse e laterais em arco. A moeda de cima é
+menor e mais alta — a hierarquia dá profundidade sem gradiente.
 
 ### Arquivos obrigatórios
 

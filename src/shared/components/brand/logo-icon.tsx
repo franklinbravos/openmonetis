@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
 
-/** Sinal — glifos + e − fundidos (grid 24×24, traço 4u). */
+/** Moeda — pilha de duas moedas (grid 24×24). */
 export function LogoIcon(props: SVGProps<SVGSVGElement>) {
 	return (
 		<svg
@@ -8,10 +8,13 @@ export function LogoIcon(props: SVGProps<SVGSVGElement>) {
 			viewBox="0 0 24 24"
 			role="img"
 			aria-label="OpenMonetis"
+			fill="currentColor"
 			{...props}
 		>
-			<rect x="4" y="10" width="16" height="4" rx="1" fill="currentColor" />
-			<rect x="10" y="4" width="4" height="10" rx="1" fill="currentColor" />
+			<path d="M4 13.5C4 12.12 7.582 11 12 11s8 1.12 8 2.5v3c0 1.38-3.582 2.5-8 2.5s-8-1.12-8-2.5v-3z" />
+			<ellipse cx="12" cy="13.5" rx="8" ry="2.5" />
+			<path d="M5.5 7.75C5.5 6.51 8.41 5.5 12 5.5s6.5 1.01 6.5 2.25v2.5c0 1.24-2.91 2.25-6.5 2.25S5.5 11.49 5.5 10.25v-2.5z" />
+			<ellipse cx="12" cy="7.75" rx="6.5" ry="2.25" />
 		</svg>
 	);
 }

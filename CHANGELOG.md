@@ -7,18 +7,18 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ## [Unreleased]
 
-Esta versão traz o redesign visual **Índigo Cofre**: nova paleta de tokens, tipografia Instrument Sans + IBM Plex Mono, componente centralizado de valores monetários, marca Sinal (+/−), entrada somente por login e verificação de tokens na CI.
+Esta versão traz o redesign visual **Índigo Cofre**: nova paleta de tokens, tipografia Instrument Sans + IBM Plex Mono, componente centralizado de valores monetários, marca Moeda (pilha de moedas), entrada somente por login e verificação de tokens na CI.
 
 ### Adicionado (redesign)
 - Tokens **Índigo Cofre** em `globals.css` (`--positive`, `--negative`, `--primary-subtle`, `--chart-1`…`5`).
 - Componente `Money` com variantes semânticas, sinal, seta e modo privacidade.
-- `scripts/check-design-tokens.sh` e etapa na CI.
+- `scripts/generate-brand-icons.mjs` e comando `pnpm run icons:generate` para ícones PWA.
 - `DESIGN.md` v3 e `docs/PLANO-REDESIGN.md`.
 
 ### Alterado (redesign)
 - Entrada `/` = login; landing institucional removida.
 - Tipografia Instrument Sans + IBM Plex Mono.
-- Marca Sinal (+/−); PWA `theme_color` `#3556B1`.
+- Marca **Moeda** (pilha de moedas); PWA `theme_color` `#3556B1`; ícones regenerados via `pnpm run icons:generate`.
 - Botões, cards e gráficos (máx. 5 séries) alinhados ao design system.
 - Classes Tailwind nomeadas migradas para tokens semânticos em ~35 arquivos.
 
