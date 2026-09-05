@@ -93,7 +93,7 @@ type InvoiceReconciliationSummary = {
 	extraTransactions: InvoiceReconciliationTransaction[];
 };
 
-type InvoiceSummaryCardProps = {
+export type InvoiceSummaryCardProps = {
 	cardId: string;
 	period: string;
 	cardBrand: string | null;

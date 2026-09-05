@@ -43,6 +43,12 @@ export type TransactionItem = {
 	transferToAccountLogo?: string | null;
 	hasAttachments: boolean;
 	readonly?: boolean;
+	invoicePaymentCardId?: string | null;
+	invoicePaymentPeriod?: string | null;
+	invoicePaymentCardName?: string | null;
+	invoicePaymentCardLogo?: string | null;
+	invoicePaymentCardBrand?: string | null;
+	invoicePaymentIsAmortization?: boolean;
 };
 
 export type SelectOption = {

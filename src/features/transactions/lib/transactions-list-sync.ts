@@ -1,5 +1,63 @@
 import type { TransactionItem } from "@/features/transactions/components/types";
 import type { TransactionsPaginationState } from "@/features/transactions/lib/export-types";
+import { getPeriodPurchaseDateBounds } from "@/shared/utils/period";
+
+export type TransactionsListMatchContext = {
+	selectedPeriod: string;
+	listCardId?: string | null;
+	listAccountId?: string | null;
+	listPayerId?: string | null;
+	/** Lista geral: filtra pela data de compra no mês. Contextos (fatura/extrato/pessoa): filtra pelo campo period. */
+	matchByPurchaseDateMonth?: boolean;
+};
+
+export function resolveTransactionsListMatchContext(
+	selectedPeriod: string,
+	options?: {
+		listCardId?: string | null;
+		listAccountId?: string | null;
+		listPayerId?: string | null;
+		matchByPurchaseDateMonth?: boolean;
+	},
+): TransactionsListMatchContext {
+	const hasScopedList = Boolean(
+		options?.listCardId || options?.listAccountId || options?.listPayerId,
+	);
+
+	return {
+		selectedPeriod,
+		listCardId: options?.listCardId ?? null,
+		listAccountId: options?.listAccountId ?? null,
+		listPayerId: options?.listPayerId ?? null,
+		matchByPurchaseDateMonth:
+			options?.matchByPurchaseDateMonth ?? !hasScopedList,
+	};
+}
+
+export function transactionMatchesListContext(
+	item: TransactionItem,
+	context: TransactionsListMatchContext,
+): boolean {
+	if (context.listCardId && item.cardId !== context.listCardId) {
+		return false;
+	}
+
+	if (context.listAccountId && item.accountId !== context.listAccountId) {
+		return false;
+	}
+
+	if (context.listPayerId && item.payerId !== context.listPayerId) {
+		return false;
+	}
+
+	if (context.matchByPurchaseDateMonth) {
+		const { start, end } = getPeriodPurchaseDateBounds(context.selectedPeriod);
+		const purchaseDate = item.purchaseDate.slice(0, 10);
+		return purchaseDate >= start && purchaseDate <= end;
+	}
+
+	return item.period === context.selectedPeriod;
+}
 
 export function sortTransactionItems(items: TransactionItem[]) {
 	return [...items].sort((left, right) => {
@@ -15,13 +73,13 @@ export function sortTransactionItems(items: TransactionItem[]) {
 export function mergeTransactionItems({
 	current,
 	incoming,
-	selectedPeriod,
+	listMatchContext,
 	page,
 	pageSize,
 }: {
 	current: TransactionItem[];
 	incoming: TransactionItem[];
-	selectedPeriod: string;
+	listMatchContext: TransactionsListMatchContext;
 	page: number;
 	pageSize: number;
 }) {
@@ -30,7 +88,7 @@ export function mergeTransactionItems({
 	let removedCount = 0;
 
 	for (const item of incoming) {
-		if (item.period !== selectedPeriod) {
+		if (!transactionMatchesListContext(item, listMatchContext)) {
 			if (byId.delete(item.id)) {
 				removedCount += 1;
 			}

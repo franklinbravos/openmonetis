@@ -91,6 +91,7 @@ export const fetchCalendarData = async ({
 	const transactionData = mapTransactionsData(
 		transactionRows,
 		filterSources.categoryRows,
+		filterSources.cardRows,
 	);
 	const events: CalendarEvent[] = [];
 

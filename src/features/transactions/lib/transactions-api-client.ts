@@ -3,11 +3,16 @@ import type { InstallmentSeriesOccurrence } from "@/features/transactions/action
 import type { TransactionItem } from "@/features/transactions/components/types";
 import type { TransactionsExportContext } from "@/features/transactions/lib/export-types";
 import {
+	type TransactionsViewMode,
+	TRANSACTIONS_VIEW_MODE_PARAM,
+} from "@/features/transactions/lib/view-mode";
+import {
 	fetchActionResult,
 	fetchJsonData,
 	getApiOrigin,
 	jsonRequestBody,
 } from "@/shared/lib/actions/action-api-client";
+import type { PeriodCarouselMonth } from "@/shared/components/month-picker/period-carousel-types";
 import type { EligibleInstallment } from "@/shared/lib/installments/anticipation-types";
 import type { ActionResult } from "@/shared/lib/types/actions";
 
@@ -72,6 +77,20 @@ export async function fetchTransactionDialogOptionsClient(): Promise<Transaction
 	);
 }
 
+export async function fetchTransactionsMonthSummariesClient(
+	viewMode: TransactionsViewMode,
+): Promise<ActionResult<{ months: PeriodCarouselMonth[] }>> {
+	const params = new URLSearchParams({
+		[TRANSACTIONS_VIEW_MODE_PARAM]: viewMode,
+	});
+
+	return fetchActionResult<{ months: PeriodCarouselMonth[] }>(
+		`/api/transactions/month-summaries?${params.toString()}`,
+		{ method: "GET" },
+		"Não foi possível carregar o resumo mensal.",
+	);
+}
+
 export async function createTransactionClient(
 	input: unknown,
 ): Promise<ActionResult<{ ids: string[] }>> {
@@ -124,7 +143,7 @@ export async function convertTransactionToInstallmentClient(
 
 export async function convertTransactionToRecurringClient(
 	transactionId: string,
-	input: { recurrenceCount: number },
+	input: { recurrenceCount?: number | null } = {},
 ): Promise<ActionResult<{ createdCount: number }>> {
 	return fetchActionResult<{ createdCount: number }>(
 		`/api/transactions/${transactionId}/convert-recurring`,
@@ -159,8 +178,11 @@ export async function updateTransactionBulkClient(
 
 export async function createMassTransactionsClient(
 	input: unknown,
-): Promise<ActionResult> {
-	return transactionsBulkClient("massCreate", input as Record<string, unknown>);
+): Promise<ActionResult<{ ids: string[] }>> {
+	return transactionsBulkClient<{ ids: string[] }>(
+		"massCreate",
+		input as Record<string, unknown>,
+	);
 }
 
 export async function deleteMultipleTransactionsClient(input: {

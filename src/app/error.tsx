@@ -22,8 +22,24 @@ export default function ErrorComponent({
 	reset: () => void;
 }) {
 	useEffect(() => {
-		// Log the error to an error reporting service
 		console.error(error);
+
+		const isChunkLoadError =
+			error.name === "ChunkLoadError" ||
+			error.message.includes("Failed to load chunk");
+
+		if (!isChunkLoadError) {
+			return;
+		}
+
+		const reloadKey = "openmonetis:chunk-reload";
+		if (sessionStorage.getItem(reloadKey) === "1") {
+			sessionStorage.removeItem(reloadKey);
+			return;
+		}
+
+		sessionStorage.setItem(reloadKey, "1");
+		window.location.reload();
 	}, [error]);
 
 	return (

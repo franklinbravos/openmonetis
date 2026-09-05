@@ -23,14 +23,14 @@ export interface TransactionDialogProps {
 	defaultPurchaseDate?: string | null;
 	defaultName?: string | null;
 	defaultAmount?: string | null;
-	lockCardSelection?: boolean;
-	lockPaymentMethod?: boolean;
 	isImporting?: boolean;
 	defaultTransactionType?: "Despesa" | "Receita";
 	/** Force showing transaction type select even when defaultTransactionType is set */
 	forceShowTransactionType?: boolean;
 	/** Called after successful create/update. */
 	onSuccess?: (result?: { ids?: string[] }) => void;
+	/** Quando definido, controla se a edição de série altera só este lançamento ou toda a série. */
+	seriesEditScope?: "single" | "future" | "all";
 	/** Max attachment file size in MB for this user */
 	maxSizeMb?: number;
 	onBulkEditRequest?: (data: {
@@ -105,8 +105,9 @@ export interface PaymentMethodSectionProps extends BaseFieldSectionProps {
 	accountOptions: SelectOption[];
 	cardOptions: SelectOption[];
 	isUpdateMode: boolean;
-	disablePaymentMethod: boolean;
-	disableCardSelect: boolean;
+	isSeriesBulkEdit?: boolean;
+	/** Exibe conversão para recorrência ao editar lançamento à vista. */
+	canConvertToSeries?: boolean;
 	showSettledToggle: boolean;
 	/** Abre a criação inline de conta sem sair do lançamento. */
 	onCreateAccount?: (accountTypeHint?: string) => void;

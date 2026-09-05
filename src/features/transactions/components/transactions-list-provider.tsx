@@ -4,6 +4,7 @@ import { createContext, type ReactNode, useContext, useMemo } from "react";
 import type { TransactionItem } from "@/features/transactions/components/types";
 import { useTransactionsRealtimeList } from "@/features/transactions/hooks/use-transactions-realtime-list";
 import type { TransactionsPaginationState } from "@/features/transactions/lib/export-types";
+import { resolveTransactionsListMatchContext } from "@/features/transactions/lib/transactions-list-sync";
 
 type TransactionsListContextValue = {
 	transactions: TransactionItem[];
@@ -22,6 +23,10 @@ type TransactionsListProviderProps = {
 	serverPagination?: TransactionsPaginationState;
 	listKey: string;
 	selectedPeriod: string;
+	listCardId?: string | null;
+	listAccountId?: string | null;
+	listPayerId?: string | null;
+	matchByPurchaseDateMonth?: boolean;
 	financialDataOwnerId: string;
 	viewerUserId: string;
 };
@@ -32,14 +37,35 @@ export function TransactionsListProvider({
 	serverPagination,
 	listKey,
 	selectedPeriod,
+	listCardId,
+	listAccountId,
+	listPayerId,
+	matchByPurchaseDateMonth,
 	financialDataOwnerId,
 	viewerUserId,
 }: TransactionsListProviderProps) {
+	const listMatchContext = useMemo(
+		() =>
+			resolveTransactionsListMatchContext(selectedPeriod, {
+				listCardId,
+				listAccountId,
+				listPayerId,
+				matchByPurchaseDateMonth,
+			}),
+		[
+			listAccountId,
+			listCardId,
+			listPayerId,
+			matchByPurchaseDateMonth,
+			selectedPeriod,
+		],
+	);
+
 	const value = useTransactionsRealtimeList({
 		serverTransactions,
 		serverPagination,
 		listKey,
-		selectedPeriod,
+		listMatchContext,
 		financialDataOwnerId,
 		viewerUserId,
 	});

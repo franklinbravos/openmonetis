@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { cards } from "@/db/schema";
 import {
-	diagnoseSecretReadFailure,
+	logSecretReadFailure,
 	tryDecryptSecret,
 } from "@/shared/lib/ai/secret-encryption";
 import {
@@ -36,9 +36,9 @@ export async function resolveCardImportPdfPassword(
 
 	const secret = tryDecryptSecret(card.importPdfPasswordSecret);
 	if (!secret) {
-		console.error(
-			"resolveCardImportPdfPassword: segredo ilegível",
-			diagnoseSecretReadFailure(card.importPdfPasswordSecret),
+		logSecretReadFailure(
+			"resolveCardImportPdfPassword",
+			card.importPdfPasswordSecret,
 		);
 		return null;
 	}
@@ -69,9 +69,9 @@ export async function resolveCardImportPdfPasswordAttempts(
 
 	const secret = tryDecryptSecret(card.importPdfPasswordSecret);
 	if (!secret) {
-		console.error(
-			"resolveCardImportPdfPasswordAttempts: segredo ilegível",
-			diagnoseSecretReadFailure(card.importPdfPasswordSecret),
+		logSecretReadFailure(
+			"resolveCardImportPdfPasswordAttempts",
+			card.importPdfPasswordSecret,
 		);
 		return [];
 	}
@@ -82,6 +82,7 @@ export async function resolveCardImportPdfPasswordAttempts(
 export type CardImportPdfPasswordSettings = {
 	rule: CardImportPdfPasswordRule;
 	hasStoredSecret: boolean;
+	secretReadable: boolean;
 };
 
 export async function fetchCardImportPdfPasswordSettings(
@@ -103,8 +104,13 @@ export async function fetchCardImportPdfPasswordSettings(
 		? card.importPdfPasswordRule
 		: ("none" as const);
 
+	const hasStoredSecret = Boolean(card.importPdfPasswordSecret);
+
 	return {
 		rule,
-		hasStoredSecret: Boolean(card.importPdfPasswordSecret),
+		hasStoredSecret,
+		secretReadable: hasStoredSecret
+			? tryDecryptSecret(card.importPdfPasswordSecret ?? "") != null
+			: false,
 	};
 }

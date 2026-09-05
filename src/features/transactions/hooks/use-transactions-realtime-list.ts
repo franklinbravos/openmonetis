@@ -9,6 +9,7 @@ import {
 	mergeTransactionItems,
 	patchTransactionItem,
 	removeTransactionItems,
+	type TransactionsListMatchContext,
 } from "@/features/transactions/lib/transactions-list-sync";
 import { createClient } from "@/shared/lib/supabase/client";
 
@@ -16,7 +17,7 @@ type UseTransactionsRealtimeListOptions = {
 	serverTransactions: TransactionItem[];
 	serverPagination?: TransactionsPaginationState;
 	listKey: string;
-	selectedPeriod: string;
+	listMatchContext: TransactionsListMatchContext;
 	financialDataOwnerId: string;
 	viewerUserId: string;
 };
@@ -25,7 +26,7 @@ export function useTransactionsRealtimeList({
 	serverTransactions,
 	serverPagination,
 	listKey,
-	selectedPeriod,
+	listMatchContext,
 	financialDataOwnerId,
 	viewerUserId,
 }: UseTransactionsRealtimeListOptions) {
@@ -71,7 +72,7 @@ export function useTransactionsRealtimeList({
 					const { items, addedCount, removedCount } = mergeTransactionItems({
 						current,
 						incoming: fetched,
-						selectedPeriod,
+						listMatchContext,
 						page: pagination?.page ?? 1,
 						pageSize: pagination?.pageSize ?? 30,
 					});
@@ -93,7 +94,7 @@ export function useTransactionsRealtimeList({
 				}
 			}
 		},
-		[pagination?.page, pagination?.pageSize, selectedPeriod],
+		[listMatchContext, pagination?.page, pagination?.pageSize],
 	);
 
 	const removeByIds = useCallback((ids: string[]) => {

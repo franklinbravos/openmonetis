@@ -4,6 +4,7 @@ import { z } from "zod";
 import { fetchAccountTransactions } from "@/features/accounts/statement-queries";
 import { fetchUserPreferences } from "@/features/settings/queries";
 import type { TransactionsExportContext } from "@/features/transactions/lib/export-types";
+import { DEFAULT_TRANSACTIONS_VIEW_MODE } from "@/features/transactions/lib/view-mode";
 import {
 	buildSluggedFilters,
 	buildSlugMaps,
@@ -50,6 +51,7 @@ const exportTransactionsSchema: z.ZodType<TransactionsExportContext> = z.object(
 		cardId: z.string().min(1).nullable().optional(),
 		payerId: z.string().min(1).nullable().optional(),
 		settledOnly: z.boolean().optional(),
+		viewMode: z.enum(["competencia", "fluxo-caixa"]).optional(),
 	},
 );
 
@@ -78,6 +80,7 @@ export async function exportTransactionsDataAction(
 			payerId: validated.payerId ?? undefined,
 			hideAnticipatedInstallments:
 				userPreferences?.hideAnticipatedInstallments ?? false,
+			viewMode: validated.viewMode ?? DEFAULT_TRANSACTIONS_VIEW_MODE,
 		});
 
 		const rows =
@@ -89,7 +92,11 @@ export async function exportTransactionsDataAction(
 			success: true,
 			message: "Dados carregados para exportação.",
 			data: {
-				transactions: mapTransactionsData(rows, filterSources.categoryRows),
+				transactions: mapTransactionsData(
+					rows,
+					filterSources.categoryRows,
+					filterSources.cardRows,
+				),
 			},
 		};
 	} catch (error) {

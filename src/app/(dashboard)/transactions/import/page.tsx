@@ -2,7 +2,10 @@ import { RiUploadCloud2Line } from "@remixicon/react";
 import type { Metadata } from "next";
 import Image from "next/image";
 import { connection } from "next/server";
-import { resolveCardImportPdfPasswordAttempts } from "@/features/cards/lib/resolve-import-pdf-password";
+import {
+	fetchCardImportPdfPasswordSettings,
+	resolveCardImportPdfPasswordAttempts,
+} from "@/features/cards/lib/resolve-import-pdf-password";
 import { fetchCardDueDays } from "@/features/cards/queries";
 import { ImportPage } from "@/features/transactions/components/import/import-page";
 import { buildImportMountKey } from "@/features/transactions/lib/import-flow-entry";
@@ -165,6 +168,13 @@ export default async function Page({ searchParams }: PageProps) {
 		? await resolveCardImportPdfPasswordAttempts(userId, validCardId)
 		: [];
 
+	const pdfPasswordSettings = validCardId
+		? await fetchCardImportPdfPasswordSettings(userId, validCardId)
+		: null;
+	const importPdfPasswordNeedsReconfigure = Boolean(
+		pdfPasswordSettings?.hasStoredSecret && !pdfPasswordSettings.secretReadable,
+	);
+
 	const importHistory = await fetchImportBatchHistory({
 		userId,
 		cardId: validCardId,
@@ -267,6 +277,7 @@ export default async function Page({ searchParams }: PageProps) {
 				invoiceContext={invoiceContext}
 				linkedCardId={validCardId}
 				autoPdfPasswordAttempts={autoPdfPasswordAttempts}
+				importPdfPasswordNeedsReconfigure={importPdfPasswordNeedsReconfigure}
 				initialImportHistory={importHistory}
 				initialResumeBatchId={initialResumeBatchId}
 			/>

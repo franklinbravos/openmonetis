@@ -63,6 +63,21 @@ export async function fetchCardData(userId: string, cardId: string) {
 	return card ?? null;
 }
 
+export async function fetchInvoiceRegisteredTotal(
+	userId: string,
+	cardId: string,
+	period: string,
+): Promise<number> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+	const totalRow = await callRpcOne<InvoiceTotalRow>("get_invoice_total", {
+		p_user_id: dataOwnerUserId,
+		p_card_id: cardId,
+		p_period: period,
+	});
+
+	return toNumber(totalRow?.total);
+}
+
 export async function fetchInvoiceData(
 	userId: string,
 	cardId: string,
@@ -73,7 +88,7 @@ export async function fetchInvoiceData(
 	paymentDate: Date | null;
 }> {
 	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
-	const [invoiceRow, totalRow] = await Promise.all([
+	const [invoiceRow, totalAmount] = await Promise.all([
 		db.query.invoices.findFirst({
 			columns: {
 				id: true,
@@ -86,14 +101,8 @@ export async function fetchInvoiceData(
 				eq(invoices.period, selectedPeriod),
 			),
 		}),
-		callRpcOne<InvoiceTotalRow>("get_invoice_total", {
-			p_user_id: dataOwnerUserId,
-			p_card_id: cardId,
-			p_period: selectedPeriod,
-		}),
+		fetchInvoiceRegisteredTotal(userId, cardId, selectedPeriod),
 	]);
-
-	const totalAmount = toNumber(totalRow?.total);
 	/*
 	 * Os três status contam: `parcial` fica de fora e a fatura aparece "Em
 	 * aberto" — sem o valor pago e sem a data, mesmo com os dois gravados. Era o

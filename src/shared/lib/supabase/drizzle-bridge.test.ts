@@ -115,6 +115,12 @@ describe("parseWhere: condições traduzíveis", () => {
 		]);
 	});
 
+	it("inArray vazio vira condição impossível", () => {
+		expect(parseWhere(inArray(transactions.id, []))).toEqual([
+			{ type: "eq", column: "id", value: null },
+		]);
+	});
+
 	it("and preserva todas as condições", () => {
 		// Antes o scanner devolvia só o que reconhecia: um and(eq, NOT LIKE)
 		// chegava ao banco como apenas o eq.

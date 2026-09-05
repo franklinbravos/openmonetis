@@ -18,8 +18,6 @@ type TransactionsQuickActionsProps = {
 	defaultAccountId?: string | null;
 	defaultCardId?: string | null;
 	defaultPaymentMethod?: string | null;
-	lockCardSelection?: boolean;
-	lockPaymentMethod?: boolean;
 	attachmentMaxSizeMb?: number;
 	transferAccounts?: AccountData[];
 };
@@ -36,8 +34,6 @@ export function TransactionsQuickActions({
 	defaultAccountId,
 	defaultCardId,
 	defaultPaymentMethod,
-	lockCardSelection,
-	lockPaymentMethod,
 	attachmentMaxSizeMb,
 	transferAccounts = [],
 }: TransactionsQuickActionsProps) {
@@ -54,8 +50,6 @@ export function TransactionsQuickActions({
 		defaultAccountId,
 		defaultCardId,
 		defaultPaymentMethod,
-		lockCardSelection,
-		lockPaymentMethod,
 		maxSizeMb: attachmentMaxSizeMb,
 	};
 

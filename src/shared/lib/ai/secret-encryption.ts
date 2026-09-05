@@ -94,6 +94,20 @@ export function diagnoseSecretReadFailure(
 	return "app_secret_changed";
 }
 
+/** Registra falha de leitura só quando indica dado corrompido ou env ausente. */
+export function logSecretReadFailure(
+	context: string,
+	payload: string,
+): SecretReadFailureReason {
+	const reason = diagnoseSecretReadFailure(payload);
+	if (reason === "app_secret_changed") {
+		return reason;
+	}
+
+	console.error(`${context}: segredo ilegível`, reason);
+	return reason;
+}
+
 export function maskApiKey(apiKey: string): string {
 	const trimmedKey = apiKey.trim();
 	if (trimmedKey.length <= 4) {

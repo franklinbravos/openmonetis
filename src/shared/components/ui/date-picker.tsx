@@ -102,6 +102,8 @@ export interface DatePickerProps {
 	inputClassName?: string;
 	/** Show compact format like "10 mar" instead of "10/03/2026" */
 	compact?: boolean;
+	/** Desativa focus trap modal — use dentro de Dialog para evitar loops de foco. */
+	nested?: boolean;
 }
 
 export function DatePicker({
@@ -114,6 +116,7 @@ export function DatePicker({
 	className,
 	inputClassName,
 	compact = false,
+	nested = false,
 }: DatePickerProps) {
 	const [open, setOpen] = React.useState(false);
 	const [date, setDate] = React.useState<Date | undefined>(() =>
@@ -126,6 +129,7 @@ export function DatePicker({
 		formatDatePickerDisplay(parseYYYYMMDD(value), compact),
 	);
 	const isEditingRef = React.useRef(false);
+	const fieldRef = React.useRef<HTMLDivElement>(null);
 
 	React.useEffect(() => {
 		if (isEditingRef.current) {
@@ -144,10 +148,18 @@ export function DatePicker({
 			setDate(committed.date);
 			setMonth(committed.date);
 			setDisplayValue(committed.displayValue);
-			onChange?.(committed.isoValue);
+			if (committed.isoValue && committed.isoValue !== value) {
+				onChange?.(committed.isoValue);
+			}
 		},
-		[compact, onChange],
+		[compact, onChange, value],
 	);
+
+	const openCalendar = React.useCallback(() => {
+		if (!disabled) {
+			setOpen(true);
+		}
+	}, [disabled]);
 
 	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const inputValue = e.target.value;
@@ -158,7 +170,7 @@ export function DatePicker({
 		}
 	};
 
-	const handleInputBlur = () => {
+	const commitInputBlur = React.useCallback(() => {
 		isEditingRef.current = false;
 
 		const trimmed = displayValue.trim();
@@ -177,25 +189,34 @@ export function DatePicker({
 		}
 
 		setDisplayValue(formatDatePickerDisplay(date, compact));
+	}, [applyCommittedDate, compact, date, displayValue, onChange]);
+
+	const handleInputBlur = () => {
+		window.setTimeout(() => {
+			if (fieldRef.current?.contains(document.activeElement)) {
+				return;
+			}
+
+			commitInputBlur();
+		}, 0);
 	};
 
 	const handleInputFocus = () => {
 		isEditingRef.current = true;
-		if (!disabled) {
-			setOpen(true);
-		}
 	};
 
 	const handleInputClick = () => {
-		if (!disabled) {
-			setOpen(true);
-		}
+		openCalendar();
 	};
 
 	const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
 		if (e.key === "ArrowDown") {
 			e.preventDefault();
-			setOpen(true);
+			openCalendar();
+		}
+
+		if (e.key === "Escape") {
+			setOpen(false);
 		}
 
 		if (e.key === "Enter") {
@@ -204,14 +225,22 @@ export function DatePicker({
 	};
 
 	const handleCalendarSelect = (selectedDate: Date | undefined) => {
+		const nextValue = dateToYYYYMMDD(selectedDate);
 		setDate(selectedDate);
+		setMonth(selectedDate);
 		setDisplayValue(formatDatePickerDisplay(selectedDate, compact));
-		onChange?.(dateToYYYYMMDD(selectedDate));
+		if (nextValue !== value) {
+			onChange?.(nextValue);
+		}
 		setOpen(false);
+		isEditingRef.current = false;
 	};
 
+	const preventFieldDismiss = (target: EventTarget | null) =>
+		target instanceof Node && fieldRef.current?.contains(target);
+
 	return (
-		<div className={cn("relative flex gap-2", className)}>
+		<div ref={fieldRef} className={cn("relative flex gap-2", className)}>
 			<Input
 				id={id}
 				value={displayValue}
@@ -226,7 +255,7 @@ export function DatePicker({
 				disabled={disabled}
 				inputMode="numeric"
 			/>
-			<Popover modal open={open} onOpenChange={setOpen}>
+			<Popover modal={!nested} open={open} onOpenChange={setOpen}>
 				<PopoverTrigger asChild>
 					<Button
 						type="button"
@@ -244,6 +273,19 @@ export function DatePicker({
 					align="end"
 					alignOffset={-8}
 					sideOffset={10}
+					onOpenAutoFocus={(event) => event.preventDefault()}
+					onCloseAutoFocus={(event) => event.preventDefault()}
+					onMouseDown={(event) => event.preventDefault()}
+					onPointerDownOutside={(event) => {
+						if (preventFieldDismiss(event.target)) {
+							event.preventDefault();
+						}
+					}}
+					onFocusOutside={(event) => {
+						if (preventFieldDismiss(event.target)) {
+							event.preventDefault();
+						}
+					}}
 				>
 					<Calendar
 						mode="single"

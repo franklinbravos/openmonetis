@@ -231,6 +231,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 	const mappedTransactions = mapTransactionsData(
 		transactionRows,
 		filterSources?.categoryRows,
+		filterSources?.cardRows,
 	);
 	const transactionData = canEdit
 		? mappedTransactions
@@ -409,6 +410,8 @@ export default async function Page({ params, searchParams }: PageProps) {
 							<LancamentosSection
 								financialDataOwnerId={financialContext.dataOwnerUserId}
 								canEditFinancial={financialContext.canEditFinancial}
+								viewerUserId={userId}
+								listPayerId={pagador.id}
 								transactions={transactionData}
 								payerOptions={optionSets.payerOptions}
 								splitPayerOptions={optionSets.splitPayerOptions}

@@ -79,16 +79,24 @@ const HARMLESS_CHUNK_TEXT = new Set([
 function toBridgeError(error: unknown): Error {
 	if (error instanceof Error) return error;
 	if (typeof error === "string") return new Error(error);
-	if (
-		error &&
-		typeof error === "object" &&
-		"message" in error &&
-		typeof (error as { message: unknown }).message === "string"
-	) {
-		const message = (error as { message: string }).message;
+	if (error && typeof error === "object" && "message" in error) {
+		const record = error as {
+			message?: unknown;
+			code?: unknown;
+			details?: unknown;
+			hint?: unknown;
+		};
+		const message =
+			typeof record.message === "string" && record.message.trim()
+				? record.message
+				: typeof record.details === "string" && record.details.trim()
+					? record.details
+					: typeof record.hint === "string" && record.hint.trim()
+						? record.hint
+						: "Falha na consulta PostgREST.";
 		const code =
-			"code" in error && typeof (error as { code: unknown }).code === "string"
-				? (error as { code: string }).code
+			typeof record.code === "string" && record.code.trim()
+				? record.code
 				: null;
 		const bridgeError = new Error(code ? `[${code}] ${message}` : message);
 		// Preserva o SQLSTATE: quem trata o erro (ex.: 23505, violação de índice
@@ -1059,11 +1067,55 @@ function qualifyColumn(filter: ColumnFilter, mainTable?: string): string {
 	return `${filter.table}.${filter.column}`;
 }
 
-function formatOrValue(value: unknown): string {
+/** Literais para expressões `.or()` / `.in.()` do PostgREST (precisam de aspas). */
+function formatPostgrestFilterValue(value: unknown): string {
 	if (value === null || value === undefined) return "null";
 	if (typeof value === "boolean") return String(value);
-	if (value instanceof Date) return value.toISOString();
-	return String(value);
+	if (typeof value === "number" && Number.isFinite(value)) return String(value);
+	if (value instanceof Date) {
+		return `"${value.toISOString()}"`;
+	}
+
+	const str = String(value);
+	return `"${str.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function formatPostgrestInList(values: unknown[]): string {
+	return values.map(formatPostgrestFilterValue).join(",");
+}
+
+/** PostgREST quebra requisições GET com `.in.(...)` muito longo (busca de lançamentos). */
+const MAX_IN_FILTER_VALUES = 40;
+
+function chunkFilterValues<T>(values: T[], size: number): T[][] {
+	const chunks: T[][] = [];
+	for (let index = 0; index < values.length; index += size) {
+		chunks.push(values.slice(index, index + size));
+	}
+	return chunks;
+}
+
+function applyInFilter<T extends { eq: FilterBuilderMethod; in: FilterBuilderMethod; or: FilterBuilderMethod }>(
+	query: T,
+	col: string,
+	values: unknown[],
+): T {
+	if (values.length === 0) {
+		return query.eq(col, "00000000-0000-0000-0000-000000000000") as T;
+	}
+
+	if (values.length <= MAX_IN_FILTER_VALUES) {
+		return query.in(col, values) as T;
+	}
+
+	const orExpr = chunkFilterValues(values, MAX_IN_FILTER_VALUES)
+		.map(
+			(chunk) =>
+				`${col}.in.(${formatPostgrestInList(chunk)})`,
+		)
+		.join(",");
+
+	return query.or(orExpr) as T;
 }
 
 /**
@@ -1138,29 +1190,40 @@ function filterToOrExpr(filter: Filter, mainTable?: string): string | null {
 	const col = qualifyColumn(filter, mainTable);
 	switch (filter.type) {
 		case "eq":
-			return `${col}.eq.${formatOrValue(filter.value)}`;
+			return `${col}.eq.${formatPostgrestFilterValue(filter.value)}`;
 		case "neq":
-			return `${col}.neq.${formatOrValue(filter.value)}`;
+			return `${col}.neq.${formatPostgrestFilterValue(filter.value)}`;
 		case "gt":
-			return `${col}.gt.${formatOrValue(filter.value)}`;
+			return `${col}.gt.${formatPostgrestFilterValue(filter.value)}`;
 		case "gte":
-			return `${col}.gte.${formatOrValue(filter.value)}`;
+			return `${col}.gte.${formatPostgrestFilterValue(filter.value)}`;
 		case "lt":
-			return `${col}.lt.${formatOrValue(filter.value)}`;
+			return `${col}.lt.${formatPostgrestFilterValue(filter.value)}`;
 		case "lte":
-			return `${col}.lte.${formatOrValue(filter.value)}`;
+			return `${col}.lte.${formatPostgrestFilterValue(filter.value)}`;
 		case "is":
 			return filter.negated ? `${col}.not.is.null` : `${col}.is.null`;
 		case "in":
-			return `${col}.in.(${filter.values.map(formatOrValue).join(",")})`;
+			if (filter.values.length === 0) {
+				return `${col}.eq.00000000-0000-0000-0000-000000000000`;
+			}
+			if (filter.values.length > MAX_IN_FILTER_VALUES) {
+				return chunkFilterValues(filter.values, MAX_IN_FILTER_VALUES)
+					.map(
+						(chunk) =>
+							`${col}.in.(${formatPostgrestInList(chunk)})`,
+					)
+					.join(",");
+			}
+			return `${col}.in.(${formatPostgrestInList(filter.values)})`;
 		case "ilike":
 			return filter.negated
-				? `${col}.not.ilike.${formatOrValue(filter.value)}`
-				: `${col}.ilike.${formatOrValue(filter.value)}`;
+				? `${col}.not.ilike.${formatPostgrestFilterValue(filter.value)}`
+				: `${col}.ilike.${formatPostgrestFilterValue(filter.value)}`;
 		case "like":
 			return filter.negated
-				? `${col}.not.like.${formatOrValue(filter.value)}`
-				: `${col}.like.${formatOrValue(filter.value)}`;
+				? `${col}.not.like.${formatPostgrestFilterValue(filter.value)}`
+				: `${col}.like.${formatPostgrestFilterValue(filter.value)}`;
 		default:
 			return null;
 	}
@@ -1236,7 +1299,7 @@ function applyFilters<
 					: (query.is(col, filter.value) as T);
 				break;
 			case "in":
-				query = query.in(col, filter.values) as T;
+				query = applyInFilter(query, col, filter.values);
 				break;
 			case "ilike":
 				if (filter.negated) {
@@ -1498,7 +1561,7 @@ async function runFind<T extends Table>(
 	if (error) {
 		console.error("[bridge] runFind falhou", {
 			table: tableName,
-			error: error.message,
+			error,
 		});
 		throw toBridgeError(error);
 	}
@@ -2049,6 +2112,16 @@ class SupabaseSelectBuilder {
 		if (isCountOnlyShape) {
 			const parsedFilters = parseWhere(this.whereClause);
 			const { api } = partitionFilters(parsedFilters, tableName);
+			const hasEmptyInFilter = api.some(
+				(filter) => filter.type === "in" && filter.values.length === 0,
+			);
+			if (hasEmptyInFilter) {
+				return [
+					Object.fromEntries(
+						shapeEntries.map(([alias]) => [alias, 0]),
+					),
+				];
+			}
 			let countQuery = this.client
 				.from(tableName as keyof Database["public"]["Tables"])
 				.select("*", { count: "exact", head: true });
@@ -2057,7 +2130,7 @@ class SupabaseSelectBuilder {
 			if (error) {
 				console.error("[bridge] count falhou", {
 					table: tableName,
-					error: error.message,
+					error,
 				});
 				throw toBridgeError(error);
 			}

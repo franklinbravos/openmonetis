@@ -6,6 +6,7 @@ import { CurrencyInput } from "@/shared/components/ui/currency-input";
 import { DatePicker } from "@/shared/components/ui/date-picker";
 import { Label } from "@/shared/components/ui/label";
 import { EstablishmentInput } from "../../shared/establishment-input";
+import { InlinePeriodPicker } from "./inline-period-picker";
 import type { BasicFieldsSectionProps } from "./transaction-dialog-types";
 
 export function BasicFieldsSection({
@@ -13,6 +14,9 @@ export function BasicFieldsSection({
 	onFieldChange,
 	estabelecimentos,
 }: Omit<BasicFieldsSectionProps, "monthOptions">) {
+	const showInvoicePeriodPicker =
+		formState.paymentMethod === "Cartão de crédito" && Boolean(formState.cardId);
+
 	return (
 		<div className="space-y-3">
 			<div className="space-y-1">
@@ -33,11 +37,18 @@ export function BasicFieldsSection({
 					<Label htmlFor="purchaseDate">Data</Label>
 					<DatePicker
 						id="purchaseDate"
+						nested
 						value={formState.purchaseDate}
 						onChange={(value) => onFieldChange("purchaseDate", value)}
 						placeholder="Data"
 						required
 					/>
+					{showInvoicePeriodPicker ? (
+						<InlinePeriodPicker
+							period={formState.period}
+							onPeriodChange={(value) => onFieldChange("period", value)}
+						/>
+					) : null}
 				</div>
 
 				<div className="w-full md:w-1/2 space-y-1">

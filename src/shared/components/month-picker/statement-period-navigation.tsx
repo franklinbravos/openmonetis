@@ -672,7 +672,7 @@ function StatementPeriodToolbarPanel({
 	);
 }
 
-type StatementPeriodNavigationProps = {
+export type StatementPeriodNavigationProps = {
 	months?: PeriodCarouselMonth[];
 	toolbarSlotId?: string;
 	embedded?: boolean;

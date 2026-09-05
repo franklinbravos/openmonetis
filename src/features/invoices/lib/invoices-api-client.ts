@@ -42,3 +42,19 @@ export async function adjustInvoiceClient(
 		"Não foi possível ajustar a fatura.",
 	);
 }
+
+export async function fetchInvoiceTotalClient(input: {
+	cardId: string;
+	period: string;
+}): Promise<ActionResult<{ totalAmount: number }>> {
+	const params = new URLSearchParams({
+		cardId: input.cardId,
+		period: input.period,
+	});
+
+	return fetchActionResult(
+		`/api/invoices/total?${params.toString()}`,
+		{ method: "GET" },
+		"Não foi possível carregar o total da fatura.",
+	);
+}

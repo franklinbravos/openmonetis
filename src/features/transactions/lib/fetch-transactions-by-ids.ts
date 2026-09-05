@@ -1,9 +1,11 @@
 import { eq, inArray } from "drizzle-orm";
-import { transactions } from "@/db/schema";
+import { cards, transactions } from "@/db/schema";
 import type { TransactionItem } from "@/features/transactions/components/types";
 import { mapTransactionsData } from "@/features/transactions/lib/page-helpers";
 import { fetchTransactionsWithRelations } from "@/features/transactions/queries";
+import { collectInvoicePaymentCardIds } from "@/shared/lib/invoices/invoice-payment-transaction";
 import { assertFinancialReadAccess } from "@/shared/lib/payers/financial-access";
+import { db } from "@/shared/lib/db";
 
 export async function fetchTransactionsByIdsForViewer(
 	viewerUserId: string,
@@ -23,5 +25,13 @@ export async function fetchTransactionsByIdsForViewer(
 		excludeInitialBalanceFromIncome: false,
 	});
 
-	return mapTransactionsData(rows);
+	const invoiceCardIds = collectInvoicePaymentCardIds(rows);
+	const cardRows =
+		invoiceCardIds.length > 0
+			? await db.query.cards.findMany({
+					where: inArray(cards.id, invoiceCardIds),
+				})
+			: [];
+
+	return mapTransactionsData(rows, undefined, cardRows);
 }

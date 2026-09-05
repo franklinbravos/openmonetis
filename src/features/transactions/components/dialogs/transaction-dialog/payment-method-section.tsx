@@ -5,16 +5,9 @@ import {
 	RiCheckboxBlankCircleLine,
 	RiCheckboxCircleFill,
 } from "@remixicon/react";
-import { useState } from "react";
 import { PAYMENT_METHODS } from "@/features/transactions/lib/constants";
 import { Button } from "@/shared/components/ui/button";
 import { Label } from "@/shared/components/ui/label";
-import { MonthPicker } from "@/shared/components/ui/month-picker";
-import {
-	Popover,
-	PopoverContent,
-	PopoverTrigger,
-} from "@/shared/components/ui/popover";
 import {
 	Select,
 	SelectContent,
@@ -23,11 +16,6 @@ import {
 	SelectValue,
 } from "@/shared/components/ui/select";
 import { SelectCreateAction } from "@/shared/components/ui/select-create-action";
-import {
-	dateToPeriod,
-	displayPeriod,
-	periodToDate,
-} from "@/shared/utils/period";
 import { cn } from "@/shared/utils/ui";
 import {
 	AccountCardSelectContent,
@@ -35,41 +23,6 @@ import {
 } from "../../select-items";
 import { PaymentSchedulingSection } from "./payment-scheduling-section";
 import type { PaymentMethodSectionProps } from "./transaction-dialog-types";
-
-function InlinePeriodPicker({
-	period,
-	onPeriodChange,
-}: {
-	period: string;
-	onPeriodChange: (value: string) => void;
-}) {
-	const [open, setOpen] = useState(false);
-
-	return (
-		<div className="ml-1">
-			<span className="text-xs text-muted-foreground">Fatura de </span>
-			<Popover modal open={open} onOpenChange={setOpen}>
-				<PopoverTrigger asChild>
-					<button
-						type="button"
-						className="cursor-pointer text-xs text-primary underline-offset-2 hover:underline lowercase"
-					>
-						{displayPeriod(period)}
-					</button>
-				</PopoverTrigger>
-				<PopoverContent className="w-auto p-0" align="start">
-					<MonthPicker
-						selectedMonth={periodToDate(period)}
-						onMonthSelect={(date) => {
-							onPeriodChange(dateToPeriod(date));
-							setOpen(false);
-						}}
-					/>
-				</PopoverContent>
-			</Popover>
-		</div>
-	);
-}
 
 function SelectFieldHeader({
 	htmlFor,
@@ -107,8 +60,8 @@ export function PaymentMethodSection({
 	accountOptions,
 	cardOptions,
 	isUpdateMode,
-	disablePaymentMethod,
-	disableCardSelect,
+	isSeriesBulkEdit = false,
+	canConvertToSeries = false,
 	showSettledToggle,
 	onCreateAccount,
 	onCreateCard,
@@ -139,11 +92,16 @@ export function PaymentMethodSection({
 			: undefined;
 
 	const hasSecondaryColumn = isCartaoSelected || showContaSelect;
+	const showPaymentMethodField = !isUpdateMode || isSeriesBulkEdit;
+	const showSchedulingSection =
+		!isUpdateMode || isSeriesBulkEdit || canConvertToSeries;
+	const schedulingRecurringOnly =
+		isUpdateMode && canConvertToSeries && !isSeriesBulkEdit;
 
 	return (
 		<div className="space-y-3">
 			<div className="flex w-full flex-col gap-2 md:flex-row">
-				{!isUpdateMode ? (
+				{showPaymentMethodField ? (
 					<div
 						className={cn(
 							"w-full space-y-1",
@@ -154,13 +112,8 @@ export function PaymentMethodSection({
 						<Select
 							value={formState.paymentMethod}
 							onValueChange={(value) => onFieldChange("paymentMethod", value)}
-							disabled={disablePaymentMethod}
 						>
-							<SelectTrigger
-								id="paymentMethod"
-								className="w-full"
-								disabled={disablePaymentMethod}
-							>
+							<SelectTrigger id="paymentMethod" className="w-full">
 								<SelectValue placeholder="Selecione" className="w-full">
 									{formState.paymentMethod && (
 										<PaymentMethodSelectContent
@@ -184,7 +137,7 @@ export function PaymentMethodSection({
 					<div
 						className={cn(
 							"w-full space-y-1",
-							!isUpdateMode ? "md:w-1/2" : "md:w-full",
+							showPaymentMethodField ? "md:w-1/2" : "md:w-full",
 						)}
 					>
 						<SelectFieldHeader
@@ -196,13 +149,8 @@ export function PaymentMethodSection({
 						<Select
 							value={formState.cardId ?? ""}
 							onValueChange={(value) => onFieldChange("cardId", value)}
-							disabled={disableCardSelect}
 						>
-							<SelectTrigger
-								id="cartao"
-								className="w-full"
-								disabled={disableCardSelect}
-							>
+							<SelectTrigger id="cartao" className="w-full">
 								<SelectValue placeholder="Selecione">
 									{formState.cardId &&
 										(() => {
@@ -243,12 +191,6 @@ export function PaymentMethodSection({
 								) : null}
 							</SelectContent>
 						</Select>
-						{formState.cardId ? (
-							<InlinePeriodPicker
-								period={formState.period}
-								onPeriodChange={(value) => onFieldChange("period", value)}
-							/>
-						) : null}
 					</div>
 				) : null}
 
@@ -256,7 +198,7 @@ export function PaymentMethodSection({
 					<div
 						className={cn(
 							"w-full space-y-1",
-							!isUpdateMode ? "md:w-1/2" : "md:w-full",
+							showPaymentMethodField ? "md:w-1/2" : "md:w-full",
 						)}
 					>
 						<SelectFieldHeader
@@ -319,12 +261,18 @@ export function PaymentMethodSection({
 			</div>
 
 			{showSettledToggle ? (
-				<div
+				<button
+					type="button"
+					onClick={() => onFieldChange("isSettled", !formState.isSettled)}
+					aria-label={
+						formState.isSettled ? "Desfazer pagamento" : "Marcar como pago"
+					}
+					aria-pressed={Boolean(formState.isSettled)}
 					className={cn(
-						"flex items-center justify-between rounded-lg border px-3 py-2.5 transition-colors",
+						"flex w-full cursor-pointer items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors",
 						formState.isSettled
-							? "border-success/20 bg-success/5"
-							: "border-border bg-transparent",
+							? "border-success/20 bg-success/5 hover:bg-success/10"
+							: "border-border bg-transparent hover:bg-muted/40",
 					)}
 				>
 					<div>
@@ -335,20 +283,12 @@ export function PaymentMethodSection({
 							Indica que o valor já foi pago.
 						</p>
 					</div>
-					<Button
-						type="button"
-						variant="ghost"
-						size="icon-sm"
-						onClick={() => onFieldChange("isSettled", !formState.isSettled)}
-						aria-label={
-							formState.isSettled ? "Desfazer pagamento" : "Marcar como pago"
-						}
-						aria-pressed={Boolean(formState.isSettled)}
+					<span
 						className={cn(
-							"transition-colors",
+							"flex size-8 shrink-0 items-center justify-center rounded-md transition-colors",
 							formState.isSettled
-								? "bg-success/10 text-success hover:bg-success/20 hover:text-success"
-								: "text-muted-foreground hover:text-foreground",
+								? "bg-success/10 text-success"
+								: "text-muted-foreground",
 						)}
 					>
 						{formState.isSettled ? (
@@ -356,14 +296,16 @@ export function PaymentMethodSection({
 						) : (
 							<RiCheckboxBlankCircleLine className="size-4" />
 						)}
-					</Button>
-				</div>
+					</span>
+				</button>
 			) : null}
 
-			{!isUpdateMode ? (
+			{showSchedulingSection ? (
 				<PaymentSchedulingSection
 					formState={formState}
 					onFieldChange={onFieldChange}
+					recurringOnly={schedulingRecurringOnly}
+					showRecurrenceDuration={schedulingRecurringOnly}
 				/>
 			) : null}
 		</div>

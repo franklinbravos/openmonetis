@@ -458,7 +458,15 @@ export function TransactionsTable({
 				.getVisibleCells()
 				.filter((cell) => PRIMARY_COLUMN_IDS.has(cell.column.id))
 				.map((cell) => (
-					<TableCell key={cell.id} className="border-b-0 pb-0 align-middle">
+					<TableCell
+						key={cell.id}
+						className={cn(
+							"border-b-0 pb-0",
+							cell.column.id === "name"
+								? "w-full max-w-0 whitespace-normal align-top"
+								: "align-middle",
+						)}
+					>
 						{flexRender(cell.column.columnDef.cell, cell.getContext())}
 					</TableCell>
 				))}

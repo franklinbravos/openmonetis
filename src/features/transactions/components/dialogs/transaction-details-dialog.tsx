@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import {
 	type ComponentType,
 	type CSSProperties,
@@ -8,6 +9,7 @@ import {
 	useState,
 } from "react";
 import { fetchTransactionByIdClient } from "@/features/transactions/lib/transactions-api-client";
+import { fetchInvoiceTotalClient } from "@/features/invoices/lib/invoices-api-client";
 import {
 	currencyFormatter,
 	formatCondition,
@@ -34,11 +36,16 @@ import {
 } from "@/shared/components/ui/dialog";
 import { Separator } from "@/shared/components/ui/separator";
 import { resolveLogoSrc } from "@/shared/lib/logo";
+import { buildCardInvoiceHref } from "@/shared/lib/invoices/invoice-payment-transaction";
 import { getAvatarSrc } from "@/shared/lib/payers/utils";
 import { getCategoryColorFromName } from "@/shared/utils/category-colors";
 import { formatDate, parseLocalDateString } from "@/shared/utils/date";
 import { getIconComponent, getPaymentMethodIcon } from "@/shared/utils/icons";
 import { AttachmentSection } from "../attachments/attachment-section";
+import {
+	hasInvoicePaymentMeta,
+	InvoicePaymentDetailsSection,
+} from "../shared/invoice-payment-meta";
 import { InstallmentSeriesList } from "../shared/installment-series-list";
 import { InstallmentTimeline } from "../shared/installment-timeline";
 import type { TransactionItem } from "../types";
@@ -60,6 +67,8 @@ export function TransactionDetailsDialog({
 	const [resolvedTransaction, setResolvedTransaction] =
 		useState<TransactionItem | null>(null);
 	const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+	const [invoiceTotal, setInvoiceTotal] = useState<number | null>(null);
+	const [isLoadingInvoiceTotal, setIsLoadingInvoiceTotal] = useState(false);
 
 	useEffect(() => {
 		setAttachmentCount(null);
@@ -93,6 +102,48 @@ export function TransactionDetailsDialog({
 		};
 	}, [open, transaction?.id]);
 
+	useEffect(() => {
+		const details = resolvedTransaction ?? transaction;
+		if (
+			!open ||
+			!details ||
+			!hasInvoicePaymentMeta(details) ||
+			!details.invoicePaymentCardId ||
+			!details.invoicePaymentPeriod
+		) {
+			setInvoiceTotal(null);
+			setIsLoadingInvoiceTotal(false);
+			return;
+		}
+
+		let cancelled = false;
+		setIsLoadingInvoiceTotal(true);
+
+		void fetchInvoiceTotalClient({
+			cardId: details.invoicePaymentCardId,
+			period: details.invoicePaymentPeriod,
+		})
+			.then((result) => {
+				if (cancelled) return;
+				setInvoiceTotal(result.success ? (result.data?.totalAmount ?? null) : null);
+			})
+			.catch(() => {
+				if (!cancelled) setInvoiceTotal(null);
+			})
+			.finally(() => {
+				if (!cancelled) setIsLoadingInvoiceTotal(false);
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [
+		open,
+		resolvedTransaction,
+		transaction,
+		transaction?.id,
+	]);
+
 	if (!transaction) return null;
 
 	const listMissingRelations =
@@ -121,6 +172,7 @@ export function TransactionDetailsDialog({
 		: 0;
 
 	const isBoleto = details.paymentMethod === "Boleto";
+	const isInvoicePayment = hasInvoicePaymentMeta(details);
 
 	const handleEdit = () => {
 		onOpenChange(false);
@@ -193,6 +245,14 @@ export function TransactionDetailsDialog({
 							</div>
 						</section>
 
+						{isInvoicePayment ? (
+							<InvoicePaymentDetailsSection
+								item={details}
+								invoiceTotal={invoiceTotal}
+								isLoadingTotal={isLoadingInvoiceTotal}
+							/>
+						) : null}
+
 						<section className="space-y-2">
 							<h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 								Detalhes
@@ -204,10 +264,25 @@ export function TransactionDetailsDialog({
 									valueClassName="font-mono"
 								/>
 
-								<DetailRow
-									label="Período"
-									value={formatPeriod(details.period)}
-								/>
+								{isInvoicePayment && details.invoicePaymentPeriod ? (
+									<>
+										<DetailRow
+											label="Fatura quitada"
+											value={formatPeriod(details.invoicePaymentPeriod)}
+										/>
+										{details.invoicePaymentPeriod !== details.period ? (
+											<DetailRow
+												label="Mês do lançamento"
+												value={formatPeriod(details.period)}
+											/>
+										) : null}
+									</>
+								) : (
+									<DetailRow
+										label="Período"
+										value={formatPeriod(details.period)}
+									/>
+								)}
 
 								<li className="flex items-center justify-between">
 									<span className="text-muted-foreground">
@@ -407,7 +482,7 @@ export function TransactionDetailsDialog({
 							</section>
 						) : null}
 
-						{details.note ? (
+						{details.note && !isInvoicePayment ? (
 							<section className="space-y-2">
 								<h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 									Notas
@@ -443,6 +518,20 @@ export function TransactionDetailsDialog({
 							Fechar
 						</Button>
 					</DialogClose>
+					{isInvoicePayment &&
+					details.invoicePaymentCardId &&
+					details.invoicePaymentPeriod ? (
+						<Button asChild variant="secondary">
+							<Link
+								href={buildCardInvoiceHref(
+									details.invoicePaymentCardId,
+									details.invoicePaymentPeriod,
+								)}
+							>
+								Ver fatura
+							</Link>
+						</Button>
+					) : null}
 					{onEdit && !details.readonly && (
 						<Button onClick={handleEdit}>Alterar</Button>
 					)}

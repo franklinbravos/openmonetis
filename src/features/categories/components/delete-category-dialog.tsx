@@ -20,7 +20,7 @@ import {
 	resolveCategoryTypeForTransaction,
 } from "@/features/categories/lib/category-select-options";
 import type { CategoryLinkedTransaction } from "@/features/categories/queries";
-import { CategorySearchSelect } from "@/features/transactions/components/dialogs/transaction-dialog/category-search-select";
+import { CategorySearchSelect } from "@/features/transactions/components/category-search-select";
 import { groupAndSortCategories } from "@/features/transactions/lib/category-helpers";
 import { Button } from "@/shared/components/ui/button";
 import {

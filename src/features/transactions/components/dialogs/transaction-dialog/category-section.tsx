@@ -17,7 +17,7 @@ import {
 import { formatCurrency } from "@/shared/utils/currency";
 import { cn } from "@/shared/utils/ui";
 import { TransactionTypeSelectContent } from "../../select-items";
-import { CategorySearchSelect } from "./category-search-select";
+import { CategorySearchSelect } from "@/features/transactions/components/category-search-select";
 import type { CategorySectionProps } from "./transaction-dialog-types";
 
 const BUDGET_DANGER_RATIO = 1;

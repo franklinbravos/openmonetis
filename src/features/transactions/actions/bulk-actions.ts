@@ -595,7 +595,7 @@ export async function updateTransactionBulkAction(
 
 export async function createMassTransactionsAction(
 	input: MassAddInput,
-): Promise<ActionResult> {
+): Promise<ActionResult<{ ids: string[] }>> {
 	try {
 		const user = await getUser();
 		const { dataOwnerUserId } = await assertFinancialEditAccess(user.id);
@@ -737,8 +737,8 @@ export async function createMassTransactionsAction(
 			throw new Error("Não foi possível criar os lançamentos solicitados.");
 		}
 
-		await db.transaction(async (tx: typeof db) => {
-			await tx.insert(transactions).values(allRecords);
+		const inserted = await db.transaction(async (tx: typeof db) => {
+			return tx.insert(transactions).values(allRecords).returning({ id: transactions.id });
 		});
 
 		const notificationEntries = buildEntriesByPayer(notificationData);
@@ -753,15 +753,16 @@ export async function createMassTransactionsAction(
 
 		revalidate(user.id);
 
-		const count = allRecords.length;
+		const count = inserted.length;
 		return {
 			success: true,
 			message: `${count} ${
 				count === 1 ? "lançamento criado" : "lançamentos criados"
 			} com sucesso.`,
+			data: { ids: inserted.map((row) => row.id) },
 		};
 	} catch (error) {
-		return handleActionError(error);
+		return handleActionError(error) as ActionResult<{ ids: string[] }>;
 	}
 }
 

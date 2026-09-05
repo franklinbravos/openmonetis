@@ -1,3 +1,5 @@
+import type { TransactionsViewMode } from "@/features/transactions/lib/view-mode";
+
 type TransactionExportFilters = {
 	transactionFilter: string | null;
 	conditionFilters: string[];
@@ -23,6 +25,7 @@ export type TransactionsExportContext = {
 	cardId?: string | null;
 	payerId?: string | null;
 	settledOnly?: boolean;
+	viewMode?: TransactionsViewMode;
 };
 
 export type TransactionsPaginationState = {

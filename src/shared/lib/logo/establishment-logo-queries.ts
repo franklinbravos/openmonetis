@@ -35,13 +35,23 @@ export async function fetchEstablishmentLogoMap(
 	const nameKeys = [...new Set(names.map(toNameKey))];
 	if (nameKeys.length === 0) return new Map();
 
-	const rows = await db.query.establishmentLogos.findMany({
-		where: and(
-			eq(establishmentLogos.userId, dataOwnerUserId),
-			inArray(establishmentLogos.nameKey, nameKeys),
-		),
-		columns: { nameKey: true, domain: true },
-	});
+	const chunkSize = 30;
+	const result = new Map<string, string>();
 
-	return new Map(rows.map((r) => [r.nameKey, r.domain]));
+	for (let index = 0; index < nameKeys.length; index += chunkSize) {
+		const chunk = nameKeys.slice(index, index + chunkSize);
+		const rows = await db.query.establishmentLogos.findMany({
+			where: and(
+				eq(establishmentLogos.userId, dataOwnerUserId),
+				inArray(establishmentLogos.nameKey, chunk),
+			),
+			columns: { nameKey: true, domain: true },
+		});
+
+		for (const row of rows) {
+			result.set(row.nameKey, row.domain);
+		}
+	}
+
+	return result;
 }

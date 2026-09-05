@@ -715,9 +715,37 @@ export async function convertTransactionToRecurringAction(
 			};
 		}
 
+		const seriesId = randomUUID();
+
+		if (data.recurrenceCount == null) {
+			await db
+				.update(transactions)
+				.set({
+					condition: "Recorrente",
+					recurrenceCount: null,
+					installmentCount: null,
+					currentInstallment: null,
+					seriesId,
+				})
+				.where(
+					and(
+						eq(transactions.id, existing.id),
+						eq(transactions.userId, dataOwnerUserId),
+					),
+				);
+
+			revalidate(user.id);
+
+			return {
+				success: true,
+				message:
+					"Lançamento convertido em recorrência sem prazo definido. Novos meses serão gerados conforme você navegar.",
+				data: { createdCount: 0 },
+			};
+		}
+
 		const amountSign: 1 | -1 = existing.transactionType === "Despesa" ? -1 : 1;
 		const totalCents = Math.round(Math.abs(Number(existing.amount)) * 100);
-		const seriesId = randomUUID();
 		const isCreditCard = existing.paymentMethod === "Cartão de crédito";
 		const records = buildTransactionRecords({
 			data: {

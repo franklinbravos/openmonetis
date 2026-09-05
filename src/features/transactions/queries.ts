@@ -26,9 +26,13 @@ import type {
 	PeriodCarouselMonth,
 	PeriodCarouselStatus,
 } from "@/shared/components/month-picker/period-carousel-types";
-import { INITIAL_BALANCE_NOTE } from "@/shared/lib/accounts/constants";
+import {
+	INITIAL_BALANCE_NOTE,
+	parseInvoicePaymentNoteCardId,
+} from "@/shared/lib/accounts/constants";
 import { db } from "@/shared/lib/db";
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
+import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import { enrichTransactionsWithTransferPeers } from "@/shared/lib/transfers/enrich-transfer-peers";
 import {
@@ -127,6 +131,10 @@ async function enrichMissingTransactionRelations(
 		}
 		if (row.cardId && !row.card) {
 			missingCardIds.add(row.cardId);
+		}
+		const invoicePaymentCardId = parseInvoicePaymentNoteCardId(row.note);
+		if (invoicePaymentCardId) {
+			missingCardIds.add(invoicePaymentCardId);
 		}
 	}
 
@@ -369,36 +377,20 @@ type PurchaseDateOverviewRow = {
 	conta_excluir_do_saldo: boolean | null;
 };
 
-export async function fetchTransactionsMonthSummaries(
-	userId: string,
-): Promise<PeriodCarouselMonth[]> {
-	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+type PeriodOverviewRow = {
+	periodo: string | null;
+	tipo_transacao: string | null;
+	realizado?: boolean | null;
+	total_amount: string | number | null;
+	refund_amount: string | number | null;
+	conta_excluir_do_saldo: boolean | null;
+};
 
+function buildPeriodCarouselMonths(
+	periodTotals: ReturnType<typeof buildPeriodTotals>,
+	endPeriod: string,
+): PeriodCarouselMonth[] {
 	const currentPeriod = getCurrentPeriod();
-	const endPeriod = addMonthsToPeriod(currentPeriod, 2);
-	const startPeriod = addMonthsToPeriod(currentPeriod, -24);
-
-	const rows = await callRpc<PurchaseDateOverviewRow>(
-		"get_purchase_date_overview",
-		{
-			p_user_id: dataOwnerUserId,
-			p_start_period: startPeriod,
-			p_end_period: endPeriod,
-		},
-	);
-
-	const periodTotals = buildPeriodTotals(
-		rows.map(
-			(row): PeriodSummaryRow => ({
-				period: row.periodo,
-				transactionType: row.tipo_transacao ?? "",
-				totalAmount: row.total_amount,
-				refundAmount: row.refund_amount,
-				accountExcludeFromBalance: row.conta_excluir_do_saldo,
-			}),
-		),
-	);
-
 	const knownPeriods = Array.from(periodTotals.keys()).sort((left, right) =>
 		comparePeriods(left, right),
 	);
@@ -429,4 +421,77 @@ export async function fetchTransactionsMonthSummaries(
 			status,
 		};
 	});
+}
+
+export async function fetchTransactionsMonthSummaries(
+	userId: string,
+): Promise<PeriodCarouselMonth[]> {
+	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
+
+	const currentPeriod = getCurrentPeriod();
+	const endPeriod = addMonthsToPeriod(currentPeriod, 2);
+	const startPeriod = addMonthsToPeriod(currentPeriod, -24);
+
+	const rows = await callRpc<PurchaseDateOverviewRow>(
+		"get_purchase_date_overview",
+		{
+			p_user_id: dataOwnerUserId,
+			p_start_period: startPeriod,
+			p_end_period: endPeriod,
+		},
+	);
+
+	const periodTotals = buildPeriodTotals(
+		rows.map(
+			(row): PeriodSummaryRow => ({
+				period: row.periodo,
+				transactionType: row.tipo_transacao ?? "",
+				totalAmount: row.total_amount,
+				refundAmount: row.refund_amount,
+				accountExcludeFromBalance: row.conta_excluir_do_saldo,
+			}),
+		),
+	);
+
+	return buildPeriodCarouselMonths(periodTotals, endPeriod);
+}
+
+export async function fetchTransactionsCashFlowMonthSummaries(
+	userId: string,
+): Promise<PeriodCarouselMonth[]> {
+	const [adminPayerId, dataOwnerUserId] = await Promise.all([
+		getAdminPayerId(userId),
+		getFinancialDataOwnerId(userId),
+	]);
+
+	if (!adminPayerId) {
+		return [];
+	}
+
+	const currentPeriod = getCurrentPeriod();
+	const endPeriod = addMonthsToPeriod(currentPeriod, 2);
+	const startPeriod = addMonthsToPeriod(currentPeriod, -24);
+
+	const rows = await callRpc<PeriodOverviewRow>("get_period_overview", {
+		p_user_id: dataOwnerUserId,
+		p_admin_payer_id: adminPayerId,
+		p_start_period: startPeriod,
+		p_end_period: endPeriod,
+	});
+
+	const hasSettledFlag = rows.some((row) => row.realizado !== undefined);
+	const periodTotals = buildPeriodTotals(
+		rows.map(
+			(row): PeriodSummaryRow => ({
+				period: row.periodo,
+				transactionType: row.tipo_transacao ?? "",
+				isSettled: hasSettledFlag ? row.realizado : true,
+				totalAmount: row.total_amount,
+				refundAmount: row.refund_amount,
+				accountExcludeFromBalance: row.conta_excluir_do_saldo,
+			}),
+		),
+	);
+
+	return buildPeriodCarouselMonths(periodTotals, endPeriod);
 }

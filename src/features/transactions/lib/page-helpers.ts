@@ -1,5 +1,5 @@
 import type { SQL } from "drizzle-orm";
-import { eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
+import { eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import {
 	type cards,
 	type categories,
@@ -19,6 +19,10 @@ import {
 	TRANSACTION_CONDITIONS,
 	TRANSACTION_TYPES,
 } from "@/features/transactions/lib/constants";
+import {
+	resolveInvoicePaymentTransactionMeta,
+	type InvoicePaymentCardSnapshot,
+} from "@/shared/lib/invoices/invoice-payment-transaction";
 import {
 	ACCOUNT_AUTO_INVOICE_NOTE_PREFIX,
 	INITIAL_BALANCE_CONDITION,
@@ -40,6 +44,8 @@ import {
 import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { callRpc } from "@/shared/lib/supabase/rpc";
 import { parseLocalDateString, toDateOnlyString } from "@/shared/utils/date";
+import type { TransactionsViewMode } from "@/features/transactions/lib/view-mode";
+import { DEFAULT_TRANSACTIONS_VIEW_MODE } from "@/features/transactions/lib/view-mode";
 import { getPeriodPurchaseDateBounds } from "@/shared/utils/period";
 import { slugify } from "@/shared/utils/string";
 
@@ -424,6 +430,7 @@ export const buildTransactionWhere = async ({
 	accountId,
 	payerId,
 	hideAnticipatedInstallments = false,
+	viewMode = DEFAULT_TRANSACTIONS_VIEW_MODE,
 }: {
 	userId: string;
 	period: string;
@@ -433,11 +440,14 @@ export const buildTransactionWhere = async ({
 	accountId?: string;
 	payerId?: string;
 	hideAnticipatedInstallments?: boolean;
+	viewMode?: TransactionsViewMode;
 }): Promise<SQL[]> => {
 	const dataOwnerUserId = await getFinancialDataOwnerId(userId);
 	const where: SQL[] = [eq(transactions.userId, dataOwnerUserId)];
 
-	const usePurchaseDateMonthFilter = !cardId && !accountId && !payerId;
+	const isGeneralList = !cardId && !accountId && !payerId;
+	const usePurchaseDateMonthFilter =
+		isGeneralList && viewMode === "competencia";
 
 	if (usePurchaseDateMonthFilter) {
 		const { start, end } = getPeriodPurchaseDateBounds(period);
@@ -562,9 +572,12 @@ export const buildTransactionWhere = async ({
 	if (filters.attachmentFilter === "true") {
 		// PostgREST não expressa EXISTS. Vira interseção por id, como já é feito
 		// no filtro de busca; o escopo por usuário vem das outras condições.
-		where.push(
-			inArray(transactions.id, await fetchTransactionIdsWithAttachment()),
-		);
+		const attachmentIds = await fetchTransactionIdsWithAttachment();
+		if (attachmentIds.length === 0) {
+			where.push(sql`false`);
+		} else {
+			where.push(inArray(transactions.id, attachmentIds));
+		}
 	}
 
 	if (filters.dividedFilter === "true") {
@@ -592,7 +605,12 @@ export const buildTransactionWhere = async ({
 	if (searchTerm) {
 		// Busca nativa no Postgres via RPC: evita o emulador de or(ilike) do bridge.
 		const searchIds = await fetchSearchTransactionIds(userId, searchTerm);
-		where.push(inArray(transactions.id, searchIds));
+		if (searchIds.length === 0) {
+			// PostgREST rejeita `in.()` vazio; expressa "nenhum resultado" de forma segura.
+			where.push(sql`false`);
+		} else {
+			where.push(inArray(transactions.id, searchIds));
+		}
 	}
 
 	return where;
@@ -615,6 +633,7 @@ type TransactionRowWithRelations = Partial<typeof transactions.$inferSelect> & {
 export const mapTransactionsData = (
 	rows: TransactionRowWithRelations[],
 	categoryRows?: CategoryRow[],
+	cardRows?: CardRow[],
 ) => {
 	const categoriesById = categoryRows
 		? new Map(
@@ -625,8 +644,26 @@ export const mapTransactionsData = (
 			)
 		: null;
 
+	const cardsById = cardRows
+		? new Map<string, InvoicePaymentCardSnapshot>(
+				cardRows.map((card) => [
+					card.id,
+					{
+						id: card.id,
+						name: card.name ?? "",
+						logo: card.logo,
+						brand: card.brand,
+					},
+				]),
+			)
+		: undefined;
+
 	return rows.map((item) => {
 		const categoryId = item.categoryId ?? null;
+		const invoiceMeta = resolveInvoicePaymentTransactionMeta(
+			item.note,
+			cardsById,
+		);
 
 		return {
 			id: item.id ?? "",
@@ -683,6 +720,12 @@ export const mapTransactionsData = (
 					item.transactionType === INITIAL_BALANCE_TRANSACTION_TYPE &&
 					item.condition === INITIAL_BALANCE_CONDITION &&
 					item.paymentMethod === INITIAL_BALANCE_PAYMENT_METHOD),
+			invoicePaymentCardId: invoiceMeta?.cardId ?? null,
+			invoicePaymentPeriod: invoiceMeta?.period ?? null,
+			invoicePaymentCardName: invoiceMeta?.cardName ?? null,
+			invoicePaymentCardLogo: invoiceMeta?.cardLogo ?? null,
+			invoicePaymentCardBrand: invoiceMeta?.cardBrand ?? null,
+			invoicePaymentIsAmortization: invoiceMeta?.isAmortization ?? false,
 		};
 	});
 };

@@ -11,6 +11,9 @@ export const CARD_IMPORT_PDF_PASSWORD_RULES = {
 export type CardImportPdfPasswordRule =
 	(typeof CARD_IMPORT_PDF_PASSWORD_RULES)[keyof typeof CARD_IMPORT_PDF_PASSWORD_RULES];
 
+export const IMPORT_PDF_PASSWORD_UNREADABLE_MESSAGE =
+	"A senha automática do PDF deste cartão foi criptografada com uma chave antiga do servidor (APP_SECRET). Edite o cartão e informe a senha novamente para importar faturas protegidas.";
+
 export const CARD_IMPORT_PDF_PASSWORD_RULE_OPTIONS: Array<{
 	value: CardImportPdfPasswordRule;
 	label: string;

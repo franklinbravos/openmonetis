@@ -2,7 +2,7 @@
 
 import { RiArrowDownSLine } from "@remixicon/react";
 import { useState } from "react";
-import { CategorySearchSelect } from "@/features/transactions/components/dialogs/transaction-dialog/category-search-select";
+import { CategorySearchSelect } from "@/features/transactions/components/category-search-select";
 import {
 	AccountCardSelectContent,
 	PayerSelectContent,

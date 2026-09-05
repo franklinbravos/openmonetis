@@ -1,4 +1,5 @@
 import type { TransactionItem } from "@/features/transactions/components/types";
+import { ACCOUNT_AUTO_INVOICE_NOTE_PREFIX } from "@/shared/lib/accounts/constants";
 import { readLastTransactionDate } from "@/shared/lib/transaction-last-date";
 import {
 	compareDateOnly,
@@ -302,6 +303,75 @@ export function buildTransactionInitialState(
 							transaction?.dueDate ?? "",
 						),
 	};
+}
+
+/** Lançamentos à vista únicos elegíveis para virar série (recorrência ou parcelas). */
+export function canConvertTransactionToSeries(
+	transaction: TransactionItem | undefined,
+): boolean {
+	if (!transaction || transaction.readonly) {
+		return false;
+	}
+
+	if (transaction.condition !== "À vista") {
+		return false;
+	}
+
+	if (transaction.seriesId) {
+		return false;
+	}
+
+	if (transaction.splitGroupId || transaction.isDivided) {
+		return false;
+	}
+
+	if (transaction.note?.startsWith(ACCOUNT_AUTO_INVOICE_NOTE_PREFIX)) {
+		return false;
+	}
+
+	return true;
+}
+
+/**
+ * Preenche o formulário para edição em série (escopo "all"), exibindo valor total
+ * e controles de parcelamento/recorrência como no cadastro.
+ */
+export function enrichFormStateForSeriesBulkEdit(
+	state: TransactionFormState,
+	transaction: TransactionItem,
+): TransactionFormState {
+	const perInstallment = Math.abs(Number.parseFloat(String(transaction.amount)));
+
+	if (
+		transaction.condition === "Parcelado" &&
+		transaction.installmentCount &&
+		transaction.installmentCount > 1 &&
+		!Number.isNaN(perInstallment)
+	) {
+		const total =
+			Math.round(perInstallment * transaction.installmentCount * 100) / 100;
+
+		return {
+			...state,
+			condition: "Parcelado",
+			installmentCount: String(transaction.installmentCount),
+			installmentAmountMode: "total",
+			startInstallment: String(transaction.currentInstallment ?? 1),
+			amount: total.toFixed(2),
+		};
+	}
+
+	if (transaction.condition === "Recorrente") {
+		return {
+			...state,
+			condition: "Recorrente",
+			recurrenceCount: transaction.recurrenceCount
+				? String(transaction.recurrenceCount)
+				: state.recurrenceCount,
+		};
+	}
+
+	return state;
 }
 
 /**

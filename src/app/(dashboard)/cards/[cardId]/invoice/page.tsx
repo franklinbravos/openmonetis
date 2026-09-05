@@ -6,7 +6,7 @@ import { CardDialog } from "@/features/cards/components/card-dialog";
 import type { Card as CreditCard } from "@/features/cards/components/types";
 import { CardInvoiceContextHeader } from "@/features/invoices/components/card-invoice-context-header";
 import { CardInvoiceNavigationShell } from "@/features/invoices/components/card-invoice-navigation-shell";
-import { InvoiceSummaryCard } from "@/features/invoices/components/invoice-summary-card";
+import { InvoiceSummaryCardLive } from "@/features/invoices/components/invoice-summary-card-live";
 import { fetchInvoiceReconciliation } from "@/features/invoices/lib/invoice-reconciliation";
 import {
 	fetchCardData,
@@ -44,7 +44,6 @@ import {
 	CARD_IMPORT_PDF_PASSWORD_RULES,
 	isCardImportPdfPasswordRule,
 } from "@/shared/lib/cards/import-pdf-password";
-import { resolveInvoiceDisplayTotal } from "@/shared/lib/import/invoice-total";
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 import { loadLogoOptions } from "@/shared/lib/logo/options";
 import { resolveFinancialDataContext } from "@/shared/lib/payers/financial-context";
@@ -128,6 +127,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 	const transactionData = mapTransactionsData(
 		transactionRows,
 		filterSources.categoryRows,
+		filterSources.cardRows,
 	);
 
 	const {
@@ -237,7 +237,9 @@ export default async function Page({ params, searchParams }: PageProps) {
 			/>
 
 			<section className="flex flex-col gap-4">
-				<InvoiceSummaryCard
+				<InvoiceSummaryCardLive
+					viewerUserId={userId}
+					financialDataOwnerId={financialContext.dataOwnerUserId}
 					payments={invoicePayments}
 					cardId={card.id}
 					period={selectedPeriod}
@@ -246,10 +248,6 @@ export default async function Page({ params, searchParams }: PageProps) {
 					closingDay={card.closingDay}
 					dueDay={card.dueDay}
 					totalAmount={totalAmount}
-					displayTotalAmount={resolveInvoiceDisplayTotal({
-						registeredTotal: totalAmount,
-						sourceTotal: invoiceReconciliation.sourceTotal,
-					})}
 					limitAmount={limitAmount}
 					invoiceStatus={invoiceStatus}
 					paymentDate={paymentDate}
@@ -300,6 +298,8 @@ export default async function Page({ params, searchParams }: PageProps) {
 						<LancamentosSection
 							financialDataOwnerId={financialContext.dataOwnerUserId}
 							canEditFinancial={financialContext.canEditFinancial}
+							viewerUserId={userId}
+							listCardId={card.id}
 							transactions={transactionData}
 							payerOptions={payerOptions}
 							splitPayerOptions={splitPayerOptions}
@@ -321,8 +321,6 @@ export default async function Page({ params, searchParams }: PageProps) {
 							attachmentMaxSizeMb={userPreferences?.attachmentMaxSizeMb ?? 50}
 							defaultCardId={card.id}
 							defaultPaymentMethod="Cartão de crédito"
-							lockCardSelection
-							lockPaymentMethod
 							showImportButton={false}
 							exportContext={{
 								source: "transactions",

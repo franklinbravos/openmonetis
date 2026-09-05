@@ -4,6 +4,8 @@ import { connection } from "next/server";
 import { fetchAllAccountsForUser } from "@/features/accounts/queries";
 import { fetchUserPreferences } from "@/features/settings/queries";
 import { TransactionsPage } from "@/features/transactions/components/page/transactions-page";
+import { TransactionsPeriodNavigationLive } from "@/features/transactions/components/transactions-period-navigation-live";
+import { TransactionsViewModeToggle } from "@/features/transactions/components/transactions-view-mode-toggle";
 import { TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID } from "@/features/transactions/lib/month-toolbar";
 import { ensureOpenRecurrenceInstancesForPeriod } from "@/features/transactions/lib/open-recurrence";
 import {
@@ -18,8 +20,14 @@ import {
 	resolveTransactionPagination,
 } from "@/features/transactions/lib/page-helpers";
 import {
+	parseTransactionsViewMode,
+	getTransactionsViewModeSubtitle,
+	TRANSACTIONS_VIEW_MODE_PARAM,
+} from "@/features/transactions/lib/view-mode";
+import {
 	fetchRecentEstablishments,
 	fetchTransactionFilterSources,
+	fetchTransactionsCashFlowMonthSummaries,
 	fetchTransactionsMonthSummaries,
 	fetchTransactionsPage,
 } from "@/features/transactions/queries";
@@ -55,6 +63,9 @@ export default async function Page({ searchParams }: PageProps) {
 
 	const searchFilters = extractTransactionSearchFilters(resolvedSearchParams);
 	const pagination = resolveTransactionPagination(resolvedSearchParams);
+	const viewMode = parseTransactionsViewMode(
+		getSingleParam(resolvedSearchParams, TRANSACTIONS_VIEW_MODE_PARAM),
+	);
 
 	const [filterSources, userPreferences, { activeAccounts }] =
 		await Promise.all([
@@ -73,7 +84,13 @@ export default async function Page({ searchParams }: PageProps) {
 		slugMaps,
 		hideAnticipatedInstallments:
 			userPreferences?.hideAnticipatedInstallments ?? false,
+		viewMode,
 	});
+
+	const monthSummariesPromise =
+		viewMode === "fluxo-caixa"
+			? fetchTransactionsCashFlowMonthSummaries(userId)
+			: fetchTransactionsMonthSummaries(userId);
 
 	const [transactionsPage, estabelecimentos, monthSummaries] =
 		await Promise.all([
@@ -82,11 +99,12 @@ export default async function Page({ searchParams }: PageProps) {
 				selectedPeriod,
 			).then(() => fetchTransactionsPage(filters, pagination)),
 			fetchRecentEstablishments(dataOwnerUserId),
-			fetchTransactionsMonthSummaries(userId),
+			monthSummariesPromise,
 		]);
 	const transactionData = mapTransactionsData(
 		transactionsPage.rows,
 		filterSources.categoryRows,
+		filterSources.cardRows,
 	);
 
 	const {
@@ -114,15 +132,19 @@ export default async function Page({ searchParams }: PageProps) {
 			<PageDescription
 				icon={<RiArrowLeftRightLine />}
 				title="Lançamentos"
-				subtitle="Acompanhe todos os lançamentos financeiros do mês selecionado incluindo receitas, despesas e transações previstas."
+				subtitle={getTransactionsViewModeSubtitle(viewMode)}
+				actions={<TransactionsViewModeToggle value={viewMode} />}
 			/>
 
-			<StatementPeriodNavigation
+			<TransactionsPeriodNavigationLive
+				initialMonths={monthSummaries}
+				viewMode={viewMode}
+				financialDataOwnerId={dataOwnerUserId}
+				viewerUserId={userId}
 				title="Resumo mensal"
 				sticky={false}
 				showCalendarControls
 				carouselVariant="account"
-				months={monthSummaries}
 			/>
 
 			<MonthToolbarSlotProvider>
@@ -150,6 +172,7 @@ export default async function Page({ searchParams }: PageProps) {
 							categoryFilterOptions={categoryFilterOptions}
 							accountCardFilterOptions={accountCardFilterOptions}
 							selectedPeriod={selectedPeriod}
+							matchByPurchaseDateMonth={viewMode === "competencia"}
 							estabelecimentos={estabelecimentos}
 							pagination={{
 								page: transactionsPage.page,
@@ -161,6 +184,7 @@ export default async function Page({ searchParams }: PageProps) {
 								source: "transactions",
 								period: selectedPeriod,
 								filters: searchFilters,
+								viewMode,
 							}}
 							noteAsColumn={userPreferences?.statementNoteAsColumn ?? false}
 							columnOrder={userPreferences?.transactionsColumnOrder ?? null}

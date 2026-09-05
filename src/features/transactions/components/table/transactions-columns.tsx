@@ -38,6 +38,7 @@ import { formatDate } from "@/shared/utils/date";
 import { getConditionIcon, getPaymentMethodIcon } from "@/shared/utils/icons";
 import { cn } from "@/shared/utils/ui";
 import { TransferAccountsPreviewBadge } from "../shared/transfer-accounts-preview";
+import { InvoicePaymentMetaLine } from "../shared/invoice-payment-meta";
 import type { TransactionItem } from "../types";
 import { TransactionActionsMenu } from "./transaction-actions-menu";
 import { TransactionSettlementButton } from "./transaction-settlement-button";
@@ -200,11 +201,34 @@ function buildColumns({
 					currentInstallment === installmentCount &&
 					installmentCount &&
 					installmentCount > 1;
+				const isInvoicePayment = Boolean(
+					row.original.invoicePaymentCardId &&
+						row.original.invoicePaymentPeriod,
+				);
+				const invoicePaymentBankLogo = resolveLogoSrc(
+					row.original.invoicePaymentCardLogo,
+				);
 
 				return (
-					<span className="flex items-center gap-2">
-						<EstablishmentLogo name={name} size={32} />
-						<span className="flex flex-col py-0.5">
+					<span className="flex min-w-0 items-start gap-2">
+						{isInvoicePayment && invoicePaymentBankLogo ? (
+							<span className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full border bg-background">
+								<Image
+									src={invoicePaymentBankLogo}
+									alt={row.original.invoicePaymentCardName ?? "Cartão"}
+									width={32}
+									height={32}
+									className="size-full object-cover"
+								/>
+							</span>
+						) : (
+							<EstablishmentLogo
+								name={name}
+								size={32}
+								className="mt-0.5 shrink-0"
+							/>
+						)}
+						<span className="flex min-w-0 flex-1 flex-col gap-1 py-0.5">
 							{showDateGroups ? null : (
 								<span className="text-xs text-muted-foreground flex items-center gap-2">
 									{formatDate(purchaseDate)}
@@ -213,18 +237,13 @@ function buildColumns({
 									) : null}
 								</span>
 							)}
-							<span className="flex items-center gap-1">
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<span className="line-clamp-2 max-w-[180px] font-semibold truncate">
-											{name}
-										</span>
-									</TooltipTrigger>
-									<TooltipContent side="top" className="max-w-xs">
-										{name}
-									</TooltipContent>
-								</Tooltip>
-
+							<span className="font-semibold leading-snug break-words">
+								{name}
+							</span>
+							{isInvoicePayment ? (
+								<InvoicePaymentMetaLine item={row.original} compact />
+							) : null}
+							<span className="flex flex-wrap items-center gap-1">
 								{isDivided && (
 									<Tooltip>
 										<TooltipTrigger asChild>

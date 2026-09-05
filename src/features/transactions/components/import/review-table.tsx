@@ -14,7 +14,7 @@ import {
 	RiSearchLine,
 } from "@remixicon/react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { CategorySearchSelect } from "@/features/transactions/components/dialogs/transaction-dialog/category-search-select";
+import { CategorySearchSelect } from "@/features/transactions/components/category-search-select";
 import {
 	AccountCardSelectContent,
 	PayerSelectContent,

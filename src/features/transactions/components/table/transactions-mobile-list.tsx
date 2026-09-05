@@ -37,6 +37,7 @@ import {
 	resolvePayerLabel,
 } from "../../lib/formatting-helpers";
 import { TransferAccountsPreviewBadge } from "../shared/transfer-accounts-preview";
+import { InvoicePaymentMetaLine } from "../shared/invoice-payment-meta";
 import type { TransactionItem } from "../types";
 import { TransactionActionsMenu } from "./transaction-actions-menu";
 import { TransactionSettlementButton } from "./transaction-settlement-button";
@@ -218,6 +219,10 @@ function TransactionMobileCard({
 	const transferAccounts = isTransfer
 		? resolveTransferAccountsPreview(item)
 		: null;
+	const isInvoicePayment = Boolean(
+		item.invoicePaymentCardId && item.invoicePaymentPeriod,
+	);
+	const invoicePaymentBankLogo = resolveLogoSrc(item.invoicePaymentCardLogo);
 
 	const type =
 		item.categoriaName === "Saldo inicial"
@@ -255,13 +260,32 @@ function TransactionMobileCard({
 			tabIndex={onViewDetails ? 0 : undefined}
 		>
 			<div className="flex items-start gap-2.5">
-				<EstablishmentLogo name={item.name} size={34} className="mt-0.5" />
+				{isInvoicePayment && invoicePaymentBankLogo ? (
+					<span className="mt-0.5 inline-flex size-[34px] shrink-0 items-center justify-center overflow-hidden rounded-full border bg-background">
+						<Image
+							src={invoicePaymentBankLogo}
+							alt={item.invoicePaymentCardName ?? "Cartão"}
+							width={34}
+							height={34}
+							className="size-full object-cover"
+						/>
+					</span>
+				) : (
+					<EstablishmentLogo name={item.name} size={34} className="mt-0.5" />
+				)}
 				<div className="min-w-0 flex-1 space-y-2">
 					<div className="flex min-w-0 items-start justify-between gap-2">
 						<div className="min-w-0 flex-1">
-							<h3 className="truncate text-sm font-semibold leading-tight">
+							<h3 className="text-sm font-semibold leading-snug break-words">
 								{item.name}
 							</h3>
+							{isInvoicePayment ? (
+								<InvoicePaymentMetaLine
+									item={item}
+									compact
+									className="mt-1.5"
+								/>
+							) : null}
 							<div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
 								{showDate ? (
 									<span className="inline-flex items-center gap-1">

@@ -32,6 +32,13 @@ import {
 } from "@/shared/components/ui/dialog";
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/shared/components/ui/select";
 import { formatCurrency } from "@/shared/utils/currency";
 import { detectInstallmentFromName } from "@/shared/utils/installment-detection";
 import type {
@@ -45,6 +52,10 @@ import {
 	type BulkActionScope,
 } from "../dialogs/bulk-action-dialog";
 import { BulkImportDialog } from "../dialogs/bulk-import-dialog";
+import {
+	SeriesEditScopeDialog,
+	type SeriesEditScope,
+} from "../dialogs/series-edit-scope-dialog";
 import {
 	MassAddDialog,
 	type MassAddFormData,
@@ -85,6 +96,10 @@ interface TransactionsPageProps {
 	accountCardFilterOptions: AccountCardFilterOption[];
 	selectedPeriod: string;
 	defaultAccountId?: string | null;
+	listCardId?: string | null;
+	listAccountId?: string | null;
+	listPayerId?: string | null;
+	matchByPurchaseDateMonth?: boolean;
 	estabelecimentos: string[];
 	allowCreate?: boolean;
 	noteAsColumn?: boolean;
@@ -92,8 +107,6 @@ interface TransactionsPageProps {
 	groupTransactionsByDate?: boolean;
 	defaultCardId?: string | null;
 	defaultPaymentMethod?: string | null;
-	lockCardSelection?: boolean;
-	lockPaymentMethod?: boolean;
 	pagination?: TransactionsPaginationState;
 	exportContext?: TransactionsExportContext;
 	attachmentMaxSizeMb?: number;
@@ -123,6 +136,10 @@ export function TransactionsPage(props: TransactionsPageProps) {
 			serverPagination={props.pagination}
 			listKey={listKey}
 			selectedPeriod={props.selectedPeriod}
+			listCardId={props.listCardId}
+			listAccountId={props.listAccountId}
+			listPayerId={props.listPayerId}
+			matchByPurchaseDateMonth={props.matchByPurchaseDateMonth}
 			financialDataOwnerId={props.financialDataOwnerId}
 			viewerUserId={props.viewerUserId ?? props.financialDataOwnerId}
 		>
@@ -147,6 +164,10 @@ function TransactionsPageContent({
 	accountCardFilterOptions,
 	selectedPeriod,
 	defaultAccountId,
+	listCardId,
+	listAccountId,
+	listPayerId,
+	matchByPurchaseDateMonth,
 	estabelecimentos,
 	allowCreate = true,
 	noteAsColumn = false,
@@ -154,8 +175,6 @@ function TransactionsPageContent({
 	groupTransactionsByDate = true,
 	defaultCardId,
 	defaultPaymentMethod,
-	lockCardSelection,
-	lockPaymentMethod,
 	pagination,
 	exportContext,
 	attachmentMaxSizeMb,
@@ -258,8 +277,14 @@ function TransactionsPageContent({
 	const [convertRecurringOpen, setConvertRecurringOpen] = useState(false);
 	const [transactionToConvertRecurring, setTransactionToConvertRecurring] =
 		useState<TransactionItem | null>(null);
-	const [recurrenceCount, setRecurrenceCount] = useState("12");
+	const [recurrenceCount, setRecurrenceCount] = useState("");
 	const [recurrencePending, setRecurrencePending] = useState(false);
+	const [seriesEditScopeOpen, setSeriesEditScopeOpen] = useState(false);
+	const [pendingSeriesEditTransaction, setPendingSeriesEditTransaction] =
+		useState<TransactionItem | null>(null);
+	const [seriesEditScope, setSeriesEditScope] = useState<
+		SeriesEditScope | undefined
+	>(undefined);
 
 	const handleToggleSettlement = async (item: TransactionItem) => {
 		if (item.paymentMethod === "Cartão de crédito") {
@@ -369,34 +394,49 @@ function TransactionsPageContent({
 			return;
 		}
 
-		setPendingEditData({
+		const nextEditData = {
 			...data,
 			transaction: selectedTransaction,
-		});
+		};
+
 		setEditOpen(false);
+
+		if (seriesEditScope === "all" || seriesEditScope === "future") {
+			setPendingEditData(nextEditData);
+			void handleBulkEdit(
+				seriesEditScope === "all" ? "all" : "future",
+				nextEditData,
+			);
+			return;
+		}
+
+		setPendingEditData(nextEditData);
 		setBulkEditOpen(true);
 	};
 
-	const handleBulkEdit = async (scope: BulkActionScope) => {
-		if (!pendingEditData) {
+	const handleBulkEdit = async (
+		scope: BulkActionScope,
+		editData = pendingEditData,
+	) => {
+		if (!editData) {
 			return;
 		}
 
 		const result = await updateTransactionBulkClient({
-			id: pendingEditData.id,
+			id: editData.id,
 			scope,
-			purchaseDate: pendingEditData.purchaseDate,
-			period: pendingEditData.period,
-			name: pendingEditData.name,
-			categoryId: pendingEditData.categoryId,
-			note: pendingEditData.note,
-			payerId: pendingEditData.payerId,
-			accountId: pendingEditData.accountId,
-			cardId: pendingEditData.cardId,
-			amount: pendingEditData.amount,
-			dueDate: pendingEditData.dueDate,
-			boletoPaymentDate: pendingEditData.boletoPaymentDate,
-			isSettled: pendingEditData.isSettled ?? undefined,
+			purchaseDate: editData.purchaseDate,
+			period: editData.period,
+			name: editData.name,
+			categoryId: editData.categoryId,
+			note: editData.note,
+			payerId: editData.payerId,
+			accountId: editData.accountId,
+			cardId: editData.cardId,
+			amount: editData.amount,
+			dueDate: editData.dueDate,
+			boletoPaymentDate: editData.boletoPaymentDate,
+			isSettled: editData.isSettled ?? undefined,
 		});
 
 		if (!result.success) {
@@ -405,17 +445,17 @@ function TransactionsPageContent({
 		}
 
 		// Propaga remoções de anexo pendentes com o mesmo escopo
-		for (const attachmentId of pendingEditData.pendingDetachIds) {
+		for (const attachmentId of editData.pendingDetachIds) {
 			await detachAttachmentBulkClient({
 				attachmentId,
-				transactionId: pendingEditData.id,
+				transactionId: editData.id,
 				scope,
 			});
 		}
 
 		// Faz upload dos arquivos pendentes e confirma com o escopo escolhido
-		for (const file of pendingEditData.pendingUploadFiles) {
-			const presign = await getPresignedUploadUrlClient(pendingEditData.id, {
+		for (const file of editData.pendingUploadFiles) {
+			const presign = await getPresignedUploadUrlClient(editData.id, {
 				fileName: file.name,
 				mimeType: file.type,
 				fileSize: file.size,
@@ -426,7 +466,7 @@ function TransactionsPageContent({
 					body: file,
 					headers: { "Content-Type": file.type },
 				});
-				await confirmAttachmentUploadClient(pendingEditData.id, {
+				await confirmAttachmentUploadClient(editData.id, {
 					uploadToken: presign.uploadToken,
 					scope,
 				});
@@ -434,9 +474,10 @@ function TransactionsPageContent({
 		}
 
 		toast.success(result.message);
-		void refreshByIds([pendingEditData.id]);
+		void refreshByIds([editData.id]);
 		setBulkEditOpen(false);
 		setPendingEditData(null);
+		setSeriesEditScope(undefined);
 	};
 
 	const handleMassAddSubmit = async (data: MassAddFormData) => {
@@ -448,6 +489,9 @@ function TransactionsPageContent({
 		}
 
 		toast.success(result.message);
+		if (result.data?.ids?.length) {
+			void refreshByIds(result.data.ids);
+		}
 	};
 
 	const handleMultipleBulkDelete = (items: TransactionItem[]) => {
@@ -566,12 +610,36 @@ function TransactionsPageContent({
 		);
 
 		toast.success(result.message);
+		void refreshByIds([pendingSplitEditData.id]);
 		setPendingSplitEditData(null);
 	};
 
-	const handleEdit = (item: TransactionItem) => {
+	const openEditDialog = (
+		item: TransactionItem,
+		scope?: SeriesEditScope,
+	) => {
 		setSelectedTransaction(item);
+		setSeriesEditScope(scope);
 		setEditOpen(true);
+	};
+
+	const handleEdit = (item: TransactionItem) => {
+		if (item.seriesId) {
+			setPendingSeriesEditTransaction(item);
+			setSeriesEditScopeOpen(true);
+			return;
+		}
+
+		openEditDialog(item);
+	};
+
+	const handleSeriesEditScopeConfirm = (scope: SeriesEditScope) => {
+		if (!pendingSeriesEditTransaction) {
+			return;
+		}
+
+		openEditDialog(pendingSeriesEditTransaction, scope);
+		setPendingSeriesEditTransaction(null);
 	};
 
 	const handleCopy = (item: TransactionItem) => {
@@ -640,6 +708,7 @@ function TransactionsPageContent({
 			}
 
 			toast.success(result.message);
+			void refreshByIds([transactionToConvert.id]);
 			setConvertInstallmentOpen(false);
 			setTransactionToConvert(null);
 		} finally {
@@ -649,7 +718,7 @@ function TransactionsPageContent({
 
 	const handleConvertToRecurring = (item: TransactionItem) => {
 		setTransactionToConvertRecurring(item);
-		setRecurrenceCount("12");
+		setRecurrenceCount("");
 		setConvertRecurringOpen(true);
 	};
 
@@ -658,8 +727,11 @@ function TransactionsPageContent({
 			return;
 		}
 
-		const count = Number(recurrenceCount);
-		if (!Number.isInteger(count) || count < 2 || count > 60) {
+		const count = recurrenceCount ? Number(recurrenceCount) : null;
+		if (
+			count != null &&
+			(!Number.isInteger(count) || count < 2 || count > 60)
+		) {
 			toast.error("Informe uma recorrência entre 2 e 60 meses.");
 			return;
 		}
@@ -677,6 +749,7 @@ function TransactionsPageContent({
 			}
 
 			toast.success(result.message);
+			void refreshByIds([transactionToConvertRecurring.id]);
 			setConvertRecurringOpen(false);
 			setTransactionToConvertRecurring(null);
 		} finally {
@@ -700,18 +773,23 @@ function TransactionsPageContent({
 				}
 			: null;
 
-	const parsedRecurrenceCount = Number(recurrenceCount);
+	const parsedRecurrenceCount = recurrenceCount
+		? Number(recurrenceCount)
+		: null;
 	const recurringSummary =
 		transactionToConvertRecurring &&
-		Number.isInteger(parsedRecurrenceCount) &&
-		parsedRecurrenceCount >= 2 &&
-		parsedRecurrenceCount <= 60
+		(parsedRecurrenceCount == null ||
+			(Number.isInteger(parsedRecurrenceCount) &&
+				parsedRecurrenceCount >= 2 &&
+				parsedRecurrenceCount <= 60))
 			? {
 					amount: formatCurrency(
 						Math.abs(transactionToConvertRecurring.amount),
 					),
 					count: parsedRecurrenceCount,
-					createdCount: parsedRecurrenceCount - 1,
+					createdCount:
+						parsedRecurrenceCount != null ? parsedRecurrenceCount - 1 : null,
+					openEnded: parsedRecurrenceCount == null,
 				}
 			: null;
 
@@ -738,8 +816,6 @@ function TransactionsPageContent({
 			defaultAccountId={defaultAccountId}
 			defaultCardId={defaultCardId}
 			defaultPaymentMethod={defaultPaymentMethod}
-			lockCardSelection={lockCardSelection}
-			lockPaymentMethod={lockPaymentMethod}
 			attachmentMaxSizeMb={attachmentMaxSizeMb}
 			transferAccounts={transferAccounts}
 		/>
@@ -839,7 +915,12 @@ function TransactionsPageContent({
 			<TransactionDialog
 				mode="update"
 				open={editOpen && !!selectedTransaction}
-				onOpenChange={setEditOpen}
+				onOpenChange={(open) => {
+					setEditOpen(open);
+					if (!open) {
+						setSeriesEditScope(undefined);
+					}
+				}}
 				payerOptions={payerOptions}
 				splitPayerOptions={splitPayerOptions}
 				defaultPayerId={defaultPayerId}
@@ -850,6 +931,7 @@ function TransactionsPageContent({
 				transaction={selectedTransaction ?? undefined}
 				defaultPeriod={selectedPeriod}
 				defaultAccountId={defaultAccountId}
+				seriesEditScope={seriesEditScope}
 				onBulkEditRequest={handleBulkEditRequest}
 				onSplitEditRequest={handleSplitEditRequest}
 				maxSizeMb={attachmentMaxSizeMb}
@@ -975,30 +1057,50 @@ function TransactionsPageContent({
 					<DialogHeader>
 						<DialogTitle>Converter em recorrente?</DialogTitle>
 						<DialogDescription>
-							O lançamento atual será mantido como a primeira recorrência e os
-							próximos meses serão criados automaticamente.
+							O lançamento atual será mantido como a primeira recorrência. Com
+							prazo definido, os meses seguintes são criados de uma vez; sem
+							prazo, novos meses aparecem conforme você navegar.
 						</DialogDescription>
 					</DialogHeader>
 
 					<div className="space-y-2">
-						<Label htmlFor="recurrenceCount">Repetir por</Label>
-						<Input
-							id="recurrenceCount"
-							type="number"
-							min={2}
-							max={60}
-							value={recurrenceCount}
-							onChange={(event) => setRecurrenceCount(event.target.value)}
-						/>
-						<p className="text-muted-foreground text-sm">
-							Use o total de meses da série, incluindo este lançamento.
-						</p>
-						{recurringSummary ? (
+						<Label htmlFor="convert-recurrence-duration">Duração</Label>
+						<Select
+							value={recurrenceCount || "__open__"}
+							onValueChange={(value) =>
+								setRecurrenceCount(value === "__open__" ? "" : value)
+							}
+						>
+							<SelectTrigger id="convert-recurrence-duration" className="w-full">
+								<SelectValue placeholder="Selecione">
+									{recurrenceCount
+										? `${recurrenceCount} meses`
+										: "Sem prazo definido"}
+								</SelectValue>
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="__open__">Sem prazo definido</SelectItem>
+								{[...Array(59)].map((_, index) => {
+									const count = index + 2;
+									return (
+										<SelectItem key={count} value={String(count)}>
+											{count} meses
+										</SelectItem>
+									);
+								})}
+							</SelectContent>
+						</Select>
+						{recurringSummary?.openEnded ? (
+							<p className="rounded-md border bg-muted/40 px-3 py-2 text-muted-foreground text-sm">
+								Resumo: recorrência aberta de {recurringSummary.amount} por mês,
+								ideal para aluguel e despesas sem data de término.
+							</p>
+						) : recurringSummary ? (
 							<p className="rounded-md border bg-muted/40 px-3 py-2 text-muted-foreground text-sm">
 								Resumo: este lançamento vira a primeira recorrência e{" "}
 								{recurringSummary.createdCount}{" "}
 								{pluralize(
-									recurringSummary.createdCount,
+									recurringSummary.createdCount ?? 0,
 									"novo lançamento mensal será criado",
 									"novos lançamentos mensais serão criados",
 								)}{" "}
@@ -1026,6 +1128,30 @@ function TransactionsPageContent({
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+
+			<SeriesEditScopeDialog
+				open={seriesEditScopeOpen && !!pendingSeriesEditTransaction}
+				onOpenChange={(open) => {
+					setSeriesEditScopeOpen(open);
+					if (!open) {
+						setPendingSeriesEditTransaction(null);
+					}
+				}}
+				seriesType={
+					pendingSeriesEditTransaction?.condition === "Parcelado"
+						? "installment"
+						: "recurring"
+				}
+				currentNumber={
+					pendingSeriesEditTransaction?.currentInstallment ?? undefined
+				}
+				totalCount={
+					pendingSeriesEditTransaction?.installmentCount ??
+					pendingSeriesEditTransaction?.recurrenceCount ??
+					undefined
+				}
+				onConfirm={handleSeriesEditScopeConfirm}
+			/>
 
 			<BulkActionDialog
 				open={bulkDeleteOpen && !!pendingDeleteData}

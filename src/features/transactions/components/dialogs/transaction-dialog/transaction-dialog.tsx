@@ -19,6 +19,7 @@ import type { CreateInput, UpdateInput } from "@/features/transactions/actions/c
 import { useTransactionsListOptional } from "@/features/transactions/components/transactions-list-provider";
 import {
 	confirmAttachmentUploadClient,
+	convertTransactionToRecurringClient,
 	createTransactionClient,
 	detachTransactionAttachmentClient,
 	getPresignedUploadUrlClient,
@@ -28,7 +29,9 @@ import { groupAndSortCategories } from "@/features/transactions/lib/category-hel
 import {
 	applyFieldDependencies,
 	buildTransactionInitialState,
+	canConvertTransactionToSeries,
 	deriveCreditCardPeriod,
+	enrichFormStateForSeriesBulkEdit,
 	getSelectedPayerIds,
 	normalizeSplitStateForSubmit,
 } from "@/features/transactions/lib/form-helpers";
@@ -120,12 +123,11 @@ export function TransactionDialog({
 	defaultPurchaseDate,
 	defaultName,
 	defaultAmount,
-	lockCardSelection,
-	lockPaymentMethod,
 	isImporting,
 	defaultTransactionType,
 	forceShowTransactionType,
 	onSuccess,
+	seriesEditScope,
 	maxSizeMb,
 	onBulkEditRequest,
 	onSplitEditRequest,
@@ -169,11 +171,33 @@ export function TransactionDialog({
 		string | undefined
 	>(undefined);
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
+	const formInitKeyRef = useRef("");
 	const { showTransactionSummary } = useAppPreferences();
 
 	useEffect(() => {
-		if (dialogOpen) {
-			const initial = buildTransactionInitialState(
+		if (!dialogOpen) {
+			formInitKeyRef.current = "";
+			return;
+		}
+
+		const initKey = [
+			mode,
+			transaction?.id ?? "new",
+			seriesEditScope ?? "none",
+			defaultPeriod ?? "",
+			defaultCardId ?? "",
+			defaultAccountId ?? "",
+			defaultPayerId ?? "",
+			isImporting ? "import" : "",
+		].join(":");
+
+		if (formInitKeyRef.current === initKey) {
+			return;
+		}
+
+		formInitKeyRef.current = initKey;
+
+		const initial = buildTransactionInitialState(
 				transaction,
 				defaultPayerId,
 				defaultPeriod,
@@ -206,7 +230,12 @@ export function TransactionDialog({
 				}
 			}
 
-			setFormState(initial);
+			let nextState = initial;
+			if (seriesEditScope === "all" && transaction?.seriesId) {
+				nextState = enrichFormStateForSeriesBulkEdit(initial, transaction);
+			}
+
+			setFormState(nextState);
 			setErrorMessage(null);
 			setPendingFiles([]);
 			setPendingDetachIds([]);
@@ -215,10 +244,10 @@ export function TransactionDialog({
 			setExtraAccountOptions([]);
 			setExtraCardOptions([]);
 			setExtraCategoryOptions([]);
-		}
 	}, [
 		dialogOpen,
-		transaction,
+		transaction?.id,
+		seriesEditScope,
 		defaultPayerId,
 		defaultPeriod,
 		defaultAccountId,
@@ -325,11 +354,19 @@ export function TransactionDialog({
 
 			const dependencies = applyFieldDependencies(key, value, prev, cardInfo);
 
-			return {
+			const nextState = {
 				...prev,
 				[key]: value,
 				...dependencies,
 			};
+
+			const hasChanges =
+				prev[key] !== value ||
+				(Object.keys(dependencies) as (keyof FormState)[]).some(
+					(dependencyKey) => prev[dependencyKey] !== nextState[dependencyKey],
+				);
+
+			return hasChanges ? nextState : prev;
 		});
 	}
 
@@ -619,7 +656,19 @@ export function TransactionDialog({
 					!transaction?.seriesId,
 			);
 
-			if (hasSeriesId && onBulkEditRequest) {
+			if (hasSeriesId && onBulkEditRequest && seriesEditScope !== "single") {
+				const bulkInstallmentCount =
+					formState.condition === "Parcelado" && formState.installmentCount
+						? Number(formState.installmentCount)
+						: 0;
+				const bulkAmount =
+					bulkInstallmentCount > 1
+						? formState.installmentAmountMode === "fixed"
+							? sanitizedAmount
+							: Math.round((sanitizedAmount / bulkInstallmentCount) * 100) /
+								100
+						: sanitizedAmount;
+
 				// Para lançamentos em série, passa os arquivos para a página confirmar
 				// o upload após o escopo ser escolhido (sem upload antecipado ao S3)
 				onBulkEditRequest({
@@ -632,7 +681,7 @@ export function TransactionDialog({
 					payerId: formState.payerId,
 					accountId: formState.accountId,
 					cardId: formState.cardId,
-					amount: sanitizedAmount,
+					amount: bulkAmount,
 					dueDate:
 						formState.paymentMethod === "Boleto"
 							? formState.dueDate || null
@@ -685,13 +734,86 @@ export function TransactionDialog({
 			}
 
 			// Atualização normal para lançamentos únicos
+			const transactionId = transaction?.id ?? "";
+			const isConvertingToRecurring =
+				canConvertTransactionToSeries(transaction) &&
+				formState.condition === "Recorrente";
+
+			if (isConvertingToRecurring) {
+				const updatePayload: UpdateTransactionInput = {
+					id: transactionId,
+					...payload,
+					condition: "À vista",
+					installmentCount: undefined,
+					recurrenceCount: undefined,
+				};
+
+				const updateResult = await updateTransactionClient(
+					transactionId,
+					updatePayload,
+				);
+
+				if (!updateResult.success) {
+					setErrorMessage(updateResult.error);
+					toast.error(updateResult.error);
+					return;
+				}
+
+				const convertResult = await convertTransactionToRecurringClient(
+					transactionId,
+					formState.recurrenceCount
+						? { recurrenceCount: Number(formState.recurrenceCount) }
+						: { recurrenceCount: null },
+				);
+
+				if (!convertResult.success) {
+					setErrorMessage(convertResult.error);
+					toast.error(convertResult.error);
+					return;
+				}
+
+				for (const attachmentId of pendingDetachIds) {
+					await detachTransactionAttachmentClient(
+						transactionId,
+						attachmentId,
+					);
+				}
+				for (const file of pendingUploadFiles) {
+					const presign = await getPresignedUploadUrlClient(transactionId, {
+						fileName: file.name,
+						mimeType: file.type,
+						fileSize: file.size,
+					});
+					if (presign.success) {
+						await fetch(presign.presignedUrl, {
+							method: "PUT",
+							body: file,
+							headers: { "Content-Type": file.type },
+						});
+						await confirmAttachmentUploadClient(transactionId, {
+							uploadToken: presign.uploadToken,
+							scope: "all",
+						});
+					}
+				}
+
+				toast.success(convertResult.message);
+				const updatedIds = transactionId ? [transactionId] : [];
+				onSuccess?.({ ids: updatedIds });
+				if (updatedIds.length > 0) {
+					void transactionsList?.refreshByIds(updatedIds);
+				}
+				setDialogOpen(false);
+				return;
+			}
+
 			const updatePayload: UpdateTransactionInput = {
-				id: transaction?.id ?? "",
+				id: transactionId,
 				...payload,
 			};
 
 			const result = await updateTransactionClient(
-				transaction?.id ?? "",
+				transactionId,
 				updatePayload,
 			);
 
@@ -771,8 +893,9 @@ export function TransactionDialog({
 	const showPaymentDate = mode === "update" && showDueDate;
 	const showSettledToggle = formState.paymentMethod !== "Cartão de crédito";
 	const isUpdateMode = mode === "update";
-	const disablePaymentMethod = Boolean(lockPaymentMethod && mode === "create");
-	const disableCardSelect = Boolean(lockCardSelection && mode === "create");
+	const isSeriesBulkEdit =
+		isUpdateMode && seriesEditScope === "all" && Boolean(transaction?.seriesId);
+	const canConvertToSeries = canConvertTransactionToSeries(transaction);
 
 	return (
 		<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -834,8 +957,8 @@ export function TransactionDialog({
 								accountOptions={mergedAccountOptions}
 								cardOptions={mergedCardOptions}
 								isUpdateMode={isUpdateMode}
-								disablePaymentMethod={disablePaymentMethod}
-								disableCardSelect={disableCardSelect}
+								isSeriesBulkEdit={isSeriesBulkEdit}
+								canConvertToSeries={canConvertToSeries}
 								showSettledToggle={showSettledToggle}
 								onCreateAccount={(hint) => {
 									setAccountCreateTypeHint(hint);

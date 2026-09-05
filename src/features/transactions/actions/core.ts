@@ -508,7 +508,9 @@ export const convertToRecurringSchema = z.object({
 		.number({ message: "Informe por quantos meses repetir." })
 		.int()
 		.min(2, "A recorrência deve ter ao menos dois meses.")
-		.max(60, "Selecione até 60 meses."),
+		.max(60, "Selecione até 60 meses.")
+		.optional()
+		.nullable(),
 });
 
 type BaseInput = z.infer<typeof baseFields>;

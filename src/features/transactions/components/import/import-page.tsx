@@ -1,6 +1,7 @@
 "use client";
 
 import { RiSaveLine } from "@remixicon/react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
 	useCallback,
@@ -60,7 +61,6 @@ import {
 	fetchTransactionByIdClient,
 	fetchTransactionDialogOptionsClient,
 } from "@/features/transactions/lib/transactions-api-client";
-import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
 import { CardLimitsCard } from "@/features/transactions/components/import/card-limits-card";
 import {
 	decodeAccountCard,
@@ -224,6 +224,7 @@ import {
 } from "@/shared/components/ui/card";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { AI_STORED_KEY_UNREADABLE_MESSAGE } from "@/shared/lib/ai/provider-messages";
+import { IMPORT_PDF_PASSWORD_UNREADABLE_MESSAGE } from "@/shared/lib/cards/import-pdf-password";
 import type { CategoryType } from "@/shared/lib/categories/constants";
 import { INVOICE_PAYMENT_CATEGORY_NAME } from "@/shared/lib/categories/constants";
 import {
@@ -265,6 +266,14 @@ import {
 	displayPeriod,
 	formatPeriodForUrl,
 } from "@/shared/utils/period";
+
+const TransactionDialog = dynamic(
+	() =>
+		import(
+			"@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog"
+		).then((mod) => mod.TransactionDialog),
+	{ ssr: false },
+);
 
 function fileFromBase64(
 	base64: string,
@@ -413,6 +422,7 @@ interface ImportPageProps {
 	invoiceContext?: InvoiceImportContext | null;
 	linkedCardId?: string | null;
 	autoPdfPasswordAttempts?: string[];
+	importPdfPasswordNeedsReconfigure?: boolean;
 	initialImportHistory?: ImportFileHistoryEntry[];
 	initialResumeBatchId?: string | null;
 	importMountKey: string;
@@ -436,6 +446,7 @@ export function ImportPage({
 	invoiceContext = null,
 	linkedCardId = null,
 	autoPdfPasswordAttempts = EMPTY_AUTO_PDF_PASSWORD_ATTEMPTS,
+	importPdfPasswordNeedsReconfigure = false,
 	initialImportHistory = EMPTY_INITIAL_IMPORT_HISTORY,
 	initialResumeBatchId = null,
 	importMountKey,
@@ -4543,6 +4554,14 @@ export function ImportPage({
 												>
 													Cancelar
 												</Button>
+											</AlertDescription>
+										</Alert>
+									) : null}
+									{importPdfPasswordNeedsReconfigure && linkedCardId ? (
+										<Alert variant="destructive">
+											<AlertTitle>Senha automática do PDF indisponível</AlertTitle>
+											<AlertDescription className="text-sm">
+												{IMPORT_PDF_PASSWORD_UNREADABLE_MESSAGE}
 											</AlertDescription>
 										</Alert>
 									) : null}

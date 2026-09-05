@@ -132,6 +132,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 	const transactionData = mapTransactionsData(
 		transactionsPage.rows,
 		filterSources.categoryRows,
+		filterSources.cardRows,
 	);
 
 	const { openingBalance, currentBalance, totalIncomes, totalExpenses } =
@@ -230,6 +231,8 @@ export default async function Page({ params, searchParams }: PageProps) {
 					<LancamentosSection
 						financialDataOwnerId={financialContext.dataOwnerUserId}
 						canEditFinancial={financialContext.canEditFinancial}
+						viewerUserId={userId}
+						listAccountId={account.id}
 						transactions={transactionData}
 						payerOptions={payerOptions}
 						splitPayerOptions={splitPayerOptions}

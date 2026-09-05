@@ -18,8 +18,8 @@ import {
 	PopoverTrigger,
 } from "@/shared/components/ui/popover";
 import { cn } from "@/shared/utils/ui";
-import { CategorySelectContent } from "../../select-items";
-import type { SelectOption } from "../../types";
+import { CategorySelectContent } from "./select-items";
+import type { SelectOption } from "./types";
 
 type CategoryGroup = {
 	label: string;

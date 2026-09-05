@@ -21,6 +21,7 @@ export function BoletoFieldsSection({
 				<Label htmlFor="dueDate">Vencimento do boleto</Label>
 				<DatePicker
 					id="dueDate"
+					nested
 					value={formState.dueDate}
 					onChange={(value) => onFieldChange("dueDate", value)}
 					placeholder="Selecione o vencimento"
@@ -31,6 +32,7 @@ export function BoletoFieldsSection({
 					<Label htmlFor="boletoPaymentDate">Pagamento do boleto</Label>
 					<DatePicker
 						id="boletoPaymentDate"
+						nested
 						value={formState.boletoPaymentDate}
 						onChange={(value) => onFieldChange("boletoPaymentDate", value)}
 						placeholder="Selecione a data de pagamento"
