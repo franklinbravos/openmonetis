@@ -13,6 +13,8 @@ export function buildInvoiceMetadataFromDueDate(
 		paymentDate?: string | null;
 		totalAmount?: number | null;
 		totalAmountSource?: InvoiceSourceTotalKind | null;
+		financeChargesTotal?: number | null;
+		financeChargesLabel?: string | null;
 	},
 ): InvoiceImportMetadata | null {
 	if (!dueDate) return null;
@@ -24,6 +26,8 @@ export function buildInvoiceMetadataFromDueDate(
 		paymentDate: options.paymentDate ?? null,
 		totalAmount: options.totalAmount ?? null,
 		totalAmountSource: options.totalAmountSource ?? null,
+		financeChargesTotal: options.financeChargesTotal ?? null,
+		financeChargesLabel: options.financeChargesLabel ?? null,
 	};
 }
 

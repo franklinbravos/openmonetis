@@ -171,8 +171,9 @@ function ImportFileHistoryActions({
 	// Já importado não tem rascunho para retomar — reprocessar clona o lote no
 	// servidor (nunca toca no original) e abre uma revisão nova a partir dele,
 	// pelo mesmo fluxo `?lote=<id>` que a retomada normal já usa.
-	const canReprocessImported =
-		isImportBatchImported(entry.status) && entry.hasAttachment;
+	// O servidor reutiliza o PDF de outro registro do mesmo arquivo quando o
+	// lote importado perdeu o anexo (importações antigas ou fluxos sem storage).
+	const canReprocessImported = isImportBatchImported(entry.status);
 	const canDelete = allowDelete && canDeleteImportBatch(entry.status);
 
 	const handleReprocessImported = () => {

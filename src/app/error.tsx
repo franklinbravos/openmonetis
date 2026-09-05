@@ -34,12 +34,13 @@ export default function ErrorComponent({
 
 		const reloadKey = "openmonetis:chunk-reload";
 		if (sessionStorage.getItem(reloadKey) === "1") {
-			sessionStorage.removeItem(reloadKey);
 			return;
 		}
 
 		sessionStorage.setItem(reloadKey, "1");
-		window.location.reload();
+		const url = new URL(window.location.href);
+		url.searchParams.set("_chunk", String(Date.now()));
+		window.location.replace(url.toString());
 	}, [error]);
 
 	return (

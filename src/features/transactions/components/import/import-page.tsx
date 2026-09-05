@@ -13,12 +13,10 @@ import {
 } from "react";
 import { toast } from "sonner";
 import {
-	CreateAccountInlineDialog,
 	type CreatedAccount,
 } from "@/features/accounts/components/create-account-inline-dialog";
 import { isAccountStatementMovementImportRow } from "@/features/accounts/lib/statement-balance-reconciliation";
 import {
-	CreateCategoryInlineDialog,
 	type CreatedCategory,
 } from "@/features/categories/components/create-category-inline-dialog";
 import type { Category } from "@/features/categories/components/types";
@@ -73,11 +71,8 @@ import {
 	type ImportAiAnalysisStatus,
 } from "@/features/transactions/components/import/import-ai-analysis-banner";
 import type { ImportAccountBalancePrompt } from "@/features/transactions/components/import/import-confirm-dialog";
-import { ImportConfirmDialog } from "@/features/transactions/components/import/import-confirm-dialog";
 import { ImportFileHistory } from "@/features/transactions/components/import/import-file-history";
-import { ImportInvoicePeriodMismatchDialog } from "@/features/transactions/components/import/import-invoice-period-mismatch-dialog";
 import type { ImportLinkMergeMode } from "@/features/transactions/components/import/import-link-dialog";
-import { ImportLinkDialog } from "@/features/transactions/components/import/import-link-dialog";
 import {
 	ImportProgressDialog,
 	type ImportProgressStep,
@@ -85,11 +80,10 @@ import {
 import { ImportSteps } from "@/features/transactions/components/import/import-steps";
 import { ImportSummary } from "@/features/transactions/components/import/import-summary";
 import { InvoiceTotalReconciliationBanner } from "@/features/transactions/components/import/invoice-total-reconciliation-banner";
-import { PreviousInvoiceFixDialog } from "@/features/transactions/components/import/previous-invoice-fix-dialog";
 import { PreviousInvoiceSettlementCard } from "@/features/transactions/components/import/previous-invoice-settlement-card";
 import {
-	type ReviewRow,
 	ReviewTable,
+	type ReviewRow,
 } from "@/features/transactions/components/import/review-table";
 import { UploadZone } from "@/features/transactions/components/import/upload-zone";
 import type {
@@ -272,6 +266,54 @@ const TransactionDialog = dynamic(
 		import(
 			"@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog"
 		).then((mod) => mod.TransactionDialog),
+	{ ssr: false },
+);
+
+const ImportConfirmDialog = dynamic(
+	() =>
+		import(
+			"@/features/transactions/components/import/import-confirm-dialog"
+		).then((mod) => mod.ImportConfirmDialog),
+	{ ssr: false },
+);
+
+const ImportInvoicePeriodMismatchDialog = dynamic(
+	() =>
+		import(
+			"@/features/transactions/components/import/import-invoice-period-mismatch-dialog"
+		).then((mod) => mod.ImportInvoicePeriodMismatchDialog),
+	{ ssr: false },
+);
+
+const ImportLinkDialog = dynamic(
+	() =>
+		import("@/features/transactions/components/import/import-link-dialog").then(
+			(mod) => mod.ImportLinkDialog,
+		),
+	{ ssr: false },
+);
+
+const PreviousInvoiceFixDialog = dynamic(
+	() =>
+		import(
+			"@/features/transactions/components/import/previous-invoice-fix-dialog"
+		).then((mod) => mod.PreviousInvoiceFixDialog),
+	{ ssr: false },
+);
+
+const LazyCreateCategoryInlineDialog = dynamic(
+	() =>
+		import("@/features/categories/components/create-category-inline-dialog").then(
+			(mod) => mod.CreateCategoryInlineDialog,
+		),
+	{ ssr: false },
+);
+
+const LazyCreateAccountInlineDialog = dynamic(
+	() =>
+		import("@/features/accounts/components/create-account-inline-dialog").then(
+			(mod) => mod.CreateAccountInlineDialog,
+		),
 	{ ssr: false },
 );
 
@@ -3966,6 +4008,19 @@ export function ImportPage({
 		});
 	}, [statement, rows, invoicePeriodExistingSnapshots, invoiceSourceTotal]);
 
+	const selectedFinanceCharges = useMemo(() => {
+		const declaredTotal = statement?.invoice?.financeChargesTotal;
+		if (declaredTotal == null || declaredTotal <= 0) return null;
+
+		const selectedTotal = rows
+			.filter(
+				(row) => row.selected && /^encargos\b/i.test(row.description.trim()),
+			)
+			.reduce((sum, row) => sum + row.amount, 0);
+
+		return selectedTotal > 0 ? selectedTotal : 0;
+	}, [rows, statement?.invoice?.financeChargesTotal]);
+
 	const invoiceTotalBalanced =
 		!importInvoiceReconciliation ||
 		isInvoiceTotalReconciled(importInvoiceReconciliation.delta);
@@ -4665,6 +4720,13 @@ export function ImportPage({
 									}
 									crossPeriodCount={crossPeriodReviewStats.count}
 									crossPeriodDisplayTotal={crossPeriodReviewStats.displayTotal}
+									fileFinanceCharges={
+										statement.invoice?.financeChargesTotal ?? null
+									}
+									fileFinanceChargesLabel={
+										statement.invoice?.financeChargesLabel ?? null
+									}
+									selectedFinanceCharges={selectedFinanceCharges}
 									sourceFile={sourceFile}
 								/>
 							) : null}
@@ -4875,93 +4937,98 @@ export function ImportPage({
 				confirmVariant="destructive"
 				onConfirm={handleConfirmCancelImport}
 			/>
-			<ImportConfirmDialog
-				open={confirmOpen}
-				onOpenChange={setConfirmOpen}
-				importCount={importRecordCount}
-				verifiedCount={importSummary.verifiedCount}
-				replacedCount={importSummary.replacedCount}
-				excludedCount={importSummary.excludedCount}
-				removalCount={importSummary.removalCount}
-				installmentBackfillCount={importSummary.installmentBackfillCount}
-				amountCorrectionCount={amountCorrectionCount}
-				isPending={isImporting}
-				invoiceTotalDelta={importInvoiceReconciliation?.delta ?? null}
-				invoiceTotalOverrideConfirmed={invoiceTotalOverrideConfirmed}
-				onInvoiceTotalOverrideChange={setInvoiceTotalOverrideConfirmed}
-				canConfirm={
-					canConfirmImport && !invoicePaymentBlocked && !nothingToConfirm
-				}
-				nothingToConfirm={nothingToConfirm}
-				cardLimits={
-					cardLimitsChangeLines.length > 0
-						? {
-								changeLines: cardLimitsChangeLines,
-								confirmed: cardLimitsConfirmed,
-								onConfirmedChange: setCardLimitsConfirmed,
-							}
-						: null
-				}
-				invoiceAmortization={
-					amortizationNeedsWrite
-						? {
-								changeLines: amortizationChangeLines,
-								confirmed: amortizationConfirmed,
-								onConfirmedChange: setAmortizationConfirmed,
-							}
-						: null
-				}
-				accountBalance={accountBalancePreview}
-				accountBalanceLoading={accountBalancePreviewLoading}
-				accountBalanceError={accountBalancePreviewError}
-				showAccountBalanceSection={hasAccountBalanceReconciliation}
-				previousInvoice={
-					previousInvoiceReview && previousInvoice
-						? {
-								previousPeriodLabel: displayPeriod(previousInvoice.period),
-								checks: previousInvoiceReview.checks,
-								allOk: previousInvoiceReview.allOk,
-								hasChanges: previousInvoiceReview.hasChanges,
-								changeLines: previousSettlementChangeLines,
-								confirmed: previousSettlementConfirmed,
-								onConfirmedChange: setPreviousSettlementConfirmed,
-							}
-						: null
-				}
-				invoicePayment={
-					canAskInvoicePayment
-						? {
-								// Fatura já quitada: informa, não pergunta.
-								alreadyPaid:
-									currentInvoice?.paymentStatus === INVOICE_PAYMENT_STATUS.PAID
-										? {
-												date: currentInvoice.paymentTransactionDate,
-												amount: currentInvoice.paymentTransactionAmount,
-												reopened: invoicePaymentReopened,
-												onReopenedChange: setInvoicePaymentReopened,
-											}
-										: null,
-								dueDate: invoiceDueDate,
-								paid: payInvoiceOnImport,
-								onPaidChange: setPayInvoiceOnImport,
-								paymentDate,
-								onPaymentDateChange: setPaymentDate,
-								accountOptions: accountOptions.map((option) => ({
-									value: option.value,
-									label: option.label,
-									logo: option.logo ?? null,
-								})),
-								accountId: paymentAccountId,
-								onAccountChange: setPaymentAccountId,
-							}
-						: null
-				}
-				onConfirm={() => void handleImport()}
-			/>
-			<ImportProgressDialog step={importProgress} />
+			{confirmOpen ? (
+				<ImportConfirmDialog
+					open={confirmOpen}
+					onOpenChange={setConfirmOpen}
+					importCount={importRecordCount}
+					verifiedCount={importSummary.verifiedCount}
+					replacedCount={importSummary.replacedCount}
+					excludedCount={importSummary.excludedCount}
+					removalCount={importSummary.removalCount}
+					installmentBackfillCount={importSummary.installmentBackfillCount}
+					amountCorrectionCount={amountCorrectionCount}
+					isPending={isImporting}
+					invoiceTotalDelta={importInvoiceReconciliation?.delta ?? null}
+					invoiceTotalOverrideConfirmed={invoiceTotalOverrideConfirmed}
+					onInvoiceTotalOverrideChange={setInvoiceTotalOverrideConfirmed}
+					canConfirm={
+						canConfirmImport && !invoicePaymentBlocked && !nothingToConfirm
+					}
+					nothingToConfirm={nothingToConfirm}
+					cardLimits={
+						cardLimitsChangeLines.length > 0
+							? {
+									changeLines: cardLimitsChangeLines,
+									confirmed: cardLimitsConfirmed,
+									onConfirmedChange: setCardLimitsConfirmed,
+								}
+							: null
+					}
+					invoiceAmortization={
+						amortizationNeedsWrite
+							? {
+									changeLines: amortizationChangeLines,
+									confirmed: amortizationConfirmed,
+									onConfirmedChange: setAmortizationConfirmed,
+								}
+							: null
+					}
+					accountBalance={accountBalancePreview}
+					accountBalanceLoading={accountBalancePreviewLoading}
+					accountBalanceError={accountBalancePreviewError}
+					showAccountBalanceSection={hasAccountBalanceReconciliation}
+					previousInvoice={
+						previousInvoiceReview && previousInvoice
+							? {
+									previousPeriodLabel: displayPeriod(previousInvoice.period),
+									checks: previousInvoiceReview.checks,
+									allOk: previousInvoiceReview.allOk,
+									hasChanges: previousInvoiceReview.hasChanges,
+									changeLines: previousSettlementChangeLines,
+									confirmed: previousSettlementConfirmed,
+									onConfirmedChange: setPreviousSettlementConfirmed,
+								}
+							: null
+					}
+					invoicePayment={
+						canAskInvoicePayment
+							? {
+									alreadyPaid:
+										currentInvoice?.paymentStatus ===
+										INVOICE_PAYMENT_STATUS.PAID
+											? {
+													date: currentInvoice.paymentTransactionDate,
+													amount: currentInvoice.paymentTransactionAmount,
+													reopened: invoicePaymentReopened,
+													onReopenedChange: setInvoicePaymentReopened,
+												}
+											: null,
+									dueDate: invoiceDueDate,
+									paid: payInvoiceOnImport,
+									onPaidChange: setPayInvoiceOnImport,
+									paymentDate,
+									onPaymentDateChange: setPaymentDate,
+									accountOptions: accountOptions.map((option) => ({
+										value: option.value,
+										label: option.label,
+										logo: option.logo ?? null,
+									})),
+									accountId: paymentAccountId,
+									onAccountChange: setPaymentAccountId,
+								}
+							: null
+					}
+					onConfirm={() => void handleImport()}
+				/>
+			) : null}
+			{importProgress ? (
+				<ImportProgressDialog step={importProgress} />
+			) : null}
 
 			{previousInvoice?.paymentTransactionId &&
-			statement?.invoice?.paymentDate ? (
+			statement?.invoice?.paymentDate &&
+			fixPreviousOpen ? (
 				<PreviousInvoiceFixDialog
 					open={fixPreviousOpen}
 					onOpenChange={setFixPreviousOpen}
@@ -5017,29 +5084,33 @@ export function ImportPage({
 					onConfirm={() => void handleConfirmPeriodMismatch()}
 				/>
 			) : null}
-			<CreateCategoryInlineDialog
-				open={categoryCreateOpen}
-				onOpenChange={(open) => {
-					setCategoryCreateOpen(open);
-					if (!open) {
-						setCategoryCreateRowIndex(null);
-						setCategoryCreateBulk(false);
-					}
-				}}
-				onCreated={handleCategoryCreated}
-				allCategories={allCategoriesForDialog}
-				defaultType={categoryCreateDefaultType}
-			/>
-			<CreateAccountInlineDialog
-				open={accountCreateOpen}
-				onOpenChange={(open) => {
-					setAccountCreateOpen(open);
-					if (!open) {
-						setAccountCreateRowIndex(null);
-					}
-				}}
-				onCreated={handleTransferPeerAccountCreated}
-			/>
+			{categoryCreateOpen ? (
+				<LazyCreateCategoryInlineDialog
+					open={categoryCreateOpen}
+					onOpenChange={(open) => {
+						setCategoryCreateOpen(open);
+						if (!open) {
+							setCategoryCreateRowIndex(null);
+							setCategoryCreateBulk(false);
+						}
+					}}
+					onCreated={handleCategoryCreated}
+					allCategories={allCategoriesForDialog}
+					defaultType={categoryCreateDefaultType}
+				/>
+			) : null}
+			{accountCreateOpen ? (
+				<LazyCreateAccountInlineDialog
+					open={accountCreateOpen}
+					onOpenChange={(open) => {
+						setAccountCreateOpen(open);
+						if (!open) {
+							setAccountCreateRowIndex(null);
+						}
+					}}
+					onCreated={handleTransferPeerAccountCreated}
+				/>
+			) : null}
 			{linkDialogIndex !== null && rows[linkDialogIndex] ? (
 				<ImportLinkDialog
 					open={linkDialogIndex !== null}

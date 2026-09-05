@@ -25,6 +25,11 @@ type InvoiceTotalReconciliationBannerProps = {
 	invoiceExtraMarkedForRemovalCount?: number;
 	crossPeriodCount?: number;
 	crossPeriodDisplayTotal?: number;
+	/** Encargos declarados no resumo do PDF (fora dos lançamentos). */
+	fileFinanceCharges?: number | null;
+	fileFinanceChargesLabel?: string | null;
+	/** Encargos selecionados para importar na revisão. */
+	selectedFinanceCharges?: number | null;
 	/** Arquivo em conferência, para abrir ao lado dos números. */
 	sourceFile?: File | null;
 };
@@ -82,11 +87,25 @@ export function InvoiceTotalReconciliationBanner({
 	invoiceExtraMarkedForRemovalCount = 0,
 	crossPeriodCount = 0,
 	crossPeriodDisplayTotal = 0,
+	fileFinanceCharges = null,
+	fileFinanceChargesLabel = null,
+	selectedFinanceCharges = null,
 	sourceFile = null,
 }: InvoiceTotalReconciliationBannerProps) {
 	// Até dois centavos é arredondamento de parcela do banco, não divergência.
 	const isBalanced =
 		Math.abs(reconciliation.delta) <= SOURCE_ROUNDING_TOLERANCE;
+	const financeChargesGap =
+		fileFinanceCharges != null && fileFinanceCharges > 0
+			? Math.abs(Math.abs(reconciliation.delta) - fileFinanceCharges) <=
+				SOURCE_ROUNDING_TOLERANCE
+			: false;
+	const pendingFinanceCharges = Math.max(
+		0,
+		(fileFinanceCharges ?? 0) - (selectedFinanceCharges ?? 0),
+	);
+	const explainsDeltaWithFinanceCharges =
+		financeChargesGap && pendingFinanceCharges > SOURCE_ROUNDING_TOLERANCE;
 	const mismatchCount = reconciliation.amountMismatchRows.length;
 	const pendingImportCount = reconciliation.pendingImportRows.length;
 	const unselectedFileCount = reconciliation.missingFileRows.length;
@@ -196,6 +215,36 @@ export function InvoiceTotalReconciliationBanner({
 						{formatCurrency(reconciliation.sourceTotal)} é o saldo da fatura, já
 						líquido do que foi pago. A conferência usa a soma das cobranças do
 						arquivo, que é o total da fatura no OpenMonetis.
+					</p>
+				) : null}
+
+				{explainsDeltaWithFinanceCharges ? (
+					<p className="text-muted-foreground text-xs leading-relaxed">
+						A diferença de {formatCurrency(Math.abs(reconciliation.delta))}{" "}
+						corresponde aos{" "}
+						<strong className="font-medium text-foreground">
+							{fileFinanceChargesLabel ?? "encargos da fatura"}{" "}
+							({formatCurrency(fileFinanceCharges ?? 0)})
+						</strong>{" "}
+						declarados no resumo do PDF — eles entram separados dos lançamentos.
+						Selecione a linha de encargos na tabela para fechar o total.
+					</p>
+				) : null}
+
+				{fileFinanceCharges != null &&
+				fileFinanceCharges > 0 &&
+				!explainsDeltaWithFinanceCharges &&
+				!isBalanced ? (
+					<p className="text-muted-foreground text-xs leading-relaxed">
+						O PDF declara{" "}
+						<strong className="font-medium text-foreground">
+							{formatCurrency(fileFinanceCharges)}
+						</strong>{" "}
+						em{" "}
+						{fileFinanceChargesLabel
+							? fileFinanceChargesLabel.toLowerCase()
+							: "encargos"}{" "}
+						no resumo da fatura.
 					</p>
 				) : null}
 

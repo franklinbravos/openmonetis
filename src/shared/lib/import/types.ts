@@ -39,6 +39,9 @@ export type InvoiceImportMetadata = {
 	 */
 	creditLimitTotal?: number | null;
 	creditLimitGuaranteed?: number | null;
+	/** Encargos do resumo (juros, mora, rotativo) quando o PDF declara separado dos lançamentos. */
+	financeChargesTotal?: number | null;
+	financeChargesLabel?: string | null;
 };
 
 export type ImportStatement = {

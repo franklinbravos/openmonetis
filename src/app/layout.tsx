@@ -1,5 +1,10 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Suspense } from "react";
+import {
+	ChunkLoadRecovery,
+	chunkLoadRecoveryScript,
+} from "@/shared/components/chunk-load-recovery";
 import { QueryProvider } from "@/shared/components/providers/query-provider";
 import { SupabaseAuthListener } from "@/shared/components/providers/supabase-auth-listener";
 import { ThemeProvider } from "@/shared/components/providers/theme-provider";
@@ -42,6 +47,13 @@ export default function RootLayout({
 				)}
 			</head>
 			<body className="antialiased" suppressHydrationWarning>
+				<Script
+					id="chunk-load-recovery"
+					strategy="beforeInteractive"
+					// biome-ignore lint/security/noDangerouslySetInnerHtml: script fixo de recuperação de chunk
+					dangerouslySetInnerHTML={{ __html: chunkLoadRecoveryScript }}
+				/>
+				<ChunkLoadRecovery />
 				<ThemeProvider attribute="class" defaultTheme="light">
 					<QueryProvider>
 						<SupabaseAuthListener />

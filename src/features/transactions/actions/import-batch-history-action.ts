@@ -1,7 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod/v4";
 import { attachments, importBatches, transactions } from "@/db/schema";
@@ -46,6 +46,50 @@ async function resolveImportBatchFileKey(batch: {
 	});
 
 	return attachment?.fileKey ?? null;
+}
+
+/**
+ * Lotes importados antes do armazenamento do PDF podem ter `attachmentId`
+ * nulo. Reprocessar reutiliza o arquivo de outro registro do mesmo contexto.
+ */
+async function resolveReprocessAttachmentId(input: {
+	dataOwnerUserId: string;
+	attachmentId: string | null;
+	sourceFileName: string;
+	cardId: string | null;
+	invoicePeriod: string | null;
+	accountId: string | null;
+}): Promise<string | null> {
+	if (input.attachmentId) {
+		return input.attachmentId;
+	}
+
+	const filters = [
+		eq(importBatches.userId, input.dataOwnerUserId),
+		eq(importBatches.sourceFileName, input.sourceFileName),
+		isNotNull(importBatches.attachmentId),
+	];
+
+	if (input.cardId) {
+		filters.push(eq(importBatches.cardId, input.cardId));
+	}
+
+	if (input.invoicePeriod) {
+		filters.push(eq(importBatches.invoicePeriod, input.invoicePeriod));
+	}
+
+	if (input.accountId) {
+		filters.push(eq(importBatches.accountId, input.accountId));
+	}
+
+	const [sibling] = await db
+		.select({ attachmentId: importBatches.attachmentId })
+		.from(importBatches)
+		.where(and(...filters))
+		.orderBy(desc(importBatches.createdAt))
+		.limit(1);
+
+	return sibling?.attachmentId ?? null;
 }
 
 const historySchema = z.object({
@@ -203,7 +247,16 @@ export async function cloneImportBatchForReprocessAction(
 			return { success: false, error: "Importação não encontrada." };
 		}
 
-		if (!source.attachmentId) {
+		const attachmentId = await resolveReprocessAttachmentId({
+			dataOwnerUserId,
+			attachmentId: source.attachmentId,
+			sourceFileName: source.sourceFileName,
+			cardId: source.cardId,
+			invoicePeriod: source.invoicePeriod,
+			accountId: source.accountId,
+		});
+
+		if (!attachmentId) {
 			return {
 				success: false,
 				error: "O arquivo original não está salvo no servidor.",
@@ -215,7 +268,7 @@ export async function cloneImportBatchForReprocessAction(
 		await db.insert(importBatches).values({
 			id: newBatchId,
 			userId: dataOwnerUserId,
-			attachmentId: source.attachmentId,
+			attachmentId,
 			sourceFileName: source.sourceFileName,
 			sourceFileSize: source.sourceFileSize,
 			cardId: source.cardId,

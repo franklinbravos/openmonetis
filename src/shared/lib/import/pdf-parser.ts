@@ -82,6 +82,16 @@ const ITAU_SECTION_END_RE =
 const ITAU_PAYMENT_RE =
 	/pagamento\s+efetuado|pagamento\s+recebido|cr[eé]dito\s+do\s+cart[aã]o/i;
 
+const ITAU_LINE_TXN_RE =
+	/^(\d{2}\/\d{2})\s+(.+?)\s+(-?[\d.]+,\d{2})(?:\s.*)?$/;
+
+/** Insere quebras antes de lançamentos em blocos contínuos do PDF Itaú. */
+function normalizeItauSectionText(section: string): string {
+	return section
+		.replace(/\u00a0/g, " ")
+		.replace(/(?:(?<=\s)|^)(\d{2}\/\d{2})\s+(?=[A-Z*])/g, "\n$1 ");
+}
+
 function inferItauTransactionYear(
 	month: number,
 	dueDate: string | null,
@@ -113,17 +123,48 @@ function parseItauSlashDate(
 	return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+function pushItauParsedTransaction(
+	transactions: ImportedTransaction[],
+	rawDate: string,
+	rawDescription: string,
+	rawAmount: string,
+	dueDate: string | null,
+): void {
+	const date = parseItauSlashDate(rawDate, dueDate);
+	if (!date) return;
+
+	const description = rawDescription.replace(/\s+/g, " ").trim();
+	if (
+		!description ||
+		ITAU_PAYMENT_RE.test(description) ||
+		/^total\b/i.test(description)
+	) {
+		return;
+	}
+
+	const amountSigned = parseBrazilianAmount(rawAmount);
+	const amount = Math.abs(amountSigned);
+	if (amount <= 0) return;
+
+	transactions.push({
+		externalId: makeSyntheticExternalId([date, description, String(amount)]),
+		date,
+		amount,
+		description,
+		transactionType: amountSigned < 0 ? "income" : "expense",
+	});
+}
+
 function parseItauCardSection(
 	section: string,
 	dueDate: string | null,
 ): ImportedTransaction[] {
 	const transactions: ImportedTransaction[] = [];
-	const lines = section
+	const normalized = normalizeItauSectionText(section);
+	const lines = normalized
 		.split(/\r?\n/)
 		.map((line) => line.trim())
 		.filter(Boolean);
-
-	const lineTxnRe = /^(\d{2}\/\d{2})\s+(.+?)\s+(-?[\d.]+,\d{2})$/;
 
 	for (const line of lines) {
 		if (
@@ -131,68 +172,100 @@ function parseItauCardSection(
 			/^total\b/i.test(line) ||
 			ITAU_PAYMENT_RE.test(line) ||
 			/^cr[eé]dito\b/i.test(line) ||
-			/^d[eé]bito\b/i.test(line)
+			/^d[eé]dito\b/i.test(line)
 		) {
 			continue;
 		}
 
-		const match = line.match(lineTxnRe);
+		const match = line.match(ITAU_LINE_TXN_RE);
 		if (!match) continue;
 
-		const date = parseItauSlashDate(match[1], dueDate);
-		if (!date) continue;
-
-		const description = match[2]
-			.replace(/\s+\d{2}\/\d{2}$/, "")
-			.replace(/\s+/g, " ")
-			.trim();
-		if (!description || ITAU_PAYMENT_RE.test(description)) continue;
-
-		const amountSigned = parseBrazilianAmount(match[3]);
-		const amount = Math.abs(amountSigned);
-		if (amount <= 0) continue;
-
-		transactions.push({
-			externalId: makeSyntheticExternalId([date, description, String(amount)]),
-			date,
-			amount,
-			description,
-			transactionType: amountSigned < 0 ? "income" : "expense",
-		});
+		pushItauParsedTransaction(
+			transactions,
+			match[1],
+			match[2],
+			match[3],
+			dueDate,
+		);
 	}
 
 	if (transactions.length > 0) return transactions;
 
-	const inlineTxnRe =
-		/(\d{2}\/\d{2})\s+((?:(?!\d{2}\/\d{2}\s)[\s\S])+?)\s+(-?[\d.]+,\d{2})/g;
+	const inlineTxnRe = /(\d{2}\/\d{2})\s+(.+?)\s+(-?[\d.]+,\d{2})(?:\s|$)/g;
 
-	for (const match of section.matchAll(inlineTxnRe)) {
-		const date = parseItauSlashDate(match[1], dueDate);
-		if (!date) continue;
+	for (const match of normalized.matchAll(inlineTxnRe)) {
+		pushItauParsedTransaction(
+			transactions,
+			match[1],
+			match[2],
+			match[3],
+			dueDate,
+		);
+	}
 
-		const description = match[2]
-			.replace(/\s+\d{2}\/\d{2}$/, "")
-			.replace(/\s+/g, " ")
-			.trim();
-		if (
-			!description ||
-			ITAU_PAYMENT_RE.test(description) ||
-			/^total\b/i.test(description)
-		) {
+	return transactions;
+}
+
+function extractItauInternationalSection(text: string): string | null {
+	const normalized = text.replace(/\u00a0/g, " ");
+	const match = normalized.match(
+		/lan[cç]amentos internacionais([\s\S]*?)(?=compras parceladas|limites de cr[eé]dito|demais faturas|total desta fatura|$)/i,
+	);
+	return match?.[1]?.trim() ?? null;
+}
+
+function parseItauInternationalSection(
+	section: string,
+	dueDate: string | null,
+): ImportedTransaction[] {
+	const transactions: ImportedTransaction[] = [];
+	const normalized = normalizeItauSectionText(section);
+	const intlLineRe =
+		/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.]+,\d{2})\s+[\d.]+\,\d{2}\s+BRL/i;
+
+	for (const line of normalized
+		.split(/\r?\n/)
+		.map((value) => value.trim())
+		.filter(Boolean)) {
+		if (/^data\b/i.test(line) || /^total\b/i.test(line)) {
 			continue;
 		}
 
-		const amountSigned = parseBrazilianAmount(match[3]);
-		const amount = Math.abs(amountSigned);
-		if (amount <= 0) continue;
+		const transactionLine = line.split(/d[oó]lar de convers/i)[0]?.trim();
+		if (!transactionLine) continue;
 
-		transactions.push({
-			externalId: makeSyntheticExternalId([date, description, String(amount)]),
-			date,
-			amount,
-			description,
-			transactionType: amountSigned < 0 ? "income" : "expense",
-		});
+		const match =
+			transactionLine.match(intlLineRe) ??
+			transactionLine.match(/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.]+,\d{2})/);
+		if (!match) continue;
+
+		pushItauParsedTransaction(
+			transactions,
+			match[1],
+			match[2],
+			match[3],
+			dueDate,
+		);
+	}
+
+	const iofMatch = section.match(/repasse de iof em r\$\s*([\d.]+,\d{2})/i);
+	if (iofMatch) {
+		const iofAmount = parseBrazilianAmount(iofMatch[1]);
+		const iofDate = transactions.at(-1)?.date ?? dueDate;
+
+		if (iofAmount > 0 && iofDate) {
+			transactions.push({
+				externalId: makeSyntheticExternalId([
+					iofDate,
+					"IOF internacional",
+					String(iofAmount),
+				]),
+				date: iofDate,
+				amount: iofAmount,
+				description: "IOF internacional",
+				transactionType: "expense",
+			});
+		}
 	}
 
 	return transactions;
@@ -219,6 +292,45 @@ function extractItauPurchaseSections(text: string): string[] {
 	});
 }
 
+function parseItauFinanceCharges(
+	text: string,
+	dueDate: string | null,
+): ImportedTransaction[] {
+	const match = text.match(/encargos\s*\(([^)]+)\)\s+([\d.]+,\d{2})/i);
+	if (!match || !dueDate) return [];
+
+	const amount = parseBrazilianAmount(match[2]);
+	if (amount <= 0) return [];
+
+	const description = `Encargos (${match[1].trim()})`;
+
+	return [
+		{
+			externalId: makeSyntheticExternalId([dueDate, description, String(amount)]),
+			date: dueDate,
+			amount,
+			description,
+			transactionType: "expense",
+		},
+	];
+}
+
+function readItauFinanceChargesSummary(text: string): {
+	total: number;
+	label: string;
+} | null {
+	const match = text.match(/encargos\s*\(([^)]+)\)\s+([\d.]+,\d{2})/i);
+	if (!match) return null;
+
+	const total = parseBrazilianAmount(match[2]);
+	if (total <= 0) return null;
+
+	return {
+		total,
+		label: `Encargos (${match[1].trim()})`,
+	};
+}
+
 function parseItauCardInvoiceMetadata(
 	text: string,
 	transactions: ImportedTransaction[],
@@ -226,7 +338,9 @@ function parseItauCardInvoiceMetadata(
 	const dueDateMatch = text.match(/vencimento[:\s]+(\d{1,2}\/\d{1,2}\/\d{4})/i);
 	const dueDate = dueDateMatch ? parseSlashDateDMY(dueDateMatch[1]) : null;
 
-	const totalMatch = text.match(/total desta fatura\s+R\$\s*([\d.]+,\d{2})/i);
+	const totalMatch = text.match(
+		/total desta fatura\s+(?:R\$\s*)?([\d.]+,\d{2})/i,
+	);
 	const parsedTotal = totalMatch ? parseBrazilianAmount(totalMatch[1]) : null;
 	const transactionTotal = sumImportedTransactionAmounts(transactions);
 
@@ -236,10 +350,13 @@ function parseItauCardInvoiceMetadata(
 	const paymentDate = paymentMatch ? parseSlashDateDMY(paymentMatch[1]) : null;
 
 	const isPaid = Boolean(paymentDate) || /pagamento\s+efetuado/i.test(text);
+	const financeCharges = readItauFinanceChargesSummary(text);
 
 	return buildInvoiceMetadataFromDueDate(dueDate, {
 		isPaid,
 		paymentDate,
+		financeChargesTotal: financeCharges?.total ?? null,
+		financeChargesLabel: financeCharges?.label ?? null,
 		...resolvePdfTotalMetadata(parsedTotal, transactionTotal),
 	});
 }
@@ -257,9 +374,18 @@ function parseItauCardPdf(text: string): ImportStatement {
 	const dueDateMatch = text.match(/vencimento[:\s]+(\d{1,2}\/\d{1,2}\/\d{4})/i);
 	const dueDate = dueDateMatch ? parseSlashDateDMY(dueDateMatch[1]) : null;
 
-	const transactions = extractItauPurchaseSections(text).flatMap((section) =>
-		parseItauCardSection(section, dueDate),
+	const purchaseTransactions = extractItauPurchaseSections(text).flatMap(
+		(section) => parseItauCardSection(section, dueDate),
 	);
+	const internationalSection = extractItauInternationalSection(text);
+	const internationalTransactions = internationalSection
+		? parseItauInternationalSection(internationalSection, dueDate)
+		: [];
+	const transactions = [
+		...purchaseTransactions,
+		...internationalTransactions,
+		...parseItauFinanceCharges(text, dueDate),
+	];
 
 	const unique = new Map<string, ImportedTransaction>();
 	for (const transaction of transactions) {
