@@ -2,7 +2,7 @@
 
 import { RiAddFill } from "@remixicon/react";
 import { useEffect, useRef, useState } from "react";
-import { getCategoryBudgetSummaryAction } from "@/features/budgets/actions";
+import { getCategoryBudgetSummaryClient } from "@/features/budgets/lib/budgets-api-client";
 import type { CategoryBudgetSummary } from "@/features/budgets/queries";
 import { TRANSACTION_TYPES } from "@/features/transactions/lib/constants";
 import { Button } from "@/shared/components/ui/button";
@@ -100,7 +100,7 @@ export function CategorySection({
 		}
 
 		let cancelled = false;
-		getCategoryBudgetSummaryAction({ categoryId, period }).then((result) => {
+		getCategoryBudgetSummaryClient({ categoryId, period }).then((result) => {
 			if (cancelled) return;
 			const data = result.success ? (result.data ?? null) : null;
 			cacheRef.current.set(key, data);

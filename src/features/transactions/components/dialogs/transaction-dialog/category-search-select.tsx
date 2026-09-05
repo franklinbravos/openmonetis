@@ -75,6 +75,46 @@ function focusAdjacentImportReviewCategory(
 const getCategorySearchValue = (option: SelectOption) =>
 	[option.label, option.categoryPath, option.value].filter(Boolean).join(" ");
 
+function filterCategoryOptions(
+	options: SelectOption[],
+	query: string,
+): SelectOption[] {
+	const trimmed = query.trim();
+	if (!trimmed) {
+		return options;
+	}
+
+	const lowerQuery = trimmed.toLowerCase();
+
+	return options
+		.filter((option) =>
+			getCategorySearchValue(option).toLowerCase().includes(lowerQuery),
+		)
+		.sort((left, right) => {
+			const leftLabel = left.label.toLowerCase();
+			const rightLabel = right.label.toLowerCase();
+
+			if (leftLabel === lowerQuery && rightLabel !== lowerQuery) {
+				return -1;
+			}
+
+			if (rightLabel === lowerQuery && leftLabel !== lowerQuery) {
+				return 1;
+			}
+
+			const leftStarts = leftLabel.startsWith(lowerQuery);
+			const rightStarts = rightLabel.startsWith(lowerQuery);
+
+			if (leftStarts !== rightStarts) {
+				return leftStarts ? -1 : 1;
+			}
+
+			return left.label.localeCompare(right.label, "pt-BR", {
+				sensitivity: "base",
+			});
+		});
+}
+
 function isCategoryTypeaheadKey(event: React.KeyboardEvent) {
 	if (event.ctrlKey || event.metaKey || event.altKey) return false;
 	return event.key.length === 1;
@@ -137,6 +177,38 @@ export function CategorySearchSelect({
 		handleOpenChange(false);
 	};
 
+	const acceptSuggestedCategory = () => {
+		if (!searchValue.trim()) {
+			return false;
+		}
+
+		const matches = filterCategoryOptions(categoryOptions, searchValue);
+		const match = matches[0];
+		if (!match) {
+			return false;
+		}
+
+		handleSelect(match.value);
+		return true;
+	};
+
+	const handleAcceptKeyDown = (event: React.KeyboardEvent) => {
+		if (event.key !== "Enter" && event.key !== "Tab") {
+			return false;
+		}
+
+		const accepted = acceptSuggestedCategory();
+		if (!accepted) {
+			return false;
+		}
+
+		if (event.key === "Enter") {
+			event.preventDefault();
+		}
+
+		return true;
+	};
+
 	const openSearch = (initialSearch = "") => {
 		pendingTypeaheadRef.current = initialSearch;
 		setSearchValue(initialSearch);
@@ -197,6 +269,10 @@ export function CategorySearchSelect({
 						}
 
 						if (popoverOpen) {
+							if (handleAcceptKeyDown(event)) {
+								return;
+							}
+
 							if (isCategoryTypeaheadKey(event)) {
 								event.preventDefault();
 								const nextSearch = searchValue + event.key;
@@ -269,6 +345,9 @@ export function CategorySearchSelect({
 						placeholder="Buscar categoria..."
 						value={searchValue}
 						onValueChange={setSearchValue}
+						onKeyDown={(event) => {
+							handleAcceptKeyDown(event);
+						}}
 					/>
 					<CommandList className="overscroll-contain">
 						<CommandEmpty>Nenhuma categoria encontrada.</CommandEmpty>

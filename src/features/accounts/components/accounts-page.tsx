@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { deleteAccountAction } from "@/features/accounts/actions";
+import { deleteAccountClient } from "@/features/accounts/lib/accounts-api-client";
 import { AccountCard } from "@/features/accounts/components/account-card";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
 import { EmptyState } from "@/shared/components/feedback/empty-state";
@@ -81,7 +81,7 @@ export function AccountsPage({
 			return;
 		}
 
-		const result = await deleteAccountAction({ id: accountToRemove.id });
+		const result = await deleteAccountClient(accountToRemove.id);
 
 		if (result.success) {
 			toast.success(result.message);

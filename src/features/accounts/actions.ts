@@ -303,12 +303,12 @@ export type TransferInput = TransferBetweenAccountsInput;
 
 export async function transferBetweenAccountsAction(
 	input: TransferInput,
-): Promise<ActionResult> {
+): Promise<ActionResult<{ ids: string[] }>> {
 	try {
 		const user = await getUser();
 		return await transferBetweenAccounts(user.id, input);
 	} catch (error) {
-		return handleActionError(error);
+		return handleActionError(error) as ActionResult<{ ids: string[] }>;
 	}
 }
 

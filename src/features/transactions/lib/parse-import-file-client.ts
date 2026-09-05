@@ -1,4 +1,4 @@
-import { parseImportPdfAction } from "@/features/transactions/actions/parse-import-pdf-action";
+import { parseImportPdfClient } from "@/features/transactions/lib/import-api-client";
 import {
 	type ParseImportFileOptions,
 	parseImportFile,
@@ -65,7 +65,7 @@ export async function parseImportFileClient(
 		);
 	}
 
-	const result = await parseImportPdfAction(formData);
+	const result = await parseImportPdfClient(formData);
 
 	for (const entry of result.logs) {
 		log(entry, "success");

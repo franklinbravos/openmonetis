@@ -13,15 +13,17 @@ import type { ReactNode } from "react";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
-	updateInvoicePaymentStatusAction,
-	updatePaymentDateAction,
-} from "@/features/invoices/actions";
+	updateInvoicePaymentStatusClient,
+	updatePaymentDateClient,
+} from "@/features/invoices/lib/invoices-api-client";
 import type { InvoiceReconciliationTransaction } from "@/features/invoices/lib/invoice-reconciliation";
 import { resolveInvoicePaymentTiming } from "@/features/invoices/lib/payment-timing";
 import type { InvoicePaymentEntry } from "@/features/invoices/queries";
-import { fetchTransactionByIdAction } from "@/features/transactions/actions/fetch-by-id";
+import {
+	fetchTransactionByIdClient,
+	fetchTransactionDialogOptionsClient,
+} from "@/features/transactions/lib/transactions-api-client";
 import type { TransactionDialogOptions } from "@/features/transactions/actions/fetch-dialog-options";
-import { fetchTransactionDialogOptionsAction } from "@/features/transactions/actions/fetch-dialog-options";
 import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
 import { AccountCardSelectContent } from "@/features/transactions/components/select-items";
 import type { TransactionItem } from "@/features/transactions/components/types";
@@ -263,7 +265,7 @@ export function InvoiceSummaryCard({
 
 	const handleAction = (accountId?: string) => {
 		startTransition(async () => {
-			const result = await updateInvoicePaymentStatusAction({
+			const result = await updateInvoicePaymentStatusClient({
 				cardId,
 				period,
 				status: targetStatus,
@@ -305,8 +307,8 @@ export function InvoiceSummaryCard({
 		setLoadingPaymentId(paymentId);
 		startTransition(async () => {
 			const [transaction, options] = await Promise.all([
-				fetchTransactionByIdAction(paymentId),
-				fetchTransactionDialogOptionsAction(),
+				fetchTransactionByIdClient(paymentId),
+				fetchTransactionDialogOptionsClient(),
 			]);
 			setLoadingPaymentId(null);
 			if (!transaction) {
@@ -321,7 +323,7 @@ export function InvoiceSummaryCard({
 	const handleDateChange = (newDate: Date) => {
 		setPaymentDate(newDate);
 		startTransition(async () => {
-			const result = await updatePaymentDateAction({
+			const result = await updatePaymentDateClient({
 				cardId,
 				period,
 				paymentDate: newDate.toISOString().split("T")[0] ?? "",

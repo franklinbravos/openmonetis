@@ -26,6 +26,34 @@ interface EstablishmentInputProps {
 	maxLength?: number;
 }
 
+function resolveAutocompleteMatch(
+	query: string,
+	suggestions: string[],
+): string | null {
+	const trimmed = query.trim();
+	if (!trimmed || suggestions.length === 0) {
+		return null;
+	}
+
+	const lowerQuery = trimmed.toLowerCase();
+
+	const exactMatch = suggestions.find(
+		(item) => item.toLowerCase() === lowerQuery,
+	);
+	if (exactMatch) {
+		return exactMatch;
+	}
+
+	const prefixMatch = suggestions.find((item) =>
+		item.toLowerCase().startsWith(lowerQuery),
+	);
+	if (prefixMatch) {
+		return prefixMatch;
+	}
+
+	return suggestions[0] ?? null;
+}
+
 export function EstablishmentInput({
 	id,
 	value,
@@ -52,12 +80,33 @@ export function EstablishmentInput({
 	};
 
 	const filteredEstabelecimentos = React.useMemo(() => {
-		if (!searchValue) return estabelecimentos;
+		if (!searchValue) {
+			return estabelecimentos;
+		}
 
 		const lowerSearch = searchValue.toLowerCase();
-		return estabelecimentos.filter((item) =>
-			item.toLowerCase().includes(lowerSearch),
-		);
+		return estabelecimentos
+			.filter((item) => item.toLowerCase().includes(lowerSearch))
+			.sort((left, right) => {
+				const leftLower = left.toLowerCase();
+				const rightLower = right.toLowerCase();
+				const leftStarts = leftLower.startsWith(lowerSearch);
+				const rightStarts = rightLower.startsWith(lowerSearch);
+
+				if (leftStarts !== rightStarts) {
+					return leftStarts ? -1 : 1;
+				}
+
+				if (leftLower === lowerSearch && rightLower !== lowerSearch) {
+					return -1;
+				}
+
+				if (rightLower === lowerSearch && leftLower !== lowerSearch) {
+					return 1;
+				}
+
+				return left.localeCompare(right, "pt-BR", { sensitivity: "base" });
+			});
 	}, [estabelecimentos, searchValue]);
 
 	const hasSuggestions = filteredEstabelecimentos.length > 0;
@@ -85,6 +134,38 @@ export function EstablishmentInput({
 		setOpen(hasMatches);
 	};
 
+	const acceptSuggestedMatch = () => {
+		const match = resolveAutocompleteMatch(
+			value,
+			filteredEstabelecimentos,
+		);
+		if (!match) {
+			return false;
+		}
+
+		handleSelect(match);
+		return true;
+	};
+
+	const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+		if (e.key !== "Enter" && e.key !== "Tab") {
+			return;
+		}
+
+		if (!open || !hasSuggestions) {
+			return;
+		}
+
+		const accepted = acceptSuggestedMatch();
+		if (!accepted) {
+			return;
+		}
+
+		if (e.key === "Enter") {
+			e.preventDefault();
+		}
+	};
+
 	return (
 		<Popover open={open} onOpenChange={setOpen} modal>
 			<PopoverTrigger asChild>
@@ -93,6 +174,7 @@ export function EstablishmentInput({
 						id={id}
 						value={value}
 						onChange={handleInputChange}
+						onKeyDown={handleInputKeyDown}
 						placeholder={placeholder}
 						required={required}
 						maxLength={maxLength}
@@ -114,12 +196,12 @@ export function EstablishmentInput({
 					<Command shouldFilter={false}>
 						<CommandList className="max-h-[300px] overflow-y-auto">
 							<CommandGroup className="p-1">
-								{filteredEstabelecimentos.map((item) => (
+								{filteredEstabelecimentos.map((item, index) => (
 									<CommandItem
 										key={item}
 										value={item}
 										onSelect={() => handleSelect(item)}
-										className="cursor-pointer"
+										className={`cursor-pointer ${index === 0 ? "bg-accent" : ""}`}
 									>
 										<span
 											className={`truncate flex-1 ${value === item ? "font-medium" : ""}`}

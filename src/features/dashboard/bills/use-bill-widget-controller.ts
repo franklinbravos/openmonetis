@@ -11,7 +11,7 @@ import {
 	type PaymentDialogController,
 	usePaymentDialogController,
 } from "@/features/dashboard/payments/use-payment-dialog-controller";
-import { toggleTransactionSettlementAction } from "@/features/transactions/actions";
+import { toggleTransactionSettlementClient } from "@/features/transactions/lib/transactions-api-client";
 
 const EMPTY_BILLS: DashboardBill[] = [];
 
@@ -46,8 +46,7 @@ export function useBillWidgetController(
 		getItemId: (bill) => bill.id,
 		isItemConfirmed: (bill) => bill.isSettled,
 		executeConfirm: (bill) =>
-			toggleTransactionSettlementAction({
-				id: bill.id,
+			toggleTransactionSettlementClient(bill.id, {
 				value: true,
 				paymentAccountId: paymentAccountIdRef.current || null,
 				paymentDate: toIsoDate(paymentDateRef.current),

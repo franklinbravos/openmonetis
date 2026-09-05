@@ -2,7 +2,7 @@
 
 import { RiLifebuoyLine } from "@remixicon/react";
 import { useState, useTransition } from "react";
-import { updateAiProviderSettingsAction } from "@/features/settings/actions/ai-providers";
+import { updateAiProviderSettingsClient } from "@/features/settings/lib/settings-api-client";
 import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent } from "@/shared/components/ui/card";
 import { Input } from "@/shared/components/ui/input";
@@ -61,7 +61,7 @@ export function AiFallbackModelCard({
 	const handleSave = () => {
 		setFeedback(null);
 		startSaving(async () => {
-			const result = await updateAiProviderSettingsAction({
+			const result = await updateAiProviderSettingsClient({
 				fallback: {
 					enabled,
 					modelId: hasModel ? modelId : null,

@@ -1,9 +1,14 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import type { CardCreateResultData } from "@/features/cards/actions";
-import { createCardAction, updateCardAction } from "@/features/cards/actions";
+import {
+	type CardCreatePayload,
+	createCardClient,
+	updateCardClient,
+} from "@/features/cards/lib/cards-api-client";
 import {
 	LogoPickerDialog,
 	LogoPickerTrigger,
@@ -92,6 +97,7 @@ export function CardDialog({
 	onOpenChange,
 	onCreated,
 }: CardDialogProps) {
+	const router = useRouter();
 	const [logoDialogOpen, setLogoDialogOpen] = useState(false);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [isPending, startTransition] = useTransition();
@@ -142,8 +148,6 @@ export function CardDialog({
 		},
 	});
 
-	type CardCreatePayload = Parameters<typeof createCardAction>[0];
-
 	const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		setErrorMessage(null);
@@ -193,26 +197,33 @@ export function CardDialog({
 		}
 
 		startTransition(async () => {
-			const result =
-				mode === "create"
-					? await createCardAction(payload)
-					: await updateCardAction({
-							id: card?.id ?? "",
-							...payload,
-						});
+			try {
+				const result =
+					mode === "create"
+						? await createCardClient(payload)
+						: await updateCardClient(card?.id ?? "", payload);
 
-			if (result.success) {
-				toast.success(result.message);
-				setDialogOpen(false);
-				resetForm(initialState);
-				if (mode === "create" && result.data && onCreated) {
-					onCreated(result.data);
+				if (result.success) {
+					toast.success(result.message);
+					setDialogOpen(false);
+					resetForm(initialState);
+					if (mode === "create" && result.data && onCreated) {
+						onCreated(result.data);
+					}
+					router.refresh();
+					return;
 				}
-				return;
-			}
 
-			setErrorMessage(result.error);
-			toast.error(result.error);
+				setErrorMessage(result.error);
+				toast.error(result.error);
+			} catch {
+				const message =
+					mode === "create"
+						? "Não foi possível criar o cartão."
+						: "Não foi possível atualizar o cartão.";
+				setErrorMessage(message);
+				toast.error(message);
+			}
 		});
 	};
 

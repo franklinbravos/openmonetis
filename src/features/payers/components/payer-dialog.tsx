@@ -4,9 +4,10 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
-	createPayerAction,
-	updatePayerAction,
-} from "@/features/payers/actions";
+	createPayerClient,
+	type PayerCreatePayload,
+	updatePayerClient,
+} from "@/features/payers/lib/payers-api-client";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
 import {
@@ -77,7 +78,6 @@ function resizeImageToBase64(file: File): Promise<string> {
 	});
 }
 
-type PayerCreatePayload = Parameters<typeof createPayerAction>[0];
 
 interface PayerDialogProps {
 	mode: "create" | "update";
@@ -208,8 +208,8 @@ export function PayerDialog({
 		startTransition(async () => {
 			const result =
 				mode === "create"
-					? await createPayerAction(payload)
-					: await updatePayerAction({ id: payerId ?? "", ...payload });
+					? await createPayerClient(payload)
+					: await updatePayerClient(payerId ?? "", payload);
 
 			if (result.success) {
 				toast.success(result.message);

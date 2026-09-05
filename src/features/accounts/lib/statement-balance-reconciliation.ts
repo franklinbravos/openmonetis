@@ -189,7 +189,10 @@ export function computeStatementMonthNetInCadastro(input: {
 	);
 
 	return roundMoney(
-		importNetInStatement + linkedFileNet + dbNetExcludingLinked + input.yieldAmount,
+		importNetInStatement +
+			linkedFileNet +
+			dbNetExcludingLinked +
+			input.yieldAmount,
 	);
 }
 
@@ -203,7 +206,11 @@ export function partitionStatementMonthDbRows(
 		(row) => !isAccountBalanceAdjustmentLabel(row.name),
 	);
 	const inMonthByDateRows = movementRows.filter((row) =>
-		isPurchaseDateInStatementMonth(row.purchaseDate, statementStart, statementEnd),
+		isPurchaseDateInStatementMonth(
+			row.purchaseDate,
+			statementStart,
+			statementEnd,
+		),
 	);
 	const misfiledForwardPeriodRows = inMonthByDateRows.filter(
 		(row) => comparePeriods(row.period, statementPeriod) > 0,
@@ -292,9 +299,7 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 
 	const yieldAmount = computeStatementYieldGap(input.balances, input.fileRows);
 	const yieldDate =
-		yieldAmount > SOURCE_ROUNDING_TOLERANCE
-			? statementBounds.start
-			: null;
+		yieldAmount > SOURCE_ROUNDING_TOLERANCE ? statementBounds.start : null;
 
 	const [
 		misplacedAdjustments,
@@ -338,7 +343,10 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 					transactions.purchaseDate,
 					parseLocalDateString(statementBounds.start),
 				),
-				lte(transactions.purchaseDate, parseLocalDateString(statementBounds.end)),
+				lte(
+					transactions.purchaseDate,
+					parseLocalDateString(statementBounds.end),
+				),
 			),
 		}),
 	]);
@@ -376,8 +384,7 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 	);
 
 	const projectedClosingBalance = roundMoney(
-		input.balances.openingBalance +
-			statementMonthNetInCadastro,
+		input.balances.openingBalance + statementMonthNetInCadastro,
 	);
 	const closingDelta = roundMoney(
 		projectedClosingBalance - input.balances.closingBalance,

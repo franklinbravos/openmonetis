@@ -11,10 +11,10 @@ import {
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-	confirmNoteAttachmentUploadAction,
-	getPresignedNoteAttachmentUploadUrlAction,
-	removeNoteAttachmentAction,
-} from "@/features/notes/actions/attachments";
+	confirmNoteAttachmentUploadClient,
+	getPresignedNoteAttachmentUploadUrlClient,
+	removeNoteAttachmentClient,
+} from "@/features/notes/lib/notes-api-client";
 import type { NoteAttachment } from "@/features/notes/components/types";
 import { Button } from "@/shared/components/ui/button";
 import {
@@ -40,7 +40,7 @@ export async function uploadNoteAttachment(
 	file: File,
 ): Promise<UploadResult> {
 	try {
-		const presign = await getPresignedNoteAttachmentUploadUrlAction({
+		const presign = await getPresignedNoteAttachmentUploadUrlClient({
 			noteId,
 			fileName: file.name,
 			fileSize: file.size,
@@ -57,7 +57,7 @@ export async function uploadNoteAttachment(
 			return { success: false, error: "Não foi possível enviar o arquivo." };
 		}
 
-		const confirmed = await confirmNoteAttachmentUploadAction({
+		const confirmed = await confirmNoteAttachmentUploadClient({
 			uploadToken: presign.uploadToken,
 		});
 		if (!confirmed.success || !confirmed.data) {
@@ -185,7 +185,7 @@ export function NoteAttachmentsField({
 		if (!noteId || !removing) return;
 		setIsRemoving(true);
 		onBusyChange?.(true);
-		const result = await removeNoteAttachmentAction({
+		const result = await removeNoteAttachmentClient({
 			noteId,
 			attachmentId: removing.attachmentId,
 		});

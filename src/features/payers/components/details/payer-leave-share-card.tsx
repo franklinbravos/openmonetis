@@ -4,7 +4,7 @@ import { RiLogoutBoxLine } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { deletePayerShareAction } from "@/features/payers/actions";
+import { deletePayerShareClient } from "@/features/payers/lib/payers-api-client";
 import { Button } from "@/shared/components/ui/button";
 import {
 	Card,
@@ -31,7 +31,7 @@ export function PayerLeaveShareCard({
 
 	const handleLeave = () => {
 		startTransition(async () => {
-			const result = await deletePayerShareAction({ shareId });
+			const result = await deletePayerShareClient(shareId);
 
 			if (!result.success) {
 				toast.error(result.error);

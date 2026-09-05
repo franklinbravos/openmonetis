@@ -9,9 +9,11 @@ import {
 } from "@remixicon/react";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { fetchCardImportPdfPasswordAttemptsAction } from "@/features/cards/actions/fetch-import-pdf-password-attempts-action";
-import { saveCardImportPdfPasswordAction } from "@/features/cards/actions/import-pdf-password-action";
-import { deleteImportBatchAction } from "@/features/transactions/actions/import-batch-history-action";
+import {
+	deleteImportBatchClient,
+	fetchCardImportPdfPasswordAttemptsClient,
+	saveCardImportPdfPasswordClient,
+} from "@/features/transactions/lib/import-api-client";
 import { ImportDuplicateFileDialog } from "@/features/transactions/components/import/import-duplicate-file-dialog";
 import { ImportPdfPasswordDialog } from "@/features/transactions/components/import/import-pdf-password-dialog";
 import { isImportBatchImported } from "@/features/transactions/lib/import-batch-status";
@@ -201,9 +203,7 @@ export function UploadZone({
 
 		let cancelled = false;
 
-		void fetchCardImportPdfPasswordAttemptsAction({
-			cardId: linkedCardId,
-		})
+		void fetchCardImportPdfPasswordAttemptsClient(linkedCardId)
 			.then((result) => {
 				if (cancelled) return;
 				if (result.success) {
@@ -292,8 +292,7 @@ export function UploadZone({
 				options.explicitPassword?.trim()
 			) {
 				startSavePasswordTransition(async () => {
-					const result = await saveCardImportPdfPasswordAction({
-						cardId: linkedCardId,
+					const result = await saveCardImportPdfPasswordClient(linkedCardId, {
 						rule:
 							options.savePasswordRule ?? CARD_IMPORT_PDF_PASSWORD_RULES.fixed,
 						secret: options.explicitPassword?.trim() ?? "",
@@ -301,9 +300,8 @@ export function UploadZone({
 
 					if (result.success) {
 						toast.success(result.message);
-						const refreshed = await fetchCardImportPdfPasswordAttemptsAction({
-							cardId: linkedCardId,
-						});
+						const refreshed =
+							await fetchCardImportPdfPasswordAttemptsClient(linkedCardId);
 						if (refreshed.success) {
 							setAutoPdfPasswordAttempts(refreshed.attempts);
 						}
@@ -396,7 +394,7 @@ export function UploadZone({
 		setDuplicatePendingFile(null);
 
 		if (!isImportBatchImported(entry.status)) {
-			const result = await deleteImportBatchAction({ batchId: entry.id });
+			const result = await deleteImportBatchClient(entry.id);
 			if (!result.success) {
 				toast.error(
 					result.error ?? "Não foi possível remover a importação anterior.",

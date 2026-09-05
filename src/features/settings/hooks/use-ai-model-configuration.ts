@@ -10,13 +10,13 @@ import {
 	useTransition,
 } from "react";
 import { toast } from "sonner";
-import { fetchProviderModelsAction } from "@/features/insights/actions";
+import { fetchProviderModelsClient } from "@/features/insights/lib/insights-api-client";
 import {
 	type AIProvider,
 	AVAILABLE_MODELS,
 	DEFAULT_PROVIDER,
 } from "@/features/insights/constants";
-import { updateAiProviderSettingsAction } from "@/features/settings/actions/ai-providers";
+import { updateAiProviderSettingsClient } from "@/features/settings/lib/settings-api-client";
 import type { ListedProviderModel } from "@/shared/lib/ai/list-provider-models";
 import {
 	mergeListedProviderModels,
@@ -264,7 +264,7 @@ export function useAiModelConfiguration({
 			setIsLoadingModels(true);
 			setModelsError(null);
 
-			const result = await fetchProviderModelsAction({
+			const result = await fetchProviderModelsClient({
 				provider: currentProvider,
 				apiKey: apiKeyInput.trim() || undefined,
 				baseUrl: baseUrlInput.trim() || undefined,
@@ -285,6 +285,13 @@ export function useAiModelConfiguration({
 				if (options?.showFeedback) {
 					toast.error(result.error);
 				}
+				return;
+			}
+
+			if (!result.data) {
+				setFetchedModels([]);
+				setCredentialValidated(false);
+				setModelsError("Não foi possível carregar os modelos.");
 				return;
 			}
 
@@ -408,7 +415,7 @@ export function useAiModelConfiguration({
 					? baseUrlInput.trim() || savedBaseUrl
 					: baseUrlInput.trim() || undefined;
 
-			const result = await updateAiProviderSettingsAction({
+			const result = await updateAiProviderSettingsClient({
 				insightsDefaultModelId: selectedModelId,
 				providers: {
 					[currentProvider]: {

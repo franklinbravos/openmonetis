@@ -1,25 +1,19 @@
 "use server";
 
-import { eq } from "drizzle-orm";
-import { transactions } from "@/db/schema";
-import { mapTransactionsData } from "@/features/transactions/lib/page-helpers";
-import { fetchTransactionsWithRelations } from "@/features/transactions/queries";
+import { fetchTransactionsByIdsForViewer } from "@/features/transactions/lib/fetch-transactions-by-ids";
 import { getUser } from "@/shared/lib/auth/server";
-import { assertFinancialReadAccess } from "@/shared/lib/payers/financial-access";
 import type { TransactionItem } from "../components/types";
 
 export async function fetchTransactionByIdAction(
 	transactionId: string,
 ): Promise<TransactionItem | null> {
+	const items = await fetchTransactionsByIdsAction([transactionId]);
+	return items[0] ?? null;
+}
+
+export async function fetchTransactionsByIdsAction(
+	transactionIds: string[],
+): Promise<TransactionItem[]> {
 	const user = await getUser();
-	const { dataOwnerUserId } = await assertFinancialReadAccess(user.id);
-	const rows = await fetchTransactionsWithRelations({
-		filters: [
-			eq(transactions.id, transactionId),
-			eq(transactions.userId, dataOwnerUserId),
-		],
-		excludeInitialBalanceFromIncome: false,
-	});
-	const mapped = mapTransactionsData(rows);
-	return mapped[0] ?? null;
+	return fetchTransactionsByIdsForViewer(user.id, transactionIds);
 }

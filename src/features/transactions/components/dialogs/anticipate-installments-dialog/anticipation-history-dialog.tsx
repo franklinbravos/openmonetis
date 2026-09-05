@@ -3,7 +3,7 @@ import { RiCalendarCheckLine, RiLoader4Line } from "@remixicon/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { toast } from "sonner";
-import { cancelInstallmentAnticipationAction } from "@/features/transactions/actions/anticipation";
+import { cancelInstallmentAnticipationClient } from "@/features/transactions/lib/transactions-api-client";
 import {
 	installmentAnticipationsQueryKey,
 	useInstallmentAnticipations,
@@ -82,9 +82,9 @@ export function AnticipationHistoryDialog({
 	const handleCancelAnticipation = async () => {
 		if (!cancelableAnticipation) return;
 
-		const result = await cancelInstallmentAnticipationAction({
-			anticipationId: cancelableAnticipation.id,
-		});
+		const result = await cancelInstallmentAnticipationClient(
+			cancelableAnticipation.id,
+		);
 
 		if (result.success) {
 			toast.success(result.message);

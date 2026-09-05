@@ -428,13 +428,9 @@ export function ImportConfirmDialog({
 								{accountBalance.misfiledForwardPeriodCount > 0 ? (
 									<li className="text-[11px] text-muted-foreground leading-relaxed">
 										{accountBalance.misfiledForwardPeriodCount} lançamento
-										{accountBalance.misfiledForwardPeriodCount !== 1
-											? "s"
-											: ""}{" "}
+										{accountBalance.misfiledForwardPeriodCount !== 1 ? "s" : ""}{" "}
 										datado
-										{accountBalance.misfiledForwardPeriodCount !== 1
-											? "s"
-											: ""}{" "}
+										{accountBalance.misfiledForwardPeriodCount !== 1 ? "s" : ""}{" "}
 										no mês do extrato será
 										{accountBalance.misfiledForwardPeriodCount !== 1
 											? "ão"

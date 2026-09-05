@@ -1,4 +1,5 @@
 import type { TransactionItem } from "@/features/transactions/components/types";
+import { readLastTransactionDate } from "@/shared/lib/transaction-last-date";
 import {
 	compareDateOnly,
 	getBusinessDateString,
@@ -193,7 +194,7 @@ export function buildTransactionInitialState(
 ): TransactionFormState {
 	const purchaseDate = transaction?.purchaseDate
 		? transaction.purchaseDate.slice(0, 10)
-		: (overrides?.defaultPurchaseDate ?? getTodayDateString());
+		: (overrides?.defaultPurchaseDate ?? readLastTransactionDate());
 
 	const paymentMethod =
 		transaction?.paymentMethod ??

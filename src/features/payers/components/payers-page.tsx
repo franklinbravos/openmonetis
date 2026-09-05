@@ -3,7 +3,7 @@
 import { RiAddFill } from "@remixicon/react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { deletePayerAction } from "@/features/payers/actions";
+import { deletePayerClient } from "@/features/payers/lib/payers-api-client";
 import { PayerCard } from "@/features/payers/components/payer-card";
 import { PayerDialog } from "@/features/payers/components/payer-dialog";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
@@ -71,7 +71,7 @@ export function PayersPage({ payers, avatarOptions }: PayersPageProps) {
 			return;
 		}
 
-		const result = await deletePayerAction({ id: payerToRemove.id });
+		const result = await deletePayerClient(payerToRemove.id);
 
 		if (result.success) {
 			toast.success(result.message);

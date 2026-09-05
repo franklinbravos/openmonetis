@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { grantPayerAccessToExistingUserAction } from "@/features/payers/actions/share-access";
+import { grantPayerAccessToExistingUserClient } from "@/features/payers/lib/payers-api-client";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
@@ -34,7 +34,7 @@ export function PayerGrantAccessForm({
 
 	const handleSubmit = () => {
 		startTransition(async () => {
-			const result = await grantPayerAccessToExistingUserAction({
+			const result = await grantPayerAccessToExistingUserClient({
 				payerId,
 				email,
 				permission,

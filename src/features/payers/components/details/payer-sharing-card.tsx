@@ -4,8 +4,10 @@ import { RiDeleteBin5Line } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { deletePayerShareAction } from "@/features/payers/actions";
-import { updatePayerSharePermissionAction } from "@/features/payers/actions/share-access";
+import {
+	deletePayerShareClient,
+	updatePayerSharePermissionClient,
+} from "@/features/payers/lib/payers-api-client";
 import { PayerGrantAccessForm } from "@/features/payers/components/details/payer-grant-access-form";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
@@ -54,7 +56,7 @@ export function PayerSharingCard({ payerId, shares }: PayerSharingCardProps) {
 	const handleRemove = (shareId: string) => {
 		setRemovePendingId(shareId);
 		startTransition(async () => {
-			const result = await deletePayerShareAction({ shareId });
+			const result = await deletePayerShareClient(shareId);
 
 			if (!result.success) {
 				toast.error(result.error);
@@ -74,8 +76,7 @@ export function PayerSharingCard({ payerId, shares }: PayerSharingCardProps) {
 	) => {
 		setPermissionPendingId(shareId);
 		startTransition(async () => {
-			const result = await updatePayerSharePermissionAction({
-				shareId,
+			const result = await updatePayerSharePermissionClient(shareId, {
 				permission,
 			});
 

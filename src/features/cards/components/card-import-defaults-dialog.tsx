@@ -4,7 +4,7 @@ import { RiSettings4Line } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { updateCardImportPdfPasswordSettingsAction } from "@/features/cards/actions/import-pdf-password-action";
+import { updateCardImportPdfPasswordSettingsClient } from "@/features/cards/lib/cards-api-client";
 import { CardImportPdfPasswordFields } from "@/features/cards/components/card-import-pdf-password-fields";
 import { Button } from "@/shared/components/ui/button";
 import {
@@ -53,7 +53,7 @@ export function CardImportDefaultsDialog({
 
 	const handleSave = () => {
 		startTransition(async () => {
-			const result = await updateCardImportPdfPasswordSettingsAction({
+			const result = await updateCardImportPdfPasswordSettingsClient({
 				cardId,
 				rule,
 				secret: secret.trim() ? secret : undefined,

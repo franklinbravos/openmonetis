@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { adjustInvoiceAction } from "@/features/invoices/actions";
+import { adjustInvoiceClient } from "@/features/invoices/lib/invoices-api-client";
 import { Button } from "@/shared/components/ui/button";
 import { CurrencyInput } from "@/shared/components/ui/currency-input";
 import {
@@ -67,7 +67,7 @@ export function AdjustInvoiceDialog({
 		}
 
 		startTransition(async () => {
-			const result = await adjustInvoiceAction({
+			const result = await adjustInvoiceClient({
 				cardId,
 				period,
 				currentTotal,

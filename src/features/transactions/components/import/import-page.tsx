@@ -21,55 +21,45 @@ import {
 	type CreatedCategory,
 } from "@/features/categories/components/create-category-inline-dialog";
 import type { Category } from "@/features/categories/components/types";
+import type { CardLimitsSnapshot } from "@/features/transactions/actions/card-limits";
+import type { TransactionDialogOptions } from "@/features/transactions/actions/fetch-dialog-options";
+import type { InvoiceSnapshot } from "@/features/transactions/actions/previous-invoice-snapshot";
 import {
-	type CardLimitsSnapshot,
-	fetchCardLimitsAction,
-	updateCardLimitsFromInvoiceAction,
-} from "@/features/transactions/actions/card-limits";
+	analyzeImportAiBatchClient as analyzeImportAiBatchAction,
+	checkDuplicateFitIdsClient as checkDuplicateFitIds,
+	deleteImportBatchClient,
+	deleteImportDuplicateTransactionClient as deleteImportDuplicateTransaction,
+	deleteTransactionByFitIdClient as deleteTransactionByFitId,
+	fetchAccountImportDuplicateSnapshotsClient as fetchAccountImportDuplicateSnapshots,
+	fetchCardInstallmentDuplicateSnapshotsClient as fetchCardInstallmentDuplicateSnapshots,
+	fetchCardLimitsClient as fetchCardLimitsAction,
+	fetchImportBatchHistoryClient as fetchImportBatchHistoryAction,
+	fetchImportDescriptionMemoryClient as fetchImportDescriptionMemory,
+	fetchImportDuplicateSnapshotsClient as fetchImportDuplicateSnapshots,
+	fetchInvoicePeriodDuplicateSnapshotsClient as fetchInvoicePeriodDuplicateSnapshots,
+	fetchInvoiceSnapshotClient as fetchInvoiceSnapshotAction,
+	getImportBatchDraftClient as getImportBatchDraftAction,
+	getImportBatchResumeClient as getImportBatchResumeAction,
+	importTransactionsClient as importTransactionsAction,
+	linkImportSuggestionsBatchClient as linkImportSuggestionsBatchAction,
+	matchInvoicePaymentsByAmountClient as matchInvoicePaymentsByAmountAction,
+	moveImportTransactionToPeriodClient as moveImportTransactionToPeriodAction,
+	prepareImportAiAnalysisClient as prepareImportAiAnalysisAction,
+	previewImportBalanceReconciliationClient as previewImportBalanceReconciliationAction,
+	registerImportUploadClient as registerImportUploadAction,
+	saveCategoryMappingsClient as saveCategoryMappings,
+	saveImportBatchDraftClient as saveImportBatchDraftAction,
+	syncImportBatchContextClient as syncImportBatchContextAction,
+	syncImportBatchSourceTotalClient as syncImportBatchSourceTotalAction,
+	undoImportClient as undoImportAction,
+	updateCardLimitsFromInvoiceClient as updateCardLimitsFromInvoiceAction,
+	updateImportExistingTransactionCategoryClient as updateImportExistingTransactionCategoryAction,
+	updatePreviousInvoicePaymentDateClient as updatePreviousInvoicePaymentDateAction,
+} from "@/features/transactions/lib/import-api-client";
 import {
-	fetchImportDescriptionMemory,
-	saveCategoryMappings,
-} from "@/features/transactions/actions/category-memory-action";
-import { fetchTransactionByIdAction } from "@/features/transactions/actions/fetch-by-id";
-import {
-	fetchTransactionDialogOptionsAction,
-	type TransactionDialogOptions,
-} from "@/features/transactions/actions/fetch-dialog-options";
-import {
-	checkDuplicateFitIds,
-	deleteImportDuplicateTransaction,
-	deleteTransactionByFitId,
-	fetchAccountImportDuplicateSnapshots,
-	fetchCardInstallmentDuplicateSnapshots,
-	fetchImportDuplicateSnapshots,
-	fetchInvoicePeriodDuplicateSnapshots,
-	importTransactionsAction,
-	linkImportSuggestionsBatchAction,
-	moveImportTransactionToPeriodAction,
-	updateImportExistingTransactionCategoryAction,
-	previewImportBalanceReconciliationAction,
-	undoImportAction,
-} from "@/features/transactions/actions/import-action";
-import {
-	analyzeImportAiBatchAction,
-	prepareImportAiAnalysisAction,
-} from "@/features/transactions/actions/import-ai-analysis-action";
-import {
-	deleteImportBatchAction,
-	fetchImportBatchHistoryAction,
-	getImportBatchDraftAction,
-	getImportBatchResumeAction,
-	registerImportUploadAction,
-	saveImportBatchDraftAction,
-	syncImportBatchContextAction,
-	syncImportBatchSourceTotalAction,
-} from "@/features/transactions/actions/import-batch-history-action";
-import { matchInvoicePaymentsByAmountAction } from "@/features/transactions/actions/invoice-payment-match";
-import {
-	fetchInvoiceSnapshotAction,
-	type InvoiceSnapshot,
-	updatePreviousInvoicePaymentDateAction,
-} from "@/features/transactions/actions/previous-invoice-snapshot";
+	fetchTransactionByIdClient,
+	fetchTransactionDialogOptionsClient,
+} from "@/features/transactions/lib/transactions-api-client";
 import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
 import { CardLimitsCard } from "@/features/transactions/components/import/card-limits-card";
 import {
@@ -86,8 +76,8 @@ import type { ImportAccountBalancePrompt } from "@/features/transactions/compone
 import { ImportConfirmDialog } from "@/features/transactions/components/import/import-confirm-dialog";
 import { ImportFileHistory } from "@/features/transactions/components/import/import-file-history";
 import { ImportInvoicePeriodMismatchDialog } from "@/features/transactions/components/import/import-invoice-period-mismatch-dialog";
-import { ImportLinkDialog } from "@/features/transactions/components/import/import-link-dialog";
 import type { ImportLinkMergeMode } from "@/features/transactions/components/import/import-link-dialog";
+import { ImportLinkDialog } from "@/features/transactions/components/import/import-link-dialog";
 import {
 	ImportProgressDialog,
 	type ImportProgressStep,
@@ -172,12 +162,6 @@ import {
 	isValidInstallmentImport,
 	isValidRecurrenceImport,
 } from "@/features/transactions/lib/import-installments";
-import {
-	buildImportLinkRequest,
-	collectImportLinkSuggestionIndexes,
-	resolveAutoLinkMergeDescription,
-	resolveLinkedReviewRowState,
-} from "@/features/transactions/lib/import-link-suggestions";
 import { applyInvoiceClosingToReviewRows } from "@/features/transactions/lib/import-invoice-closing";
 import {
 	collectInvoiceExtraRemovalTransactionIds,
@@ -208,6 +192,12 @@ import {
 	pickInvoicePeriodExistingSnapshots,
 	shouldFetchInvoiceDuplicateSnapshots,
 } from "@/features/transactions/lib/import-invoice-reconciliation";
+import {
+	buildImportLinkRequest,
+	collectImportLinkSuggestionIndexes,
+	resolveAutoLinkMergeDescription,
+	resolveLinkedReviewRowState,
+} from "@/features/transactions/lib/import-link-suggestions";
 import { collectPeriodLockedTransactionIds } from "@/features/transactions/lib/import-move-period";
 import { isImportReviewRowImportable } from "@/features/transactions/lib/import-review-filters";
 import { guessImportTransfer } from "@/features/transactions/lib/import-transfer-detection";
@@ -2777,8 +2767,8 @@ export function ImportPage({
 			if (!transactionId) return;
 
 			const [transaction, options] = await Promise.all([
-				fetchTransactionByIdAction(transactionId),
-				editDialogOptions ?? fetchTransactionDialogOptionsAction(),
+				fetchTransactionByIdClient(transactionId),
+				editDialogOptions ?? fetchTransactionDialogOptionsClient(),
 			]);
 
 			if (!transaction) {
@@ -2862,7 +2852,10 @@ export function ImportPage({
 				}
 
 				const resolvedPayerId =
-					validation.existingPayerId ?? row.payerId ?? payerId ?? defaultPayerId;
+					validation.existingPayerId ??
+					row.payerId ??
+					payerId ??
+					defaultPayerId;
 				const mergeDescription =
 					options?.mergeDescription ??
 					resolveAutoLinkMergeDescription(validation);
@@ -4106,7 +4099,7 @@ export function ImportPage({
 			null;
 
 		if (batchId) {
-			const result = await deleteImportBatchAction({ batchId });
+			const result = await deleteImportBatchClient(batchId);
 			if (!result.success) {
 				toast.error(result.error ?? "Não foi possível descartar a importação.");
 				throw new Error(result.error ?? "discard failed");

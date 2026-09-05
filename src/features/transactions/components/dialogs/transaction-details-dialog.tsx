@@ -7,7 +7,7 @@ import {
 	useEffect,
 	useState,
 } from "react";
-import { fetchTransactionByIdAction } from "@/features/transactions/actions/fetch-by-id";
+import { fetchTransactionByIdClient } from "@/features/transactions/lib/transactions-api-client";
 import {
 	currencyFormatter,
 	formatCondition,
@@ -75,7 +75,7 @@ export function TransactionDetailsDialog({
 		let cancelled = false;
 		setIsLoadingDetails(true);
 
-		void fetchTransactionByIdAction(transaction.id)
+		void fetchTransactionByIdClient(transaction.id)
 			.then((full) => {
 				if (cancelled) return;
 				setResolvedTransaction(full);
@@ -136,7 +136,7 @@ export function TransactionDetailsDialog({
 			return;
 		}
 
-		void fetchTransactionByIdAction(transactionId).then((full) => {
+		void fetchTransactionByIdClient(transactionId).then((full) => {
 			if (!full) return;
 			onOpenChange(false);
 			onEdit(full);

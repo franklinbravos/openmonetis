@@ -3,7 +3,10 @@
 import { RiAddFill, RiTodoLine } from "@remixicon/react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { archiveNoteAction, deleteNoteAction } from "@/features/notes/actions";
+import {
+	archiveNoteClient,
+	deleteNoteClient,
+} from "@/features/notes/lib/notes-api-client";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
 import { EmptyState } from "@/shared/components/feedback/empty-state";
 import { Button } from "@/shared/components/ui/button";
@@ -103,8 +106,7 @@ export function NotesPage({
 			return;
 		}
 
-		const result = await archiveNoteAction({
-			id: noteToArquivar.id,
+		const result = await archiveNoteClient(noteToArquivar.id, {
 			archived: !isArquivadas,
 		});
 
@@ -122,7 +124,7 @@ export function NotesPage({
 			return;
 		}
 
-		const result = await deleteNoteAction({ id: noteToRemove.id });
+		const result = await deleteNoteClient(noteToRemove.id);
 
 		if (result.success) {
 			toast.success(result.message);

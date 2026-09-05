@@ -197,7 +197,9 @@ function ReviewVerifiedDuplicateDescription({
 }) {
 	return (
 		<div className="flex min-w-0 flex-wrap items-center gap-1.5">
-			<p className="min-w-0 flex-1 break-words font-medium">{row.description}</p>
+			<p className="min-w-0 flex-1 break-words font-medium">
+				{row.description}
+			</p>
 			<ReviewVerifiedInvoicePaymentBadge row={row} cardOptions={cardOptions} />
 			<Badge variant="success" className="shrink-0 text-[10px]">
 				Conferido
@@ -1135,187 +1137,332 @@ export function ReviewTable({
 									<col className="w-28" />
 								</colgroup>
 								<TableHeader className="sticky top-0 z-10 bg-background">
-								<TableRow>
-									<TableHead className="w-10">
-										<Checkbox
-											checked={allSelected}
-											onCheckedChange={(v) => handleToggleAll(!!v)}
-											aria-label={
-												filtersActive
-													? "Selecionar lançamentos visíveis"
-													: "Selecionar todas"
-											}
-											data-state={
-												!allSelected && someSelected
-													? "indeterminate"
-													: undefined
-											}
-										/>
-									</TableHead>
-									<TableHead className="w-24">Data</TableHead>
-									<TableHead className={REVIEW_TABLE_DESCRIPTION_CELL_CLASS}>
-										Descrição
-									</TableHead>
-									<TableHead className="w-12 text-center">Pessoa</TableHead>
-									<TableHead className="w-44">Categoria / Fatura</TableHead>
-									<TableHead className="w-32">Tipo</TableHead>
-									<TableHead className="w-28 text-right">Valor</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{filteredEntries.map(({ row, index }) => {
-									const categoryOptionsForRow = categoryOptions.filter(
-										(option) =>
-											option.group ===
-											categoryGroupByTransactionType[row.transactionType],
-									);
+									<TableRow>
+										<TableHead className="w-10">
+											<Checkbox
+												checked={allSelected}
+												onCheckedChange={(v) => handleToggleAll(!!v)}
+												aria-label={
+													filtersActive
+														? "Selecionar lançamentos visíveis"
+														: "Selecionar todas"
+												}
+												data-state={
+													!allSelected && someSelected
+														? "indeterminate"
+														: undefined
+												}
+											/>
+										</TableHead>
+										<TableHead className="w-24">Data</TableHead>
+										<TableHead className={REVIEW_TABLE_DESCRIPTION_CELL_CLASS}>
+											Descrição
+										</TableHead>
+										<TableHead className="w-12 text-center">Pessoa</TableHead>
+										<TableHead className="w-44">Categoria / Fatura</TableHead>
+										<TableHead className="w-32">Tipo</TableHead>
+										<TableHead className="w-28 text-right">Valor</TableHead>
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{filteredEntries.map(({ row, index }) => {
+										const categoryOptionsForRow = categoryOptions.filter(
+											(option) =>
+												option.group ===
+												categoryGroupByTransactionType[row.transactionType],
+										);
 
-									if (isInvoiceExtraReviewRow(row)) {
+										if (isInvoiceExtraReviewRow(row)) {
+											return (
+												<TableRow
+													key={getReviewRowKey(row)}
+													className={getInvoiceExtraRowClassName(row)}
+												>
+													<TableCell>
+														<Checkbox
+															checked={row.selected}
+															onCheckedChange={() => onToggle(index)}
+															aria-label={`Marcar remoção de ${row.description}`}
+															tabIndex={-1}
+														/>
+													</TableCell>
+													<TableCell className="text-muted-foreground text-sm">
+														{formatDate(row.date)}
+													</TableCell>
+													<TableCell
+														className={REVIEW_TABLE_DESCRIPTION_CELL_CLASS}
+													>
+														<div className="space-y-1">
+															<p className="break-words font-medium">
+																{row.description}
+															</p>
+															<ReviewInvoiceExtraStatus row={row} />
+														</div>
+													</TableCell>
+													<TableCell className="w-12 text-center">
+														<div className="flex justify-center">
+															<ReviewVerifiedExistingPayer
+																payerId={row.payerId}
+																payerOptions={payerOptions}
+															/>
+														</div>
+													</TableCell>
+													<TableCell>
+														<ReviewVerifiedExistingCategory
+															categoryId={row.categoryId}
+															categoryOptions={categoryOptions}
+														/>
+													</TableCell>
+													<TableCell>
+														<ReviewVerifiedExistingType
+															transactionType={row.transactionType}
+															rowKind={row.kind}
+														/>
+													</TableCell>
+													<TableCell className="text-right text-sm">
+														<ReviewAmountField
+															row={row}
+															index={index}
+															onAmountChange={onAmountChange}
+															alignRight
+														/>
+													</TableCell>
+												</TableRow>
+											);
+										}
+
+										if (
+											isVerifiedImportDuplicate(row) ||
+											isImportRowLinked(row)
+										) {
+											const existingPayerId = resolveReviewExistingPayerId(
+												row,
+												defaultPayerId,
+											);
+											const existingCategoryId =
+												resolveReviewExistingCategoryId(row);
+											const categoryRow = {
+												...row,
+												categoryId: existingCategoryId,
+											};
+
+											return (
+												<TableRow
+													key={getReviewRowKey(row)}
+													className={getDuplicateRowClassName(row)}
+												>
+													<TableCell className="w-10">
+														<RiCheckboxCircleFill
+															className="size-5 text-emerald-600 dark:text-emerald-400"
+															aria-label={
+																isImportRowLinked(row)
+																	? "Lançamento vinculado"
+																	: "Lançamento conferido"
+															}
+														/>
+													</TableCell>
+													<TableCell className="text-muted-foreground text-sm">
+														{formatDate(row.date)}
+													</TableCell>
+													<TableCell
+														className={REVIEW_TABLE_DESCRIPTION_CELL_CLASS}
+													>
+														{isImportRowLinked(row) ? (
+															<div className="space-y-1">
+																<p className="break-words font-medium">
+																	{row.description}
+																</p>
+																<ReviewLinkedStatus
+																	row={row}
+																	accountOptions={transferAccountOptions}
+																/>
+															</div>
+														) : (
+															<ReviewVerifiedDuplicateDescription
+																row={row}
+																index={index}
+																cardOptions={cardOptions}
+																onEditDuplicate={onEditDuplicate}
+																onUndoDuplicate={onUndoDuplicate}
+															/>
+														)}
+														<ReviewCrossPeriodStatus
+															row={row}
+															index={index}
+															invoicePeriodExistingIdSet={
+																invoicePeriodExistingIdSet
+															}
+															periodLockedExistingIds={periodLockedExistingIds}
+															onMoveToInvoicePeriod={onMoveToInvoicePeriod}
+														/>
+													</TableCell>
+													<TableCell className="w-12 text-center">
+														<div className="flex justify-center">
+															<ReviewVerifiedExistingPayer
+																payerId={existingPayerId}
+																payerOptions={payerOptions}
+															/>
+														</div>
+													</TableCell>
+													<TableCell>
+														{shouldAllowReviewExistingCategoryEdit(row) ? (
+															<ReviewCategorySelect
+																row={categoryRow}
+																index={index}
+																categoryOptions={categoryOptionsForRow}
+																onCategoryChange={onCategoryChange}
+																onCreateCategory={onCreateCategory}
+															/>
+														) : (
+															<ReviewVerifiedExistingCategory
+																categoryId={existingCategoryId}
+																categoryOptions={categoryOptions}
+															/>
+														)}
+													</TableCell>
+													<TableCell>
+														<ReviewVerifiedExistingType
+															transactionType={row.transactionType}
+															rowKind={row.kind}
+														/>
+													</TableCell>
+													<TableCell className="text-right text-sm">
+														<ReviewAmountField
+															row={row}
+															index={index}
+															onAmountChange={onAmountChange}
+															alignRight
+														/>
+													</TableCell>
+												</TableRow>
+											);
+										}
+
 										return (
 											<TableRow
 												key={getReviewRowKey(row)}
-												className={getInvoiceExtraRowClassName(row)}
+												className={cn(
+													getDuplicateRowClassName(row),
+													getReviewRowClassifiedClassName(row),
+												)}
 											>
 												<TableCell>
 													<Checkbox
 														checked={row.selected}
 														onCheckedChange={() => onToggle(index)}
-														aria-label={`Marcar remoção de ${row.description}`}
+														disabled={isImportLinkSuggestion(row)}
+														aria-label={`Selecionar ${row.description}`}
 														tabIndex={-1}
 													/>
 												</TableCell>
 												<TableCell className="text-muted-foreground text-sm">
 													{formatDate(row.date)}
 												</TableCell>
-												<TableCell className={REVIEW_TABLE_DESCRIPTION_CELL_CLASS}>
-													<div className="space-y-1">
-														<p className="break-words font-medium">{row.description}</p>
-														<ReviewInvoiceExtraStatus row={row} />
+												{/*
+												 * A descrição é o que distingue uma linha da outra, então é
+												 * ela que precisa de espaço — não os selects. Antes a célula
+												 * era travada em 200px e o campo era um input de uma linha:
+												 * "Transferência recebida pelo Pix FULANO - CNPJ - BANCO"
+												 * aparecia como "Transferência", igual em toda linha.
+												 */}
+												<TableCell
+													className={REVIEW_TABLE_DESCRIPTION_CELL_CLASS}
+												>
+													<div className="min-w-0 space-y-2">
+														<ReviewDescriptionField
+															row={row}
+															index={index}
+															fullWidth
+															isCard={isCard}
+															invoicePeriod={invoicePeriod}
+															categoryOptions={categoryOptions}
+															transferAccountOptions={transferAccountOptions}
+															onDescriptionChange={onDescriptionChange}
+															onUndoDuplicate={onUndoDuplicate}
+															onLinkDuplicate={onLinkDuplicate}
+															onDismissLinkSuggestion={onDismissLinkSuggestion}
+															onConvertToInstallment={onConvertToInstallment}
+															onConvertToRecurrence={onConvertToRecurrence}
+															excludeFromTabOrder
+														/>
+														<ReviewInstallmentFields
+															row={row}
+															index={index}
+															isCard={isCard}
+															invoicePeriod={invoicePeriod}
+															onInstallmentToggle={onInstallmentToggle}
+															onInstallmentDismiss={onInstallmentDismiss}
+															onInstallmentCountChange={
+																onInstallmentCountChange
+															}
+															onInstallmentCurrentChange={
+																onInstallmentCurrentChange
+															}
+														/>
+														<ReviewRecurrenceFields
+															row={row}
+															index={index}
+															onRecurrenceToggle={onRecurrenceToggle}
+															onRecurrenceCountChange={onRecurrenceCountChange}
+														/>
 													</div>
 												</TableCell>
 												<TableCell className="w-12 text-center">
 													<div className="flex justify-center">
-														<ReviewVerifiedExistingPayer
-															payerId={row.payerId}
+														<ReviewPayerSelect
+															row={row}
+															index={index}
 															payerOptions={payerOptions}
+															onPayerChange={onPayerChange}
+															skipPeerTabStops
 														/>
 													</div>
 												</TableCell>
-												<TableCell>
-													<ReviewVerifiedExistingCategory
-														categoryId={row.categoryId}
-														categoryOptions={categoryOptions}
-													/>
-												</TableCell>
-												<TableCell>
-													<ReviewVerifiedExistingType
-														transactionType={row.transactionType}
-														rowKind={row.kind}
-													/>
-												</TableCell>
-												<TableCell className="text-right text-sm">
-													<ReviewAmountField
-														row={row}
-														index={index}
-														onAmountChange={onAmountChange}
-														alignRight
-													/>
-												</TableCell>
-											</TableRow>
-										);
-									}
-
-									if (
-										isVerifiedImportDuplicate(row) ||
-										isImportRowLinked(row)
-									) {
-										const existingPayerId = resolveReviewExistingPayerId(
-											row,
-											defaultPayerId,
-										);
-										const existingCategoryId =
-											resolveReviewExistingCategoryId(row);
-										const categoryRow = {
-											...row,
-											categoryId: existingCategoryId,
-										};
-
-										return (
-											<TableRow
-												key={getReviewRowKey(row)}
-												className={getDuplicateRowClassName(row)}
-											>
-												<TableCell className="w-10">
-													<RiCheckboxCircleFill
-														className="size-5 text-emerald-600 dark:text-emerald-400"
-														aria-label={
-															isImportRowLinked(row)
-																? "Lançamento vinculado"
-																: "Lançamento conferido"
-														}
-													/>
-												</TableCell>
-												<TableCell className="text-muted-foreground text-sm">
-													{formatDate(row.date)}
-												</TableCell>
-												<TableCell className={REVIEW_TABLE_DESCRIPTION_CELL_CLASS}>
-													{isImportRowLinked(row) ? (
-														<div className="space-y-1">
-															<p className="break-words font-medium">
-																{row.description}
-															</p>
-															<ReviewLinkedStatus
-																row={row}
-																accountOptions={transferAccountOptions}
-															/>
-														</div>
-													) : (
-														<ReviewVerifiedDuplicateDescription
+												<TableCell className="w-44 max-w-[11rem]">
+													{row.kind === "invoice_payment" ? (
+														<ReviewInvoicePaymentFields
 															row={row}
 															index={index}
 															cardOptions={cardOptions}
-															onEditDuplicate={onEditDuplicate}
-															onUndoDuplicate={onUndoDuplicate}
+															onInvoicePaymentCardChange={
+																onInvoicePaymentCardChange
+															}
+															onInvoicePaymentPeriodChange={
+																onInvoicePaymentPeriodChange
+															}
+															skipPeerTabStops
 														/>
-													)}
-													<ReviewCrossPeriodStatus
-														row={row}
-														index={index}
-														invoicePeriodExistingIdSet={
-															invoicePeriodExistingIdSet
-														}
-														periodLockedExistingIds={periodLockedExistingIds}
-														onMoveToInvoicePeriod={onMoveToInvoicePeriod}
-													/>
-												</TableCell>
-												<TableCell className="w-12 text-center">
-													<div className="flex justify-center">
-														<ReviewVerifiedExistingPayer
-															payerId={existingPayerId}
-															payerOptions={payerOptions}
+													) : row.kind === "transfer" ? (
+														<ReviewTransferFields
+															row={row}
+															index={index}
+															accountOptions={transferAccountOptions}
+															onTransferPeerAccountChange={
+																onTransferPeerAccountChange
+															}
+															onCreateTransferPeerAccount={
+																onCreateTransferPeerAccount
+															}
+															skipPeerTabStops
 														/>
-													</div>
-												</TableCell>
-												<TableCell>
-													{shouldAllowReviewExistingCategoryEdit(row) ? (
+													) : (
 														<ReviewCategorySelect
-															row={categoryRow}
+															row={row}
 															index={index}
 															categoryOptions={categoryOptionsForRow}
 															onCategoryChange={onCategoryChange}
 															onCreateCategory={onCreateCategory}
-														/>
-													) : (
-														<ReviewVerifiedExistingCategory
-															categoryId={existingCategoryId}
-															categoryOptions={categoryOptions}
+															keyboardCategoryFlow
 														/>
 													)}
 												</TableCell>
-												<TableCell>
-													<ReviewVerifiedExistingType
-														transactionType={row.transactionType}
-														rowKind={row.kind}
+												<TableCell className="w-32 max-w-[8rem]">
+													<ReviewRowKindSelect
+														row={row}
+														index={index}
+														isCard={isCard}
+														onRowTypeChange={onRowTypeChange}
+														skipPeerTabStops
 													/>
 												</TableCell>
 												<TableCell className="text-right text-sm">
@@ -1328,144 +1475,9 @@ export function ReviewTable({
 												</TableCell>
 											</TableRow>
 										);
-									}
-
-									return (
-										<TableRow
-											key={getReviewRowKey(row)}
-											className={cn(
-												getDuplicateRowClassName(row),
-												getReviewRowClassifiedClassName(row),
-											)}
-										>
-											<TableCell>
-												<Checkbox
-													checked={row.selected}
-													onCheckedChange={() => onToggle(index)}
-													disabled={isImportLinkSuggestion(row)}
-													aria-label={`Selecionar ${row.description}`}
-													tabIndex={-1}
-												/>
-											</TableCell>
-											<TableCell className="text-muted-foreground text-sm">
-												{formatDate(row.date)}
-											</TableCell>
-											{/*
-											 * A descrição é o que distingue uma linha da outra, então é
-											 * ela que precisa de espaço — não os selects. Antes a célula
-											 * era travada em 200px e o campo era um input de uma linha:
-											 * "Transferência recebida pelo Pix FULANO - CNPJ - BANCO"
-											 * aparecia como "Transferência", igual em toda linha.
-											 */}
-											<TableCell className={REVIEW_TABLE_DESCRIPTION_CELL_CLASS}>
-												<div className="min-w-0 space-y-2">
-													<ReviewDescriptionField
-														row={row}
-														index={index}
-														fullWidth
-														isCard={isCard}
-														invoicePeriod={invoicePeriod}
-														categoryOptions={categoryOptions}
-														transferAccountOptions={transferAccountOptions}
-														onDescriptionChange={onDescriptionChange}
-														onUndoDuplicate={onUndoDuplicate}
-														onLinkDuplicate={onLinkDuplicate}
-														onDismissLinkSuggestion={onDismissLinkSuggestion}
-														onConvertToInstallment={onConvertToInstallment}
-														onConvertToRecurrence={onConvertToRecurrence}
-														excludeFromTabOrder
-													/>
-													<ReviewInstallmentFields
-														row={row}
-														index={index}
-														isCard={isCard}
-														invoicePeriod={invoicePeriod}
-														onInstallmentToggle={onInstallmentToggle}
-														onInstallmentDismiss={onInstallmentDismiss}
-														onInstallmentCountChange={onInstallmentCountChange}
-														onInstallmentCurrentChange={
-															onInstallmentCurrentChange
-														}
-													/>
-													<ReviewRecurrenceFields
-														row={row}
-														index={index}
-														onRecurrenceToggle={onRecurrenceToggle}
-														onRecurrenceCountChange={onRecurrenceCountChange}
-													/>
-												</div>
-											</TableCell>
-											<TableCell className="w-12 text-center">
-												<div className="flex justify-center">
-													<ReviewPayerSelect
-														row={row}
-														index={index}
-														payerOptions={payerOptions}
-														onPayerChange={onPayerChange}
-														skipPeerTabStops
-													/>
-												</div>
-											</TableCell>
-											<TableCell className="w-44 max-w-[11rem]">
-												{row.kind === "invoice_payment" ? (
-													<ReviewInvoicePaymentFields
-														row={row}
-														index={index}
-														cardOptions={cardOptions}
-														onInvoicePaymentCardChange={
-															onInvoicePaymentCardChange
-														}
-														onInvoicePaymentPeriodChange={
-															onInvoicePaymentPeriodChange
-														}
-														skipPeerTabStops
-													/>
-												) : row.kind === "transfer" ? (
-													<ReviewTransferFields
-														row={row}
-														index={index}
-														accountOptions={transferAccountOptions}
-														onTransferPeerAccountChange={
-															onTransferPeerAccountChange
-														}
-														onCreateTransferPeerAccount={
-															onCreateTransferPeerAccount
-														}
-														skipPeerTabStops
-													/>
-												) : (
-													<ReviewCategorySelect
-														row={row}
-														index={index}
-														categoryOptions={categoryOptionsForRow}
-														onCategoryChange={onCategoryChange}
-														onCreateCategory={onCreateCategory}
-														keyboardCategoryFlow
-													/>
-												)}
-											</TableCell>
-											<TableCell className="w-32 max-w-[8rem]">
-												<ReviewRowKindSelect
-													row={row}
-													index={index}
-													isCard={isCard}
-													onRowTypeChange={onRowTypeChange}
-													skipPeerTabStops
-												/>
-											</TableCell>
-											<TableCell className="text-right text-sm">
-												<ReviewAmountField
-													row={row}
-													index={index}
-													onAmountChange={onAmountChange}
-													alignRight
-												/>
-											</TableCell>
-										</TableRow>
-									);
-								})}
-							</TableBody>
-						</Table>
+									})}
+								</TableBody>
+							</Table>
 						</div>
 					</>
 				)}
@@ -1572,9 +1584,10 @@ function ReviewImportFilters({
 				<div className="flex flex-col gap-2 rounded-md border border-sky-500/30 bg-sky-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
 					<p className="text-sky-900 text-xs leading-relaxed dark:text-sky-100">
 						{linkSuggestionCount} lançamento
-						{linkSuggestionCount !== 1 ? "s" : ""} com possível vínculo. O sistema
-						confirma automaticamente quando data e valor batem; use o botão para
-						vincular o restante de uma vez (descrição do extrato prevalece).
+						{linkSuggestionCount !== 1 ? "s" : ""} com possível vínculo. O
+						sistema confirma automaticamente quando data e valor batem; use o
+						botão para vincular o restante de uma vez (descrição do extrato
+						prevalece).
 					</p>
 					<Button
 						type="button"

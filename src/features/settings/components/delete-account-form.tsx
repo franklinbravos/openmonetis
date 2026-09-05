@@ -3,9 +3,9 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
-	deleteAccountAction,
-	resetAccountAction,
-} from "@/features/settings/actions";
+	deleteSettingsAccountClient,
+	resetSettingsAccountClient,
+} from "@/features/settings/lib/settings-api-client";
 import { Button } from "@/shared/components/ui/button";
 import {
 	Dialog,
@@ -38,10 +38,10 @@ export function DeleteAccountForm() {
 		startTransition(async () => {
 			const result =
 				currentAction === "reset"
-					? await resetAccountAction({
+					? await resetSettingsAccountClient({
 							confirmation: confirmation as typeof RESET_CONFIRMATION,
 						})
-					: await deleteAccountAction({
+					: await deleteSettingsAccountClient({
 							confirmation: confirmation as typeof DELETE_CONFIRMATION,
 						});
 

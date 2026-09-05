@@ -6,9 +6,10 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { CategoryIcon } from "@/features/categories/components/category-icon";
 import {
-	createInstallmentAnticipationAction,
-	getEligibleInstallmentsAction,
-} from "@/features/transactions/actions/anticipation";
+	cancelInstallmentAnticipationClient,
+	createInstallmentAnticipationClient,
+	getEligibleInstallmentsClient,
+} from "@/features/transactions/lib/transactions-api-client";
 import { installmentAnticipationsQueryKey } from "@/features/transactions/hooks/use-installment-anticipations";
 import MoneyValues from "@/shared/components/money-values";
 import { PeriodPicker } from "@/shared/components/period-picker";
@@ -122,7 +123,7 @@ export function AnticipateInstallmentsDialog({
 			setSelectedIds([]);
 			setErrorMessage(null);
 
-			getEligibleInstallmentsAction(seriesId, formState.anticipationPeriod)
+			getEligibleInstallmentsClient(seriesId, formState.anticipationPeriod)
 				.then((result) => {
 					if (!shouldUpdate) return;
 
@@ -204,7 +205,7 @@ export function AnticipateInstallmentsDialog({
 		}
 
 		startTransition(async () => {
-			const result = await createInstallmentAnticipationAction({
+			const result = await createInstallmentAnticipationClient({
 				seriesId,
 				installmentIds: selectedIds,
 				anticipationPeriod: formState.anticipationPeriod,

@@ -24,7 +24,8 @@ export function canAutoLinkImportSuggestion(
 	validation: ImportDuplicateValidation,
 ): boolean {
 	if (validation.status !== "link_suggestion") return false;
-	if (!validation.matchScore.date || !validation.matchScore.amount) return false;
+	if (!validation.matchScore.date || !validation.matchScore.amount)
+		return false;
 
 	return !validation.mismatches.some((mismatch) =>
 		AUTO_LINK_BLOCKING_MISMATCH_FIELDS.has(mismatch.field),
@@ -68,10 +69,7 @@ export function resolveLinkedReviewRowState<
 	const resolvedCategoryId = validation.existingIsTransfer
 		? null
 		: validation.existingCategoryId &&
-				isCategoryCompatible(
-					validation.existingCategoryId,
-					row.transactionType,
-				)
+				isCategoryCompatible(validation.existingCategoryId, row.transactionType)
 			? validation.existingCategoryId
 			: row.categoryId &&
 					isCategoryCompatible(row.categoryId, row.transactionType)
@@ -100,7 +98,10 @@ export function collectImportLinkSuggestionIndexes(
 		if (!row.duplicateValidation) return [];
 		if (row.duplicateValidation.status !== "link_suggestion") return [];
 		if (row.linked || row.reimported) return [];
-		if (options?.autoLinkOnly && !canAutoLinkImportSuggestion(row.duplicateValidation)) {
+		if (
+			options?.autoLinkOnly &&
+			!canAutoLinkImportSuggestion(row.duplicateValidation)
+		) {
 			return [];
 		}
 		return [index];

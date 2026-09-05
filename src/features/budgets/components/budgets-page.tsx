@@ -4,9 +4,9 @@ import { RiAddFill, RiFileCopyLine, RiFundsLine } from "@remixicon/react";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
-	deleteBudgetAction,
-	duplicatePreviousMonthBudgetsAction,
-} from "@/features/budgets/actions";
+	deleteBudgetClient,
+	duplicatePreviousMonthBudgetsClient,
+} from "@/features/budgets/lib/budgets-api-client";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
 import { EmptyState } from "@/shared/components/feedback/empty-state";
 import { Button } from "@/shared/components/ui/button";
@@ -63,7 +63,7 @@ export function BudgetsPage({
 			return;
 		}
 
-		const result = await deleteBudgetAction({ id: budgetToRemove.id });
+		const result = await deleteBudgetClient(budgetToRemove.id);
 
 		if (result.success) {
 			toast.success(result.message);
@@ -75,7 +75,7 @@ export function BudgetsPage({
 	};
 
 	const handleDuplicateConfirm = async () => {
-		const result = await duplicatePreviousMonthBudgetsAction({
+		const result = await duplicatePreviousMonthBudgetsClient({
 			period: selectedPeriod,
 		});
 

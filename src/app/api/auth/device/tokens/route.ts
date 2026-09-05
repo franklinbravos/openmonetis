@@ -1,6 +1,8 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { connection, NextResponse } from "next/server";
 import { apiTokens } from "@/db/schema";
+import { createApiTokenAction } from "@/features/settings/actions";
+import { requireAuthSession } from "@/shared/lib/actions/action-route-handler";
 import { getOptionalUserSession } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
 
@@ -37,4 +39,17 @@ export async function GET() {
 			{ status: 500 },
 		);
 	}
+}
+
+export async function POST(request: Request) {
+	const { unauthorized } = await requireAuthSession();
+	if (unauthorized) {
+		return unauthorized;
+	}
+
+	const input = await request.json();
+	const result = await createApiTokenAction(input);
+	return NextResponse.json(result, {
+		status: result.success ? 200 : 400,
+	});
 }

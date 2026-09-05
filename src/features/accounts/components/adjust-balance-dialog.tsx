@@ -4,7 +4,7 @@ import { RiEqualizerLine } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { adjustAccountBalanceAction } from "@/features/accounts/actions";
+import { adjustAccountBalanceClient } from "@/features/accounts/lib/accounts-api-client";
 import { Button } from "@/shared/components/ui/button";
 import { CurrencyInput } from "@/shared/components/ui/currency-input";
 import {
@@ -64,8 +64,7 @@ export function AdjustBalanceDialog({
 		}
 
 		startTransition(async () => {
-			const result = await adjustAccountBalanceAction({
-				accountId,
+			const result = await adjustAccountBalanceClient(accountId, {
 				period,
 				currentBalance,
 				targetBalance,

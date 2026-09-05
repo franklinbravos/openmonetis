@@ -14,9 +14,9 @@ import { ptBR } from "date-fns/locale";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
-	deleteSavedInsightsAction,
-	generateInsightsAction,
-} from "@/features/insights/actions";
+	deleteSavedInsightsClient,
+	generateInsightsClient,
+} from "@/features/insights/lib/insights-api-client";
 import {
 	savedInsightsQueryKey,
 	useSavedInsights,
@@ -90,20 +90,20 @@ export function InsightsPage({
 		onAnalyze?.();
 		startTransition(async () => {
 			try {
-				const result = await generateInsightsAction(
+				const result = await generateInsightsClient({
 					period,
-					selectedModel,
+					modelId: selectedModel,
 					userInstructions,
-				);
+				});
 
-				if (result.success) {
+				if (result.success && result.data) {
 					queryClient.setQueryData(savedInsightsQueryKey(period), {
 						insights: result.data.insights,
 						modelId: result.data.modelId,
 						createdAt: result.data.createdAt,
 					});
 					toast.success("Insights gerados e salvos com sucesso!");
-				} else {
+				} else if (!result.success) {
 					setError(result.error);
 					toast.error(result.error);
 				}
@@ -121,7 +121,7 @@ export function InsightsPage({
 
 		startDeleteTransition(async () => {
 			try {
-				const result = await deleteSavedInsightsAction(period);
+				const result = await deleteSavedInsightsClient(period);
 
 				if (result.success) {
 					queryClient.setQueryData(savedInsightsQueryKey(period), null);

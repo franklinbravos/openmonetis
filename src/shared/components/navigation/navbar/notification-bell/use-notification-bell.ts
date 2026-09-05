@@ -4,11 +4,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-	archiveDashboardNotificationAction,
-	markDashboardNotificationAsReadAction,
-	markDashboardNotificationAsUnreadAction,
-	unarchiveDashboardNotificationAction,
-} from "@/features/dashboard/notifications/notifications-actions";
+	archiveDashboardNotificationClient,
+	markDashboardNotificationAsReadClient,
+	markDashboardNotificationAsUnreadClient,
+	unarchiveDashboardNotificationClient,
+} from "@/features/dashboard/lib/notifications-api-client";
 import type {
 	NotificationActionState,
 	NotificationBellProps,
@@ -71,10 +71,10 @@ const serverActionByType: Record<
 		fingerprint: string;
 	}) => Promise<{ success: boolean; message?: string; error?: string }>
 > = {
-	archive: archiveDashboardNotificationAction,
-	unarchive: unarchiveDashboardNotificationAction,
-	read: markDashboardNotificationAsReadAction,
-	unread: markDashboardNotificationAsUnreadAction,
+	archive: archiveDashboardNotificationClient,
+	unarchive: unarchiveDashboardNotificationClient,
+	read: markDashboardNotificationAsReadClient,
+	unread: markDashboardNotificationAsUnreadClient,
 };
 
 export function useNotificationBell({

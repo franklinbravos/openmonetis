@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
-	createBudgetAction,
-	updateBudgetAction,
-} from "@/features/budgets/actions";
+	createBudgetClient,
+	updateBudgetClient,
+} from "@/features/budgets/lib/budgets-api-client";
 import { CategoryIcon } from "@/features/categories/components/category-icon";
 import { PeriodPicker } from "@/shared/components/period-picker";
 import { Button } from "@/shared/components/ui/button";
@@ -143,11 +143,8 @@ export function BudgetDialog({
 		startTransition(async () => {
 			const result =
 				mode === "create"
-					? await createBudgetAction(payload)
-					: await updateBudgetAction({
-							id: budget?.id ?? "",
-							...payload,
-						});
+					? await createBudgetClient(payload)
+					: await updateBudgetClient(budget?.id ?? "", payload);
 
 			if (result.success) {
 				toast.success(result.message);

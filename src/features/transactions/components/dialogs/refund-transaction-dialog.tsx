@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { refundTransactionAction } from "@/features/transactions/actions/refund-action";
+import { refundTransactionClient } from "@/features/transactions/lib/transactions-api-client";
 import { deriveCreditCardPeriod } from "@/features/transactions/lib/form-helpers";
 import { formatDate } from "@/features/transactions/lib/formatting-helpers";
 import { PeriodPicker } from "@/shared/components/period-picker";
@@ -96,8 +96,7 @@ export function RefundTransactionDialog({
 		}
 
 		startTransition(async () => {
-			const result = await refundTransactionAction({
-				originalTransactionId: transaction.id,
+			const result = await refundTransactionClient(transaction.id, {
 				refundDate,
 				refundPeriod,
 			});

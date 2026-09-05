@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
-	createCategoryAction,
-	updateCategoryAction,
-} from "@/features/categories/actions";
+	createCategoryClient,
+	updateCategoryClient,
+} from "@/features/categories/lib/categories-api-client";
 import { Button } from "@/shared/components/ui/button";
 import {
 	Dialog,
@@ -197,11 +197,8 @@ export function CategoryDialog({
 		startTransition(async () => {
 			const result =
 				mode === "create"
-					? await createCategoryAction(payload)
-					: await updateCategoryAction({
-							id: category?.id ?? "",
-							...payload,
-						});
+					? await createCategoryClient(payload)
+					: await updateCategoryClient(category?.id ?? "", payload);
 
 			if (result.success) {
 				toast.success(result.message);

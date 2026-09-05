@@ -8,7 +8,7 @@ import {
 } from "@remixicon/react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { exportTransactionsDataAction } from "@/features/transactions/actions";
+import { exportTransactionsDataClient } from "@/features/transactions/lib/transactions-api-client";
 import type { TransactionsExportContext } from "@/features/transactions/lib/export-types";
 import { formatCurrency } from "@/features/transactions/lib/formatting-helpers";
 import {
@@ -112,7 +112,7 @@ export function TransactionsExport({
 			return lancamentos;
 		}
 
-		const result = await exportTransactionsDataAction(exportContext);
+		const result = await exportTransactionsDataClient(exportContext);
 
 		if (!result.success) {
 			throw new Error(result.error);

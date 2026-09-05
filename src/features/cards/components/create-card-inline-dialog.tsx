@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchCardFormOptionsAction } from "@/features/cards/actions";
+import { fetchCardFormOptionsClient } from "@/features/cards/lib/cards-api-client";
 import { CardDialog, type CreatedCard } from "./card-dialog";
 
 export type { CreatedCard } from "./card-dialog";
@@ -33,7 +33,7 @@ export function CreateCardInlineDialog({
 
 		let cancelled = false;
 
-		fetchCardFormOptionsAction()
+		fetchCardFormOptionsClient()
 			.then((result) => {
 				if (!cancelled) {
 					setLogoOptions(result.logoOptions);

@@ -14,7 +14,10 @@ import {
 	useTransition,
 } from "react";
 import { toast } from "sonner";
-import { createNoteAction, updateNoteAction } from "@/features/notes/actions";
+import {
+	createNoteClient,
+	updateNoteClient,
+} from "@/features/notes/lib/notes-api-client";
 import {
 	NoteAttachmentsField,
 	uploadNoteAttachment,
@@ -268,10 +271,10 @@ export function NoteDialog({
 
 		startTransition(async () => {
 			let result:
-				| Awaited<ReturnType<typeof createNoteAction>>
-				| Awaited<ReturnType<typeof updateNoteAction>>;
+				| Awaited<ReturnType<typeof createNoteClient>>
+				| Awaited<ReturnType<typeof updateNoteClient>>;
 			if (mode === "create") {
-				result = await createNoteAction(payload);
+				result = await createNoteClient(payload);
 			} else {
 				if (!note?.id) {
 					const msg = "ID da anotação não encontrado.";
@@ -279,7 +282,7 @@ export function NoteDialog({
 					toast.error(msg);
 					return;
 				}
-				result = await updateNoteAction({ id: note.id, ...payload });
+				result = await updateNoteClient(note.id, payload);
 			}
 
 			if (result.success) {

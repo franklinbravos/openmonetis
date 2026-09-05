@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchAccountFormOptionsAction } from "@/features/accounts/actions";
+import { fetchAccountFormOptionsClient } from "@/features/accounts/lib/accounts-api-client";
 import { useReleaseBodyPointerEventsLock } from "@/shared/hooks/use-body-pointer-events-lock";
 import type { CreatedAccount } from "./account-dialog";
 import { AccountDialog } from "./account-dialog";
@@ -39,7 +39,7 @@ export function CreateAccountInlineDialog({
 
 		let cancelled = false;
 
-		fetchAccountFormOptionsAction()
+		fetchAccountFormOptionsClient()
 			.then((result) => {
 				if (!cancelled) {
 					setLogoOptions(result.logoOptions);

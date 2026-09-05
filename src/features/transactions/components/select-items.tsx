@@ -89,10 +89,7 @@ export function CategorySelectContent({
 }) {
 	return (
 		<span
-			className={cn(
-				"flex items-center gap-2",
-				truncateLabel && "min-w-0",
-			)}
+			className={cn("flex items-center gap-2", truncateLabel && "min-w-0")}
 			style={{ paddingLeft: depth > 0 ? `${depth * 0.75}rem` : undefined }}
 		>
 			<CategoryIcon name={icon} className="size-4 shrink-0" />

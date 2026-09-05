@@ -48,9 +48,9 @@ import {
 	monthToolbarMobileLabelClassName,
 	TRANSACTIONS_MONTH_TOOLBAR_SLOT_ID,
 } from "../../lib/month-toolbar";
+import { TransactionQuickActionLayoutProvider } from "../quick-actions/transaction-quick-action-trigger";
 import { TransactionsExport } from "../transactions-export";
 import { TransactionsImportButton } from "../transactions-import-button";
-import { TransactionQuickActionLayoutProvider } from "../quick-actions/transaction-quick-action-trigger";
 import type {
 	AccountCardFilterOption,
 	TransactionFilterOption,
@@ -391,7 +391,9 @@ export function TransactionsTable({
 								className={cn(monthToolbarIconClassName, "text-primary")}
 								aria-hidden
 							/>
-							<span className={monthToolbarMobileLabelClassName}>Múltiplos</span>
+							<span className={monthToolbarMobileLabelClassName}>
+								Múltiplos
+							</span>
 						</Button>
 					) : null}
 				</div>

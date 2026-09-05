@@ -135,6 +135,7 @@ export default async function Page({ searchParams }: PageProps) {
 
 					<LogoPrefetchProvider mappings={logoMappings}>
 						<TransactionsPage
+							viewerUserId={userId}
 							embeddedInToolbarCard
 							financialDataOwnerId={dataOwnerUserId}
 							canEditFinancial={financialContext.canEditFinancial}

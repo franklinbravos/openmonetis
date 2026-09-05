@@ -9,7 +9,7 @@ import {
 } from "@remixicon/react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { detachTransactionAttachmentAction } from "@/features/transactions/actions/attachments";
+import { detachTransactionAttachmentClient } from "@/features/transactions/lib/transactions-api-client";
 import { Button } from "@/shared/components/ui/button";
 import {
 	Dialog,
@@ -156,10 +156,10 @@ export function AttachmentItem({
 			return;
 		}
 		startTransition(async () => {
-			const result = await detachTransactionAttachmentAction({
-				attachmentId,
+			const result = await detachTransactionAttachmentClient(
 				transactionId,
-			});
+				attachmentId,
+			);
 			if (result.success) {
 				toast.success(result.message);
 				onDeleted();

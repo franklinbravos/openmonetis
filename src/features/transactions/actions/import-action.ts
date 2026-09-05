@@ -280,9 +280,7 @@ const importSchema = z
 		previousInvoiceSettlement: previousInvoiceSettlementSchema.optional(),
 		invoiceAmortizations: z.array(invoiceAmortizationSchema).optional(),
 		accountStatementBalances: accountStatementBalancesSchema.optional(),
-		accountStatementFileRows: z
-			.array(importRowSnapshotSchema)
-			.optional(),
+		accountStatementFileRows: z.array(importRowSnapshotSchema).optional(),
 	})
 	.superRefine((data, ctx) => {
 		// A liquidação da fatura anterior é trabalho por si só: reprocessar um mês
@@ -668,7 +666,9 @@ async function performLinkImportToExisting(
 	if (!nextPayerId) {
 		const candidatePayerId = data.fallbackPayerId ?? adminPayerId;
 		if (candidatePayerId) {
-			const ownedPayerIds = await fetchOwnedPayerIds(userId, [candidatePayerId]);
+			const ownedPayerIds = await fetchOwnedPayerIds(userId, [
+				candidatePayerId,
+			]);
 			if (ownedPayerIds.has(candidatePayerId)) {
 				nextPayerId = candidatePayerId;
 			}

@@ -10,11 +10,11 @@ import {
 } from "react";
 import { toast } from "sonner";
 import {
-	deleteCategoryAction,
-	fetchCategoryLinkedTransactionsAction,
-	migrateCategoryTransactionsAction,
-	updateCategoryTransactionCategoryAction,
-} from "@/features/categories/actions";
+	deleteCategoryClient,
+	fetchCategoryLinkedTransactionsClient,
+	migrateCategoryTransactionsClient,
+	updateCategoryTransactionCategoryClient,
+} from "@/features/categories/lib/categories-api-client";
 import {
 	buildCategorySelectOptions,
 	resolveCategoryTypeForTransaction,
@@ -62,7 +62,7 @@ export function DeleteCategoryDialog({
 	const loadLinkedTransactions = useCallback(async (categoryId: string) => {
 		setIsLoading(true);
 		try {
-			const result = await fetchCategoryLinkedTransactionsAction(categoryId);
+			const result = await fetchCategoryLinkedTransactionsClient(categoryId);
 			if (!result.success) {
 				toast.error(result.error);
 				setLinkedTransactions([]);
@@ -115,7 +115,7 @@ export function DeleteCategoryDialog({
 		}
 
 		startTransition(async () => {
-			const result = await migrateCategoryTransactionsAction({
+			const result = await migrateCategoryTransactionsClient({
 				fromCategoryId: category.id,
 				toCategoryId: bulkTargetCategoryId,
 			});
@@ -139,10 +139,12 @@ export function DeleteCategoryDialog({
 		if (!category || !targetCategoryId) return;
 
 		startTransition(async () => {
-			const result = await updateCategoryTransactionCategoryAction({
-				transactionId: transaction.id,
-				categoryId: targetCategoryId,
-			});
+			const result = await updateCategoryTransactionCategoryClient(
+				transaction.id,
+				{
+					categoryId: targetCategoryId,
+				},
+			);
 
 			if (!result.success) {
 				toast.error(result.error);
@@ -160,7 +162,7 @@ export function DeleteCategoryDialog({
 		if (!category) return;
 
 		startTransition(async () => {
-			const result = await deleteCategoryAction({ id: category.id });
+			const result = await deleteCategoryClient(category.id);
 
 			if (!result.success) {
 				toast.error(result.error);

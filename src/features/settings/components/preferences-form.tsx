@@ -20,7 +20,7 @@ import { RiDragMove2Line } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { updatePreferencesAction } from "@/features/settings/actions";
+import { updatePreferencesClient } from "@/features/settings/lib/settings-api-client";
 import {
 	ATTACHMENT_SIZE_OPTIONS,
 	type AttachmentSizeOption,
@@ -139,7 +139,7 @@ export function PreferencesForm({
 		event.preventDefault();
 
 		startTransition(async () => {
-			const result = await updatePreferencesAction({
+			const result = await updatePreferencesClient({
 				statementNoteAsColumn,
 				transactionsColumnOrder: columnOrder,
 				attachmentMaxSizeMb,

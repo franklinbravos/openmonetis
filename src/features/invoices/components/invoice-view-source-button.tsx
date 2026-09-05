@@ -3,7 +3,7 @@
 import { RiEyeLine } from "@remixicon/react";
 import { useTransition } from "react";
 import { toast } from "sonner";
-import { getImportSourceDownloadUrlAction } from "@/features/transactions/actions/import-source-action";
+import { getImportSourceDownloadUrlClient } from "@/features/transactions/lib/import-api-client";
 import { Button } from "@/shared/components/ui/button";
 import { cn } from "@/shared/utils/ui";
 
@@ -32,7 +32,7 @@ export function InvoiceViewSourceButton({
 			)}
 			onClick={() => {
 				startTransition(async () => {
-					const result = await getImportSourceDownloadUrlAction({
+					const result = await getImportSourceDownloadUrlClient({
 						cardId,
 						invoicePeriod,
 					});

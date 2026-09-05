@@ -26,7 +26,7 @@ import {
 } from "@remixicon/react";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { reorderCategoriesAction } from "@/features/categories/actions";
+import { reorderCategoriesClient } from "@/features/categories/lib/categories-api-client";
 import { CategoryHierarchyName } from "@/features/categories/components/category-hierarchy-name";
 import type { Category } from "@/features/categories/components/types";
 import {
@@ -400,7 +400,7 @@ export function CategoriesSortableTable({
 		const updates = buildCategoryOrderUpdates(nextItems);
 
 		startTransition(async () => {
-			const result = await reorderCategoriesAction({
+			const result = await reorderCategoriesClient({
 				type,
 				categories: updates,
 			});

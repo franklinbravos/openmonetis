@@ -2,7 +2,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { createTransactionAction } from "@/features/transactions/actions";
+import { createTransactionClient } from "@/features/transactions/lib/transactions-api-client";
+import type { CreateInput } from "@/features/transactions/actions/core";
 import { groupAndSortCategories } from "@/features/transactions/lib/category-helpers";
 import { Button } from "@/shared/components/ui/button";
 import {
@@ -58,7 +59,7 @@ export function BulkImportDialog({
 	const [accountId, setContaId] = useState<string | undefined>(undefined);
 	const [cardId, setCartaoId] = useState<string | undefined>(undefined);
 	const [isPending, startTransition] = useTransition();
-	type CreateTransactionInput = Parameters<typeof createTransactionAction>[0];
+	type CreateTransactionInput = CreateInput;
 
 	// Reset form when dialog opens/closes
 	const handleOpenChange = (newOpen: boolean) => {
@@ -152,7 +153,7 @@ export function BulkImportDialog({
 							: undefined,
 				};
 
-				const result = await createTransactionAction(payload);
+				const result = await createTransactionClient(payload);
 
 				if (result.success) {
 					successCount++;

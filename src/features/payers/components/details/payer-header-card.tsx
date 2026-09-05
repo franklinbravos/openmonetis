@@ -13,7 +13,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { sendPayerSummaryAction } from "@/features/payers/lib/detail-actions";
+import { sendPayerSummaryClient } from "@/features/payers/lib/payers-api-client";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import {
@@ -79,7 +79,7 @@ export function PayerHeaderCard({
 		}
 
 		startTransition(async () => {
-			const result = await sendPayerSummaryAction({
+			const result = await sendPayerSummaryClient({
 				payerId: payer.id,
 				period: selectedPeriod,
 			});

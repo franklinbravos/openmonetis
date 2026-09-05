@@ -97,6 +97,41 @@ export function isValidDateOnly(value: string): boolean {
 	return parseDateOnlyParts(value) !== null;
 }
 
+/**
+ * Interpreta entradas comuns em formulários brasileiros e devolve YYYY-MM-DD.
+ * Aceita: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY (com 1 ou 2 dígitos em dia/mês).
+ */
+export function parseFlexibleDateInput(raw: string): string | null {
+	const trimmed = raw.trim();
+	if (!trimmed) {
+		return null;
+	}
+
+	if (parseDateOnlyParts(trimmed)) {
+		return trimmed;
+	}
+
+	const slashMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+	if (slashMatch) {
+		const day = Number.parseInt(slashMatch[1] ?? "", 10);
+		const month = Number.parseInt(slashMatch[2] ?? "", 10);
+		const year = Number.parseInt(slashMatch[3] ?? "", 10);
+		const iso = buildDateOnlyString({ year, month, day });
+		return isValidDateOnly(iso) ? iso : null;
+	}
+
+	const dashMatch = trimmed.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+	if (dashMatch) {
+		const day = Number.parseInt(dashMatch[1] ?? "", 10);
+		const month = Number.parseInt(dashMatch[2] ?? "", 10);
+		const year = Number.parseInt(dashMatch[3] ?? "", 10);
+		const iso = buildDateOnlyString({ year, month, day });
+		return isValidDateOnly(iso) ? iso : null;
+	}
+
+	return null;
+}
+
 function getTimeZoneParts(
 	date: Date,
 	timeZone: string,

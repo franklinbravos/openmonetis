@@ -10,14 +10,14 @@ import {
 } from "react";
 import { toast } from "sonner";
 import {
-	bulkDeleteInboxItemsAction,
-	bulkDeleteSelectedInboxItemsAction,
-	bulkDiscardInboxItemsAction,
-	deleteInboxItemAction,
-	discardInboxItemAction,
-	markInboxAsProcessedAction,
-	restoreDiscardedInboxItemAction,
-} from "@/features/inbox/actions";
+	bulkDeleteInboxItemsClient,
+	bulkDeleteSelectedInboxItemsClient,
+	bulkDiscardInboxItemsClient,
+	deleteInboxItemClient,
+	discardInboxItemClient,
+	markInboxAsProcessedClient,
+	restoreDiscardedInboxItemClient,
+} from "@/features/inbox/lib/inbox-api-client";
 import { INBOX_DEFAULT_PAGE_SIZE } from "@/features/inbox/page-helpers";
 import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
@@ -149,9 +149,7 @@ export function InboxPage({
 
 	const handleDiscardConfirm = async () => {
 		if (!itemToDiscard) return;
-		const result = await discardInboxItemAction({
-			inboxItemId: itemToDiscard.id,
-		});
+		const result = await discardInboxItemClient(itemToDiscard.id);
 		if (result.success) {
 			toast.success(result.message);
 			return;
@@ -172,9 +170,7 @@ export function InboxPage({
 
 	const handleDeleteConfirm = async () => {
 		if (!itemToDelete) return;
-		const result = await deleteInboxItemAction({
-			inboxItemId: itemToDelete.id,
-		});
+		const result = await deleteInboxItemClient(itemToDelete.id);
 		if (result.success) {
 			toast.success(result.message);
 			return;
@@ -195,9 +191,7 @@ export function InboxPage({
 
 	const handleRestoreToPendingConfirm = async () => {
 		if (!itemToRestore) return;
-		const result = await restoreDiscardedInboxItemAction({
-			inboxItemId: itemToRestore.id,
-		});
+		const result = await restoreDiscardedInboxItemClient(itemToRestore.id);
 		if (result.success) {
 			toast.success(result.message);
 			return;
@@ -304,7 +298,7 @@ export function InboxPage({
 
 	const handleSelectionBulkConfirm = async () => {
 		if (selectionBulkStatus === "pending") {
-			const result = await bulkDiscardInboxItemsAction({
+			const result = await bulkDiscardInboxItemsClient({
 				inboxItemIds: selectedIds,
 			});
 			if (result.success) {
@@ -315,7 +309,7 @@ export function InboxPage({
 			toast.error(result.error);
 			throw new Error(result.error);
 		} else {
-			const result = await bulkDeleteSelectedInboxItemsAction({
+			const result = await bulkDeleteSelectedInboxItemsClient({
 				inboxItemIds: selectedIds,
 			});
 			if (result.success) {
@@ -334,7 +328,7 @@ export function InboxPage({
 	};
 
 	const handleBulkDeleteConfirm = async () => {
-		const result = await bulkDeleteInboxItemsAction({
+		const result = await bulkDeleteInboxItemsClient({
 			status: bulkDeleteStatus,
 		});
 		if (result.success) {
@@ -347,9 +341,7 @@ export function InboxPage({
 
 	const handleLancamentoSuccess = async () => {
 		if (!itemToProcess) return;
-		const result = await markInboxAsProcessedAction({
-			inboxItemId: itemToProcess.id,
-		});
+		const result = await markInboxAsProcessedClient(itemToProcess.id);
 		if (result.success) {
 			toast.success("Notificação processada!");
 		} else {

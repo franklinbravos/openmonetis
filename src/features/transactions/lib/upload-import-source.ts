@@ -1,4 +1,4 @@
-import { uploadImportSourceFileDirectAction } from "@/features/transactions/actions/import-source-action";
+import { uploadImportSourceFileClient } from "@/features/transactions/lib/import-api-client";
 
 type UploadImportSourceFileInput = {
 	file: File;
@@ -33,7 +33,7 @@ export async function uploadImportSourceFile({
 		if (invoicePeriod) formData.append("invoicePeriod", invoicePeriod);
 		if (accountId) formData.append("accountId", accountId);
 
-		return await uploadImportSourceFileDirectAction(formData);
+		return await uploadImportSourceFileClient(formData);
 	} catch (error) {
 		const message =
 			error instanceof Error

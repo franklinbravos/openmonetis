@@ -3,6 +3,7 @@
 import { RiAddLine, RiDeleteBinLine } from "@remixicon/react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import type { MassAddInput } from "@/features/transactions/actions/core";
 import { groupAndSortCategories } from "@/features/transactions/lib/category-helpers";
 import {
 	PAYMENT_METHODS,
@@ -109,9 +110,7 @@ interface MassAddDialogProps {
 	defaultCardId?: string | null;
 }
 
-export type MassAddFormData = Parameters<
-	typeof import("@/features/transactions/actions").createMassTransactionsAction
->[0];
+export type MassAddFormData = MassAddInput;
 
 interface TransactionRow {
 	id: string;

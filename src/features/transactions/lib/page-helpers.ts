@@ -779,9 +779,7 @@ export const buildOptionSets = ({
 		(option) => option.role === PAYER_ROLE_THIRD_PARTY,
 	);
 
-	const contaOptionsSource = limitContaId
-		? accountFiltersRaw.filter((conta) => conta.id === limitContaId)
-		: accountFiltersRaw;
+	const contaOptionsSource = accountFiltersRaw;
 
 	const accountOptions = sortByLabel(
 		contaOptionsSource.map(({ id, label, slug, logo, accountType }) =>

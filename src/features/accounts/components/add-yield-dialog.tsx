@@ -4,7 +4,7 @@ import { RiCalculatorLine, RiFundsLine } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { addAccountYieldAction } from "@/features/accounts/actions";
+import { addAccountYieldClient } from "@/features/accounts/lib/accounts-api-client";
 import { CalculatorDialogButton } from "@/shared/components/calculator/calculator-dialog";
 import { Button } from "@/shared/components/ui/button";
 import { CurrencyInput } from "@/shared/components/ui/currency-input";
@@ -61,8 +61,7 @@ export function AddYieldDialog({
 		}
 
 		startTransition(async () => {
-			const result = await addAccountYieldAction({
-				accountId,
+			const result = await addAccountYieldClient(accountId, {
 				amount: numericAmount,
 				date,
 			});

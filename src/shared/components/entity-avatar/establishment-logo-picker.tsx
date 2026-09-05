@@ -11,9 +11,9 @@ import {
 import { Spinner } from "@/shared/components/ui/spinner";
 import { logoQueryKeys, toNameKey } from "@/shared/lib/logo";
 import {
-	removeEstablishmentLogoAction,
-	saveEstablishmentLogoAction,
-} from "@/shared/lib/logo/establishment-logo-actions";
+	removeEstablishmentLogoClient,
+	saveEstablishmentLogoClient,
+} from "@/shared/lib/logo/logo-api-client";
 import {
 	buildInitials,
 	getCategoryBgColorFromName,
@@ -81,7 +81,7 @@ export function EstablishmentLogoPicker({
 
 	function handleSelect(result: LogoResult) {
 		startTransition(async () => {
-			await saveEstablishmentLogoAction(name, result.domain);
+			await saveEstablishmentLogoClient(name, result.domain);
 			queryClient.setQueryData(logoQueryKeys.mapping(toNameKey(name)), {
 				domain: result.domain,
 				logoUrl: result.logoUrl,
@@ -92,7 +92,7 @@ export function EstablishmentLogoPicker({
 
 	function handleReset() {
 		startTransition(async () => {
-			await removeEstablishmentLogoAction(name);
+			await removeEstablishmentLogoClient(name);
 			queryClient.setQueryData(logoQueryKeys.mapping(toNameKey(name)), {
 				domain: null,
 				logoUrl: null,

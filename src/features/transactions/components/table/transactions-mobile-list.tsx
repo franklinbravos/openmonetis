@@ -29,7 +29,6 @@ import {
 import { resolveLogoSrc } from "@/shared/lib/logo";
 import { getAvatarSrc } from "@/shared/lib/payers/utils";
 import { resolveTransferAccountsPreview } from "@/shared/lib/transfers/utils";
-import { TransferAccountsPreviewBadge } from "../shared/transfer-accounts-preview";
 import { formatDate, formatDateGroupLabel } from "@/shared/utils/date";
 import { getConditionIcon, getPaymentMethodIcon } from "@/shared/utils/icons";
 import { cn } from "@/shared/utils/ui";
@@ -37,6 +36,7 @@ import {
 	getPayerDisplayName,
 	resolvePayerLabel,
 } from "../../lib/formatting-helpers";
+import { TransferAccountsPreviewBadge } from "../shared/transfer-accounts-preview";
 import type { TransactionItem } from "../types";
 import { TransactionActionsMenu } from "./transaction-actions-menu";
 import { TransactionSettlementButton } from "./transaction-settlement-button";
@@ -100,7 +100,7 @@ export function TransactionsMobileList({
 
 	if (!showDateGroups) {
 		return (
-			<div className="space-y-3 md:hidden">
+			<div className="space-y-2 md:hidden">
 				{data.map((item) => (
 					<TransactionMobileCard
 						key={item.id}
@@ -128,16 +128,16 @@ export function TransactionsMobileList({
 	}
 
 	return (
-		<div className="space-y-4 md:hidden">
+		<div className="space-y-5 md:hidden">
 			{groups.map((group, groupIndex) => (
 				<section
 					key={`${group.date || group.label}-${groupIndex}`}
-					className="space-y-2"
+					className="space-y-1"
 				>
-					<div className="rounded-md border bg-muted/60 px-3 py-1.5 text-xs font-semibold tracking-wide text-muted-foreground">
+					<div className="px-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 						{group.label}
 					</div>
-					<div className="space-y-3">
+					<div className="space-y-2">
 						{group.items.map((item) => (
 							<TransactionMobileCard
 								key={item.id}
@@ -254,9 +254,9 @@ function TransactionMobileCard({
 			role={onViewDetails ? "button" : undefined}
 			tabIndex={onViewDetails ? 0 : undefined}
 		>
-			<div className="flex items-center gap-2.5">
-				<EstablishmentLogo name={item.name} size={34} />
-				<div className="min-w-0 flex-1">
+			<div className="flex items-start gap-2.5">
+				<EstablishmentLogo name={item.name} size={34} className="mt-0.5" />
+				<div className="min-w-0 flex-1 space-y-2">
 					<div className="flex min-w-0 items-start justify-between gap-2">
 						<div className="min-w-0 flex-1">
 							<h3 className="truncate text-sm font-semibold leading-tight">
@@ -301,7 +301,7 @@ function TransactionMobileCard({
 								</span>
 							</div>
 						</div>
-						<div className="shrink-0 text-right">
+						<div className="flex shrink-0 flex-col items-end gap-1.5">
 							<MoneyValues
 								amount={item.amount}
 								showPositiveSign={isReceita || isIncomingTransfer}
@@ -311,136 +311,134 @@ function TransactionMobileCard({
 									isTransfer && "text-info",
 								)}
 							/>
+							{showActions ? (
+								<div
+									role="group"
+									className="flex shrink-0 items-center gap-0.5"
+									onClick={(event) => event.stopPropagation()}
+									onKeyDown={(event) => event.stopPropagation()}
+								>
+									<TransactionSettlementButton
+										item={item}
+										isLoading={isSettlementLoading(item.id)}
+										onToggle={onToggleSettlement}
+									/>
+									<TransactionActionsMenu
+										item={item}
+										financialDataOwnerId={financialDataOwnerId}
+										canEditFinancial={canEditFinancial}
+										onEdit={onEdit}
+										onCopy={onCopy}
+										onImport={onImport}
+										onConfirmDelete={onConfirmDelete}
+										onViewDetails={onViewDetails}
+										onRefund={onRefund}
+										onAnticipate={onAnticipate}
+										onViewAnticipationHistory={onViewAnticipationHistory}
+										onConvertToInstallment={onConvertToInstallment}
+										onConvertToRecurring={onConvertToRecurring}
+									/>
+								</div>
+							) : null}
 						</div>
 					</div>
 
-					<div className="mt-2 flex items-center justify-between gap-2">
-						<div className="flex min-w-0 flex-wrap items-center gap-1.5">
-							{transferAccounts ? (
-								<TransferAccountsPreviewBadge
-									accounts={transferAccounts}
-									variant="compact"
-								/>
-							) : (
-								<>
+					<div className="flex min-w-0 flex-wrap items-center gap-1.5">
+						{transferAccounts ? (
+							<TransferAccountsPreviewBadge
+								accounts={transferAccounts}
+								variant="compact"
+							/>
+						) : (
+							<>
+								<IconBadge
+									label={type}
+									compact
+									className={getTransactionTypeIconClassName(type)}
+								>
+									{getTransactionTypeIcon(type)}
+								</IconBadge>
+								<IconBadge label={paymentMethodLabel} compact>
+									{getPaymentMethodIcon(item.paymentMethod)}
+								</IconBadge>
+								{accountCardLabel ? (
 									<IconBadge
-										label={type}
+										label={`${accountCardType}: ${accountCardLabel}`}
 										compact
-										className={getTransactionTypeIconClassName(type)}
+										compactVariant="media"
 									>
-										{getTransactionTypeIcon(type)}
+										<AccountMiniAvatar
+											name={accountCardLabel}
+											logo={accountCardLogo}
+										/>
 									</IconBadge>
-									<IconBadge label={paymentMethodLabel} compact>
-										{getPaymentMethodIcon(item.paymentMethod)}
-									</IconBadge>
-									{accountCardLabel ? (
-										<IconBadge
-											label={`${accountCardType}: ${accountCardLabel}`}
-											compact
-											compactVariant="media"
-										>
-											<AccountMiniAvatar
-												name={accountCardLabel}
-												logo={accountCardLogo}
-											/>
-										</IconBadge>
-									) : null}
-								</>
-							)}
-							<IconBadge label={item.condition} compact>
-								{getConditionIcon(item.condition)}
+								) : null}
+							</>
+						)}
+						<IconBadge label={item.condition} compact>
+							{getConditionIcon(item.condition)}
+						</IconBadge>
+						{hasPayer ? (
+							<IconBadge label={payerLabel} compact compactVariant="media">
+								<PayerMiniAvatar
+									name={payerDisplayName}
+									avatar={item.pagadorAvatar}
+								/>
 							</IconBadge>
-							{hasPayer ? (
-								<IconBadge label={payerLabel} compact compactVariant="media">
-									<PayerMiniAvatar
-										name={payerDisplayName}
-										avatar={item.pagadorAvatar}
-									/>
-								</IconBadge>
-							) : null}
-							{installmentBadge ? (
-								<Badge variant="outline" className="px-1.5 text-xs">
-									{installmentBadge}
-								</Badge>
-							) : null}
-							{item.isDivided ? (
-								<IconBadge label="Dividido entre pessoas" compact>
-									<RiGroupLine className="size-3.5" aria-hidden />
-								</IconBadge>
-							) : null}
-							{isLastInstallment ? (
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<span className="inline-flex size-6 items-center justify-center rounded-full border text-muted-foreground">
-											<Image
-												src="/icons/party.svg"
-												alt=""
-												width={14}
-												height={14}
-												className="size-3.5"
-											/>
-											<span className="sr-only">Última parcela</span>
-										</span>
-									</TooltipTrigger>
-									<TooltipContent side="top">Última parcela!</TooltipContent>
-								</Tooltip>
-							) : null}
-							{item.isAnticipated ? (
-								<IconBadge label="Parcela antecipada" compact>
-									<RiTimeLine className="size-3.5" aria-hidden />
-								</IconBadge>
-							) : null}
-							{hasNote ? (
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<span className="inline-flex size-6 items-center justify-center rounded-full border text-muted-foreground">
-											<RiChat1Line className="size-3.5" aria-hidden />
-											<span className="sr-only">Ver anotação</span>
-										</span>
-									</TooltipTrigger>
-									<TooltipContent
-										side="top"
-										align="start"
-										className="max-w-xs whitespace-pre-line"
-									>
-										{item.note}
-									</TooltipContent>
-								</Tooltip>
-							) : null}
-							{item.hasAttachments ? (
-								<IconBadge label="Possui anexos" compact>
-									<RiAttachment2 className="size-3.5" aria-hidden />
-								</IconBadge>
-							) : null}
-						</div>
-						{showActions ? (
-							<div
-								role="group"
-								className="flex shrink-0 items-center gap-1"
-								onClick={(event) => event.stopPropagation()}
-								onKeyDown={(event) => event.stopPropagation()}
-							>
-								<TransactionSettlementButton
-									item={item}
-									isLoading={isSettlementLoading(item.id)}
-									onToggle={onToggleSettlement}
-								/>
-								<TransactionActionsMenu
-									item={item}
-									financialDataOwnerId={financialDataOwnerId}
-									canEditFinancial={canEditFinancial}
-									onEdit={onEdit}
-									onCopy={onCopy}
-									onImport={onImport}
-									onConfirmDelete={onConfirmDelete}
-									onViewDetails={onViewDetails}
-									onRefund={onRefund}
-									onAnticipate={onAnticipate}
-									onViewAnticipationHistory={onViewAnticipationHistory}
-									onConvertToInstallment={onConvertToInstallment}
-									onConvertToRecurring={onConvertToRecurring}
-								/>
-							</div>
+						) : null}
+						{installmentBadge ? (
+							<Badge variant="outline" className="px-1.5 text-xs">
+								{installmentBadge}
+							</Badge>
+						) : null}
+						{item.isDivided ? (
+							<IconBadge label="Dividido entre pessoas" compact>
+								<RiGroupLine className="size-3.5" aria-hidden />
+							</IconBadge>
+						) : null}
+						{isLastInstallment ? (
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<span className="inline-flex size-6 items-center justify-center rounded-full border text-muted-foreground">
+										<Image
+											src="/icons/party.svg"
+											alt=""
+											width={14}
+											height={14}
+											className="size-3.5"
+										/>
+										<span className="sr-only">Última parcela</span>
+									</span>
+								</TooltipTrigger>
+								<TooltipContent side="top">Última parcela!</TooltipContent>
+							</Tooltip>
+						) : null}
+						{item.isAnticipated ? (
+							<IconBadge label="Parcela antecipada" compact>
+								<RiTimeLine className="size-3.5" aria-hidden />
+							</IconBadge>
+						) : null}
+						{hasNote ? (
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<span className="inline-flex size-6 items-center justify-center rounded-full border text-muted-foreground">
+										<RiChat1Line className="size-3.5" aria-hidden />
+										<span className="sr-only">Ver anotação</span>
+									</span>
+								</TooltipTrigger>
+								<TooltipContent
+									side="top"
+									align="start"
+									className="max-w-xs whitespace-pre-line"
+								>
+									{item.note}
+								</TooltipContent>
+							</Tooltip>
+						) : null}
+						{item.hasAttachments ? (
+							<IconBadge label="Possui anexos" compact>
+								<RiAttachment2 className="size-3.5" aria-hidden />
+							</IconBadge>
 						) : null}
 					</div>
 				</div>

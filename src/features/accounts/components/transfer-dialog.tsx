@@ -1,11 +1,10 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { AccountData } from "@/features/accounts/queries";
-import type { ActionResult } from "@/shared/lib/types/actions";
 import { AccountCardSelectContent } from "@/features/transactions/components/select-items";
+import { useTransactionsListOptional } from "@/features/transactions/components/transactions-list-provider";
 import { PeriodPicker } from "@/shared/components/period-picker";
 import { Button } from "@/shared/components/ui/button";
 import { CurrencyInput } from "@/shared/components/ui/currency-input";
@@ -28,7 +27,11 @@ import {
 	SelectValue,
 } from "@/shared/components/ui/select";
 import { useControlledState } from "@/shared/hooks/use-controlled-state";
-import { getTodayDateString } from "@/shared/utils/date";
+import type { ActionResult } from "@/shared/lib/types/actions";
+import {
+	readLastTransactionDate,
+	writeLastTransactionDate,
+} from "@/shared/lib/transaction-last-date";
 
 interface TransferDialogProps {
 	trigger?: React.ReactNode;
@@ -47,7 +50,7 @@ export function TransferDialog({
 	open,
 	onOpenChange,
 }: TransferDialogProps) {
-	const router = useRouter();
+	const transactionsList = useTransactionsListOptional();
 	const [dialogOpen, setDialogOpen] = useControlledState(
 		open,
 		false,
@@ -56,7 +59,6 @@ export function TransferDialog({
 
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
-	const isFromAccountFixed = Boolean(fromAccountId);
 	const [selectedFromAccountId, setSelectedFromAccountId] = useState(
 		fromAccountId ?? accounts[0]?.id ?? "",
 	);
@@ -64,7 +66,7 @@ export function TransferDialog({
 	// Form state
 	const [toAccountId, setToAccountId] = useState("");
 	const [amount, setAmount] = useState("");
-	const [date, setDate] = useState(getTodayDateString());
+	const [date, setDate] = useState(readLastTransactionDate);
 	const [period, setPeriod] = useState(currentPeriod);
 
 	useEffect(() => {
@@ -75,21 +77,20 @@ export function TransferDialog({
 		setErrorMessage(null);
 		setToAccountId("");
 		setAmount("");
-		setDate(getTodayDateString());
+		setDate(readLastTransactionDate());
 		setPeriod(currentPeriod);
 
 		if (fromAccountId) {
 			setSelectedFromAccountId(fromAccountId);
-			return;
+		} else {
+			setSelectedFromAccountId((current) => {
+				if (current && accounts.some((account) => account.id === current)) {
+					return current;
+				}
+
+				return accounts[0]?.id ?? "";
+			});
 		}
-
-		setSelectedFromAccountId((current) => {
-			if (current && accounts.some((account) => account.id === current)) {
-				return current;
-			}
-
-			return accounts[0]?.id ?? "";
-		});
 	}, [accounts, currentPeriod, dialogOpen, fromAccountId]);
 
 	// Available destination accounts (exclude source account)
@@ -144,7 +145,7 @@ export function TransferDialog({
 				throw new Error("Não foi possível registrar a transferência.");
 			}
 
-			const result = (await response.json()) as ActionResult;
+			const result = (await response.json()) as ActionResult<{ ids: string[] }>;
 
 			if (!response.ok && !result.success) {
 				setErrorMessage(result.error);
@@ -154,11 +155,14 @@ export function TransferDialog({
 
 			if (result.success) {
 				toast.success(result.message);
+				writeLastTransactionDate(date);
+				const createdIds = result.data?.ids ?? [];
+				if (createdIds.length > 0) {
+					void transactionsList?.refreshByIds(createdIds);
+				}
 				setDialogOpen(false);
-				router.refresh();
 				setToAccountId("");
 				setAmount("");
-				setDate(getTodayDateString());
 				setPeriod(currentPeriod);
 				return;
 			}
@@ -193,7 +197,10 @@ export function TransferDialog({
 							<DatePicker
 								id="transfer-date"
 								value={date}
-								onChange={setDate}
+								onChange={(value) => {
+									setDate(value);
+									writeLastTransactionDate(value);
+								}}
 								required
 							/>
 						</div>
@@ -220,32 +227,7 @@ export function TransferDialog({
 
 						<div className="flex flex-col gap-2 sm:col-span-2">
 							<Label htmlFor="from-account">Conta de origem</Label>
-							{isFromAccountFixed ? (
-								<Select value={selectedFromAccountId} disabled>
-									<SelectTrigger id="from-account" className="w-full">
-										<SelectValue>
-											{fromAccount && (
-												<AccountCardSelectContent
-													label={fromAccount.name}
-													logo={fromAccount.logo}
-													isCartao={false}
-												/>
-											)}
-										</SelectValue>
-									</SelectTrigger>
-									<SelectContent>
-										{fromAccount && (
-											<SelectItem value={fromAccount.id}>
-												<AccountCardSelectContent
-													label={fromAccount.name}
-													logo={fromAccount.logo}
-													isCartao={false}
-												/>
-											</SelectItem>
-										)}
-									</SelectContent>
-								</Select>
-							) : accounts.length === 0 ? (
+							{accounts.length === 0 ? (
 								<div className="rounded-md border border-border bg-muted p-3 text-muted-foreground text-sm">
 									Cadastre ao menos uma conta para realizar transferências.
 								</div>

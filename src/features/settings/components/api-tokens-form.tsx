@@ -12,9 +12,9 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useState } from "react";
 import {
-	createApiTokenAction,
-	revokeApiTokenAction,
-} from "@/features/settings/actions";
+	createApiTokenClient,
+	revokeApiTokenClient,
+} from "@/features/settings/lib/settings-api-client";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -74,13 +74,15 @@ export function ApiTokensForm({ tokens }: ApiTokensFormProps) {
 		setError(null);
 
 		try {
-			const result = await createApiTokenAction({ name: tokenName.trim() });
+			const result = await createApiTokenClient({ name: tokenName.trim() });
 
 			if (result.success && result.data?.token) {
 				setNewToken(result.data.token);
 				setTokenName("");
 			} else {
-				setError(result.error || "Erro ao criar token");
+				setError(
+					!result.success ? result.error : "Erro ao criar token",
+				);
 			}
 		} catch {
 			setError("Erro ao criar token");
@@ -115,7 +117,7 @@ export function ApiTokensForm({ tokens }: ApiTokensFormProps) {
 		setIsRevoking(true);
 
 		try {
-			const result = await revokeApiTokenAction({ tokenId: revokeId });
+			const result = await revokeApiTokenClient({ tokenId: revokeId });
 
 			if (!result.success) {
 				setError(result.error || "Erro ao revogar token");

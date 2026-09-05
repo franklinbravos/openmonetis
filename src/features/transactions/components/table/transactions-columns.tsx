@@ -32,13 +32,13 @@ import {
 	TooltipTrigger,
 } from "@/shared/components/ui/tooltip";
 import { resolveLogoSrc } from "@/shared/lib/logo";
-import { resolveTransferAccountsPreview } from "@/shared/lib/transfers/utils";
 import { getAvatarSrc } from "@/shared/lib/payers/utils";
+import { resolveTransferAccountsPreview } from "@/shared/lib/transfers/utils";
 import { formatDate } from "@/shared/utils/date";
 import { getConditionIcon, getPaymentMethodIcon } from "@/shared/utils/icons";
 import { cn } from "@/shared/utils/ui";
-import type { TransactionItem } from "../types";
 import { TransferAccountsPreviewBadge } from "../shared/transfer-accounts-preview";
+import type { TransactionItem } from "../types";
 import { TransactionActionsMenu } from "./transaction-actions-menu";
 import { TransactionSettlementButton } from "./transaction-settlement-button";
 
@@ -467,9 +467,7 @@ function buildColumns({
 						: null;
 
 				if (transferAccounts) {
-					return (
-						<TransferAccountsPreviewBadge accounts={transferAccounts} />
-					);
+					return <TransferAccountsPreviewBadge accounts={transferAccounts} />;
 				}
 
 				const {

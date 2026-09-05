@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { completeRequiredPasswordChangeAction } from "@/features/settings/actions";
+import { completeRequiredPasswordChangeClient } from "@/features/settings/lib/settings-api-client";
 import { Button } from "@/shared/components/ui/button";
 import {
 	Card,
@@ -23,7 +23,7 @@ export default function ChangePasswordRequiredPage() {
 
 	const handleSubmit = () => {
 		startTransition(async () => {
-			const result = await completeRequiredPasswordChangeAction({
+			const result = await completeRequiredPasswordChangeClient({
 				newPassword: password,
 				confirmPassword,
 			});

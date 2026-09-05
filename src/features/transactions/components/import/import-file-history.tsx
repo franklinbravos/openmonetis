@@ -11,10 +11,10 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
-	cloneImportBatchForReprocessAction,
-	deleteImportBatchAction,
-	getImportBatchDownloadUrlAction,
-} from "@/features/transactions/actions/import-batch-history-action";
+	cloneImportBatchForReprocessClient,
+	deleteImportBatchClient,
+	getImportBatchDownloadUrlClient,
+} from "@/features/transactions/lib/import-api-client";
 import {
 	canDeleteImportBatch,
 	isImportBatchDraft,
@@ -177,9 +177,7 @@ function ImportFileHistoryActions({
 
 	const handleReprocessImported = () => {
 		startCloning(async () => {
-			const result = await cloneImportBatchForReprocessAction({
-				batchId: entry.id,
-			});
+			const result = await cloneImportBatchForReprocessClient(entry.id);
 
 			if (!result.success) {
 				toast.error(result.error);
@@ -237,9 +235,7 @@ function ImportFileHistoryActions({
 					aria-label={`Baixar ${entry.sourceFileName}`}
 					onClick={() => {
 						startTransition(async () => {
-							const result = await getImportBatchDownloadUrlAction({
-								batchId: entry.id,
-							});
+							const result = await getImportBatchDownloadUrlClient(entry.id);
 
 							if (!result.success) {
 								toast.error(result.error);
@@ -374,9 +370,7 @@ export function ImportFileHistory({
 	const handleConfirmDelete = async () => {
 		if (!pendingDeleteEntry) return;
 
-		const result = await deleteImportBatchAction({
-			batchId: pendingDeleteEntry.id,
-		});
+		const result = await deleteImportBatchClient(pendingDeleteEntry.id);
 
 		if (!result.success) {
 			toast.error(result.error ?? "Não foi possível excluir a importação.");

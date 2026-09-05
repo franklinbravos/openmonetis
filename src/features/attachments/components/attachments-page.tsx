@@ -14,9 +14,11 @@ import { AttachmentGridItem } from "@/features/attachments/components/attachment
 import { AttachmentPreview } from "@/features/attachments/components/attachment-preview";
 import { useAttachmentUrl } from "@/features/attachments/hooks/use-attachment-url";
 import type { AttachmentForPeriod } from "@/features/attachments/queries";
-import { fetchTransactionByIdAction } from "@/features/transactions/actions/fetch-by-id";
 import type { TransactionDialogOptions } from "@/features/transactions/actions/fetch-dialog-options";
-import { fetchTransactionDialogOptionsAction } from "@/features/transactions/actions/fetch-dialog-options";
+import {
+	fetchTransactionByIdClient,
+	fetchTransactionDialogOptionsClient,
+} from "@/features/transactions/lib/transactions-api-client";
 import { TransactionDetailsDialog } from "@/features/transactions/components/dialogs/transaction-details-dialog";
 import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
 import { PayerSelectContent } from "@/features/transactions/components/select-items";
@@ -164,7 +166,7 @@ export function AttachmentsPage({
 	function handleDetails(transactionId: string) {
 		setLoadingTransactionId(transactionId);
 		startTransition(async () => {
-			const transaction = await fetchTransactionByIdAction(transactionId);
+			const transaction = await fetchTransactionByIdClient(transactionId);
 			setLoadingTransactionId(null);
 			if (transaction) setTransactionDetails(transaction);
 		});
@@ -173,7 +175,7 @@ export function AttachmentsPage({
 	function handleEdit(transaction: TransactionItem) {
 		setTransactionToEdit(transaction);
 		startTransition(async () => {
-			const options = await fetchTransactionDialogOptionsAction();
+			const options = await fetchTransactionDialogOptionsClient();
 			setDialogOptions(options);
 			setEditOpen(true);
 		});

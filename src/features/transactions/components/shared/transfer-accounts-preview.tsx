@@ -140,10 +140,7 @@ export function TransferAccountsPreviewBadge({
 						href={fromHref}
 						size="md"
 					/>
-					<RiArrowRightLine
-						className="size-3.5 shrink-0"
-						aria-hidden
-					/>
+					<RiArrowRightLine className="size-3.5 shrink-0" aria-hidden />
 					<AccountEndpoint
 						name={accounts.to.name}
 						logo={resolveLogoSrc(accounts.to.logo)}

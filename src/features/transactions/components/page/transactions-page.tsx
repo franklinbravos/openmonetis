@@ -1,25 +1,25 @@
 "use client";
 
+import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { AccountData } from "@/features/accounts/queries";
+import type { UpdateInput } from "@/features/transactions/actions/core";
 import {
-	convertTransactionToInstallmentAction,
-	convertTransactionToRecurringAction,
-	createMassTransactionsAction,
-	deleteMultipleTransactionsAction,
-	deleteTransactionAction,
-	deleteTransactionBulkAction,
-	toggleTransactionSettlementAction,
-	updateTransactionAction,
-	updateTransactionBulkAction,
-	updateTransactionSplitPairAction,
-} from "@/features/transactions/actions";
-import {
-	confirmAttachmentUploadAction,
-	detachAttachmentBulkAction,
-	getPresignedUploadUrlAction,
-} from "@/features/transactions/actions/attachments";
+	confirmAttachmentUploadClient,
+	convertTransactionToInstallmentClient,
+	convertTransactionToRecurringClient,
+	createMassTransactionsClient,
+	deleteMultipleTransactionsClient,
+	deleteTransactionBulkClient,
+	deleteTransactionClient,
+	detachAttachmentBulkClient,
+	getPresignedUploadUrlClient,
+	toggleTransactionSettlementClient,
+	updateTransactionBulkClient,
+	updateTransactionClient,
+	updateTransactionSplitPairClient,
+} from "@/features/transactions/lib/transactions-api-client";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
 import { Button } from "@/shared/components/ui/button";
 import {
@@ -58,6 +58,10 @@ import { TransactionDetailsDialog } from "../dialogs/transaction-details-dialog"
 import { TransactionDialog } from "../dialogs/transaction-dialog/transaction-dialog";
 import { TransactionsQuickActions } from "../quick-actions/transactions-quick-actions";
 import { TransactionsTable } from "../table/transactions-table";
+import {
+	TransactionsListProvider,
+	useTransactionsList,
+} from "../transactions-list-provider";
 import type {
 	AccountCardFilterOption,
 	SelectOption,
@@ -66,6 +70,7 @@ import type {
 } from "../types";
 
 interface TransactionsPageProps {
+	viewerUserId?: string;
 	financialDataOwnerId: string;
 	canEditFinancial: boolean;
 	transactions: TransactionItem[];
@@ -107,10 +112,30 @@ interface TransactionsPageProps {
 const pluralize = (count: number, singular: string, plural: string) =>
 	count === 1 ? singular : plural;
 
-export function TransactionsPage({
+export function TransactionsPage(props: TransactionsPageProps) {
+	const pathname = usePathname();
+	const searchParams = useSearchParams();
+	const listKey = `${pathname}?${searchParams.toString()}`;
+
+	return (
+		<TransactionsListProvider
+			serverTransactions={props.transactions}
+			serverPagination={props.pagination}
+			listKey={listKey}
+			selectedPeriod={props.selectedPeriod}
+			financialDataOwnerId={props.financialDataOwnerId}
+			viewerUserId={props.viewerUserId ?? props.financialDataOwnerId}
+		>
+			<TransactionsPageContent {...props} />
+		</TransactionsListProvider>
+	);
+}
+
+function TransactionsPageContent({
+	viewerUserId: _viewerUserId,
 	financialDataOwnerId,
 	canEditFinancial,
-	transactions: transactionList,
+	transactions: _serverTransactions,
 	payerOptions,
 	splitPayerOptions,
 	defaultPayerId,
@@ -144,6 +169,13 @@ export function TransactionsPage({
 	showImportButton = true,
 	embeddedInToolbarCard = false,
 }: TransactionsPageProps) {
+	const {
+		transactions: transactionList,
+		pagination: livePagination,
+		refreshByIds,
+		removeByIds,
+		patchItem,
+	} = useTransactionsList();
 	const [selectedTransaction, setSelectedTransaction] =
 		useState<TransactionItem | null>(null);
 	const [editOpen, setEditOpen] = useState(false);
@@ -253,8 +285,7 @@ export function TransactionsPage({
 
 		try {
 			setSettlementLoadingId(item.id);
-			const result = await toggleTransactionSettlementAction({
-				id: item.id,
+			const result = await toggleTransactionSettlementClient(item.id, {
 				value: nextValue,
 			});
 
@@ -267,6 +298,7 @@ export function TransactionsPage({
 					? `"${item.name}" marcado como pago`
 					: `"${item.name}" marcado como não pago`,
 			);
+			patchItem(item.id, { isSettled: nextValue });
 		} catch (error) {
 			const message =
 				error instanceof Error
@@ -283,9 +315,7 @@ export function TransactionsPage({
 			return;
 		}
 
-		const result = await deleteTransactionAction({
-			id: transactionToDelete.id,
-		});
+		const result = await deleteTransactionClient(transactionToDelete.id);
 
 		if (!result.success) {
 			toast.error(result.error);
@@ -293,6 +323,7 @@ export function TransactionsPage({
 		}
 
 		toast.success(result.message);
+		removeByIds([transactionToDelete.id]);
 		setDeleteOpen(false);
 	};
 
@@ -301,7 +332,7 @@ export function TransactionsPage({
 			return;
 		}
 
-		const result = await deleteTransactionBulkAction({
+		const result = await deleteTransactionBulkClient({
 			id: pendingDeleteData.id,
 			scope,
 		});
@@ -312,6 +343,7 @@ export function TransactionsPage({
 		}
 
 		toast.success(result.message);
+		removeByIds([pendingDeleteData.id]);
 		setBulkDeleteOpen(false);
 		setPendingDeleteData(null);
 	};
@@ -350,7 +382,7 @@ export function TransactionsPage({
 			return;
 		}
 
-		const result = await updateTransactionBulkAction({
+		const result = await updateTransactionBulkClient({
 			id: pendingEditData.id,
 			scope,
 			purchaseDate: pendingEditData.purchaseDate,
@@ -374,7 +406,7 @@ export function TransactionsPage({
 
 		// Propaga remoções de anexo pendentes com o mesmo escopo
 		for (const attachmentId of pendingEditData.pendingDetachIds) {
-			await detachAttachmentBulkAction({
+			await detachAttachmentBulkClient({
 				attachmentId,
 				transactionId: pendingEditData.id,
 				scope,
@@ -383,11 +415,10 @@ export function TransactionsPage({
 
 		// Faz upload dos arquivos pendentes e confirma com o escopo escolhido
 		for (const file of pendingEditData.pendingUploadFiles) {
-			const presign = await getPresignedUploadUrlAction({
+			const presign = await getPresignedUploadUrlClient(pendingEditData.id, {
 				fileName: file.name,
 				mimeType: file.type,
 				fileSize: file.size,
-				transactionId: pendingEditData.id,
 			});
 			if (presign.success) {
 				await fetch(presign.presignedUrl, {
@@ -395,7 +426,7 @@ export function TransactionsPage({
 					body: file,
 					headers: { "Content-Type": file.type },
 				});
-				await confirmAttachmentUploadAction({
+				await confirmAttachmentUploadClient(pendingEditData.id, {
 					uploadToken: presign.uploadToken,
 					scope,
 				});
@@ -403,12 +434,13 @@ export function TransactionsPage({
 		}
 
 		toast.success(result.message);
+		void refreshByIds([pendingEditData.id]);
 		setBulkEditOpen(false);
 		setPendingEditData(null);
 	};
 
 	const handleMassAddSubmit = async (data: MassAddFormData) => {
-		const result = await createMassTransactionsAction(data);
+		const result = await createMassTransactionsClient(data);
 
 		if (!result.success) {
 			toast.error(result.error);
@@ -440,7 +472,7 @@ export function TransactionsPage({
 		}
 
 		const ids = pendingMultipleDeleteData.map((item) => item.id);
-		const result = await deleteMultipleTransactionsAction({ ids });
+		const result = await deleteMultipleTransactionsClient({ ids });
 
 		if (!result.success) {
 			toast.error(result.error);
@@ -448,6 +480,7 @@ export function TransactionsPage({
 		}
 
 		toast.success(result.message);
+		removeByIds(ids);
 		setMultipleBulkDeleteOpen(false);
 		setPendingMultipleDeleteData([]);
 	};
@@ -473,16 +506,10 @@ export function TransactionsPage({
 			name: pendingSplitEditData.name,
 			purchaseDate: pendingSplitEditData.purchaseDate,
 			period: pendingSplitEditData.period,
-			transactionType: pendingSplitEditData.transactionType as Parameters<
-				typeof updateTransactionAction
-			>[0]["transactionType"],
+			transactionType: pendingSplitEditData.transactionType as UpdateInput["transactionType"],
 			amount: pendingSplitEditData.amount,
-			condition: pendingSplitEditData.condition as Parameters<
-				typeof updateTransactionAction
-			>[0]["condition"],
-			paymentMethod: pendingSplitEditData.paymentMethod as Parameters<
-				typeof updateTransactionAction
-			>[0]["paymentMethod"],
+			condition: pendingSplitEditData.condition as UpdateInput["condition"],
+			paymentMethod: pendingSplitEditData.paymentMethod as UpdateInput["paymentMethod"],
 			payerId: pendingSplitEditData.payerId ?? null,
 			accountId: pendingSplitEditData.accountId ?? null,
 			cardId: pendingSplitEditData.cardId ?? null,
@@ -494,11 +521,11 @@ export function TransactionsPage({
 			isSplit: false,
 		};
 
-		const action =
+		const { id, ...updatePayload } = payload;
+		const result =
 			scope === "both"
-				? updateTransactionSplitPairAction
-				: updateTransactionAction;
-		const result = await action(payload);
+				? await updateTransactionSplitPairClient(id, updatePayload)
+				: await updateTransactionClient(id, updatePayload);
 
 		if (!result.success) {
 			toast.error(result.error);
@@ -507,7 +534,7 @@ export function TransactionsPage({
 
 		await Promise.all(
 			pendingSplitEditData.pendingDetachIds.map((attachmentId) =>
-				detachAttachmentBulkAction({
+				detachAttachmentBulkClient({
 					attachmentId,
 					transactionId: pendingSplitEditData.id,
 					scope: "current",
@@ -517,19 +544,21 @@ export function TransactionsPage({
 
 		await Promise.all(
 			pendingSplitEditData.pendingUploadFiles.map(async (file) => {
-				const presign = await getPresignedUploadUrlAction({
-					fileName: file.name,
-					mimeType: file.type,
-					fileSize: file.size,
-					transactionId: pendingSplitEditData.id,
-				});
+				const presign = await getPresignedUploadUrlClient(
+					pendingSplitEditData.id,
+					{
+						fileName: file.name,
+						mimeType: file.type,
+						fileSize: file.size,
+					},
+				);
 				if (!presign.success) return;
 				await fetch(presign.presignedUrl, {
 					method: "PUT",
 					body: file,
 					headers: { "Content-Type": file.type },
 				});
-				await confirmAttachmentUploadAction({
+				await confirmAttachmentUploadClient(pendingSplitEditData.id, {
 					uploadToken: presign.uploadToken,
 					scope: "current",
 				});
@@ -600,10 +629,10 @@ export function TransactionsPage({
 
 		try {
 			setInstallmentPending(true);
-			const result = await convertTransactionToInstallmentAction({
-				id: transactionToConvert.id,
-				installmentCount: count,
-			});
+			const result = await convertTransactionToInstallmentClient(
+				transactionToConvert.id,
+				{ installmentCount: count },
+			);
 
 			if (!result.success) {
 				toast.error(result.error);
@@ -637,10 +666,10 @@ export function TransactionsPage({
 
 		try {
 			setRecurrencePending(true);
-			const result = await convertTransactionToRecurringAction({
-				id: transactionToConvertRecurring.id,
-				recurrenceCount: count,
-			});
+			const result = await convertTransactionToRecurringClient(
+				transactionToConvertRecurring.id,
+				{ recurrenceCount: count },
+			);
 
 			if (!result.success) {
 				toast.error(result.error);
@@ -729,7 +758,7 @@ export function TransactionsPage({
 				categoryFilterOptions={categoryFilterOptions}
 				accountCardFilterOptions={accountCardFilterOptions}
 				selectedPeriod={selectedPeriod}
-				pagination={pagination}
+				pagination={livePagination ?? pagination}
 				exportContext={exportContext}
 				createSlot={createSlot}
 				onMassAdd={allowCreate ? handleMassAdd : undefined}

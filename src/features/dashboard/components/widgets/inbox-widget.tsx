@@ -14,9 +14,9 @@ import { dashboardWidgetListStyles as styles } from "@/features/dashboard/compon
 import type { DashboardInboxSnapshot } from "@/features/dashboard/lib/inbox-snapshot-queries";
 import type { DashboardWidgetQuickActionOptions } from "@/features/dashboard/widget-registry/widget-config";
 import {
-	discardInboxItemAction,
-	markInboxAsProcessedAction,
-} from "@/features/inbox/actions";
+	discardInboxItemClient,
+	markInboxAsProcessedClient,
+} from "@/features/inbox/lib/inbox-api-client";
 import { TransactionDialog } from "@/features/transactions/components/dialogs/transaction-dialog/transaction-dialog";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
 import MoneyValues from "@/shared/components/money-values";
@@ -116,9 +116,7 @@ export function InboxWidget({
 	const handleDiscardConfirm = async () => {
 		if (!itemToDiscard) return;
 
-		const result = await discardInboxItemAction({
-			inboxItemId: itemToDiscard.id,
-		});
+		const result = await discardInboxItemClient(itemToDiscard.id);
 
 		if (result.success) {
 			toast.success(result.message);
@@ -133,9 +131,7 @@ export function InboxWidget({
 	const handleLancamentoSuccess = async () => {
 		if (!itemToProcess) return;
 
-		const result = await markInboxAsProcessedAction({
-			inboxItemId: itemToProcess.id,
-		});
+		const result = await markInboxAsProcessedClient(itemToProcess.id);
 
 		if (result.success) {
 			toast.success("Notificação processada!");

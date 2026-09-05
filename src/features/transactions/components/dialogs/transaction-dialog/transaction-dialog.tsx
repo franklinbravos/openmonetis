@@ -15,15 +15,15 @@ import {
 	type CreatedCategory,
 } from "@/features/categories/components/create-category-inline-dialog";
 import type { Category } from "@/features/categories/components/types";
+import type { CreateInput, UpdateInput } from "@/features/transactions/actions/core";
+import { useTransactionsListOptional } from "@/features/transactions/components/transactions-list-provider";
 import {
-	createTransactionAction,
-	updateTransactionAction,
-} from "@/features/transactions/actions";
-import {
-	confirmAttachmentUploadAction,
-	detachTransactionAttachmentAction,
-	getPresignedUploadUrlAction,
-} from "@/features/transactions/actions/attachments";
+	confirmAttachmentUploadClient,
+	createTransactionClient,
+	detachTransactionAttachmentClient,
+	getPresignedUploadUrlClient,
+	updateTransactionClient,
+} from "@/features/transactions/lib/transactions-api-client";
 import { groupAndSortCategories } from "@/features/transactions/lib/category-helpers";
 import {
 	applyFieldDependencies,
@@ -32,6 +32,7 @@ import {
 	getSelectedPayerIds,
 	normalizeSplitStateForSubmit,
 } from "@/features/transactions/lib/form-helpers";
+import { writeLastTransactionDate } from "@/shared/lib/transaction-last-date";
 import { useAppPreferences } from "@/shared/components/providers/app-preferences-provider";
 import { Button } from "@/shared/components/ui/button";
 import {
@@ -129,6 +130,7 @@ export function TransactionDialog({
 	onBulkEditRequest,
 	onSplitEditRequest,
 }: TransactionDialogProps) {
+	const transactionsList = useTransactionsListOptional();
 	const [dialogOpen, setDialogOpen] = useControlledState(
 		open,
 		false,
@@ -280,8 +282,8 @@ export function TransactionDialog({
 		return groupAndSortCategories(filtered);
 	}, [mergedCategoryOptions, formState.transactionType]);
 
-	type CreateTransactionInput = Parameters<typeof createTransactionAction>[0];
-	type UpdateTransactionInput = Parameters<typeof updateTransactionAction>[0];
+	type CreateTransactionInput = CreateInput;
+	type UpdateTransactionInput = UpdateInput;
 
 	const totalAmount = useMemo(() => {
 		const parsed = Number.parseFloat(formState.amount);
@@ -312,6 +314,10 @@ export function TransactionDialog({
 		key: Key,
 		value: FormState[Key],
 	) {
+		if (key === "purchaseDate" && typeof value === "string" && value) {
+			writeLastTransactionDate(value);
+		}
+
 		setFormState((prev) => {
 			const effectiveCardId =
 				key === "cardId" ? (value as string) : prev.cardId;
@@ -564,7 +570,7 @@ export function TransactionDialog({
 
 		startTransition(async () => {
 			if (mode === "create") {
-				const result = await createTransactionAction(payload);
+				const result = await createTransactionClient(payload);
 
 				if (result.success) {
 					if (pendingFiles.length > 0 && result.data?.ids?.length) {
@@ -573,11 +579,10 @@ export function TransactionDialog({
 							formState.condition === "Parcelado" ||
 							formState.condition === "Recorrente";
 						for (const file of pendingFiles) {
-							const presign = await getPresignedUploadUrlAction({
+							const presign = await getPresignedUploadUrlClient(firstId, {
 								fileName: file.name,
 								mimeType: file.type,
 								fileSize: file.size,
-								transactionId: firstId,
 							});
 							if (presign.success) {
 								await fetch(presign.presignedUrl, {
@@ -585,7 +590,7 @@ export function TransactionDialog({
 									body: file,
 									headers: { "Content-Type": file.type },
 								});
-								await confirmAttachmentUploadAction({
+								await confirmAttachmentUploadClient(firstId, {
 									uploadToken: presign.uploadToken,
 									scope: isNewSeries ? "all" : "current",
 								});
@@ -593,7 +598,11 @@ export function TransactionDialog({
 						}
 					}
 					toast.success(result.message);
-					onSuccess?.();
+					const createdIds = result.data?.ids ?? [];
+					onSuccess?.({ ids: createdIds });
+					if (createdIds.length > 0) {
+						void transactionsList?.refreshByIds(createdIds);
+					}
 					setDialogOpen(false);
 					return;
 				}
@@ -681,36 +690,45 @@ export function TransactionDialog({
 				...payload,
 			};
 
-			const result = await updateTransactionAction(updatePayload);
+			const result = await updateTransactionClient(
+				transaction?.id ?? "",
+				updatePayload,
+			);
 
 			if (result.success) {
 				for (const attachmentId of pendingDetachIds) {
-					await detachTransactionAttachmentAction({
+					await detachTransactionAttachmentClient(
+						transaction?.id ?? "",
 						attachmentId,
-						transactionId: transaction?.id ?? "",
-					});
+					);
 				}
 				for (const file of pendingUploadFiles) {
-					const presign = await getPresignedUploadUrlAction({
-						fileName: file.name,
-						mimeType: file.type,
-						fileSize: file.size,
-						transactionId: transaction?.id ?? "",
-					});
+					const presign = await getPresignedUploadUrlClient(
+						transaction?.id ?? "",
+						{
+							fileName: file.name,
+							mimeType: file.type,
+							fileSize: file.size,
+						},
+					);
 					if (presign.success) {
 						await fetch(presign.presignedUrl, {
 							method: "PUT",
 							body: file,
 							headers: { "Content-Type": file.type },
 						});
-						await confirmAttachmentUploadAction({
+						await confirmAttachmentUploadClient(transaction?.id ?? "", {
 							uploadToken: presign.uploadToken,
 							scope: "current",
 						});
 					}
 				}
 				toast.success(result.message);
-				onSuccess?.();
+				const updatedIds = transaction?.id ? [transaction.id] : [];
+				onSuccess?.({ ids: updatedIds });
+				if (updatedIds.length > 0) {
+					void transactionsList?.refreshByIds(updatedIds);
+				}
 				setDialogOpen(false);
 				return;
 			}

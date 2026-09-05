@@ -3,8 +3,10 @@
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import type { ReconciliationLine } from "@/db/schema";
-import { createReconciliationSessionAction } from "@/features/reconciliation/actions/create-session";
-import { fetchReconciliationSessionAction } from "@/features/reconciliation/actions/fetch-session";
+import {
+	createReconciliationSessionClient,
+	fetchReconciliationSessionClient,
+} from "@/features/reconciliation/lib/reconciliation-api-client";
 import {
 	type ReconciliationScopeValue,
 	ScopeStep,
@@ -76,7 +78,7 @@ export function ReconciliationPage({
 		}
 
 		startTransition(async () => {
-			const result = await createReconciliationSessionAction({
+			const result = await createReconciliationSessionClient({
 				targetType: scope.targetType,
 				targetId: scope.targetId,
 				period: scope.period,
@@ -100,7 +102,7 @@ export function ReconciliationPage({
 				return;
 			}
 
-			const sessionResult = await fetchReconciliationSessionAction(
+			const sessionResult = await fetchReconciliationSessionClient(
 				result.data.sessionId,
 			);
 			if (!sessionResult.success || !sessionResult.data) {

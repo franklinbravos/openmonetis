@@ -12,32 +12,14 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 } from "@/shared/components/ui/popover";
-import { parseLocalDateString, toLocalDateString } from "@/shared/utils/date";
+import {
+	parseFlexibleDateInput,
+	parseLocalDateString,
+	toLocalDateString,
+} from "@/shared/utils/date";
 import { cn } from "@/shared/utils/ui";
 
-function formatDate(date: Date | undefined, compact = false): string {
-	if (!date) {
-		return "";
-	}
-
-	if (compact) {
-		return date
-			.toLocaleDateString("pt-BR", {
-				day: "numeric",
-				month: "short",
-			})
-			.replace(".", "")
-			.replace(" de ", " ");
-	}
-
-	return date.toLocaleDateString("pt-BR", {
-		day: "2-digit",
-		month: "long",
-		year: "numeric",
-	});
-}
-
-function isValidDate(date: Date | undefined): boolean {
+function isValidDate(date: Date | undefined): date is Date {
 	if (!date) {
 		return false;
 	}
@@ -53,18 +35,60 @@ function parseYYYYMMDD(dateString: string): Date | undefined {
 		return undefined;
 	}
 
-	// Parse YYYY-MM-DD format as local date
-	// IMPORTANT: new Date("2025-11-25") treats the date as UTC midnight,
-	// which in Brazil (UTC-3) becomes 2025-11-26 03:00 local time!
-	const ymdMatch = dateString.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-	if (ymdMatch) {
-		const date = parseLocalDateString(dateString);
-		return isValidDate(date) ? date : undefined;
+	const date = parseLocalDateString(dateString);
+	return isValidDate(date) ? date : undefined;
+}
+
+function formatDatePickerDisplay(
+	date: Date | undefined,
+	compact = false,
+): string {
+	if (!isValidDate(date)) {
+		return "";
 	}
 
-	// For other formats, return undefined instead of using native parser
-	// to avoid timezone issues
-	return undefined;
+	if (compact) {
+		return date
+			.toLocaleDateString("pt-BR", {
+				day: "numeric",
+				month: "short",
+			})
+			.replace(".", "")
+			.replace(" de ", " ");
+	}
+
+	return date.toLocaleDateString("pt-BR", {
+		day: "2-digit",
+		month: "2-digit",
+		year: "numeric",
+	});
+}
+
+function isCompleteDateInput(value: string): boolean {
+	const trimmed = value.trim();
+	return (
+		/^\d{4}-\d{2}-\d{2}$/.test(trimmed) ||
+		/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(trimmed) ||
+		/^\d{1,2}-\d{1,2}-\d{4}$/.test(trimmed)
+	);
+}
+
+function commitParsedDate(
+	raw: string,
+	compact: boolean,
+): {
+	date: Date | undefined;
+	displayValue: string;
+	isoValue: string;
+} {
+	const isoValue = parseFlexibleDateInput(raw) ?? "";
+	const date = isoValue ? parseYYYYMMDD(isoValue) : undefined;
+
+	return {
+		date,
+		displayValue: formatDatePickerDisplay(date, compact),
+		isoValue,
+	};
 }
 
 export interface DatePickerProps {
@@ -76,7 +100,7 @@ export interface DatePickerProps {
 	disabled?: boolean;
 	className?: string;
 	inputClassName?: string;
-	/** Show compact format like "10 mar" instead of "10 de março de 2025" */
+	/** Show compact format like "10 mar" instead of "10/03/2026" */
 	compact?: boolean;
 }
 
@@ -99,26 +123,72 @@ export function DatePicker({
 		parseYYYYMMDD(value),
 	);
 	const [displayValue, setDisplayValue] = React.useState(() =>
-		formatDate(parseYYYYMMDD(value), compact),
+		formatDatePickerDisplay(parseYYYYMMDD(value), compact),
 	);
+	const isEditingRef = React.useRef(false);
 
-	// Sincronizar quando value externo mudar
 	React.useEffect(() => {
+		if (isEditingRef.current) {
+			return;
+		}
+
 		const newDate = parseYYYYMMDD(value);
 		setDate(newDate);
 		setMonth(newDate);
-		setDisplayValue(formatDate(newDate, compact));
+		setDisplayValue(formatDatePickerDisplay(newDate, compact));
 	}, [value, compact]);
+
+	const applyCommittedDate = React.useCallback(
+		(raw: string) => {
+			const committed = commitParsedDate(raw, compact);
+			setDate(committed.date);
+			setMonth(committed.date);
+			setDisplayValue(committed.displayValue);
+			onChange?.(committed.isoValue);
+		},
+		[compact, onChange],
+	);
 
 	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const inputValue = e.target.value;
 		setDisplayValue(inputValue);
 
-		const parsedDate = parseYYYYMMDD(inputValue);
-		if (isValidDate(parsedDate)) {
-			setDate(parsedDate);
-			setMonth(parsedDate);
-			onChange?.(dateToYYYYMMDD(parsedDate));
+		if (isCompleteDateInput(inputValue)) {
+			applyCommittedDate(inputValue);
+		}
+	};
+
+	const handleInputBlur = () => {
+		isEditingRef.current = false;
+
+		const trimmed = displayValue.trim();
+		if (!trimmed) {
+			setDate(undefined);
+			setMonth(undefined);
+			setDisplayValue("");
+			onChange?.("");
+			return;
+		}
+
+		const isoValue = parseFlexibleDateInput(trimmed);
+		if (isoValue) {
+			applyCommittedDate(trimmed);
+			return;
+		}
+
+		setDisplayValue(formatDatePickerDisplay(date, compact));
+	};
+
+	const handleInputFocus = () => {
+		isEditingRef.current = true;
+		if (!disabled) {
+			setOpen(true);
+		}
+	};
+
+	const handleInputClick = () => {
+		if (!disabled) {
+			setOpen(true);
 		}
 	};
 
@@ -127,11 +197,15 @@ export function DatePicker({
 			e.preventDefault();
 			setOpen(true);
 		}
+
+		if (e.key === "Enter") {
+			e.currentTarget.blur();
+		}
 	};
 
 	const handleCalendarSelect = (selectedDate: Date | undefined) => {
 		setDate(selectedDate);
-		setDisplayValue(formatDate(selectedDate, compact));
+		setDisplayValue(formatDatePickerDisplay(selectedDate, compact));
 		onChange?.(dateToYYYYMMDD(selectedDate));
 		setOpen(false);
 	};
@@ -144,9 +218,13 @@ export function DatePicker({
 				placeholder={placeholder}
 				className={cn("bg-background pr-10", inputClassName)}
 				onChange={handleInputChange}
+				onFocus={handleInputFocus}
+				onClick={handleInputClick}
+				onBlur={handleInputBlur}
 				onKeyDown={handleInputKeyDown}
 				required={required}
 				disabled={disabled}
+				inputMode="numeric"
 			/>
 			<Popover modal open={open} onOpenChange={setOpen}>
 				<PopoverTrigger asChild>

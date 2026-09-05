@@ -1,10 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { categories, financialAccounts, transactions } from "@/db/schema";
-import {
-	ActionError,
-	revalidateForEntity,
-} from "@/shared/lib/actions/helpers";
+import { ActionError, revalidateForEntity } from "@/shared/lib/actions/helpers";
 import { db } from "@/shared/lib/db";
 import { PERIOD_FORMAT_REGEX } from "@/shared/lib/invoices";
 import { assertFinancialEditAccess } from "@/shared/lib/payers/financial-access";
@@ -49,7 +46,7 @@ export type TransferBetweenAccountsInput = z.input<typeof transferSchema>;
 export async function transferBetweenAccounts(
 	viewerUserId: string,
 	input: TransferBetweenAccountsInput,
-): Promise<ActionResult> {
+): Promise<ActionResult<{ ids: string[] }>> {
 	const { dataOwnerUserId } = await assertFinancialEditAccess(viewerUserId);
 	const data = transferSchema.parse(input);
 
@@ -73,6 +70,8 @@ export async function transferBetweenAccounts(
 			"Pessoa administrador não encontrada. Por favor, crie uma pessoa admin.",
 		);
 	}
+
+	let transactionIds: string[] = [];
 
 	await db.transaction(async (tx: typeof db) => {
 		const [fromAccount, toAccount] = await Promise.all([
@@ -133,20 +132,25 @@ export async function transferBetweenAccounts(
 			cardId: null,
 		};
 
-		await tx.insert(transactions).values([
-			{
-				...sharedFields,
-				name: TRANSFER_ESTABLISHMENT_SAIDA,
-				amount: formatDecimalForDbRequired(-Math.abs(data.amount)),
-				accountId: fromAccount.id,
-			},
-			{
-				...sharedFields,
-				name: TRANSFER_ESTABLISHMENT_ENTRADA,
-				amount: formatDecimalForDbRequired(Math.abs(data.amount)),
-				accountId: toAccount.id,
-			},
-		]);
+		const inserted = await tx
+			.insert(transactions)
+			.values([
+				{
+					...sharedFields,
+					name: TRANSFER_ESTABLISHMENT_SAIDA,
+					amount: formatDecimalForDbRequired(-Math.abs(data.amount)),
+					accountId: fromAccount.id,
+				},
+				{
+					...sharedFields,
+					name: TRANSFER_ESTABLISHMENT_ENTRADA,
+					amount: formatDecimalForDbRequired(Math.abs(data.amount)),
+					accountId: toAccount.id,
+				},
+			])
+			.returning({ id: transactions.id });
+
+		transactionIds = inserted.map((row) => row.id);
 	});
 
 	revalidateForEntity("accounts", viewerUserId);
@@ -155,5 +159,6 @@ export async function transferBetweenAccounts(
 	return {
 		success: true,
 		message: "Transferência registrada com sucesso.",
+		data: { ids: transactionIds },
 	};
 }

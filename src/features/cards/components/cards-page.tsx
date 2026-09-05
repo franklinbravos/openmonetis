@@ -4,7 +4,7 @@ import { RiAddFill, RiBankCard2Line } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { deleteCardAction } from "@/features/cards/actions";
+import { deleteCardClient } from "@/features/cards/lib/cards-api-client";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
 import { EmptyState } from "@/shared/components/feedback/empty-state";
 import { Button } from "@/shared/components/ui/button";
@@ -95,15 +95,26 @@ export function CardsPage({
 			return;
 		}
 
-		const result = await deleteCardAction({ id: cardToRemove.id });
+		try {
+			const result = await deleteCardClient(cardToRemove.id);
 
-		if (result.success) {
-			toast.success(result.message);
-			return;
+			if (result.success) {
+				toast.success(result.message);
+				router.refresh();
+				return;
+			}
+
+			toast.error(result.error);
+			throw new Error(result.error);
+		} catch (error) {
+			if (error instanceof Error && error.message) {
+				throw error;
+			}
+
+			const message = "Não foi possível remover o cartão.";
+			toast.error(message);
+			throw new Error(message);
 		}
-
-		toast.error(result.error);
-		throw new Error(result.error);
 	};
 
 	const removeTitle = cardToRemove

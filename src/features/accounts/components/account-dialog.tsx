@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
+import type { AccountCreateResultData } from "@/features/accounts/actions";
 import {
-	type AccountCreateResultData,
-	createAccountAction,
-	updateAccountAction,
-} from "@/features/accounts/actions";
+	type AccountCreatePayload,
+	createAccountClient,
+	updateAccountClient,
+} from "@/features/accounts/lib/accounts-api-client";
 import {
 	LogoPickerDialog,
 	LogoPickerTrigger,
@@ -163,7 +164,7 @@ export function AccountDialog({
 		}
 	}, [dialogOpen]);
 
-	type AccountCreatePayload = Parameters<typeof createAccountAction>[0];
+	type AccountFormPayload = AccountCreatePayload;
 
 	// Use logo selection hook
 	const handleLogoSelection = useLogoSelection({
@@ -210,7 +211,7 @@ export function AccountDialog({
 
 		startTransition(async () => {
 			if (mode === "create") {
-				const result = await createAccountAction(payload);
+				const result = await createAccountClient(payload);
 
 				if (result.success) {
 					toast.success(result.message);
@@ -231,10 +232,7 @@ export function AccountDialog({
 				return;
 			}
 
-			const result = await updateAccountAction({
-				id: accountId,
-				...payload,
-			});
+			const result = await updateAccountClient(accountId, payload);
 
 			if (result.success) {
 				toast.success(result.message);

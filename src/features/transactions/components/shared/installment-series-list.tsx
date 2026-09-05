@@ -2,10 +2,8 @@
 
 import { RiAlertLine, RiCheckLine, RiFlashlightLine } from "@remixicon/react";
 import { useEffect, useState } from "react";
-import {
-	fetchInstallmentSeriesAction,
-	type InstallmentSeriesOccurrence,
-} from "@/features/transactions/actions/installment-series";
+import type { InstallmentSeriesOccurrence } from "@/features/transactions/actions/installment-series";
+import { fetchInstallmentSeriesClient } from "@/features/transactions/lib/transactions-api-client";
 import {
 	currencyFormatter,
 	formatPeriod,
@@ -67,7 +65,7 @@ export function InstallmentSeriesList({
 		let cancelled = false;
 		setOccurrences(null);
 
-		void fetchInstallmentSeriesAction(seriesId).then((rows) => {
+		void fetchInstallmentSeriesClient(seriesId).then((rows) => {
 			if (cancelled) return;
 			setOccurrences(rows);
 		});

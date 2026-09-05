@@ -4,9 +4,9 @@ import { RiAttachment2 } from "@remixicon/react";
 import { useEffect, useRef, useTransition } from "react";
 import { toast } from "sonner";
 import {
-	confirmAttachmentUploadAction,
-	getPresignedUploadUrlAction,
-} from "@/features/transactions/actions/attachments";
+	confirmAttachmentUploadClient,
+	getPresignedUploadUrlClient,
+} from "@/features/transactions/lib/transactions-api-client";
 import {
 	ALLOWED_MIME_TYPES,
 	DEFAULT_MAX_FILE_SIZE_MB,
@@ -56,11 +56,10 @@ export function AttachmentUpload({
 		}
 
 		startTransition(async () => {
-			const presignResult = await getPresignedUploadUrlAction({
+			const presignResult = await getPresignedUploadUrlClient(transactionId, {
 				fileName: file.name,
 				mimeType: file.type,
 				fileSize: file.size,
-				transactionId,
 			});
 
 			if (!presignResult.success) {
@@ -79,7 +78,7 @@ export function AttachmentUpload({
 				return;
 			}
 
-			const confirmResult = await confirmAttachmentUploadAction({
+			const confirmResult = await confirmAttachmentUploadClient(transactionId, {
 				uploadToken: presignResult.uploadToken,
 			});
 

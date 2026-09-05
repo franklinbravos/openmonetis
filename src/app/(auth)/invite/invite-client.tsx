@@ -7,9 +7,9 @@ import { toast } from "sonner";
 import { AuthCardShell } from "@/features/auth/components/auth-card-shell";
 import { AuthHeader } from "@/features/auth/components/auth-header";
 import {
-	acceptPayerInviteAction,
-	getPayerInvitePreviewAction,
-} from "@/features/payers/actions/share-access";
+	acceptPayerInviteClient,
+	getPayerInvitePreviewClient,
+} from "@/features/payers/lib/payers-api-client";
 import { Button } from "@/shared/components/ui/button";
 import {
 	PAYER_SHARE_PERMISSION_LABELS,
@@ -49,7 +49,7 @@ export default function InvitePage() {
 		}
 
 		startTransition(async () => {
-			const result = await getPayerInvitePreviewAction({ token });
+			const result = await getPayerInvitePreviewClient({ token });
 			if (!result.success) {
 				setError(result.error);
 				return;
@@ -73,7 +73,7 @@ export default function InvitePage() {
 
 	const handleAccept = () => {
 		startTransition(async () => {
-			const result = await acceptPayerInviteAction({ token });
+			const result = await acceptPayerInviteClient({ token });
 			if (!result.success) {
 				toast.error(result.error);
 				return;

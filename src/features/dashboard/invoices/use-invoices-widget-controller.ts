@@ -12,7 +12,7 @@ import {
 	type PaymentDialogController,
 	usePaymentDialogController,
 } from "@/features/dashboard/payments/use-payment-dialog-controller";
-import { updateInvoicePaymentStatusAction } from "@/features/invoices/actions";
+import { updateInvoicePaymentStatusClient } from "@/features/invoices/lib/invoices-api-client";
 import { INVOICE_PAYMENT_STATUS } from "@/shared/lib/invoices";
 
 type InvoicesWidgetController = Omit<
@@ -47,7 +47,7 @@ export function useInvoicesWidgetController(
 			const date = paymentDateRef.current;
 			const isoDate = date.toISOString().split("T")[0];
 
-			return updateInvoicePaymentStatusAction({
+			return updateInvoicePaymentStatusClient({
 				cardId: invoice.cardId,
 				period: invoice.period,
 				status: INVOICE_PAYMENT_STATUS.PAID,
