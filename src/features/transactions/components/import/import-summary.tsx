@@ -276,7 +276,7 @@ export function ImportSummary({
 				</span>
 
 				{duplicates > 0 && (
-					<span className="text-amber-600 dark:text-amber-400">
+					<span className="text-warning">
 						{duplicates} já cadastrado{duplicates !== 1 ? "s" : ""}
 						{duplicateVerified > 0 || duplicateMismatch > 0
 							? ` (${duplicateVerified} conferido${duplicateVerified !== 1 ? "s" : ""}${duplicateMismatch > 0 ? `, ${duplicateMismatch} divergência${duplicateMismatch !== 1 ? "s" : ""}` : ""})`
@@ -285,7 +285,7 @@ export function ImportSummary({
 				)}
 
 				{linkSuggestions > 0 && (
-					<span className="text-sky-700 dark:text-sky-300">
+					<span className="text-info">
 						{linkSuggestions} possível{linkSuggestions !== 1 ? "is" : ""}{" "}
 						vínculo
 						{linkSuggestions !== 1 ? "s" : ""}
@@ -293,7 +293,7 @@ export function ImportSummary({
 				)}
 
 				{installmentCorrectionCount > 0 && (
-					<span className="text-violet-700 dark:text-violet-300">
+					<span className="text-chart-1">
 						{installmentCorrectionCount}{" "}
 						{installmentCorrectionCount !== 1
 							? "parcelas renumeradas"
@@ -302,7 +302,7 @@ export function ImportSummary({
 				)}
 
 				{amountCorrectionCount > 0 && (
-					<span className="text-violet-700 dark:text-violet-300">
+					<span className="text-chart-1">
 						{amountCorrectionCount}{" "}
 						{amountCorrectionCount !== 1
 							? "valores corrigidos"
@@ -314,7 +314,7 @@ export function ImportSummary({
 					<span>{uncategorized} sem categoria</span>
 				) : (
 					selected > 0 && (
-						<span className="text-emerald-600 dark:text-emerald-400">
+						<span className="text-positive">
 							todas categorizadas ✓
 						</span>
 					)
@@ -324,7 +324,7 @@ export function ImportSummary({
 					<span>{withoutPayer} sem pessoa</span>
 				) : (
 					selected > 0 && (
-						<span className="text-emerald-600 dark:text-emerald-400">
+						<span className="text-positive">
 							todas com pessoa ✓
 						</span>
 					)

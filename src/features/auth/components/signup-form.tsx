@@ -283,14 +283,8 @@ export function SignupForm({ className, ...props }: DivProps) {
 
 						<FieldDescription className="pt-1 text-center">
 							Já tem uma conta?{" "}
-							<a href="/login" className={authLinkClassName}>
-								Entrar
-							</a>
-						</FieldDescription>
-
-						<FieldDescription className="text-center text-sm text-muted-foreground">
 							<a href="/" className={authLinkClassName}>
-								Voltar para a página inicial
+								Entrar
 							</a>
 						</FieldDescription>
 					</FieldGroup>

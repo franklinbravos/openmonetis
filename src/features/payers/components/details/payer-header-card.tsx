@@ -125,7 +125,7 @@ export function PayerHeaderCard({
 							</CardTitle>
 							{isAdmin ? (
 								<RiVerifiedBadgeFill
-									className="size-4 text-sky-500"
+									className="size-4 text-info"
 									aria-hidden
 								/>
 							) : null}

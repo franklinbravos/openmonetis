@@ -56,7 +56,7 @@ function StatCard({
 			className={cn(
 				"rounded-md border px-3 py-2",
 				checked
-					? "border-emerald-500/40 bg-emerald-500/10"
+					? "border-positive/40 bg-positive-surface"
 					: "border-border/60 bg-background/70",
 			)}
 		>
@@ -69,7 +69,7 @@ function StatCard({
 			>
 				{checked ? (
 					<RiCheckboxCircleLine
-						className="size-4 shrink-0 text-emerald-600"
+						className="size-4 shrink-0 text-positive"
 						aria-label="Confere com o arquivo"
 					/>
 				) : null}
@@ -145,11 +145,11 @@ export function InvoiceTotalReconciliationBanner({
 			variant="default"
 			className={cn(
 				"border-border/60 bg-muted/15",
-				isBalanced && "border-emerald-500/30 bg-emerald-500/5",
+				isBalanced && "border-positive/30 bg-positive-surface",
 			)}
 		>
 			{isBalanced ? (
-				<RiCheckboxCircleLine className="size-4 text-emerald-600" />
+				<RiCheckboxCircleLine className="size-4 text-positive" />
 			) : (
 				<RiAlertLine className="size-4 text-muted-foreground" />
 			)}
@@ -196,7 +196,7 @@ export function InvoiceTotalReconciliationBanner({
 					className={cn(
 						"text-xs tabular-nums",
 						isBalanced
-							? "text-emerald-700 dark:text-emerald-300"
+							? "text-positive"
 							: "text-foreground",
 					)}
 				>

@@ -85,7 +85,7 @@ function UploadLogStatusIcon({ status }: { status: ImportUploadLogStatus }) {
 		return (
 			<RiCheckLine
 				aria-hidden
-				className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+				className="mt-0.5 size-3.5 shrink-0 text-positive"
 			/>
 		);
 	}

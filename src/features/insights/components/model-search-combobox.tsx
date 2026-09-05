@@ -54,7 +54,7 @@ function FreeModelBadge({ className }: { className?: string }) {
 		<Badge
 			variant="outline"
 			className={cn(
-				"shrink-0 border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400",
+				"shrink-0 border-positive/40 bg-positive/10 px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide text-positive",
 				className,
 			)}
 		>

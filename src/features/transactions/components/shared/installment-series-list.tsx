@@ -120,21 +120,21 @@ export function InstallmentSeriesList({
 
 							{occurrence.isAnticipated && (
 								<RiFlashlightLine
-									className="size-3.5 shrink-0 text-amber-600"
+									className="size-3.5 shrink-0 text-warning"
 									aria-label="Antecipada"
 								/>
 							)}
 
 							{occurrence.isSettled && (
 								<RiCheckLine
-									className="size-3.5 shrink-0 text-emerald-600"
+									className="size-3.5 shrink-0 text-positive"
 									aria-label="Paga"
 								/>
 							)}
 
 							<span
 								className={`shrink-0 tabular-nums text-xs ${
-									divergesFromSeries ? "font-semibold text-amber-600" : ""
+									divergesFromSeries ? "font-semibold text-warning" : ""
 								}`}
 								title={
 									divergesFromSeries
@@ -173,7 +173,7 @@ export function InstallmentSeriesList({
 			{missingCount > 0 && (
 				<Badge
 					variant="outline"
-					className="gap-1 border-amber-500/40 text-amber-700 dark:text-amber-500"
+					className="gap-1 border-warning/40 text-warning"
 				>
 					<RiAlertLine className="size-3" />
 					{missingCount === 1

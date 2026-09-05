@@ -50,7 +50,7 @@ const feedbackCategories = [
 		title: "Compartilhar Experiência",
 		icon: RiStarLine,
 		description: "Como o OpenMonetis tem ajudado você?",
-		color: "text-purple-500 dark:text-purple-400",
+		color: "text-chart-1",
 		url: `${GITHUB_DISCUSSIONS_BASE}?category=sua-experiencia`,
 	},
 ];

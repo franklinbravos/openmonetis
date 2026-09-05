@@ -68,7 +68,7 @@ export function InvoiceListItem({ invoice, onPay }: InvoiceListItemProps) {
 	const dueStatusClassName = cn(
 		isOverdue && "font-semibold text-destructive",
 		isDueToday && "font-semibold text-warning",
-		isDueTomorrow && "font-semibold text-amber-600 dark:text-amber-500",
+		isDueTomorrow && "font-semibold text-warning dark:text-warning",
 	);
 
 	const payButtonLabel = isOverdue
@@ -243,7 +243,7 @@ export function InvoiceListItem({ invoice, onPay }: InvoiceListItemProps) {
 						<span className={`${styles.trailingMeta} text-warning`}>Hoje</span>
 					) : isDueTomorrow ? (
 						<span
-							className={`${styles.trailingMeta} text-amber-600 dark:text-amber-500`}
+							className={`${styles.trailingMeta} text-warning dark:text-warning`}
 						>
 							Amanhã
 						</span>

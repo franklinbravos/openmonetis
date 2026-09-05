@@ -49,7 +49,9 @@ function redirectKeepingSession(
 	return redirectResponse;
 }
 
-const PUBLIC_AUTH_ROUTES = ["/login", "/signup"];
+const PUBLIC_AUTH_ROUTES = ["/", "/login", "/signup"];
+
+const PUBLIC_SITE_AUTH_PREFIXES = ["/api/auth", "/auth"];
 
 function buildCsp(): string {
 	const isDev = process.env.NODE_ENV === "development";
@@ -190,13 +192,18 @@ export default async function proxy(request: NextRequest) {
 	const hostname = request.headers.get("host")?.replace(/:\d+$/, "");
 
 	if (publicDomain && hostname === publicDomain) {
-		if (pathname.startsWith("/api/")) {
-			return NextResponse.json({ error: "Not found" }, { status: 404 });
-		}
-		if (pathname !== "/") {
+		const isPublicSiteAuthRoute =
+			pathname === "/" ||
+			pathname === "/login" ||
+			pathname.startsWith("/signup") ||
+			PUBLIC_SITE_AUTH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+
+		if (!isPublicSiteAuthRoute) {
+			if (pathname.startsWith("/api/")) {
+				return NextResponse.json({ error: "Not found" }, { status: 404 });
+			}
 			return NextResponse.redirect(new URL("/", request.url));
 		}
-		return NextResponse.next();
 	}
 
 	const {
@@ -218,7 +225,7 @@ export default async function proxy(request: NextRequest) {
 		) {
 			return redirectKeepingSession(
 				request,
-				isAuthenticated ? "/dashboard" : "/login",
+				isAuthenticated ? "/dashboard" : "/",
 				sessionCookies,
 				authHeaders,
 			);
@@ -270,7 +277,7 @@ export default async function proxy(request: NextRequest) {
 
 		return redirectKeepingSession(
 			request,
-			"/login",
+			"/",
 			sessionCookies,
 			authHeaders,
 		);

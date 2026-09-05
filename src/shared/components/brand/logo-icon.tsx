@@ -1,18 +1,17 @@
 import type { SVGProps } from "react";
 
+/** Sinal — glifos + e − fundidos (grid 24×24, traço 4u). */
 export function LogoIcon(props: SVGProps<SVGSVGElement>) {
 	return (
 		<svg
 			xmlns="http://www.w3.org/2000/svg"
-			viewBox="0 0 200 200"
+			viewBox="0 0 24 24"
 			role="img"
 			aria-label="OpenMonetis"
 			{...props}
 		>
-			<path
-				fill="#ff7733"
-				d="M 77.66,165.64 L 37.77,141.54 L 63.30,108.72 L 27.13,97.44 L 46.81,50.77 L 77.66,63.08 L 81.91,30.26 L 126.40,29.23 L 126.06,33.85 L 122.87,67.69 L 158.51,50.77 L 178.19,90.26 L 140.96,104.62 L 162.23,127.18 L 132.98,162.56 L 103.19,131.79 Z"
-			/>
+			<rect x="4" y="10" width="16" height="4" rx="1" fill="currentColor" />
+			<rect x="10" y="4" width="4" height="10" rx="1" fill="currentColor" />
 		</svg>
 	);
 }

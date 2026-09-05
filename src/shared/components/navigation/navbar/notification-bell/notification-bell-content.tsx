@@ -316,7 +316,7 @@ function DueDateIcon({ isOverdue }: { isOverdue: boolean }) {
 	return isOverdue ? (
 		<RiAlertFill className="size-5 text-destructive" />
 	) : (
-		<RiTimeLine className="size-5 text-amber-500" />
+		<RiTimeLine className="size-5 text-warning" />
 	);
 }
 
@@ -402,7 +402,7 @@ export function NotificationBellContent({
 					n.status === "exceeded" ? (
 						<RiAlertFill className="size-5 text-destructive" />
 					) : (
-						<RiErrorWarningLine className="size-5 text-amber-500" />
+						<RiErrorWarningLine className="size-5 text-warning" />
 					)
 				}
 				renderTitle={(n) => n.categoryName}

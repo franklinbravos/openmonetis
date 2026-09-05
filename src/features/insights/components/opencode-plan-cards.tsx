@@ -59,7 +59,7 @@ export function OpenCodePlanCards({
 											Pay-per-use
 										</span>
 									) : (
-										<span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+										<span className="rounded-full bg-positive/10 px-2 py-0.5 text-[10px] font-medium text-positive">
 											Assinatura
 										</span>
 									)}

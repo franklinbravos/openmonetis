@@ -31,7 +31,7 @@ export function Logo({
 				<LogoIcon
 					className={cn(
 						"size-8 shrink-0",
-						!colorIcon && iconFilterClass,
+						colorIcon ? "text-primary" : iconFilterClass,
 						iconClassName,
 					)}
 				/>

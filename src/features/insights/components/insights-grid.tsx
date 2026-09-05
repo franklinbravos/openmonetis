@@ -39,20 +39,20 @@ const CATEGORY_COLORS: Record<
 	{ titleText: string; chatAiIcon: string }
 > = {
 	behaviors: {
-		titleText: "text-orange-700 dark:text-orange-400",
-		chatAiIcon: "text-orange-600 dark:text-orange-400",
+		titleText: "text-chart-4",
+		chatAiIcon: "text-chart-4",
 	},
 	triggers: {
-		titleText: "text-amber-700 dark:text-amber-400 ",
-		chatAiIcon: "text-amber-600 dark:text-amber-400",
+		titleText: "text-warning",
+		chatAiIcon: "text-warning",
 	},
 	recommendations: {
-		titleText: "text-sky-700 dark:text-sky-400",
-		chatAiIcon: "text-sky-600 dark:text-sky-400",
+		titleText: "text-info",
+		chatAiIcon: "text-info",
 	},
 	improvements: {
-		titleText: "text-emerald-700 dark:text-emerald-400",
-		chatAiIcon: "text-emerald-600 dark:text-emerald-400",
+		titleText: "text-positive",
+		chatAiIcon: "text-positive",
 	},
 };
 

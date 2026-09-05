@@ -74,12 +74,12 @@ const FILTERS: {
 	{
 		value: "images",
 		label: "Imagens",
-		icon: <RiImageLine className="size-3.5 text-blue-500" />,
+		icon: <RiImageLine className="size-3.5 text-info" />,
 	},
 	{
 		value: "pdfs",
 		label: "PDFs",
-		icon: <RiFilePdf2Line className="size-3.5 text-red-500" />,
+		icon: <RiFilePdf2Line className="size-3.5 text-destructive" />,
 	},
 ];
 
@@ -229,7 +229,7 @@ export function AttachmentsPage({
 														/>
 														{selectedPayer.value === adminPayerId && (
 															<RiVerifiedBadgeFill
-																className="size-4 text-blue-500"
+																className="size-4 text-info"
 																aria-label="Pessoa principal"
 															/>
 														)}
@@ -255,7 +255,7 @@ export function AttachmentsPage({
 														/>
 														{option.value === adminPayerId && (
 															<RiVerifiedBadgeFill
-																className="size-4 text-blue-500"
+																className="size-4 text-info"
 																aria-label="Pessoa principal"
 															/>
 														)}

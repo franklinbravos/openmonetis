@@ -16,10 +16,10 @@ function FeatureItem({
 }) {
 	return (
 		<div className="flex items-center gap-3">
-			<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-black/12">
-				<Icon className="h-3.5 w-3.5 text-black/55" />
+			<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-foreground/12">
+				<Icon className="h-3.5 w-3.5 text-primary-foreground/70" />
 			</div>
-			<span className="text-sm font-medium text-black/68">{text}</span>
+			<span className="text-sm font-medium text-primary-foreground/85">{text}</span>
 		</div>
 	);
 }
@@ -42,8 +42,8 @@ function AuthSidebar() {
 			<div className="relative flex flex-1 flex-col justify-between p-10 lg:p-12">
 				<Logo
 					variant="compact"
-					invertTextOnDark={false}
-					className="opacity-92 [&_img]:brightness-0 [&_img]:saturate-0"
+					colorIcon
+					className="text-primary-foreground opacity-95 [&_svg]:text-primary-foreground"
 				/>
 
 				<div className="flex flex-1 items-center justify-center py-10">

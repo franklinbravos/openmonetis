@@ -192,7 +192,7 @@ export function AiFallbackModelCard({
 						</div>
 
 						{blockedSameModel ? (
-							<p className="text-amber-700 text-xs leading-relaxed dark:text-amber-400">
+							<p className="text-warning text-xs leading-relaxed">
 								A reserva é o mesmo modelo principal e sem chave própria, então
 								não teria efeito. Escolha outro modelo ou informe uma chave.
 							</p>

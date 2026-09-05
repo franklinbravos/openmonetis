@@ -47,15 +47,15 @@ export function PreviousInvoiceSettlementCard({
 			className={cn(
 				"space-y-2 rounded-lg border px-3 py-3 sm:px-4",
 				review.allOk
-					? "border-emerald-500/30 bg-emerald-500/5"
-					: "border-amber-500/30 bg-amber-500/5",
+					? "border-positive/30 bg-positive-surface"
+					: "border-warning/30 bg-warning/5",
 			)}
 		>
 			<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
 				{review.allOk ? (
-					<RiCheckboxCircleLine className="size-4 shrink-0 text-emerald-600" />
+					<RiCheckboxCircleLine className="size-4 shrink-0 text-positive" />
 				) : (
-					<RiAlertLine className="size-4 shrink-0 text-amber-600" />
+					<RiAlertLine className="size-4 shrink-0 text-warning" />
 				)}
 				<p className="font-medium text-sm">Fatura de {periodLabel}</p>
 				<Badge
@@ -63,8 +63,8 @@ export function PreviousInvoiceSettlementCard({
 					className={cn(
 						"font-normal text-xs",
 						review.allOk
-							? "border-emerald-500/40 text-emerald-700 dark:text-emerald-500"
-							: "border-amber-500/40 text-amber-700 dark:text-amber-500",
+							? "border-positive/40 text-positive"
+							: "border-warning/40 text-warning",
 					)}
 				>
 					{review.noFileEvidence
@@ -104,9 +104,9 @@ export function PreviousInvoiceSettlementCard({
 				{review.checks.map((check) => (
 					<li key={check.label} className="flex items-center gap-1.5">
 						{check.ok ? (
-							<RiCheckboxCircleLine className="size-3.5 shrink-0 text-emerald-600" />
+							<RiCheckboxCircleLine className="size-3.5 shrink-0 text-positive" />
 						) : (
-							<RiCloseCircleLine className="size-3.5 shrink-0 text-amber-600" />
+							<RiCloseCircleLine className="size-3.5 shrink-0 text-warning" />
 						)}
 						<span className="text-muted-foreground">{check.label}</span>
 						<span
@@ -114,13 +114,13 @@ export function PreviousInvoiceSettlementCard({
 								"tabular-nums",
 								check.ok
 									? "font-medium"
-									: "font-medium text-amber-700 dark:text-amber-500",
+									: "font-medium text-warning",
 							)}
 						>
 							{check.value}
 						</span>
 						{check.detail ? (
-							<span className="text-amber-700 dark:text-amber-500">
+							<span className="text-warning">
 								({check.detail})
 							</span>
 						) : check.note ? (

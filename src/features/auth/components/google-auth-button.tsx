@@ -1,6 +1,8 @@
 import { RiLoader4Line } from "@remixicon/react";
 import { Button } from "@/shared/components/ui/button";
 
+/** design-token: ALLOWED — cores oficiais da marca Google no ícone SVG. */
+
 interface GoogleAuthButtonProps {
 	onClick: () => void;
 	loading?: boolean;

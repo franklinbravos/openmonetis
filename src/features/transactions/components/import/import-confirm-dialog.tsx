@@ -321,10 +321,10 @@ export function ImportConfirmDialog({
 						className={cn(
 							"space-y-2 rounded-md border p-3",
 							accountBalance?.closingMatches
-								? "border-sky-500/40 bg-sky-500/5"
+								? "border-info/40 bg-info/5"
 								: accountBalanceError
 									? "border-destructive/40 bg-destructive/5"
-									: "border-amber-500/40 bg-amber-500/5",
+									: "border-warning/40 bg-warning/5",
 						)}
 					>
 						<div className="flex flex-wrap items-center gap-2">
@@ -334,8 +334,8 @@ export function ImportConfirmDialog({
 									className={cn(
 										"rounded-full border px-2 py-0.5 text-xs",
 										accountBalance.closingMatches
-											? "border-sky-500/40 text-sky-700 dark:text-sky-300"
-											: "border-amber-500/40 text-amber-700 dark:text-amber-500",
+											? "border-info/40 text-info"
+											: "border-warning/40 text-warning",
 									)}
 								>
 									{accountBalance.closingMatches
@@ -466,7 +466,7 @@ export function ImportConfirmDialog({
 											{formatDateOnly(accountBalance.yieldDate) ??
 												accountBalance.yieldDate}
 										</span>
-										<span className="font-medium text-emerald-600 tabular-nums dark:text-emerald-400">
+										<span className="font-medium text-positive tabular-nums">
 											+{formatCurrency(accountBalance.yieldAmount)}
 										</span>
 									</li>
@@ -512,14 +512,14 @@ export function ImportConfirmDialog({
 											"font-medium tabular-nums",
 											accountBalance.closingMatches
 												? undefined
-												: "text-amber-800 dark:text-amber-400",
+												: "text-warning",
 										)}
 									>
 										{formatCurrency(accountBalance.projectedClosingBalance)}
 									</span>
 								</li>
 								{!accountBalance.closingMatches ? (
-									<li className="text-amber-800 text-xs leading-relaxed dark:text-amber-400">
+									<li className="text-warning text-xs leading-relaxed">
 										Diferença de{" "}
 										{formatCurrency(
 											Math.abs(
@@ -584,8 +584,8 @@ export function ImportConfirmDialog({
 						className={cn(
 							"space-y-2 rounded-md border p-3",
 							previousInvoice.allOk
-								? "border-emerald-500/40 bg-emerald-500/5"
-								: "border-amber-500/40 bg-amber-500/5",
+								? "border-positive/40 bg-positive-surface"
+								: "border-warning/40 bg-warning/5",
 						)}
 					>
 						<div className="flex flex-wrap items-center gap-2">
@@ -596,8 +596,8 @@ export function ImportConfirmDialog({
 								className={cn(
 									"rounded-full border px-2 py-0.5 text-xs",
 									previousInvoice.allOk
-										? "border-emerald-500/40 text-emerald-700 dark:text-emerald-500"
-										: "border-amber-500/40 text-amber-700 dark:text-amber-500",
+										? "border-positive/40 text-positive"
+										: "border-warning/40 text-warning",
 								)}
 							>
 								{previousInvoice.allOk ? "Confere" : "Requer atenção"}
@@ -608,16 +608,16 @@ export function ImportConfirmDialog({
 							{previousInvoice.checks.map((check) => (
 								<li key={check.label} className="flex items-center gap-1">
 									{check.ok ? (
-										<RiCheckboxCircleLine className="size-3.5 shrink-0 text-emerald-600" />
+										<RiCheckboxCircleLine className="size-3.5 shrink-0 text-positive" />
 									) : (
-										<RiCloseCircleLine className="size-3.5 shrink-0 text-amber-600" />
+										<RiCloseCircleLine className="size-3.5 shrink-0 text-warning" />
 									)}
 									<span className="text-muted-foreground">{check.label}</span>
 									<span className="font-medium tabular-nums">
 										{check.value}
 									</span>
 									{check.detail ? (
-										<span className="text-amber-700 dark:text-amber-500">
+										<span className="text-warning">
 											({check.detail})
 										</span>
 									) : check.note ? (
@@ -666,7 +666,7 @@ export function ImportConfirmDialog({
 				) : null}
 
 				{cardLimits && cardLimits.changeLines.length > 0 ? (
-					<div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+					<div className="space-y-2 rounded-md border border-warning/40 bg-warning/5 p-3">
 						<p className="font-medium text-sm">Limites do cartão</p>
 
 						<div className="flex items-center gap-2">
@@ -702,7 +702,7 @@ export function ImportConfirmDialog({
 				) : null}
 
 				{invoiceAmortization && invoiceAmortization.changeLines.length > 0 ? (
-					<div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+					<div className="space-y-2 rounded-md border border-warning/40 bg-warning/5 p-3">
 						<p className="font-medium text-sm">Pagamento antecipado</p>
 
 						<div className="flex items-center gap-2">
@@ -738,9 +738,9 @@ export function ImportConfirmDialog({
 				) : null}
 
 				{invoicePayment?.alreadyPaid ? (
-					<div className="space-y-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3">
+					<div className="space-y-2 rounded-md border border-positive/40 bg-positive-surface p-3">
 						<div className="flex flex-wrap items-center gap-2">
-							<RiCheckboxCircleLine className="size-4 shrink-0 text-emerald-600" />
+							<RiCheckboxCircleLine className="size-4 shrink-0 text-positive" />
 							<p className="font-medium text-sm">Esta fatura já está paga</p>
 						</div>
 						<ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
@@ -907,8 +907,8 @@ export function ImportConfirmDialog({
 
 const summaryToneClassName = {
 	default: "text-foreground",
-	success: "text-emerald-600 dark:text-emerald-400",
-	info: "text-blue-600 dark:text-blue-400",
+	success: "text-positive",
+	info: "text-info",
 	destructive: "text-destructive",
 } as const;
 

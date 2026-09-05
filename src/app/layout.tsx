@@ -10,7 +10,7 @@ import { SupabaseAuthListener } from "@/shared/components/providers/supabase-aut
 import { ThemeProvider } from "@/shared/components/providers/theme-provider";
 import { Toaster } from "@/shared/components/ui/sonner";
 import "./globals.css";
-import { inter, signatureFont } from "@/public/fonts/font_index";
+import { mono, sans, signatureFont } from "@/public/fonts/font_index";
 
 export const metadata: Metadata = {
 	title: {
@@ -30,7 +30,7 @@ export default function RootLayout({
 		<html
 			data-scroll-behavior="smooth"
 			lang="pt-BR"
-			className={`${inter.className} ${signatureFont.variable}`}
+			className={`${sans.variable} ${mono.variable} ${signatureFont.variable} ${sans.className}`}
 			suppressHydrationWarning
 		>
 			<head>

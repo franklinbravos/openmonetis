@@ -7,7 +7,20 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ## [Unreleased]
 
-Esta versão adiciona conferência do total da fatura na importação de cartão (OFX/PDF), bloqueando a conclusão quando o total projetado diverge do arquivo — com override explícito — e exibindo a diferença na página da fatura após a importação.
+Esta versão traz o redesign visual **Índigo Cofre**: nova paleta de tokens, tipografia Instrument Sans + IBM Plex Mono, componente centralizado de valores monetários, marca Sinal (+/−), entrada somente por login e verificação de tokens na CI.
+
+### Adicionado (redesign)
+- Tokens **Índigo Cofre** em `globals.css` (`--positive`, `--negative`, `--primary-subtle`, `--chart-1`…`5`).
+- Componente `Money` com variantes semânticas, sinal, seta e modo privacidade.
+- `scripts/check-design-tokens.sh` e etapa na CI.
+- `DESIGN.md` v3 e `docs/PLANO-REDESIGN.md`.
+
+### Alterado (redesign)
+- Entrada `/` = login; landing institucional removida.
+- Tipografia Instrument Sans + IBM Plex Mono.
+- Marca Sinal (+/−); PWA `theme_color` `#3556B1`.
+- Botões, cards e gráficos (máx. 5 séries) alinhados ao design system.
+- Classes Tailwind nomeadas migradas para tokens semânticos em ~35 arquivos.
 
 ### Adicionado
 - **Extrato de conta do Mercado Pago em PDF.** Antes o arquivo caía no erro genérico "Ocorreu um erro inesperado" — não havia parser, e a mensagem útil do fallback nem chegava à tela. O documento traz o que os outros extratos não tinham juntos: sinal explícito por linha, **ID da operação** por lançamento (id de banco real, não sintético) e **saldo corrido** que fecha linha a linha. Verificado no extrato real de agosto/2026: 32 lançamentos, entradas R$ 942,20 e saídas R$ 947,32 batendo com o cabeçalho, cadeia de saldo com zero quebras e resíduo R$ 0,00. As linhas de `Rendimentos` já entram com categoria; o rendimento fica `yield: 0` de propósito — declarar yield faria o app inserir um lançamento fantasma que já existe nas linhas. A detecção do Inter foi endurecida para não reivindicar o Mercado Pago se o layout ganhar acento em "Período".

@@ -66,6 +66,7 @@ Exemplos comuns:
 src/
 ├── app/
 │   ├── (auth)/
+│   │   ├── page.tsx
 │   │   ├── login/page.tsx
 │   │   └── signup/page.tsx
 │   ├── (dashboard)/
@@ -93,13 +94,11 @@ src/
 │   │   │   ├── installment-analysis/
 │   │   │   └── establishments/
 │   │   └── settings/
-│   ├── (landing-page)/
 │   ├── api/
 │   ├── globals.css
 │   └── layout.tsx
 ├── features/                      # cada feature segue: actions.ts, queries.ts, actions/, components/, hooks/, lib/
 │   ├── auth/
-│   ├── landing/
 │   ├── dashboard/
 │   ├── transactions/
 │   ├── cards/

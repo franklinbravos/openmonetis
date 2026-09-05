@@ -48,7 +48,7 @@ export async function getUser(): Promise<AppUser> {
 	const session = await getSessionCached();
 
 	if (!session?.user) {
-		redirect("/login");
+		redirect("/");
 	}
 
 	await ensureUserBootstrap(session.user);
@@ -63,7 +63,7 @@ export async function getUserId(): Promise<string> {
 export async function getUserSession() {
 	const session = await getSessionCached();
 	if (!session?.user) {
-		redirect("/login");
+		redirect("/");
 	}
 	await ensureUserBootstrap(session.user);
 	return session;

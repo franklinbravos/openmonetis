@@ -27,7 +27,7 @@ function resolveRedirectUri(request: NextRequest): string {
 export async function GET(request: NextRequest) {
 	if (!isGoogleOAuthConfigured()) {
 		return NextResponse.redirect(
-			new URL("/login?error=oauth_callback_failed", request.url),
+			new URL("/?error=oauth_callback_failed", request.url),
 		);
 	}
 
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
 	const oauthError = requestUrl.searchParams.get("error");
 
 	if (oauthError) {
-		const loginUrl = new URL("/login", request.url);
+		const loginUrl = new URL("/", request.url);
 		loginUrl.searchParams.set("error", oauthError);
 		const description = requestUrl.searchParams.get("error_description");
 		if (description) {
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
 	if (!code) {
 		return clearRedirectCookie(
 			NextResponse.redirect(
-				new URL("/login?error=oauth_callback_failed", request.url),
+				new URL("/?error=oauth_callback_failed", request.url),
 			),
 		);
 	}
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
 	const result = await exchangeGoogleAuthCode(code, redirectUri);
 
 	if (!result.ok) {
-		const loginUrl = new URL("/login", request.url);
+		const loginUrl = new URL("/", request.url);
 		loginUrl.searchParams.set("error", result.error);
 		return clearRedirectCookie(NextResponse.redirect(loginUrl));
 	}

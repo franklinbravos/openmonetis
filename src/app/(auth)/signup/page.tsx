@@ -4,7 +4,7 @@ import { isSignupDisabled } from "@/shared/lib/auth/signup";
 
 export default function SignupPage() {
 	if (isSignupDisabled()) {
-		redirect("/login");
+		redirect("/");
 	}
 
 	return <SignupForm />;

@@ -9,16 +9,7 @@ import {
 	DialogFooter,
 	DialogTitle,
 } from "@/shared/components/ui/dialog";
-
-// Tons baseados na primary: oklch(72% 0.163 50) ≈ laranja quente
-const PRIMARY_CONFETTI_COLORS = [
-	"#e07a3a", // primary base
-	"#f5a870", // primary claro
-	"#ffd4a8", // primary muito claro
-	"#b85520", // primary escuro
-	"#8a3a10", // primary muito escuro
-	"#f5c896", // tom pastel
-];
+import { CONFETTI_COLORS } from "@/shared/lib/design/allowed-colors";
 
 type PaymentSuccessProps = {
 	title: string;
@@ -38,7 +29,7 @@ export function PaymentSuccess({
 			particleCount: 80,
 			spread: 70,
 			origin,
-			colors: PRIMARY_CONFETTI_COLORS,
+			colors: [...CONFETTI_COLORS],
 			startVelocity: 28,
 			gravity: 1.2,
 			scalar: 0.9,
@@ -50,7 +41,7 @@ export function PaymentSuccess({
 				particleCount: 40,
 				spread: 50,
 				origin: { x: 0.3, y: 0.45 },
-				colors: PRIMARY_CONFETTI_COLORS,
+				colors: [...CONFETTI_COLORS],
 				startVelocity: 22,
 				gravity: 1.1,
 				scalar: 0.8,
@@ -63,7 +54,7 @@ export function PaymentSuccess({
 				particleCount: 40,
 				spread: 50,
 				origin: { x: 0.7, y: 0.45 },
-				colors: PRIMARY_CONFETTI_COLORS,
+				colors: [...CONFETTI_COLORS],
 				startVelocity: 22,
 				gravity: 1.1,
 				scalar: 0.8,

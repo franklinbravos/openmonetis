@@ -221,7 +221,7 @@ const URGENCY_GROUP_ORDER: Array<{
 	{
 		id: "dueTomorrow",
 		label: "Vence amanhã",
-		headerClassName: "text-amber-600",
+		headerClassName: "text-warning",
 	},
 	{ id: "overdue", label: "Atrasadas", headerClassName: "text-destructive" },
 	{ id: "upcoming", label: "Próximas" },

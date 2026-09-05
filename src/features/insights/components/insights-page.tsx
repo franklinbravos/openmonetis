@@ -211,22 +211,22 @@ function LoadingState() {
 		{
 			label: "Comportamentos",
 			icon: RiEyeLine,
-			color: "text-orange-600 dark:text-orange-400",
+			color: "text-chart-4",
 		},
 		{
 			label: "Gatilhos",
 			icon: RiFlashlightLine,
-			color: "text-amber-600 dark:text-amber-400",
+			color: "text-warning",
 		},
 		{
 			label: "Recomendações",
 			icon: RiLightbulbLine,
-			color: "text-sky-600 dark:text-sky-400",
+			color: "text-info",
 		},
 		{
 			label: "Melhorias",
 			icon: RiRocketLine,
-			color: "text-emerald-600 dark:text-emerald-400",
+			color: "text-positive",
 		},
 	];
 

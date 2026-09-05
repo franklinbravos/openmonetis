@@ -94,7 +94,7 @@ export function NavbarUser({
 		setLogoutLoading(true);
 		await signOut();
 		setLogoutLoading(false);
-		router.push("/login");
+		router.push("/");
 	}
 
 	return (

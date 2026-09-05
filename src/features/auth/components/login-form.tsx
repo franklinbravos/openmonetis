@@ -67,7 +67,7 @@ export function LoginForm({
 		if (!oauthError) return;
 
 		setError(oauthError);
-		router.replace("/login", { scroll: false });
+		router.replace("/", { scroll: false });
 	}, [router, searchParams]);
 
 	async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -149,7 +149,7 @@ export function LoginForm({
 					<FieldGroup className="mx-auto w-full max-w-md gap-5">
 						<AuthHeader
 							title="Entrar no OpenMonetis"
-							description="Acesse sua conta para acompanhar cartões, lançamentos e metas em um só lugar."
+							description="Acesse sua instância para registrar e acompanhar suas finanças."
 						/>
 
 						<AuthErrorAlert error={error} />
@@ -238,11 +238,6 @@ export function LoginForm({
 							</FieldDescription>
 						)}
 
-						<FieldDescription className="text-center text-sm text-muted-foreground">
-							<a href="/" className={authLinkClassName}>
-								Voltar para a página inicial
-							</a>
-						</FieldDescription>
 					</FieldGroup>
 				</form>
 			</AuthCardShell>

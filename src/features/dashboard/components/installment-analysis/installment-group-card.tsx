@@ -392,7 +392,7 @@ export function InstallmentGroupCard({
 													{group.totalInstallments}
 												</p>
 												<p className="text-xs text-muted-foreground flex items-center gap-1">
-													<RiTimeLine className="size-3 text-amber-600" />
+													<RiTimeLine className="size-3 text-warning" />
 													Vencimento: {dueDate}
 												</p>
 											</div>

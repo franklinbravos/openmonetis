@@ -13,9 +13,10 @@ const CATEGORY_BREAKDOWN_COLORS = [
 	"var(--chart-3)",
 	"var(--chart-4)",
 	"var(--chart-5)",
-	"var(--chart-1)",
-	"var(--chart-2)",
 ];
+
+const TOP_CATEGORIES_LIMIT = 5;
+const OTHERS_COLOR = "var(--muted)";
 
 const formatPercentage = (value: number, digits: number) =>
 	formatPercentageValue(value, {
@@ -36,24 +37,23 @@ export function CategoryBreakdownChart({
 	const chartConfig = useMemo(() => {
 		const nextConfig: ChartConfig = {};
 
-		const topCategories = categories.slice(0, 7);
+		const topCategories = categories.slice(0, TOP_CATEGORIES_LIMIT);
 		topCategories.forEach((category, index) => {
 			nextConfig[category.categoryId] = {
 				label: category.categoryName,
-				color:
-					CATEGORY_BREAKDOWN_COLORS[index % CATEGORY_BREAKDOWN_COLORS.length],
+				color: CATEGORY_BREAKDOWN_COLORS[index],
 			};
 		});
 
-		if (categories.length > 7) {
-			nextConfig.outros = { label: "Outros", color: "var(--chart-6)" };
+		if (categories.length > TOP_CATEGORIES_LIMIT) {
+			nextConfig.outros = { label: "Outros", color: OTHERS_COLOR };
 		}
 
 		return nextConfig;
 	}, [categories]);
 
 	const chartData = useMemo(() => {
-		if (categories.length <= 7) {
+		if (categories.length <= TOP_CATEGORIES_LIMIT) {
 			return categories.map((category) => ({
 				category: category.categoryId,
 				name: category.categoryName,
@@ -63,8 +63,8 @@ export function CategoryBreakdownChart({
 			}));
 		}
 
-		const topCategories = categories.slice(0, 7);
-		const otherCategories = categories.slice(7);
+		const topCategories = categories.slice(0, TOP_CATEGORIES_LIMIT);
+		const otherCategories = categories.slice(TOP_CATEGORIES_LIMIT);
 		const otherTotal = otherCategories.reduce(
 			(sum, c) => sum + c.currentAmount,
 			0,

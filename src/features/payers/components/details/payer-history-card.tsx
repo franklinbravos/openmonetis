@@ -27,7 +27,7 @@ import { currencyFormatter } from "@/shared/utils/currency";
 const chartConfig = {
 	despesas: {
 		label: "Despesas",
-		color: "hsl(356, 72%, 50%)",
+		color: "var(--negative)",
 	},
 };
 

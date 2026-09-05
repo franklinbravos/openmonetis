@@ -46,7 +46,7 @@ export function PayerCard({ payer, onEdit, onRemove }: PayerCardProps) {
 				<div className="flex items-center gap-1.5">
 					<h3 className="font-semibold text-foreground">{payer.name}</h3>
 					{isAdmin ? (
-						<RiVerifiedBadgeFill className="size-4 text-blue-500" aria-hidden />
+						<RiVerifiedBadgeFill className="size-4 text-info" aria-hidden />
 					) : null}
 					{payer.isAutoSend ? (
 						<RiMailSendLine className="size-4 text-primary" aria-hidden />

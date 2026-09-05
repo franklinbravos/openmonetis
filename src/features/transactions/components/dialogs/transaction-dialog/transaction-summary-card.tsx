@@ -188,8 +188,8 @@ export function TransactionSummaryCard({
 						isRecurring
 							? "bg-primary/10 text-primary"
 							: formState.transactionType === "Receita"
-								? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-								: "bg-orange-500/10 text-orange-700 dark:text-orange-300",
+								? "bg-positive/10 text-positive"
+								: "bg-warning/10 text-warning",
 					)}
 				>
 					{isRecurring

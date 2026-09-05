@@ -183,7 +183,7 @@ export function AnalysisSummaryCard({
 							</div>
 							{currentProvider === "ollama" && (
 								<Badge
-									className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-none"
+									className="bg-positive/10 text-positive border-none"
 									variant="outline"
 								>
 									Local
@@ -206,9 +206,9 @@ export function AnalysisSummaryCard({
 						</div>
 					</div>
 
-					<div className="rounded-2xl bg-violet-500/10 p-4">
+					<div className="rounded-2xl bg-chart-1/10 p-4">
 						<div className="flex gap-3">
-							<RiShieldCheckLine className="mt-0.5 size-4 shrink-0 text-violet-600 dark:text-violet-300" />
+							<RiShieldCheckLine className="mt-0.5 size-4 shrink-0 text-chart-1" />
 							<div className="space-y-1">
 								<p className="font-medium text-xs">Privacidade dos dados</p>
 								<p className="text-muted-foreground text-xs leading-relaxed">

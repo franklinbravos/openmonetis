@@ -68,7 +68,7 @@ export function PayersWidget({ payers }: PayersWidgetProps) {
 													<TooltipTrigger asChild>
 														<span className="inline-flex shrink-0">
 															<RiVerifiedBadgeFill
-																className="size-4 text-blue-500"
+																className="size-4 text-info"
 																aria-hidden
 															/>
 															<span className="sr-only">Pessoa principal</span>

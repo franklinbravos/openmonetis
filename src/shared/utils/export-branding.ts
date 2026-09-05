@@ -1,4 +1,4 @@
-const FALLBACK_PRIMARY_COLOR: [number, number, number] = [201, 106, 58];
+const FALLBACK_PRIMARY_COLOR: [number, number, number] = [53, 86, 177];
 const RGB_PATTERN = /\d+(?:\.\d+)?/g;
 
 function parseRgbColor(value: string): [number, number, number] | null {

@@ -12,15 +12,15 @@ import { cn } from "@/shared/utils/ui";
 const segmentConfig = {
 	card: {
 		label: "Cartões",
-		color: "bg-violet-500",
+		color: "bg-chart-1",
 	},
 	boleto: {
 		label: "Boletos",
-		color: "bg-amber-500",
+		color: "bg-warning",
 	},
 	instant: {
 		label: "Pix/Débito/Dinheiro",
-		color: "bg-emerald-500",
+		color: "bg-positive",
 	},
 } as const;
 

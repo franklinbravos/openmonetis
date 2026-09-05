@@ -7,6 +7,7 @@ import { z } from "zod";
 import { payers, transactions } from "@/db/schema";
 import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import { EMAIL_COLORS } from "@/shared/lib/design/allowed-colors";
 import { getResendFromEmail } from "@/shared/lib/email/resend";
 import {
 	fetchPayerBoletoStats,
@@ -88,7 +89,7 @@ type SummaryPayload = {
 };
 
 const buildSectionHeading = (label: string) =>
-	`<h3 style="font-size:16px;margin:24px 0 8px 0;color:#0f172a;">${label}</h3>`;
+	`<h3 style="font-size:16px;margin:24px 0 8px 0;color:${EMAIL_COLORS.foreground};">${label}</h3>`;
 
 const buildSummaryHtml = ({
 	pagadorName,
@@ -111,19 +112,19 @@ const buildSummaryHtml = ({
 						const percentage = (point.despesas / maxDespesas) * 100;
 						const barColor =
 							point.despesas > maxDespesas * 0.8
-								? "#ef4444"
+								? EMAIL_COLORS.negative
 								: point.despesas > maxDespesas * 0.5
-									? "#f59e0b"
-									: "#10b981";
+									? EMAIL_COLORS.warning
+									: EMAIL_COLORS.positive;
 
 						return `
           <tr>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-weight:500;">${escapeHtml(
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:500;">${escapeHtml(
 							point.label,
 						)}</td>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};">
               <div style="display:flex;align-items:center;gap:12px;">
-                <div style="flex:1;background:#f1f5f9;border-radius:6px;height:24px;overflow:hidden;">
+                <div style="flex:1;background:${EMAIL_COLORS.borderSubtle};border-radius:6px;height:24px;overflow:hidden;">
                   <div style="background:${barColor};height:100%;width:${percentage}%;transition:width 0.3s;"></div>
                 </div>
                 <span style="font-weight:600;min-width:100px;text-align:right;">${formatCurrency(
@@ -134,7 +135,7 @@ const buildSummaryHtml = ({
           </tr>`;
 					})
 					.join("")
-			: `<tr><td colspan="2" style="padding:16px;text-align:center;color:#94a3b8;">Sem histórico suficiente.</td></tr>`;
+			: `<tr><td colspan="2" style="padding:16px;text-align:center;color:${EMAIL_COLORS.foregroundDisabled};">Sem histórico suficiente.</td></tr>`;
 
 	const cardUsageRows =
 		cardUsage.length > 0
@@ -142,16 +143,16 @@ const buildSummaryHtml = ({
 					.map(
 						(item) => `
           <tr>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-weight:500;">${escapeHtml(
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:500;">${escapeHtml(
 							item.name,
 						)}</td>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600;">${formatCurrency(
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};text-align:right;font-weight:600;">${formatCurrency(
 							item.amount,
 						)}</td>
           </tr>`,
 					)
 					.join("")
-			: `<tr><td colspan="2" style="padding:16px;text-align:center;color:#94a3b8;">Sem gastos com cartão neste período.</td></tr>`;
+			: `<tr><td colspan="2" style="padding:16px;text-align:center;color:${EMAIL_COLORS.foregroundDisabled};">Sem gastos com cartão neste período.</td></tr>`;
 
 	const boletoRows =
 		boletos.length > 0
@@ -159,19 +160,19 @@ const buildSummaryHtml = ({
 					.map(
 						(item) => `
           <tr>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-weight:500;">${escapeHtml(
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:500;">${escapeHtml(
 							item.name,
 						)}</td>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};">${
 							item.dueDate ? formatDate(item.dueDate) : "—"
 						}</td>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600;">${formatCurrency(
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};text-align:right;font-weight:600;">${formatCurrency(
 							item.amount,
 						)}</td>
           </tr>`,
 					)
 					.join("")
-			: `<tr><td colspan="3" style="padding:16px;text-align:center;color:#94a3b8;">Sem boletos neste período.</td></tr>`;
+			: `<tr><td colspan="3" style="padding:16px;text-align:center;color:${EMAIL_COLORS.foregroundDisabled};">Sem boletos neste período.</td></tr>`;
 
 	const transactionRows =
 		transactions.length > 0
@@ -179,25 +180,25 @@ const buildSummaryHtml = ({
 					.map(
 						(item) => `
           <tr>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${formatDate(
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};white-space:nowrap;">${formatDate(
 							item.purchaseDate,
 						)}</td>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};">${
 							escapeHtml(item.name) || "Sem descrição"
 						}</td>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};">${
 							escapeHtml(item.condition) || "—"
 						}</td>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};">${
 							escapeHtml(item.paymentMethod) || "—"
 						}</td>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600;">${formatCurrency(
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};text-align:right;font-weight:600;">${formatCurrency(
 							item.amount,
 						)}</td>
           </tr>`,
 					)
 					.join("")
-			: `<tr><td colspan="5" style="padding:16px;text-align:center;color:#94a3b8;">Nenhum lançamento registrado no período.</td></tr>`;
+			: `<tr><td colspan="5" style="padding:16px;text-align:center;color:${EMAIL_COLORS.foregroundDisabled};">Nenhum lançamento registrado no período.</td></tr>`;
 
 	const parceladoRows =
 		parcelados.length > 0
@@ -205,43 +206,43 @@ const buildSummaryHtml = ({
 					.map(
 						(item) => `
           <tr>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${formatDate(
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};white-space:nowrap;">${formatDate(
 							item.purchaseDate,
 						)}</td>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};">${
 							escapeHtml(item.name) || "Sem descrição"
 						}</td>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">${
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};text-align:center;">${
 							item.currentInstallment
 						}/${item.installmentCount}</td>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600;">${formatCurrency(
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};text-align:right;font-weight:600;">${formatCurrency(
 							item.installmentAmount,
 						)}</td>
-            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;color:#64748b;">${formatCurrency(
+            <td style="padding:10px 12px;border-bottom:1px solid ${EMAIL_COLORS.border};text-align:right;color:${EMAIL_COLORS.foregroundFaint};">${formatCurrency(
 							item.totalAmount,
 						)}</td>
           </tr>`,
 					)
 					.join("")
-			: `<tr><td colspan="5" style="padding:16px;text-align:center;color:#94a3b8;">Nenhum lançamento parcelado neste período.</td></tr>`;
+			: `<tr><td colspan="5" style="padding:16px;text-align:center;color:${EMAIL_COLORS.foregroundDisabled};">Nenhum lançamento parcelado neste período.</td></tr>`;
 
 	return `
-    <div style="margin:0 auto;max-width:800px;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Inter',Arial,sans-serif;color:#0f172a;line-height:1.6;">
+    <div style="margin:0 auto;max-width:800px;background:${EMAIL_COLORS.background};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Inter',Arial,sans-serif;color:${EMAIL_COLORS.foreground};line-height:1.6;">
   <!-- Preheader invisível (melhora a prévia no cliente de e-mail) -->
   <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;">Resumo mensal e detalhes de gastos por cartão, boletos e lançamentos.</span>
 
   <!-- Cabeçalho -->
-  <div style="background:linear-gradient(90deg,#dc5a3a,#ea744e);padding:28px 24px;border-radius:12px 12px 0 0;">
-    <h1 style="margin:0 0 6px 0;font-size:26px;font-weight:800;letter-spacing:-0.3px;color:#ffffff;">Resumo Financeiro</h1>
-    <p style="margin:0;font-size:15px;color:#ffece6;">${escapeHtml(
+  <div style="background:linear-gradient(90deg,${EMAIL_COLORS.primary},${EMAIL_COLORS.primaryLight});padding:28px 24px;border-radius:12px 12px 0 0;">
+    <h1 style="margin:0 0 6px 0;font-size:26px;font-weight:800;letter-spacing:-0.3px;color:${EMAIL_COLORS.surface};">Resumo Financeiro</h1>
+    <p style="margin:0;font-size:15px;color:${EMAIL_COLORS.primarySubtleText};">${escapeHtml(
 			periodLabel,
 		)}</p>
   </div>
 
   <!-- Cartão principal -->
-  <div style="background:#ffffff;padding:28px 24px;border-radius:0 0 12px 12px;border:1px solid #e2e8f0;border-top:none;">
+  <div style="background:${EMAIL_COLORS.surface};padding:28px 24px;border-radius:0 0 12px 12px;border:1px solid ${EMAIL_COLORS.border};border-top:none;">
     <!-- Saudação -->
-    <p style="margin:0 0 24px 0;font-size:15px;color:#334155;">
+    <p style="margin:0 0 24px 0;font-size:15px;color:${EMAIL_COLORS.foregroundMuted};">
       Olá <strong>${escapeHtml(
 				pagadorName,
 			)}</strong>, segue o consolidado do mês:
@@ -249,31 +250,31 @@ const buildSummaryHtml = ({
 
     <!-- Totais do mês -->
     ${buildSectionHeading("💰 Totais do mês")}
-    <table role="presentation" style="width:100%;border-collapse:collapse;margin:0 0 28px 0;border:1px solid #f1f5f9;border-radius:10px;overflow:hidden;">
+    <table role="presentation" style="width:100%;border-collapse:collapse;margin:0 0 28px 0;border:1px solid ${EMAIL_COLORS.borderSubtle};border-radius:10px;overflow:hidden;">
       <tbody>
         <tr>
-          <td style="padding:16px 18px;background:#fff7f5;border-bottom:1px solid #f1f5f9;font-size:15px;color:#475569;">Total gasto</td>
-          <td style="padding:16px 18px;background:#fff7f5;border-bottom:1px solid #f1f5f9;text-align:right;">
-            <strong style="font-size:22px;color:#0f172a;">${formatCurrency(
+          <td style="padding:16px 18px;background:${EMAIL_COLORS.primarySubtle};border-bottom:1px solid ${EMAIL_COLORS.borderSubtle};font-size:15px;color:${EMAIL_COLORS.foregroundSubtle};">Total gasto</td>
+          <td style="padding:16px 18px;background:${EMAIL_COLORS.primarySubtle};border-bottom:1px solid ${EMAIL_COLORS.borderSubtle};text-align:right;">
+            <strong style="font-size:22px;color:${EMAIL_COLORS.foreground};">${formatCurrency(
 							monthlyBreakdown.totalExpenses,
 						)}</strong>
           </td>
         </tr>
         <tr>
-          <td style="padding:12px 18px;font-size:14px;color:#64748b;">💳 Cartões</td>
-          <td style="padding:12px 18px;text-align:right;"><strong style="font-size:15px;color:#0f172a;">${formatCurrency(
+          <td style="padding:12px 18px;font-size:14px;color:${EMAIL_COLORS.foregroundFaint};">💳 Cartões</td>
+          <td style="padding:12px 18px;text-align:right;"><strong style="font-size:15px;color:${EMAIL_COLORS.foreground};">${formatCurrency(
 						monthlyBreakdown.paymentSplits.card,
 					)}</strong></td>
         </tr>
-        <tr style="background:#fcfcfd;">
-          <td style="padding:12px 18px;font-size:14px;color:#64748b;">📄 Boletos</td>
-          <td style="padding:12px 18px;text-align:right;"><strong style="font-size:15px;color:#0f172a;">${formatCurrency(
+        <tr style="background:${EMAIL_COLORS.backgroundAlt};">
+          <td style="padding:12px 18px;font-size:14px;color:${EMAIL_COLORS.foregroundFaint};">📄 Boletos</td>
+          <td style="padding:12px 18px;text-align:right;"><strong style="font-size:15px;color:${EMAIL_COLORS.foreground};">${formatCurrency(
 						monthlyBreakdown.paymentSplits.boleto,
 					)}</strong></td>
         </tr>
         <tr>
-          <td style="padding:12px 18px;font-size:14px;color:#64748b;">⚡ Pix/Débito/Dinheiro</td>
-          <td style="padding:12px 18px;text-align:right;"><strong style="font-size:15px;color:#0f172a;">${formatCurrency(
+          <td style="padding:12px 18px;font-size:14px;color:${EMAIL_COLORS.foregroundFaint};">⚡ Pix/Débito/Dinheiro</td>
+          <td style="padding:12px 18px;text-align:right;"><strong style="font-size:15px;color:${EMAIL_COLORS.foreground};">${formatCurrency(
 						monthlyBreakdown.paymentSplits.instant,
 					)}</strong></td>
         </tr>
@@ -282,11 +283,11 @@ const buildSummaryHtml = ({
 
     <!-- Evolução 6 meses -->
     ${buildSectionHeading("📊 Evolução das Despesas (6 meses)")}
-    <table style="width:100%;border-collapse:collapse;font-size:14px;margin:0 0 28px 0;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;margin:0 0 28px 0;border:1px solid ${EMAIL_COLORS.border};border-radius:10px;overflow:hidden;">
       <thead>
-        <tr style="background:#f8fafc;">
-          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Período</th>
-          <th style="text-align:right;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Valor</th>
+        <tr style="background:${EMAIL_COLORS.background};">
+          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Período</th>
+          <th style="text-align:right;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Valor</th>
         </tr>
       </thead>
       <tbody>${historyRows}</tbody>
@@ -296,12 +297,12 @@ const buildSummaryHtml = ({
     ${buildSectionHeading("💳 Gastos com Cartões")}
      <table role="presentation" style="width:100%;border-collapse:collapse;margin:0 0 8px 0;">
       <tr>
-        <td style="padding:10px 0;border-bottom:2px solid #e2e8f0;">
+        <td style="padding:10px 0;border-bottom:2px solid ${EMAIL_COLORS.border};">
           <table role="presentation" style="width:100%;border-collapse:collapse;">
             <tr>
-              <td style="color:#475569;font-weight:700;font-size:15px;">Total</td>
+              <td style="color:${EMAIL_COLORS.foregroundSubtle};font-weight:700;font-size:15px;">Total</td>
               <td style="text-align:right;">
-                <strong style="font-size:18px;color:#0f172a;">${formatCurrency(
+                <strong style="font-size:18px;color:${EMAIL_COLORS.foreground};">${formatCurrency(
 									monthlyBreakdown.paymentSplits.card,
 								)}</strong>
               </td>
@@ -310,11 +311,11 @@ const buildSummaryHtml = ({
         </td>
       </tr>
     </table>
-    <table style="width:100%;border-collapse:collapse;font-size:14px;margin:0 0 28px 0;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;margin:0 0 28px 0;border:1px solid ${EMAIL_COLORS.border};border-radius:10px;overflow:hidden;">
       <thead>
-        <tr style="background:#f8fafc;">
-          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Cartão</th>
-          <th style="text-align:right;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Valor</th>
+        <tr style="background:${EMAIL_COLORS.background};">
+          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Cartão</th>
+          <th style="text-align:right;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Valor</th>
         </tr>
       </thead>
       <tbody>${cardUsageRows}</tbody>
@@ -324,12 +325,12 @@ const buildSummaryHtml = ({
     ${buildSectionHeading("📄 Boletos")}
     <table role="presentation" style="width:100%;border-collapse:collapse;margin:0 0 8px 0;">
       <tr>
-        <td style="padding:10px 0;border-bottom:2px solid #e2e8f0;">
+        <td style="padding:10px 0;border-bottom:2px solid ${EMAIL_COLORS.border};">
           <table role="presentation" style="width:100%;border-collapse:collapse;">
             <tr>
-              <td style="color:#475569;font-weight:700;font-size:15px;">Total</td>
+              <td style="color:${EMAIL_COLORS.foregroundSubtle};font-weight:700;font-size:15px;">Total</td>
               <td style="text-align:right;">
-                <strong style="font-size:18px;color:#0f172a;">${formatCurrency(
+                <strong style="font-size:18px;color:${EMAIL_COLORS.foreground};">${formatCurrency(
 									boletoStats.totalAmount,
 								)}</strong>
               </td>
@@ -338,12 +339,12 @@ const buildSummaryHtml = ({
         </td>
       </tr>
     </table>
-    <table style="width:100%;border-collapse:collapse;font-size:14px;margin:0 0 28px 0;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;margin:0 0 28px 0;border:1px solid ${EMAIL_COLORS.border};border-radius:10px;overflow:hidden;">
       <thead>
-        <tr style="background:#f8fafc;">
-          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Descrição</th>
-          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Vencimento</th>
-          <th style="text-align:right;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Valor</th>
+        <tr style="background:${EMAIL_COLORS.background};">
+          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Descrição</th>
+          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Vencimento</th>
+          <th style="text-align:right;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Valor</th>
         </tr>
       </thead>
       <tbody>${boletoRows}</tbody>
@@ -351,14 +352,14 @@ const buildSummaryHtml = ({
 
     <!-- Lançamentos -->
     ${buildSectionHeading("📝 Lançamentos do Mês")}
-    <table style="width:100%;border-collapse:collapse;font-size:14px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;border:1px solid ${EMAIL_COLORS.border};border-radius:10px;overflow:hidden;">
       <thead>
-        <tr style="background:#f8fafc;">
-          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Data</th>
-          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Descrição</th>
-          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Condição</th>
-          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Pagamento</th>
-          <th style="text-align:right;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Valor</th>
+        <tr style="background:${EMAIL_COLORS.background};">
+          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Data</th>
+          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Descrição</th>
+          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Condição</th>
+          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Pagamento</th>
+          <th style="text-align:right;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Valor</th>
         </tr>
       </thead>
       <tbody>${transactionRows}</tbody>
@@ -366,25 +367,25 @@ const buildSummaryHtml = ({
 
     <!-- Lançamentos Parcelados -->
     ${buildSectionHeading("💳 Lançamentos Parcelados")}
-    <table style="width:100%;border-collapse:collapse;font-size:14px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;border:1px solid ${EMAIL_COLORS.border};border-radius:10px;overflow:hidden;">
       <thead>
-        <tr style="background:#f8fafc;">
-          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Data</th>
-          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Descrição</th>
-          <th style="text-align:center;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Parcela</th>
-          <th style="text-align:right;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Valor Parcela</th>
-          <th style="text-align:right;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">Total</th>
+        <tr style="background:${EMAIL_COLORS.background};">
+          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Data</th>
+          <th style="text-align:left;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Descrição</th>
+          <th style="text-align:center;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Parcela</th>
+          <th style="text-align:right;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Valor Parcela</th>
+          <th style="text-align:right;padding:12px 14px;border-bottom:1px solid ${EMAIL_COLORS.border};font-weight:600;color:${EMAIL_COLORS.foregroundSubtle};">Total</th>
         </tr>
       </thead>
       <tbody>${parceladoRows}</tbody>
     </table>
 
     <!-- Divisor suave -->
-    <div style="height:1px;background:#e2e8f0;margin:28px 0;"></div>
+    <div style="height:1px;background:${EMAIL_COLORS.border};margin:28px 0;"></div>
   </div>
 
   <!-- Rodapé externo -->
-  <p style="margin:16px 0 0 0;font-size:12.5px;color:#94a3b8;text-align:center;">
+  <p style="margin:16px 0 0 0;font-size:12.5px;color:${EMAIL_COLORS.foregroundDisabled};text-align:center;">
     Este e-mail foi enviado automaticamente pelo <strong>OpenMonetis</strong>.
   </p>
 </div>

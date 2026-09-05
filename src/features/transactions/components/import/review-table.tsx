@@ -110,7 +110,7 @@ function getInvoiceExtraRowClassName(row: ReviewRow) {
 	if (!isInvoiceExtraReviewRow(row)) return "";
 	return row.selected
 		? "border-destructive/40 bg-destructive/5"
-		: "border-amber-500/40 bg-amber-500/5";
+		: "border-warning/40 bg-warning/5";
 }
 
 function getDuplicateRowClassName(row: ReviewRow) {
@@ -119,21 +119,21 @@ function getDuplicateRowClassName(row: ReviewRow) {
 	}
 
 	if (isVerifiedImportDuplicate(row) || isImportRowLinked(row)) {
-		return "border-emerald-500/40 bg-emerald-500/8";
+		return "border-positive/40 bg-positive-surface";
 	}
 
 	if (isImportLinkSuggestion(row)) {
-		return "border-sky-500/40 bg-sky-500/5";
+		return "border-info/40 bg-info/5";
 	}
 
 	if (!row.isDuplicate || row.selected) return "";
 
 	if (row.duplicateValidation?.status === "match") {
-		return "border-emerald-500/30 bg-emerald-500/5";
+		return "border-positive/30 bg-positive-surface";
 	}
 
 	if (row.duplicateValidation?.status === "mismatch") {
-		return "border-amber-500/40 bg-amber-500/5";
+		return "border-warning/40 bg-warning/5";
 	}
 
 	return "opacity-50";
@@ -161,7 +161,7 @@ function isReviewRowClassified(row: ReviewRow): boolean {
 
 function getReviewRowClassifiedClassName(row: ReviewRow): string {
 	if (!isReviewRowClassified(row)) return "";
-	return "border-emerald-500/40 bg-emerald-500/8 hover:bg-emerald-500/10";
+	return "border-positive/40 bg-positive-surface hover:bg-positive-surface";
 }
 
 function resolveReviewExistingCategoryId(row: ReviewRow): string | null {
@@ -516,7 +516,7 @@ function ReviewVerifiedInvoicePaymentBadge({
 			<TooltipTrigger asChild>
 				<Badge
 					variant="outline"
-					className="shrink-0 gap-1 border-amber-500/40 bg-amber-500/5 text-[10px] text-amber-800 dark:text-amber-300"
+					className="shrink-0 gap-1 border-warning/40 bg-warning/5 text-[10px] text-warning"
 				>
 					<RiBankCardLine className="size-3" aria-hidden />
 					Fatura — cadastro sem vínculo
@@ -573,7 +573,7 @@ function ReviewDuplicateStatus({
 			</div>
 
 			{isVerified ? (
-				<p className="text-emerald-700 text-xs dark:text-emerald-400">
+				<p className="text-positive text-xs">
 					{row.aiSuggestion?.duplicate
 						? "Identificado pela IA como lançamento já cadastrado."
 						: "Os dados do extrato batem com o lançamento existente."}
@@ -581,12 +581,12 @@ function ReviewDuplicateStatus({
 			) : null}
 
 			{hasMismatch && validation ? (
-				<div className="min-w-0 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs">
-					<p className="font-medium text-amber-800 dark:text-amber-300">
+				<div className="min-w-0 rounded-md border border-warning/30 bg-warning/5 p-2 text-xs">
+					<p className="font-medium text-warning">
 						Diferenças encontradas:
 					</p>
 					<ReviewMatchedExistingSummary validation={validation} />
-					<ul className="mt-1 space-y-1 break-words text-amber-900/90 whitespace-normal dark:text-amber-100/90">
+					<ul className="mt-1 space-y-1 break-words text-warning/90 whitespace-normal">
 						{validation.mismatches.map((mismatch) => (
 							<li key={mismatch.field} className="break-words">
 								<span className="font-medium">{mismatch.label}:</span> extrato{" "}
@@ -619,7 +619,7 @@ function ReviewMatchedExistingSummary({
 	if (partes.length === 0) return null;
 
 	return (
-		<p className="mt-1 break-words text-amber-900/70 whitespace-normal dark:text-amber-100/70">
+		<p className="mt-1 break-words text-warning/70 whitespace-normal">
 			Casou com: {partes.join(" · ")}
 		</p>
 	);
@@ -662,7 +662,7 @@ function ReviewLinkSuggestionStatus({
 			<div className="flex flex-wrap items-center gap-1.5">
 				<Badge
 					variant="outline"
-					className="w-fit border-sky-500/40 text-[10px] text-sky-700 dark:text-sky-300"
+					className="w-fit border-info/40 text-[10px] text-info"
 				>
 					Possível vínculo
 				</Badge>
@@ -675,7 +675,7 @@ function ReviewLinkSuggestionStatus({
 					</Badge>
 				) : null}
 			</div>
-			<p className="break-words text-sky-800 text-xs whitespace-normal dark:text-sky-300">
+			<p className="break-words text-info text-xs whitespace-normal">
 				{validation.existingIsTransfer || row.kind === "transfer"
 					? matchedFields.length > 0
 						? `${matchedFields.join(" e ")} batem com uma transferência já cadastrada entre contas.`
@@ -763,7 +763,7 @@ function ReviewLinkedStatus({
 					? "Transferência vinculada"
 					: "Vinculado ao cadastro"}
 			</Badge>
-			<p className="text-emerald-700 text-xs dark:text-emerald-400">
+			<p className="text-positive text-xs">
 				{row.kind === "transfer"
 					? peerAccountLabel
 						? `Extrato associado à transferência existente com ${peerAccountLabel}.`
@@ -1253,7 +1253,7 @@ export function ReviewTable({
 												>
 													<TableCell className="w-10">
 														<RiCheckboxCircleFill
-															className="size-5 text-emerald-600 dark:text-emerald-400"
+															className="size-5 text-positive"
 															aria-label={
 																isImportRowLinked(row)
 																	? "Lançamento vinculado"
@@ -1581,8 +1581,8 @@ function ReviewImportFilters({
 			</div>
 
 			{linkSuggestionCount > 0 && onLinkAllSuggestions ? (
-				<div className="flex flex-col gap-2 rounded-md border border-sky-500/30 bg-sky-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
-					<p className="text-sky-900 text-xs leading-relaxed dark:text-sky-100">
+				<div className="flex flex-col gap-2 rounded-md border border-info/30 bg-info/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+					<p className="text-info text-xs leading-relaxed">
 						{linkSuggestionCount} lançamento
 						{linkSuggestionCount !== 1 ? "s" : ""} com possível vínculo. O
 						sistema confirma automaticamente quando data e valor batem; use o
@@ -1846,7 +1846,7 @@ function ReviewMobileCard({
 				<div className="space-y-2">
 					<div className="flex items-center gap-2">
 						<RiCheckboxCircleFill
-							className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400"
+							className="size-5 shrink-0 text-positive"
 							aria-hidden
 						/>
 						<p className="min-w-0 flex-1 text-muted-foreground text-xs">
@@ -1945,7 +1945,7 @@ function ReviewMobileCard({
 						<div className="min-w-0 flex-1">
 							<div className="flex items-center gap-1.5">
 								<RiCheckboxCircleFill
-									className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+									className="size-3.5 shrink-0 text-positive"
 									aria-hidden
 								/>
 								<p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
@@ -2991,8 +2991,8 @@ function ReviewCategorySelect({
 				compact ? "min-w-0 flex-1" : fullWidth && "w-full",
 				row.categoryId &&
 					(row.aiSuggestion?.category
-						? "border-violet-500/35 bg-violet-500/5"
-						: "border-emerald-500/30 bg-emerald-500/5"),
+						? "border-chart-1/35 bg-chart-1/5"
+						: "border-positive/30 bg-positive-surface"),
 			)}
 		/>
 	);

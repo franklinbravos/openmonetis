@@ -152,9 +152,9 @@ const pendingPaymentButtonClassName = cn(
 const formatDay = (value: string) => value.padStart(2, "0");
 
 const getCardStatusDotColor = (status: string | null) => {
-	if (!status) return "bg-gray-400";
+	if (!status) return "bg-muted-foreground";
 	const s = status.toLowerCase();
-	return s === "ativo" || s === "active" ? "bg-success" : "bg-gray-400";
+	return s === "ativo" || s === "active" ? "bg-success" : "bg-muted-foreground";
 };
 
 export function InvoiceSummaryCard({
@@ -407,7 +407,7 @@ export function InvoiceSummaryCard({
 							{isReconciled ? (
 								<Badge
 									variant="outline"
-									className="gap-1 border-emerald-500/40 text-emerald-700 text-xs dark:text-emerald-400"
+									className="gap-1 border-positive/40 text-positive text-xs"
 									title={`Confere com ${reconciliation?.sourceFileName ?? "o arquivo importado"}`}
 								>
 									<RiCheckboxCircleLine className="size-3.5" aria-hidden />
@@ -461,7 +461,7 @@ export function InvoiceSummaryCard({
 								"space-y-3 rounded-lg border px-3 py-3 sm:px-4",
 								hasReconciliationMismatch
 									? "border-destructive/30 bg-destructive/5"
-									: "border-emerald-500/30 bg-emerald-500/5",
+									: "border-positive/30 bg-positive/5",
 							)}
 						>
 							<div className="flex flex-wrap items-center gap-2">
@@ -522,7 +522,7 @@ export function InvoiceSummaryCard({
 											"font-semibold tabular-nums",
 											hasReconciliationMismatch
 												? "text-destructive"
-												: "text-emerald-700 dark:text-emerald-300",
+												: "text-positive",
 										)}
 									>
 										{reconciliationDelta != null && reconciliationDelta > 0
@@ -810,7 +810,7 @@ function InvoicePaymentsPanel({
 					{hasPending ? (
 						<span className="text-xs">
 							<span className="text-muted-foreground">Pendente</span>{" "}
-							<span className="font-semibold text-amber-600 tabular-nums dark:text-amber-500">
+							<span className="font-semibold text-warning tabular-nums dark:text-warning">
 								{formatCurrency(pendingAmount)}
 							</span>{" "}
 							<span className="text-muted-foreground">

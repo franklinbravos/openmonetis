@@ -126,8 +126,8 @@ export function AttachmentGridItem({
 				)}
 				{isPdf && url && <PdfCanvas url={url} />}
 				{isPdf && !url && (
-					<div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-red-50 dark:bg-red-950/20">
-						<RiFilePdf2Line className="size-14 text-red-400/60" />
+					<div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-destructive/10 dark:bg-destructive/20">
+						<RiFilePdf2Line className="size-14 text-destructive/60" />
 					</div>
 				)}
 				{!isImage && !isPdf && (
@@ -145,8 +145,8 @@ export function AttachmentGridItem({
 				{/* Nome do arquivo + tipo */}
 				<div className="flex items-center gap-1 min-w-0">
 					<div className="shrink-0 gap-0.5 text-xs opacity-60">
-						{isPdf && <RiFilePdf2Line className="size-4 text-red-500" />}
-						{isImage && <RiImageLine className="size-4 text-blue-500" />}
+						{isPdf && <RiFilePdf2Line className="size-4 text-destructive" />}
+						{isImage && <RiImageLine className="size-4 text-info" />}
 						{!isPdf && !isImage && <RiFileLine className="size-4" />}
 					</div>
 

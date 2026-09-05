@@ -38,7 +38,7 @@ type CardUsageChartProps = {
 const chartConfig = {
 	amount: {
 		label: "Uso",
-		color: "#3b82f6",
+		color: "var(--primary)",
 	},
 } satisfies ChartConfig;
 
@@ -113,7 +113,7 @@ export function CardUsageChart({ data, limit, card }: CardUsageChartProps) {
 						{limit > 0 && (
 							<ReferenceLine
 								y={limit}
-								stroke="#ef4444"
+								stroke="var(--negative)"
 								strokeDasharray="3 3"
 								label={{
 									value: "Limite",

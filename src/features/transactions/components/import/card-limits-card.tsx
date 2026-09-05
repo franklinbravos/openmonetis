@@ -50,23 +50,23 @@ export function CardLimitsCard({
 			className={cn(
 				"space-y-2 rounded-lg border px-3 py-3 sm:px-4",
 				hasChanges
-					? "border-amber-500/30 bg-amber-500/5"
-					: "border-emerald-500/30 bg-emerald-500/5",
+					? "border-warning/30 bg-warning/5"
+					: "border-positive/30 bg-positive-surface",
 			)}
 		>
 			<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
 				{hasChanges ? (
-					<RiInformationLine className="size-4 shrink-0 text-amber-600" />
+					<RiInformationLine className="size-4 shrink-0 text-warning" />
 				) : (
-					<RiCheckboxCircleLine className="size-4 shrink-0 text-emerald-600" />
+					<RiCheckboxCircleLine className="size-4 shrink-0 text-positive" />
 				)}
 				<p className="font-medium text-sm">Limites do cartão</p>
 				<span
 					className={cn(
 						"rounded-full border px-2 py-0.5 text-xs",
 						hasChanges
-							? "border-amber-500/40 text-amber-700 dark:text-amber-500"
-							: "border-emerald-500/40 text-emerald-700 dark:text-emerald-500",
+							? "border-warning/40 text-warning"
+							: "border-positive/40 text-positive",
 					)}
 				>
 					{hasChanges ? "Mudou" : "Confere"}
@@ -80,7 +80,7 @@ export function CardLimitsCard({
 						{formatCurrency(fileLimit)}
 					</span>
 					{limitChanged ? (
-						<span className="text-amber-700 dark:text-amber-500">
+						<span className="text-warning">
 							(era {formatCurrency(registeredLimit)})
 						</span>
 					) : null}
@@ -92,7 +92,7 @@ export function CardLimitsCard({
 							{formatCurrency(fileGuaranteedLimit)}
 						</span>
 						{guaranteedChanged ? (
-							<span className="text-amber-700 dark:text-amber-500">
+							<span className="text-warning">
 								(
 								{registeredGuaranteedLimit == null
 									? "não cadastrado"

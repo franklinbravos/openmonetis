@@ -1,10 +1,18 @@
-import { Caveat, Inter } from "next/font/google";
+import { Caveat, IBM_Plex_Mono, Instrument_Sans } from "next/font/google";
 
-export const inter = Inter({
+export const sans = Instrument_Sans({
 	subsets: ["latin"],
 	display: "swap",
-	variable: "--font-inter",
+	variable: "--font-sans",
 	fallback: ["ui-sans-serif", "system-ui", "sans-serif"],
+	preload: true,
+});
+
+export const mono = IBM_Plex_Mono({
+	subsets: ["latin"],
+	weight: ["400", "500", "600"],
+	display: "swap",
+	variable: "--font-mono",
 	preload: true,
 });
 
@@ -16,3 +24,6 @@ export const signatureFont = Caveat({
 	weight: ["500", "600"],
 	preload: false,
 });
+
+/** @deprecated Use `sans` — mantido para imports legados durante a migração. */
+export const inter = sans;

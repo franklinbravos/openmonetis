@@ -199,14 +199,14 @@ export function ImportAiAnalysisBanner({
 	if (!summary) return null;
 
 	return (
-		<Alert className="border-emerald-500/20 bg-emerald-500/5">
+		<Alert className="border-positive/20 bg-positive-surface">
 			<AlertDescription className="flex flex-col gap-3 text-sm sm:flex-row sm:items-start sm:justify-between">
 				<div>
-					<span className="inline-flex items-center gap-1.5 font-medium text-emerald-800 dark:text-emerald-300">
+					<span className="inline-flex items-center gap-1.5 font-medium text-positive">
 						<RiSparkling2Line className="size-4" />
 						Análise com IA concluída
 					</span>
-					<span className="mt-1 block text-emerald-900/90 dark:text-emerald-100/90">
+					<span className="mt-1 block text-positive/90">
 						{summary.duplicatesFound > 0
 							? `${summary.duplicatesFound} duplicata(s) identificada(s)`
 							: "Nenhuma duplicata extra encontrada"}
@@ -226,7 +226,7 @@ export function ImportAiAnalysisBanner({
 						type="button"
 						variant="outline"
 						size="sm"
-						className="shrink-0 border-emerald-500/30 bg-background/80 text-emerald-800 hover:bg-emerald-500/10 dark:text-emerald-200"
+						className="shrink-0 border-positive/30 bg-background/80 text-positive hover:bg-positive-surface"
 						onClick={onRetry}
 						disabled={isRetrying}
 					>

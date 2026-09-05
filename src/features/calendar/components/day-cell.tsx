@@ -22,8 +22,8 @@ export const EVENT_TYPE_STYLES: Record<
 	},
 	installment: {
 		wrapper:
-			"bg-amber-100 text-amber-600 dark:bg-amber-900/10 dark:text-amber-500",
-		dot: "bg-amber-500",
+			"bg-warning-surface text-warning",
+		dot: "bg-warning",
 	},
 	boleto: {
 		wrapper: "bg-info/10 text-info dark:bg-info/5 dark:text-info",
@@ -31,8 +31,8 @@ export const EVENT_TYPE_STYLES: Record<
 	},
 	card: {
 		wrapper:
-			"bg-violet-100 text-violet-600 dark:bg-violet-900/10 dark:text-violet-500",
-		dot: "bg-violet-600 dark:bg-violet-500",
+			"bg-primary-subtle text-primary",
+		dot: "bg-chart-1",
 	},
 };
 

@@ -108,12 +108,12 @@ export function SelectedModelDetails({
 					</Badge>
 				) : null}
 				{isSavedInDatabase && !hasUnsavedChanges ? (
-					<span className="inline-flex items-center gap-1 text-emerald-600 text-xs dark:text-emerald-400">
+					<span className="inline-flex items-center gap-1 text-positive text-xs">
 						<RiCheckLine className="size-3.5" />
 						Salvo no banco
 					</span>
 				) : (
-					<span className="inline-flex items-center gap-1 text-amber-700 text-xs dark:text-amber-400">
+					<span className="inline-flex items-center gap-1 text-warning text-xs">
 						<RiErrorWarningLine className="size-3.5" />
 						Alteração não salva — clique em Salvar
 					</span>
@@ -156,7 +156,7 @@ export function SelectedModelDetails({
 			</dl>
 
 			{model.unavailableInCatalog ? (
-				<p className="text-amber-800 text-xs dark:text-amber-300">
+				<p className="text-warning text-xs">
 					Este modelo não apareceu na listagem do plano atual. Troque o plano,
 					escolha outro modelo ou salve novamente após validar a chave.
 				</p>

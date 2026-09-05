@@ -117,7 +117,7 @@ export default function InvitePage() {
 						<div className="flex flex-col gap-2">
 							<Button type="button" asChild>
 								<Link
-									href={`/login?callbackUrl=/invite?token=${encodeURIComponent(token)}`}
+									href={`/?callbackUrl=/invite?token=${encodeURIComponent(token)}`}
 								>
 									Entrar para aceitar
 								</Link>

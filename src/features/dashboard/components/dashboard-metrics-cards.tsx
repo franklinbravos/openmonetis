@@ -97,7 +97,7 @@ const CARDS = [
 		key: "previsto",
 		icon: RiCalendar2Line,
 		invertTrend: false,
-		iconClass: "text-cyan-600",
+		iconClass: "text-chart-2",
 		getTransactionsHref: (period: string) =>
 			`/transactions?periodo=${formatPeriodForUrl(period)}`,
 		helpTitle: "Como calculamos o previsto",

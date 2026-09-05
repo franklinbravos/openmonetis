@@ -123,7 +123,7 @@ export function ModelSelectionCard({
 								<Label htmlFor="provider-api-key">Chave API</Label>
 								{credentialValidated &&
 								(apiKey.trim().length > 0 || hasConfiguredCredential) ? (
-									<span className="inline-flex items-center gap-1 text-emerald-600 text-xs dark:text-emerald-400">
+									<span className="inline-flex items-center gap-1 text-positive text-xs">
 										<RiCheckLine className="size-3.5" />
 										Chave validada
 									</span>
@@ -202,7 +202,7 @@ export function ModelSelectionCard({
 						<div className="flex items-center justify-between gap-2">
 							<Label htmlFor="provider-model">Modelo</Label>
 							{credentialValidated && providerModels.length > 0 ? (
-								<span className="inline-flex items-center gap-1 text-emerald-600 text-xs dark:text-emerald-400">
+								<span className="inline-flex items-center gap-1 text-positive text-xs">
 									<RiCheckLine className="size-3.5" />
 									{providerModels.length} modelos disponíveis
 								</span>
@@ -230,7 +230,7 @@ export function ModelSelectionCard({
 												: "Nenhum modelo disponível"
 										: "Informe a chave API para listar modelos"
 								}
-								className={cn(credentialValidated && "border-emerald-500/40")}
+								className={cn(credentialValidated && "border-positive/40")}
 							/>
 						)}
 

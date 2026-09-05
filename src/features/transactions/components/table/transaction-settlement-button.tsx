@@ -64,7 +64,7 @@ export function TransactionSettlementButton({
 							className={cn(
 								"transition-colors",
 								partiallyPaid
-									? "bg-amber-500/10 text-amber-600 dark:text-amber-500"
+									? "bg-warning/10 text-warning"
 									: invoicePaid
 										? "bg-success/10 text-success"
 										: "text-muted-foreground/30",

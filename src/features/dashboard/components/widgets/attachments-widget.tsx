@@ -56,13 +56,13 @@ export function AttachmentsWidget({ snapshot }: AttachmentsWidgetProps) {
 				</span>
 				{snapshot.imageCount > 0 && (
 					<span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
-						<RiImageLine className="size-3.5 text-blue-500" />
+						<RiImageLine className="size-3.5 text-info" />
 						{snapshot.imageCount}
 					</span>
 				)}
 				{snapshot.pdfCount > 0 && (
 					<span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
-						<RiFilePdf2Line className="size-3.5 text-red-500" />
+						<RiFilePdf2Line className="size-3.5 text-destructive" />
 						{snapshot.pdfCount}
 					</span>
 				)}
@@ -81,8 +81,8 @@ export function AttachmentsWidget({ snapshot }: AttachmentsWidgetProps) {
 								className={`${styles.row} w-full text-left`}
 							>
 								<div className="shrink-0">
-									{isPdf && <RiFilePdf2Line className="size-6 text-red-500" />}
-									{isImage && <RiImageLine className="size-6 text-blue-500" />}
+									{isPdf && <RiFilePdf2Line className="size-6 text-destructive" />}
+									{isImage && <RiImageLine className="size-6 text-info" />}
 									{!isPdf && !isImage && (
 										<RiFileLine className="size-6 text-muted-foreground" />
 									)}

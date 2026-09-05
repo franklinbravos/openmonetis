@@ -95,7 +95,7 @@ export function ImportProgressDialog({ step }: ImportProgressDialogProps) {
 								)}
 							>
 								{isDone ? (
-									<RiCheckboxCircleLine className="size-4 shrink-0 text-emerald-600" />
+									<RiCheckboxCircleLine className="size-4 shrink-0 text-positive" />
 								) : isCurrent ? (
 									<RiLoader4Line className="size-4 shrink-0 animate-spin text-primary" />
 								) : (

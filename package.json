@@ -11,6 +11,7 @@
 		"lint": "biome check .",
 		"lint:deadcode": "knip --reporter compact",
 		"lint:fix": "biome check --write .",
+		"lint:design-tokens": "bash scripts/check-design-tokens.sh",
 		"test": "vitest run",
 		"test:unit": "vitest run",
 		"test:unit:watch": "vitest",

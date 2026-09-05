@@ -613,7 +613,7 @@ S3_ACCESS_KEY_ID=
 S3_SECRET_ACCESS_KEY=
 S3_BUCKET=
 
-# Multi-domínio (landing-only no domínio público)
+# Multi-domínio (login-only no domínio público; demais rotas redirecionam para /)
 # PUBLIC_DOMAIN=openmonetis.com
 
 # OAuth
@@ -711,14 +711,14 @@ Para o plano OpenCode Go, use `https://opencode.ai/zen/go/v1` em `OPENCODE_BASE_
 
 ## 🎨 Design System
 
-O OpenMonetis usa uma identidade visual própria com superfícies quentes, laranja
-como cor de destaque, temas claro e escuro e tipografia Inter. A
-interface é construída com tokens semânticos em OKLCH, Tailwind CSS 4 e
-componentes compartilhados baseados em shadcn/ui e Radix UI.
+O OpenMonetis usa a direção visual **Índigo Cofre**: neutros frios, índigo profundo
+como cor de marca (separada de receita/despesa/alerta), tipografia **Instrument Sans**
++ **IBM Plex Mono** para valores, e tokens semânticos em OKLCH via Tailwind CSS 4 e
+shadcn/ui.
 
-As regras de cores, tipografia, componentes, responsividade e acessibilidade
-estão documentadas no [`DESIGN.md`](DESIGN.md). Use esse guia como referência ao
-criar telas ou alterar componentes visuais.
+O guia completo está em [`DESIGN.md`](DESIGN.md). O plano de execução do redesign
+está em [`docs/PLANO-REDESIGN.md`](docs/PLANO-REDESIGN.md). A CI valida tokens com
+`bash scripts/check-design-tokens.sh`.
 
 ---
 
@@ -731,9 +731,8 @@ openmonetis/
 ├── src/
 │   ├── app/                       # Next.js App Router (rotas finas)
 │   │   ├── api/                   # API Routes (auth, health, inbox)
-│   │   ├── (auth)/                # Login e cadastro
+│   │   ├── (auth)/                # Login (/) e cadastro
 │   │   ├── (dashboard)/           # Rotas protegidas (transactions, cards, accounts, etc.)
-│   │   └── (landing-page)/        # Página inicial pública
 │   │
 │   ├── features/                  # Código de domínio por feature
 │   │   ├── dashboard/             # Widgets, queries e métricas
@@ -750,7 +749,6 @@ openmonetis/
 │   │   ├── notes/                 # Anotações
 │   │   ├── calendar/              # Calendário financeiro
 │   │   ├── settings/              # Ajustes do usuário
-│   │   ├── landing/               # Landing page
 │   │   └── auth/                  # Formulários de autenticação
 │   │
 │   ├── shared/                    # Código reutilizado entre features

@@ -2,6 +2,7 @@ import { inArray } from "drizzle-orm";
 import { Resend } from "resend";
 import { payers } from "@/db/schema";
 import { db } from "@/shared/lib/db";
+import { EMAIL_COLORS } from "@/shared/lib/design/allowed-colors";
 import { getResendFromEmail } from "@/shared/lib/email/resend";
 import { formatCurrency } from "@/shared/utils/currency";
 import { formatDateTime } from "@/shared/utils/date";
@@ -66,36 +67,36 @@ const buildHtmlBody = ({
 					? `${formatCurrency(Math.abs(entry.amount))} (Despesa)`
 					: `${formatCurrency(Math.abs(entry.amount))} (Receita)`;
 			return `<tr>
-        <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${formatDate(
+        <td style="padding:8px;border-bottom:1px solid ${EMAIL_COLORS.border};">${formatDate(
 					entry.purchaseDate,
 				)}</td>
-        <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${
+        <td style="padding:8px;border-bottom:1px solid ${EMAIL_COLORS.border};">${
 					entry.name ?? "Sem descrição"
 				}</td>
-        <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${
+        <td style="padding:8px;border-bottom:1px solid ${EMAIL_COLORS.border};">${
 					entry.paymentMethod ?? "—"
 				}</td>
-        <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${
+        <td style="padding:8px;border-bottom:1px solid ${EMAIL_COLORS.border};">${
 					entry.condition ?? "—"
 				}</td>
-        <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:right;">${label}</td>
+        <td style="padding:8px;border-bottom:1px solid ${EMAIL_COLORS.border};text-align:right;">${label}</td>
       </tr>`;
 		})
 		.join("");
 
 	return `
-    <div style="font-family:'Inter',Arial,sans-serif;color:#0f172a;line-height:1.5;">
+    <div style="font-family:'Inter',Arial,sans-serif;color:${EMAIL_COLORS.foreground};line-height:1.5;">
       <h2 style="margin:0 0 8px 0;font-size:20px;">${actionLabel}</h2>
-      <p style="margin:0 0 16px 0;color:#475569;">${actionDescription}</p>
+      <p style="margin:0 0 16px 0;color:${EMAIL_COLORS.foregroundSubtle};">${actionDescription}</p>
 
       <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;">
         <thead>
-          <tr style="background:#f8fafc;">
-            <th style="text-align:left;padding:8px;border-bottom:1px solid #e2e8f0;">Data</th>
-            <th style="text-align:left;padding:8px;border-bottom:1px solid #e2e8f0;">Descrição</th>
-            <th style="text-align:left;padding:8px;border-bottom:1px solid #e2e8f0;">Pagamento</th>
-            <th style="text-align:left;padding:8px;border-bottom:1px solid #e2e8f0;">Condição</th>
-            <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0;">Valor</th>
+          <tr style="background:${EMAIL_COLORS.background};">
+            <th style="text-align:left;padding:8px;border-bottom:1px solid ${EMAIL_COLORS.border};">Data</th>
+            <th style="text-align:left;padding:8px;border-bottom:1px solid ${EMAIL_COLORS.border};">Descrição</th>
+            <th style="text-align:left;padding:8px;border-bottom:1px solid ${EMAIL_COLORS.border};">Pagamento</th>
+            <th style="text-align:left;padding:8px;border-bottom:1px solid ${EMAIL_COLORS.border};">Condição</th>
+            <th style="text-align:right;padding:8px;border-bottom:1px solid ${EMAIL_COLORS.border};">Valor</th>
           </tr>
         </thead>
         <tbody>
@@ -103,7 +104,7 @@ const buildHtmlBody = ({
         </tbody>
       </table>
 
-      <p style="margin:0;font-size:12px;color:#94a3b8;">
+      <p style="margin:0;font-size:12px;color:${EMAIL_COLORS.foregroundDisabled};">
         Enviado automaticamente por ${userLabel} via OpenMonetis.
       </p>
     </div>

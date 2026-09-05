@@ -227,9 +227,9 @@ export function NoteAttachmentsField({
 							className="flex min-w-0 items-center gap-2 rounded-md border px-3 py-2 text-sm"
 						>
 							{attachment.mimeType === "application/pdf" ? (
-								<RiFilePdf2Line className="size-4 shrink-0 text-red-500" />
+								<RiFilePdf2Line className="size-4 shrink-0 text-destructive" />
 							) : (
-								<RiFileImageLine className="size-4 shrink-0 text-blue-500" />
+								<RiFileImageLine className="size-4 shrink-0 text-info" />
 							)}
 							<div className="min-w-0 flex-1">
 								<p className="truncate font-medium" title={attachment.fileName}>

@@ -87,17 +87,13 @@ interface CategoryReportChartProps {
 	data: CategoryChartData;
 }
 
-const LIMIT_OPTIONS = [
-	{ value: "5", label: "Top 5" },
-	{ value: "10", label: "Top 10" },
-	{ value: "15", label: "Top 15" },
-] as const;
+const LIMIT_OPTIONS = [{ value: "5", label: "Top 5" }] as const;
 
-const MAX_CATEGORIES = 15;
+const MAX_CATEGORIES = 5;
 
 export function CategoryReportChart({ data }: CategoryReportChartProps) {
 	const { chartData, categories } = data;
-	const [limit, setLimit] = React.useState("10");
+	const [limit, setLimit] = React.useState("5");
 
 	const { topCategories, filteredChartData } = React.useMemo(() => {
 		const limitNum = Math.min(Number(limit), MAX_CATEGORIES);
