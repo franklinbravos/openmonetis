@@ -38,7 +38,10 @@ export type ImportInvoicePaymentPrompt = {
 	 */
 	alreadyPaid?: {
 		date: string | null;
+		/** Débito registrado na conta como pagamento desta fatura. */
 		amount: number | null;
+		/** Total declarado no arquivo sendo importado. */
+		fileTotal: number | null;
 		/** Reabre o pagamento para corrigir a data ou desfazê-lo. */
 		reopened: boolean;
 		onReopenedChange: (reopened: boolean) => void;
@@ -146,6 +149,8 @@ export type ImportAccountBalancePrompt = {
 	outOfMonthRowCount: number;
 	outOfMonthRowAmount: number;
 	unmatchedInMonthAmount: number;
+	orphanSyntheticTransferCount: number;
+	orphanSyntheticTransferAmount: number;
 	adjustmentAmount: number;
 	adjustmentDate: string;
 	yieldAmount: number;
@@ -493,12 +498,63 @@ export function ImportConfirmDialog({
 														accountBalance.unmatchedInMonthAmount,
 													)}
 												/>
-												<li className="text-[11px] text-muted-foreground leading-relaxed">
-													Costuma ser perna de transferência sintetizada ao
-													importar a conta do outro lado — apague a linha
-													excedente no extrato da conta antes de confirmar.
-												</li>
+												{accountBalance.orphanSyntheticTransferCount > 0 ? (
+													<li className="text-[11px] text-muted-foreground leading-relaxed">
+														{accountBalance.orphanSyntheticTransferCount}{" "}
+														perna
+														{accountBalance.orphanSyntheticTransferCount !== 1
+															? "s"
+															: ""}{" "}
+														de transferência sintetizada
+														{accountBalance.orphanSyntheticTransferCount !== 1
+															? "s"
+															: ""}{" "}
+														({formatCurrency(
+															Math.abs(
+																accountBalance.orphanSyntheticTransferAmount,
+															),
+														)}
+														) será
+														{accountBalance.orphanSyntheticTransferCount !== 1
+															? "ão"
+															: ""}{" "}
+														removida
+														{accountBalance.orphanSyntheticTransferCount !== 1
+															? "s"
+															: ""}{" "}
+														ao confirmar — costumam sobrar ao importar a conta do
+														outro lado antes desta.
+													</li>
+												) : (
+													<li className="text-[11px] text-muted-foreground leading-relaxed">
+														Costuma ser perna de transferência já coberta por
+														uma linha do extrato. Confira se a transferência
+														está vinculada na revisão.
+													</li>
+												)}
 											</>
+										) : null}
+										{accountBalance.orphanSyntheticTransferCount > 0 &&
+										Math.abs(accountBalance.unmatchedInMonthAmount) <= 0.01 ? (
+											<li className="text-[11px] text-muted-foreground leading-relaxed">
+												{accountBalance.orphanSyntheticTransferCount} perna
+												{accountBalance.orphanSyntheticTransferCount !== 1
+													? "s"
+													: ""}{" "}
+												de transferência sintetizada
+												{accountBalance.orphanSyntheticTransferCount !== 1
+													? "s"
+													: ""}{" "}
+												será
+												{accountBalance.orphanSyntheticTransferCount !== 1
+													? "ão"
+													: ""}{" "}
+												removida
+												{accountBalance.orphanSyntheticTransferCount !== 1
+													? "s"
+													: ""}{" "}
+												ao confirmar para o saldo fechar com o extrato.
+											</li>
 										) : null}
 									</>
 								) : null}
@@ -753,15 +809,46 @@ export function ImportConfirmDialog({
 									</span>
 								</li>
 							) : null}
+							{invoicePayment.alreadyPaid.fileTotal != null ? (
+								<li className="flex items-center gap-1.5">
+									<span className="text-muted-foreground">Total do arquivo</span>
+									<span className="font-medium tabular-nums">
+										{formatCurrency(invoicePayment.alreadyPaid.fileTotal)}
+									</span>
+								</li>
+							) : null}
 							{invoicePayment.alreadyPaid.amount != null ? (
 								<li className="flex items-center gap-1.5">
-									<span className="text-muted-foreground">Valor</span>
-									<span className="font-medium tabular-nums">
+									<span className="text-muted-foreground">
+										Pagamento registrado
+									</span>
+									<span
+										className={cn(
+											"font-medium tabular-nums",
+											invoicePayment.alreadyPaid.fileTotal != null &&
+												Math.abs(
+													invoicePayment.alreadyPaid.amount -
+														invoicePayment.alreadyPaid.fileTotal,
+												) > 0.01 &&
+												"text-warning",
+										)}
+									>
 										{formatCurrency(invoicePayment.alreadyPaid.amount)}
 									</span>
 								</li>
 							) : null}
 						</ul>
+						{invoicePayment.alreadyPaid.fileTotal != null &&
+						invoicePayment.alreadyPaid.amount != null &&
+						Math.abs(
+							invoicePayment.alreadyPaid.amount -
+								invoicePayment.alreadyPaid.fileTotal,
+						) > 0.01 ? (
+							<p className="text-warning text-xs leading-relaxed">
+								O pagamento registrado difere do total do arquivo. Ative a opção
+								abaixo para corrigir o valor ou desfazer a baixa.
+							</p>
+						) : null}
 						<div className="flex items-center gap-2">
 							<Switch
 								id="reopen-invoice-payment"

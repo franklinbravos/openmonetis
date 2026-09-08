@@ -1,8 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="OpenMonetis">
-  <!-- Moeda inferior -->
-  <path d="M4 13.5C4 12.12 7.582 11 12 11s8 1.12 8 2.5v3c0 1.38-3.582 2.5-8 2.5s-8-1.12-8-2.5v-3z" />
-  <ellipse cx="12" cy="13.5" rx="8" ry="2.5" />
-  <!-- Moeda superior -->
-  <path d="M5.5 7.75C5.5 6.51 8.41 5.5 12 5.5s6.5 1.01 6.5 2.25v2.5c0 1.24-2.91 2.25-6.5 2.25S5.5 11.49 5.5 10.25v-2.5z" />
-  <ellipse cx="12" cy="7.75" rx="6.5" ry="2.25" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" role="img" aria-label="OpenMonetis">
+  <defs>
+    <marker id="orbit-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,1.5 L8,5 L0,8.5" fill="none" stroke="context-stroke" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" />
+    </marker>
+    <mask id="core-cut">
+      <rect width="48" height="48" fill="white" />
+      <g transform="translate(24 24) scale(0.64) translate(-12 -12)" stroke="black" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+      </g>
+    </mask>
+  </defs>
+  <g stroke="#5C6573" stroke-width="1.75" stroke-linecap="round">
+    <g transform="rotate(0 24 24)">
+      <path d="M8.75 13.55A18.5 18.5 0 0 1 34.85 10.15" marker-end="url(#orbit-arrow)" />
+    </g>
+    <g transform="rotate(120 24 24)">
+      <path d="M8.75 13.55A18.5 18.5 0 0 1 34.85 10.15" marker-end="url(#orbit-arrow)" />
+    </g>
+    <g transform="rotate(240 24 24)">
+      <path d="M8.75 13.55A18.5 18.5 0 0 1 34.85 10.15" marker-end="url(#orbit-arrow)" />
+    </g>
+  </g>
+  <circle cx="24" cy="24" r="9" fill="#3556B1" mask="url(#core-cut)" />
 </svg>

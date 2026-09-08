@@ -37,7 +37,7 @@ export function Logo({
 				/>
 				<LogoText
 					className={cn(
-						"hidden h-auto w-[110px] shrink-0 sm:block",
+						"h-auto w-[96px] shrink-0 sm:w-[110px]",
 						invertTextOnDark && "dark:invert",
 						textClassName,
 					)}

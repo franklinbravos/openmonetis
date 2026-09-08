@@ -777,17 +777,19 @@ function ReviewLinkedStatus({
 function ReviewCrossPeriodStatus({
 	row,
 	index,
+	isCard,
 	invoicePeriodExistingIdSet,
 	periodLockedExistingIds,
 	onMoveToInvoicePeriod,
 }: {
 	row: ReviewRow;
 	index: number;
+	isCard: boolean;
 	invoicePeriodExistingIdSet?: Set<string>;
 	periodLockedExistingIds?: Set<string>;
 	onMoveToInvoicePeriod: (index: number) => void;
 }) {
-	if (!invoicePeriodExistingIdSet) return null;
+	if (!isCard || !invoicePeriodExistingIdSet?.size) return null;
 	if (!isImportRowCrossPeriod(row, invoicePeriodExistingIdSet)) return null;
 
 	const existingTransactionId = resolveReviewExistingTransactionId(row);
@@ -1289,6 +1291,7 @@ export function ReviewTable({
 														<ReviewCrossPeriodStatus
 															row={row}
 															index={index}
+															isCard={isCard}
 															invoicePeriodExistingIdSet={
 																invoicePeriodExistingIdSet
 															}
@@ -1879,6 +1882,7 @@ function ReviewMobileCard({
 					<ReviewCrossPeriodStatus
 						row={row}
 						index={index}
+						isCard={isCard}
 						invoicePeriodExistingIdSet={invoicePeriodExistingIdSet}
 						periodLockedExistingIds={periodLockedExistingIds}
 						onMoveToInvoicePeriod={onMoveToInvoicePeriod}

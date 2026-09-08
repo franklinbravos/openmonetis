@@ -1,8 +1,6 @@
-import { RiPencilLine } from "@remixicon/react";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import type { FinancialAccount } from "@/db/schema";
-import { CardDialog } from "@/features/cards/components/card-dialog";
 import type { Card as CreditCard } from "@/features/cards/components/types";
 import { CardInvoiceContextHeader } from "@/features/invoices/components/card-invoice-context-header";
 import { CardInvoiceNavigationShell } from "@/features/invoices/components/card-invoice-navigation-shell";
@@ -37,7 +35,6 @@ import { fetchImportBatchHistory } from "@/features/transactions/queries/import-
 import { MonthToolbarSlotProvider } from "@/shared/components/month-picker/month-toolbar-slot-context";
 import { StatementPeriodNavigation } from "@/shared/components/month-picker/statement-period-navigation";
 import { PageBreadcrumb } from "@/shared/components/navigation/page-breadcrumb";
-import { Button } from "@/shared/components/ui/button";
 import { Card as UiCard } from "@/shared/components/ui/card";
 import { getUserId } from "@/shared/lib/auth/server";
 import {
@@ -206,32 +203,10 @@ export default async function Page({ params, searchParams }: PageProps) {
 				header={
 					<CardInvoiceContextHeader
 						embedded
-						cardId={card.id}
-						cardName={card.name}
-						cardBrand={card.brand ?? null}
-						logo={card.logo}
+						card={cardDialogData}
+						logoOptions={logoOptions}
+						accounts={cardDialogAccounts}
 						periodLabel={periodLabel}
-						importPdfPasswordRule={importPdfPasswordRule}
-						hasImportPdfPasswordSecret={card.hasImportPdfPasswordSecret}
-						actions={
-							<CardDialog
-								mode="update"
-								card={cardDialogData}
-								logoOptions={logoOptions}
-								accounts={cardDialogAccounts}
-								trigger={
-									<Button
-										type="button"
-										variant="ghost"
-										size="icon-sm"
-										className="text-muted-foreground hover:text-foreground"
-										aria-label="Editar cartão"
-									>
-										<RiPencilLine className="size-4" />
-									</Button>
-								}
-							/>
-						}
 					/>
 				}
 			/>

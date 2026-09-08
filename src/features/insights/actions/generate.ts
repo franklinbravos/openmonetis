@@ -108,6 +108,11 @@ ${JSON.stringify(aggregatedData, null, 2)}
 
 DADOS IMPORTANTES PARA SUA ANÁLISE:
 
+**Progresso do período:**
+- periodContext indica se o mês ainda está em andamento (isPartialPeriod), quantos dias já passaram e a data de referência
+- comparisons traz métricas confiáveis: quando isMonthOverMonthReliable é false, use ritmo diário (dailyPace*) ou projeção (projected*) — nunca o total parcial vs mês fechado
+${aggregatedData.periodContext.isPartialPeriod ? `- ATENÇÃO: este mês tem apenas ${aggregatedData.periodContext.daysElapsed} de ${aggregatedData.periodContext.daysInMonth} dias (${aggregatedData.periodContext.progressPercent.toFixed(0)}% do período). Não conclua queda/alta do mês inteiro comparando totais parciais.` : ""}
+
 **Tendência de 3 meses:**
 - Os dados incluem tendência dos últimos 3 meses (threeMonthTrend)
 - Use isso para identificar padrões crescentes, decrescentes ou estáveis
@@ -135,6 +140,8 @@ Organize suas observações nas 4 categories especificadas no prompt do sistema:
 4. Melhorias Sugeridas (improvements): 3-6 itens
 
 Cada item deve ser conciso, direto e acionável. Use os novos dados para dar contexto temporal e identificar padrões mais profundos.
+
+Para cada item, inclua obrigatoriamente os campos text, detail e events (evidências dos dados agregados que sustentam o insight).
 
 Responda APENAS com um JSON válido seguindo exatamente o schema especificado.`,
 		});

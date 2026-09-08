@@ -14,6 +14,8 @@ import {
 	formatPeriodMonthShort,
 	formatShortPeriodLabel,
 	getCurrentPeriod,
+	getDaysInPeriod,
+	getPeriodProgressContext,
 	getNextPeriod,
 	getPeriodPurchaseDateBounds,
 	getPreviousPeriod,
@@ -69,6 +71,23 @@ describe("navegação de períodos", () => {
 
 	it("getCurrentPeriod usa a data informada", () => {
 		expect(getCurrentPeriod(new Date(2025, 10, 15))).toBe("2025-11");
+	});
+
+	it("getPeriodProgressContext marca mês em andamento", () => {
+		const context = getPeriodProgressContext(
+			"2025-09",
+			new Date(2025, 8, 7),
+		);
+
+		expect(context.isPartialPeriod).toBe(true);
+		expect(context.daysElapsed).toBe(7);
+		expect(context.daysInMonth).toBe(30);
+		expect(context.referenceDate).toBe("2025-09-07");
+	});
+
+	it("getDaysInPeriod retorna dias do mês", () => {
+		expect(getDaysInPeriod("2025-02")).toBe(28);
+		expect(getDaysInPeriod("2025-09")).toBe(30);
 	});
 });
 

@@ -1,4 +1,4 @@
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { categories, transactions } from "@/db/schema";
 import { upsertAccountBalanceAdjustmentInTx } from "@/features/accounts/lib/balance-adjustment";
 import { fetchAccountSummary } from "@/features/accounts/statement-queries";
@@ -20,6 +20,10 @@ import {
 	roundMoney,
 	SOURCE_ROUNDING_TOLERANCE,
 } from "@/shared/lib/import/invoice-total";
+import {
+	TRANSFER_ESTABLISHMENT_ENTRADA,
+	TRANSFER_ESTABLISHMENT_SAIDA,
+} from "@/shared/lib/transfers/constants";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 import { parseLocalDateString, toDateOnlyString } from "@/shared/utils/date";
@@ -27,7 +31,6 @@ import { safeToNumber } from "@/shared/utils/number";
 import {
 	comparePeriods,
 	derivePeriodFromDate,
-	getPeriodPurchaseDateBounds,
 } from "@/shared/utils/period";
 
 const ACCOUNT_YIELD_CATEGORY_NAME = "Rendimentos";
@@ -77,6 +80,9 @@ export type AccountStatementBalancePreview = {
 	 * extrato = cadastro` —, e cada parcela aponta para um conserto diferente.
 	 */
 	unmatchedInMonthAmount: number;
+	/** Pernas sintéticas de transferência removidas automaticamente na confirmação. */
+	orphanSyntheticTransferCount: number;
+	orphanSyntheticTransferAmount: number;
 	/** Valor do lançamento de ajuste (positivo = receita, negativo = despesa). */
 	adjustmentAmount: number;
 	yieldAmount: number;
@@ -102,7 +108,288 @@ type DbMovementRow = {
 	purchaseDate: Date;
 	name: string | null;
 	period: string;
+	transferId?: string | null;
+	ofxFitId?: string | null;
 };
+
+type TransferPeerLeg = {
+	id: string;
+	ofxFitId: string | null;
+	accountId: string | null;
+};
+
+function isTransferEstablishmentName(name: string | null | undefined): boolean {
+	if (!name) return false;
+	const normalized = name.trim().toLowerCase();
+	return (
+		normalized === TRANSFER_ESTABLISHMENT_SAIDA.toLowerCase() ||
+		normalized === TRANSFER_ESTABLISHMENT_ENTRADA.toLowerCase()
+	);
+}
+
+export function isSyntheticTransferLegRow(row: {
+	transferId?: string | null;
+	ofxFitId?: string | null;
+	name: string | null;
+}): boolean {
+	if (!row.transferId) return false;
+	if (row.ofxFitId) return false;
+	return isTransferEstablishmentName(row.name);
+}
+
+export function importFileRowMatchesDbTransferLeg(
+	fileRow: ImportRowSnapshot,
+	leg: DbMovementRow,
+): boolean {
+	const legDate = toDateOnlyString(leg.purchaseDate);
+	if (!legDate || fileRow.date !== legDate) return false;
+
+	const fileSigned = signedRowAmount(fileRow);
+	const legAmount = safeToNumber(leg.amount);
+	return Math.abs(fileSigned - legAmount) <= SOURCE_ROUNDING_TOLERANCE;
+}
+
+export type SyntheticTransferReconciliationAdjustments = {
+	excludedDbIds: Set<string>;
+	orphanSyntheticLegIds: Set<string>;
+	matchedSyntheticLegIdsForCleanup: Set<string>;
+	matchedUnlinkedFileNet: number;
+};
+
+function resolveStatementDateBounds(balances: AccountStatementBalances): {
+	start: string;
+	end: string;
+} {
+	return {
+		start: balances.periodFrom,
+		end: balances.periodTo,
+	};
+}
+
+function fileRowHasMatchingDbMovement(
+	fileRow: ImportRowSnapshot,
+	inMonthByDateRows: DbMovementRow[],
+	excludedDbIds: Set<string>,
+): boolean {
+	return inMonthByDateRows.some(
+		(leg) =>
+			leg.id &&
+			!excludedDbIds.has(leg.id) &&
+			importFileRowMatchesDbTransferLeg(fileRow, leg),
+	);
+}
+
+function dbLegDuplicatesLinkedFileRow(
+	fileRow: ImportRowSnapshot,
+	leg: DbMovementRow,
+): boolean {
+	const legDate = toDateOnlyString(leg.purchaseDate);
+	if (!legDate || legDate !== fileRow.date) return false;
+
+	const fileSigned = signedRowAmount(fileRow);
+	const legAmount = safeToNumber(leg.amount);
+	return Math.abs(fileSigned - legAmount) <= SOURCE_ROUNDING_TOLERANCE;
+}
+
+function preferCanonicalMatchingDbLeg(legs: DbMovementRow[]): DbMovementRow {
+	return (
+		legs.find((leg) => leg.ofxFitId) ??
+		legs.find((leg) => !isSyntheticTransferLegRow(leg)) ??
+		legs[0]
+	);
+}
+
+export function resolveSyntheticTransferReconciliationAdjustments(input: {
+	accountId: string;
+	statementPeriod: string;
+	statementDateRange?: { start: string; end: string };
+	inMonthByDateRows: DbMovementRow[];
+	fileRows: ImportRowSnapshot[];
+	importRows?: ImportRowSnapshot[];
+	peerLegsByTransferId: Map<string, TransferPeerLeg[]>;
+}): SyntheticTransferReconciliationAdjustments {
+	const excludedDbIds = new Set<string>();
+	const orphanSyntheticLegIds = new Set<string>();
+	const matchedSyntheticLegIdsForCleanup = new Set<string>();
+	let matchedUnlinkedFileNet = 0;
+	const importingRowKeys = new Set(
+		(input.importRows ?? [])
+			.filter((row) =>
+				isImportRowInStatementMonth(
+					row,
+					input.statementPeriod,
+					input.statementDateRange,
+				),
+			)
+			.map(
+				(row) =>
+					`${row.date}|${row.amount}|${row.transactionType}|${row.description}`,
+			),
+	);
+
+	for (const fileRow of input.fileRows) {
+		if (!fileRow.existingTransactionId) continue;
+		if (
+			!isImportRowInStatementMonth(
+				fileRow,
+				input.statementPeriod,
+				input.statementDateRange,
+			)
+		) {
+			continue;
+		}
+
+		excludedDbIds.add(fileRow.existingTransactionId);
+
+		for (const leg of input.inMonthByDateRows) {
+			if (!leg.id || leg.id === fileRow.existingTransactionId) continue;
+			if (!dbLegDuplicatesLinkedFileRow(fileRow, leg)) continue;
+
+			excludedDbIds.add(leg.id);
+			matchedSyntheticLegIdsForCleanup.add(leg.id);
+		}
+	}
+
+	for (const leg of input.inMonthByDateRows) {
+		if (!leg.id || !isSyntheticTransferLegRow(leg)) continue;
+		if (excludedDbIds.has(leg.id)) continue;
+
+		const coveringFileRow = input.fileRows.find(
+			(fileRow) =>
+				isImportRowInStatementMonth(
+					fileRow,
+					input.statementPeriod,
+					input.statementDateRange,
+				) && importFileRowMatchesDbTransferLeg(fileRow, leg),
+		);
+
+		if (coveringFileRow) {
+			excludedDbIds.add(leg.id);
+			const explicitlyLinkedToThisLeg =
+				coveringFileRow.existingTransactionId === leg.id;
+			const importKey = `${coveringFileRow.date}|${coveringFileRow.amount}|${coveringFileRow.transactionType}|${coveringFileRow.description}`;
+			const alreadyInDb = fileRowHasMatchingDbMovement(
+				coveringFileRow,
+				input.inMonthByDateRows,
+				excludedDbIds,
+			);
+
+			if (
+				!explicitlyLinkedToThisLeg &&
+				!importingRowKeys.has(importKey) &&
+				!alreadyInDb
+			) {
+				matchedUnlinkedFileNet = roundMoney(
+					matchedUnlinkedFileNet + signedRowAmount(coveringFileRow),
+				);
+			} else if (
+				!explicitlyLinkedToThisLeg &&
+				(alreadyInDb || coveringFileRow.existingTransactionId)
+			) {
+				matchedSyntheticLegIdsForCleanup.add(leg.id);
+			}
+			continue;
+		}
+
+		if (!leg.transferId) continue;
+		const peers = input.peerLegsByTransferId.get(leg.transferId) ?? [];
+		const peerOnOtherAccount = peers.some(
+			(peer) =>
+				peer.id !== leg.id &&
+				peer.accountId &&
+				peer.accountId !== input.accountId,
+		);
+		if (!peerOnOtherAccount) continue;
+
+		excludedDbIds.add(leg.id);
+		orphanSyntheticLegIds.add(leg.id);
+	}
+
+	for (const fileRow of input.fileRows) {
+		if (fileRow.existingTransactionId) continue;
+		if (
+			!isImportRowInStatementMonth(
+				fileRow,
+				input.statementPeriod,
+				input.statementDateRange,
+			)
+		) {
+			continue;
+		}
+
+		const importKey = `${fileRow.date}|${fileRow.amount}|${fileRow.transactionType}|${fileRow.description}`;
+		if (importingRowKeys.has(importKey)) continue;
+
+		const matchingLegs = input.inMonthByDateRows.filter(
+			(leg) =>
+				leg.id &&
+				!excludedDbIds.has(leg.id) &&
+				dbLegDuplicatesLinkedFileRow(fileRow, leg),
+		);
+
+		if (matchingLegs.length === 0) continue;
+
+		const canonicalLeg = preferCanonicalMatchingDbLeg(matchingLegs);
+
+		for (const leg of matchingLegs) {
+			if (!leg.id || leg.id === canonicalLeg.id) continue;
+			excludedDbIds.add(leg.id);
+			matchedSyntheticLegIdsForCleanup.add(leg.id);
+		}
+
+		const canonicalStillCounts =
+			Boolean(canonicalLeg.id) &&
+			!excludedDbIds.has(canonicalLeg.id) &&
+			!importingRowKeys.has(importKey);
+
+		if (!canonicalStillCounts) {
+			matchedUnlinkedFileNet = roundMoney(
+				matchedUnlinkedFileNet + signedRowAmount(fileRow),
+			);
+		}
+	}
+
+	return {
+		excludedDbIds,
+		orphanSyntheticLegIds,
+		matchedSyntheticLegIdsForCleanup,
+		matchedUnlinkedFileNet: roundMoney(matchedUnlinkedFileNet),
+	};
+}
+
+async function fetchTransferPeerLegsByTransferId(
+	dataOwnerUserId: string,
+	transferIds: string[],
+): Promise<Map<string, TransferPeerLeg[]>> {
+	if (transferIds.length === 0) return new Map();
+
+	const rows = await db.query.transactions.findMany({
+		columns: {
+			id: true,
+			transferId: true,
+			ofxFitId: true,
+			accountId: true,
+		},
+		where: and(
+			eq(transactions.userId, dataOwnerUserId),
+			inArray(transactions.transferId, transferIds),
+		),
+	});
+
+	const peerLegsByTransferId = new Map<string, TransferPeerLeg[]>();
+	for (const row of rows) {
+		if (!row.transferId) continue;
+		const legs = peerLegsByTransferId.get(row.transferId) ?? [];
+		legs.push({
+			id: row.id,
+			ofxFitId: row.ofxFitId,
+			accountId: row.accountId,
+		});
+		peerLegsByTransferId.set(row.transferId, legs);
+	}
+
+	return peerLegsByTransferId;
+}
 
 function sumDbMovementRows(rows: DbMovementRow[]): number {
 	return roundMoney(
@@ -123,6 +410,7 @@ function isPurchaseDateInStatementMonth(
 function isImportRowInStatementMonth(
 	row: Pick<ImportRowSnapshot, "date" | "description">,
 	statementPeriod: string,
+	statementDateRange?: { start: string; end: string },
 ): boolean {
 	if (
 		shouldRelocateBalanceAdjustmentRow(
@@ -133,7 +421,14 @@ function isImportRowInStatementMonth(
 	) {
 		return false;
 	}
-	return derivePeriodFromDate(row.date) === statementPeriod;
+	if (derivePeriodFromDate(row.date) !== statementPeriod) return false;
+	if (
+		statementDateRange &&
+		(row.date < statementDateRange.start || row.date > statementDateRange.end)
+	) {
+		return false;
+	}
+	return true;
 }
 
 /**
@@ -146,17 +441,23 @@ function isImportRowInStatementMonth(
  */
 export function computeStatementMonthNetInCadastro(input: {
 	statementPeriod: string;
+	statementDateRange?: { start: string; end: string };
 	inMonthByDateRows: DbMovementRow[];
 	importRows: ImportRowSnapshot[];
 	fileRows: ImportRowSnapshot[];
 	yieldAmount: number;
+	syntheticTransferAdjustments?: SyntheticTransferReconciliationAdjustments;
 }): number {
 	const linkedExistingIds = new Set(
 		input.fileRows
 			.filter(
 				(row) =>
 					row.existingTransactionId &&
-					isImportRowInStatementMonth(row, input.statementPeriod),
+					isImportRowInStatementMonth(
+						row,
+						input.statementPeriod,
+						input.statementDateRange,
+					),
 			)
 			.map((row) => row.existingTransactionId as string),
 	);
@@ -165,7 +466,11 @@ export function computeStatementMonthNetInCadastro(input: {
 		input.fileRows.reduce((total, row) => {
 			if (
 				!row.existingTransactionId ||
-				!isImportRowInStatementMonth(row, input.statementPeriod)
+				!isImportRowInStatementMonth(
+					row,
+					input.statementPeriod,
+					input.statementDateRange,
+				)
 			) {
 				return total;
 			}
@@ -175,22 +480,34 @@ export function computeStatementMonthNetInCadastro(input: {
 
 	const importNetInStatement = roundMoney(
 		input.importRows.reduce((total, row) => {
-			if (!isImportRowInStatementMonth(row, input.statementPeriod)) {
+			if (
+				!isImportRowInStatementMonth(
+					row,
+					input.statementPeriod,
+					input.statementDateRange,
+				)
+			) {
 				return total;
 			}
 			return total + signedRowAmount(row);
 		}, 0),
 	);
 
+	const excludedDbIds = new Set([
+		...linkedExistingIds,
+		...(input.syntheticTransferAdjustments?.excludedDbIds ?? []),
+	]);
+
 	const dbNetExcludingLinked = sumDbMovementRows(
 		input.inMonthByDateRows.filter(
-			(row) => !row.id || !linkedExistingIds.has(row.id),
+			(row) => !row.id || !excludedDbIds.has(row.id),
 		),
 	);
 
 	return roundMoney(
 		importNetInStatement +
 			linkedFileNet +
+			(input.syntheticTransferAdjustments?.matchedUnlinkedFileNet ?? 0) +
 			dbNetExcludingLinked +
 			input.yieldAmount,
 	);
@@ -291,7 +608,7 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 	if (!input.balances.balances) return null;
 
 	const statementPeriod = deriveStatementPeriodFromBalances(input.balances);
-	const statementBounds = getPeriodPurchaseDateBounds(statementPeriod);
+	const statementDateRange = resolveStatementDateBounds(input.balances);
 	const { period: previousPeriod, date: previousPeriodLastDate } =
 		resolveBalanceAdjustmentPlacement(statementPeriod);
 	const adminPayerId = await getAdminPayerId(input.viewerUserId);
@@ -299,7 +616,7 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 
 	const yieldAmount = computeStatementYieldGap(input.balances, input.fileRows);
 	const yieldDate =
-		yieldAmount > SOURCE_ROUNDING_TOLERANCE ? statementBounds.start : null;
+		yieldAmount > SOURCE_ROUNDING_TOLERANCE ? statementDateRange.start : null;
 
 	const [
 		misplacedAdjustments,
@@ -334,6 +651,8 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 				purchaseDate: true,
 				name: true,
 				period: true,
+				transferId: true,
+				ofxFitId: true,
 			},
 			where: and(
 				eq(transactions.userId, input.dataOwnerUserId),
@@ -341,11 +660,11 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 				eq(transactions.isSettled, true),
 				gte(
 					transactions.purchaseDate,
-					parseLocalDateString(statementBounds.start),
+					parseLocalDateString(statementDateRange.start),
 				),
 				lte(
 					transactions.purchaseDate,
-					parseLocalDateString(statementBounds.end),
+					parseLocalDateString(statementDateRange.end),
 				),
 			),
 		}),
@@ -355,21 +674,62 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 		partitionStatementMonthDbRows(
 			statementDateRangeRows,
 			statementPeriod,
-			statementBounds.start,
-			statementBounds.end,
+			statementDateRange.start,
+			statementDateRange.end,
 		);
 	const outOfMonthRowAmount = sumDbMovementRows(outOfMonthRows);
+
+	const transferIds = [
+		...new Set(
+			inMonthByDateRows
+				.map((row) => row.transferId)
+				.filter((transferId): transferId is string => Boolean(transferId)),
+		),
+	];
+	const peerLegsByTransferId = await fetchTransferPeerLegsByTransferId(
+		input.dataOwnerUserId,
+		transferIds,
+	);
+	const syntheticTransferAdjustments =
+		resolveSyntheticTransferReconciliationAdjustments({
+			accountId: input.accountId,
+			statementPeriod,
+			statementDateRange,
+			inMonthByDateRows,
+			fileRows: input.fileRows,
+			importRows: input.importedRows,
+			peerLegsByTransferId,
+		});
+	const orphanSyntheticTransferAmount = roundMoney(
+		inMonthByDateRows.reduce((total, row) => {
+			if (
+				!row.id ||
+				!(
+					syntheticTransferAdjustments.orphanSyntheticLegIds.has(row.id) ||
+					syntheticTransferAdjustments.matchedSyntheticLegIdsForCleanup.has(
+						row.id,
+					)
+				)
+			) {
+				return total;
+			}
+			return total + safeToNumber(row.amount);
+		}, 0),
+	);
 
 	const statementMonthNetFromFile = computeStatementMonthNetFromFileRows(
 		input.fileRows,
 		statementPeriod,
+		statementDateRange,
 	);
 	const statementMonthNetInCadastro = computeStatementMonthNetInCadastro({
 		statementPeriod,
+		statementDateRange,
 		inMonthByDateRows,
 		importRows: input.importedRows,
 		fileRows: input.fileRows,
 		yieldAmount,
+		syntheticTransferAdjustments,
 	});
 
 	const existingPreviousAdjustmentAmount = Number(
@@ -406,6 +766,10 @@ export async function previewAccountStatementBalanceReconciliation(input: {
 		unmatchedInMonthAmount: roundMoney(
 			statementMonthNetInCadastro - statementMonthNetFromFile,
 		),
+		orphanSyntheticTransferCount:
+			syntheticTransferAdjustments.orphanSyntheticLegIds.size +
+			syntheticTransferAdjustments.matchedSyntheticLegIdsForCleanup.size,
+		orphanSyntheticTransferAmount,
 		adjustmentAmount,
 		yieldAmount,
 		yieldDate,
@@ -460,8 +824,12 @@ export async function applyAccountStatementBalanceReconciliation(input: {
 	 */
 	const { period: previousPeriod, date: previousPeriodLastDate } =
 		resolveBalanceAdjustmentPlacement(statementPeriod);
-	const statementBounds = getPeriodPurchaseDateBounds(statementPeriod);
-	const yieldGap = computeStatementYieldGap(input.balances, input.importedRows);
+	const statementDateRange = resolveStatementDateBounds(input.balances);
+	const reconciliationFileRows = input.fileRows ?? input.importedRows;
+	const yieldGap = computeStatementYieldGap(
+		input.balances,
+		reconciliationFileRows,
+	);
 
 	try {
 		await db.transaction(async (tx) => {
@@ -500,19 +868,19 @@ export async function applyAccountStatementBalanceReconciliation(input: {
 					eq(transactions.isSettled, true),
 					gte(
 						transactions.purchaseDate,
-						parseLocalDateString(statementBounds.start),
+						parseLocalDateString(statementDateRange.start),
 					),
 					lte(
 						transactions.purchaseDate,
-						parseLocalDateString(statementBounds.end),
+						parseLocalDateString(statementDateRange.end),
 					),
 				),
 			});
 			const { misfiledForwardPeriodRows } = partitionStatementMonthDbRows(
 				misfiledCandidates,
 				statementPeriod,
-				statementBounds.start,
-				statementBounds.end,
+				statementDateRange.start,
+				statementDateRange.end,
 			);
 
 			for (const row of misfiledForwardPeriodRows) {
@@ -532,7 +900,7 @@ export async function applyAccountStatementBalanceReconciliation(input: {
 					),
 				});
 
-				const statementStart = statementBounds.start;
+				const statementStart = statementDateRange.start;
 
 				await tx.insert(transactions).values({
 					condition: INITIAL_BALANCE_CONDITION,
@@ -578,6 +946,8 @@ export async function applyAccountStatementBalanceReconciliation(input: {
 				purchaseDate: true,
 				name: true,
 				period: true,
+				transferId: true,
+				ofxFitId: true,
 			},
 			where: and(
 				eq(transactions.userId, input.dataOwnerUserId),
@@ -585,31 +955,116 @@ export async function applyAccountStatementBalanceReconciliation(input: {
 				eq(transactions.isSettled, true),
 				gte(
 					transactions.purchaseDate,
-					parseLocalDateString(statementBounds.start),
+					parseLocalDateString(statementDateRange.start),
 				),
 				lte(
 					transactions.purchaseDate,
-					parseLocalDateString(statementBounds.end),
+					parseLocalDateString(statementDateRange.end),
 				),
 			),
 		});
 		const { inMonthByDateRows } = partitionStatementMonthDbRows(
 			statementDateRangeRows,
 			statementPeriod,
-			statementBounds.start,
-			statementBounds.end,
+			statementDateRange.start,
+			statementDateRange.end,
 		);
-		const reconciliationFileRows = input.fileRows ?? input.importedRows;
+		const transferIds = [
+			...new Set(
+				inMonthByDateRows
+					.map((row) => row.transferId)
+					.filter((transferId): transferId is string => Boolean(transferId)),
+			),
+		];
+		const peerLegsByTransferId = await fetchTransferPeerLegsByTransferId(
+			input.dataOwnerUserId,
+			transferIds,
+		);
+		const syntheticTransferAdjustments =
+			resolveSyntheticTransferReconciliationAdjustments({
+				accountId: input.accountId,
+				statementPeriod,
+				statementDateRange,
+				inMonthByDateRows,
+				fileRows: reconciliationFileRows,
+				importRows: input.importedRows,
+				peerLegsByTransferId,
+			});
+		const syntheticLegIdsToDelete = [
+			...new Set([
+				...syntheticTransferAdjustments.orphanSyntheticLegIds,
+				...syntheticTransferAdjustments.matchedSyntheticLegIdsForCleanup,
+			]),
+		];
+
+		if (syntheticLegIdsToDelete.length > 0) {
+			await db
+				.delete(transactions)
+				.where(
+					and(
+						eq(transactions.userId, input.dataOwnerUserId),
+						eq(transactions.accountId, input.accountId),
+						inArray(transactions.id, syntheticLegIdsToDelete),
+					),
+				);
+		}
+
+		const refreshedStatementDateRangeRows =
+			syntheticLegIdsToDelete.length > 0
+				? await db.query.transactions.findMany({
+						columns: {
+							id: true,
+							amount: true,
+							purchaseDate: true,
+							name: true,
+							period: true,
+							transferId: true,
+							ofxFitId: true,
+						},
+						where: and(
+							eq(transactions.userId, input.dataOwnerUserId),
+							eq(transactions.accountId, input.accountId),
+							eq(transactions.isSettled, true),
+							gte(
+								transactions.purchaseDate,
+								parseLocalDateString(statementDateRange.start),
+							),
+							lte(
+								transactions.purchaseDate,
+								parseLocalDateString(statementDateRange.end),
+							),
+						),
+					})
+				: statementDateRangeRows;
+		const { inMonthByDateRows: refreshedInMonthByDateRows } =
+			partitionStatementMonthDbRows(
+				refreshedStatementDateRangeRows,
+				statementPeriod,
+				statementDateRange.start,
+				statementDateRange.end,
+			);
+		const refreshedAdjustments =
+			resolveSyntheticTransferReconciliationAdjustments({
+				accountId: input.accountId,
+				statementPeriod,
+				statementDateRange,
+				inMonthByDateRows: refreshedInMonthByDateRows,
+				fileRows: reconciliationFileRows,
+				importRows: input.importedRows,
+				peerLegsByTransferId,
+			});
 		const yieldAmount = computeStatementYieldGap(
 			input.balances,
 			reconciliationFileRows,
 		);
 		const statementMonthNetInCadastro = computeStatementMonthNetInCadastro({
 			statementPeriod,
-			inMonthByDateRows,
+			statementDateRange,
+			inMonthByDateRows: refreshedInMonthByDateRows,
 			importRows: [],
 			fileRows: reconciliationFileRows,
 			yieldAmount,
+			syntheticTransferAdjustments: refreshedAdjustments,
 		});
 		const projectedClosingBalance = roundMoney(
 			input.balances.openingBalance + statementMonthNetInCadastro,

@@ -1,5 +1,8 @@
+"use client";
+
 import {
 	type RemixiconComponentType,
+	RiArrowRightSLine,
 	RiChatAi3Line,
 	RiEyeLine,
 	RiFlashlightLine,
@@ -8,6 +11,7 @@ import {
 	RiSparklingLine,
 } from "@remixicon/react";
 import type React from "react";
+import { useState } from "react";
 import {
 	Card,
 	CardContent,
@@ -16,16 +20,25 @@ import {
 } from "@/shared/components/ui/card";
 import type {
 	InsightCategoryId,
+	InsightItem,
 	InsightsResponse,
 } from "@/shared/lib/schemas/insights";
 import { INSIGHT_CATEGORIES } from "@/shared/lib/schemas/insights";
 import { displayPeriod } from "@/shared/utils/period";
 import { cn } from "@/shared/utils/ui";
+import { InsightItemDetailDialog } from "./insight-item-detail-dialog";
 
 interface InsightsGridProps {
 	insights: InsightsResponse;
 	action?: React.ReactNode;
 }
+
+type SelectedInsight = {
+	item: InsightItem;
+	categoryId: InsightCategoryId;
+	categoryTitle: string;
+	iconClassName: string;
+};
 
 const CATEGORY_ICONS: Record<InsightCategoryId, RemixiconComponentType> = {
 	behaviors: RiEyeLine,
@@ -58,6 +71,9 @@ const CATEGORY_COLORS: Record<
 
 export function InsightsGrid({ insights, action }: InsightsGridProps) {
 	const formattedPeriod = displayPeriod(insights.month);
+	const [selectedInsight, setSelectedInsight] = useState<SelectedInsight | null>(
+		null,
+	);
 
 	return (
 		<div className="space-y-6">
@@ -75,7 +91,8 @@ export function InsightsGrid({ insights, action }: InsightsGridProps) {
 								<p className="max-w-2xl text-muted-foreground text-sm leading-relaxed">
 									Organizamos os sinais mais relevantes do período em quatro
 									blocos: comportamentos, gatilhos, recomendações e
-									oportunidades de melhoria.
+									oportunidades de melhoria. Toque em um item para ver o
+									detalhamento e os eventos relacionados.
 								</p>
 							</div>
 						</div>
@@ -105,21 +122,51 @@ export function InsightsGrid({ insights, action }: InsightsGridProps) {
 							</CardHeader>
 							<CardContent>
 								{categoryData.items.map((item, index) => (
-									<div
-										key={index}
-										className="flex flex-1 border-b border-dashed py-2.5 gap-2 items-start last:border-0"
+									<button
+										key={`${categoryData.category}-${index}`}
+										type="button"
+										onClick={() =>
+											setSelectedInsight({
+												item,
+												categoryId: categoryData.category,
+												categoryTitle: categoryConfig.title,
+												iconClassName: colors.chatAiIcon,
+											})
+										}
+										className={cn(
+											"group flex w-full flex-1 items-start gap-2 border-b border-dashed py-2.5 text-left transition-colors last:border-0",
+											"rounded-md hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+										)}
 									>
 										<RiChatAi3Line
-											className={cn("size-4 shrink-0", colors.chatAiIcon)}
+											className={cn("mt-0.5 size-4 shrink-0", colors.chatAiIcon)}
 										/>
-										<span className="text-sm">{item.text}</span>
-									</div>
+										<span className="min-w-0 flex-1 text-sm leading-snug">
+											{item.text}
+										</span>
+										<RiArrowRightSLine
+											className="mt-0.5 size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+											aria-hidden
+										/>
+									</button>
 								))}
 							</CardContent>
 						</Card>
 					);
 				})}
 			</div>
+
+			<InsightItemDetailDialog
+				item={selectedInsight?.item ?? null}
+				categoryTitle={selectedInsight?.categoryTitle}
+				iconClassName={selectedInsight?.iconClassName}
+				open={selectedInsight !== null}
+				onOpenChange={(open) => {
+					if (!open) {
+						setSelectedInsight(null);
+					}
+				}}
+			/>
 		</div>
 	);
 }

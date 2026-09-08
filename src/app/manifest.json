@@ -1,12 +1,16 @@
 {
+	"id": "/",
 	"name": "OpenMonetis",
 	"short_name": "OpenMonetis",
 	"description": "Controle suas finanças pessoais de forma simples e transparente.",
 	"start_url": "/",
 	"scope": "/",
 	"display": "standalone",
-	"orientation": "portrait-primary",
+	"display_override": ["window-controls-overlay", "standalone", "browser"],
+	"orientation": "any",
 	"lang": "pt-BR",
+	"dir": "ltr",
+	"categories": ["finance", "productivity"],
 	"icons": [
 		{
 			"src": "/images/web-app-manifest-192x192.png",
@@ -28,5 +32,5 @@
 		}
 	],
 	"theme_color": "#3556B1",
-	"background_color": "#FAFCFE"
+	"background_color": "#000000"
 }

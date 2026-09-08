@@ -3,17 +3,10 @@
 import { RiArrowRightLine, RiSparklingLine } from "@remixicon/react";
 import Link from "next/link";
 import { AnalysisSummaryCard } from "@/features/insights/components/analysis-summary-card";
-import {
-	type AIProvider,
-	DEFAULT_MODEL,
-	PROVIDERS,
-} from "@/features/insights/constants";
+import { DEFAULT_MODEL } from "@/features/insights/constants";
+import { getInsightsAiConfigState } from "@/features/insights/lib/insights-ai-config";
 import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent } from "@/shared/components/ui/card";
-import {
-	getModelLabel,
-	getProviderFromModelId,
-} from "@/shared/lib/ai/model-config-helpers";
 import type { AiProviderSettingsView } from "@/shared/lib/ai/types";
 
 interface InsightsGeneratePanelProps {
@@ -37,13 +30,15 @@ export function InsightsGeneratePanel({
 	disabled,
 	isLoadingSavedInsights,
 }: InsightsGeneratePanelProps) {
-	const currentProvider =
-		(getProviderFromModelId(selectedModelId) as AIProvider | null) ?? "openai";
-	const selectedModelLabel = getModelLabel(selectedModelId);
-	const providerConfig = providerSettings?.[currentProvider];
-	const hasInvalidKey = providerConfig?.hasInvalidDatabaseKey ?? false;
-	const hasCredential =
-		providerConfig?.activeSource !== "none" && !hasInvalidKey;
+	const {
+		currentProvider,
+		selectedModelLabel,
+		hasInvalidKey,
+		hasCredential,
+		isConfigured,
+		providerName,
+	} = getInsightsAiConfigState(selectedModelId, providerSettings);
+
 	const canAnalyze =
 		!disabled &&
 		!isLoadingSavedInsights &&
@@ -52,50 +47,53 @@ export function InsightsGeneratePanel({
 
 	return (
 		<section className="space-y-4">
-			<Card className="border-border/70 bg-card/95 shadow-sm">
-				<CardContent className="space-y-4">
-					<div className="space-y-1">
-						<h2 className="font-semibold text-2xl tracking-tight">
-							Gerar insights
-						</h2>
-						<p className="max-w-2xl text-muted-foreground text-sm leading-relaxed">
-							A configuração de provedor, chave de API e modelo foi movida para{" "}
-							<strong>Ajustes → Inteligência artificial</strong>. Lá você
-							escolhe o provedor, valida a chave e define o modelo padrão usado
-							nesta análise.
-						</p>
-					</div>
+			{!isConfigured ? (
+				<Card className="border-border/70 bg-card/95 shadow-sm">
+					<CardContent className="space-y-4">
+						<div className="space-y-1">
+							<h2 className="font-semibold text-2xl tracking-tight">
+								Configurar IA
+							</h2>
+							<p className="max-w-2xl text-muted-foreground text-sm leading-relaxed">
+								Para gerar insights, configure o provedor, a chave de API e o
+								modelo em{" "}
+								<strong>Ajustes → Inteligência artificial</strong>.
+							</p>
+						</div>
 
-					<Button asChild className="w-fit">
-						<Link href="/settings?aba=ia">
-							Configurar modelo de IA
-							<RiArrowRightLine className="size-4" />
-						</Link>
-					</Button>
+						<Button asChild className="w-fit">
+							<Link href="/settings?aba=ia">
+								Configurar modelo de IA
+								<RiArrowRightLine className="size-4" />
+							</Link>
+						</Button>
 
-					<div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm">
-						<p className="font-medium">Configuração atual</p>
-						<p className="mt-1 text-muted-foreground">
-							<strong>{PROVIDERS[currentProvider].name}</strong>
-							{" · "}
-							{selectedModelLabel || DEFAULT_MODEL}
-							{hasInvalidKey
-								? " · chave ilegível — salve novamente em Ajustes"
-								: hasCredential
-									? " · chave configurada"
+						<div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm">
+							<p className="font-medium">Status</p>
+							<p className="mt-1 text-muted-foreground">
+								<strong>{providerName}</strong>
+								{" · "}
+								{selectedModelLabel || DEFAULT_MODEL}
+								{hasInvalidKey
+									? " · chave ilegível — salve novamente em Ajustes"
 									: " · sem chave configurada"}
-						</p>
-					</div>
-				</CardContent>
-			</Card>
+							</p>
+						</div>
+					</CardContent>
+				</Card>
+			) : null}
 
 			<div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
 				<Card className="border-border/70 bg-card/95 shadow-sm">
 					<CardContent className="flex flex-col gap-4 py-6">
 						<div className="space-y-1">
-							<h3 className="font-semibold text-sm">Executar análise</h3>
-							<p className="text-muted-foreground text-xs">
-								Gera os insights do período com o modelo configurado em Ajustes.
+							<h2 className="font-semibold text-lg tracking-tight">
+								Gerar insights
+							</h2>
+							<p className="text-muted-foreground text-sm">
+								{isConfigured
+									? "Analise o período selecionado com o modelo configurado."
+									: "Configure a IA em Ajustes para habilitar a análise."}
 							</p>
 						</div>
 						<Button

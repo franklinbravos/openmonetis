@@ -104,6 +104,33 @@ function buildCsp(): string {
 	].join("; ");
 }
 
+function pruneStaleSupabaseAuthCookies(
+	request: NextRequest,
+	cookiesToSet: CookieToSet[],
+): CookieToSet[] {
+	const incomingNames = new Set(cookiesToSet.map((cookie) => cookie.name));
+	const staleCookies = request.cookies
+		.getAll()
+		.filter(
+			(cookie) =>
+				cookie.name.includes("-auth-token") && !incomingNames.has(cookie.name),
+		)
+		.map((cookie) => ({
+			name: cookie.name,
+			value: "",
+			options: {
+				path: "/",
+				maxAge: 0,
+			},
+		}));
+
+	if (staleCookies.length === 0) {
+		return cookiesToSet;
+	}
+
+	return [...cookiesToSet, ...staleCookies];
+}
+
 async function getSessionUser(request: NextRequest) {
 	let response = NextResponse.next({ request });
 	let sessionCookies: CookieToSet[] = [];
@@ -115,14 +142,18 @@ async function getSessionUser(request: NextRequest) {
 				return request.cookies.getAll();
 			},
 			setAll(cookiesToSet, headers = {}) {
-				sessionCookies = cookiesToSet;
+				const mergedCookies = pruneStaleSupabaseAuthCookies(
+					request,
+					cookiesToSet,
+				);
+				sessionCookies = mergedCookies;
 				authHeaders = headers;
 
-				for (const { name, value } of cookiesToSet) {
+				for (const { name, value } of mergedCookies) {
 					request.cookies.set(name, value);
 				}
 				response = NextResponse.next({ request });
-				for (const { name, value, options } of cookiesToSet) {
+				for (const { name, value, options } of mergedCookies) {
 					response.cookies.set(name, value, options);
 				}
 				for (const [key, value] of Object.entries(headers)) {

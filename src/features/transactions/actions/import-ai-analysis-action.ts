@@ -1,6 +1,7 @@
 "use server";
 
 import { generateObject, generateText, type LanguageModel } from "ai";
+import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { transactions } from "@/db/schema";
@@ -49,6 +50,10 @@ import {
 	getProviderFromModelId,
 	resolveAiModelIdForCredentials,
 } from "@/shared/lib/ai/model-config-helpers";
+import {
+	createOpenCodeGoSessionId,
+	isOpenCodeGoBaseUrl,
+} from "@/shared/lib/ai/opencode-go-client";
 import { getOpenCodePlanFromBaseUrl } from "@/shared/lib/ai/opencode-plans";
 import { AI_STORED_KEY_UNREADABLE_MESSAGE } from "@/shared/lib/ai/provider-messages";
 import type { ResolvedAiCredentials } from "@/shared/lib/ai/types";
@@ -165,7 +170,6 @@ export type PrepareImportAiAnalysisResult =
 				batchCount: number;
 				rowCount: number;
 				candidateCount: number;
-				existingCandidates: ImportAiExistingCandidate[];
 				existingSnapshots: (ImportDuplicateSnapshot & {
 					period?: string | null;
 				})[];
@@ -175,6 +179,7 @@ export type PrepareImportAiAnalysisResult =
 				categoryBatchCount: number;
 				duplicateBatchCount: number;
 				totalBatchCount: number;
+				opencodeSessionId?: string;
 			};
 	  }
 	| {
@@ -208,17 +213,20 @@ const analyzeImportAiBatchInputSchema = analyzeImportInputSchema.extend({
 	batchIndex: z.number().int().min(0),
 	totalBatches: z.number().int().min(1),
 	preparedModelId: z.string().trim().min(1),
-	existingCandidates: z.array(
-		z.object({
-			id: z.string().uuid(),
-			name: z.string(),
-			amount: z.number(),
-			date: z.string().nullable(),
-			period: z.string().nullable(),
-			installment: z.string().nullable(),
-			categoryId: z.string().uuid().nullable(),
-		}),
-	),
+	existingCandidates: z
+		.array(
+			z.object({
+				id: z.string().uuid(),
+				name: z.string(),
+				amount: z.number(),
+				date: z.string().nullable(),
+				period: z.string().nullable(),
+				installment: z.string().nullable(),
+				categoryId: z.string().uuid().nullable(),
+			}),
+		)
+		.optional(),
+	opencodeSessionId: z.string().uuid().optional(),
 });
 
 export async function fetchExistingCandidatesForAi(input: {
@@ -295,6 +303,7 @@ async function resolveImportAiExecutionContext(
 	options?: {
 		fetchCandidates?: boolean;
 		preparedModelId?: string;
+		opencodeSessionId?: string;
 	},
 ) {
 	const userId = await getUserId();
@@ -331,7 +340,9 @@ async function resolveImportAiExecutionContext(
 		});
 	const modelLabel = buildImportAiModelLabel(modelId, credentials);
 
-	const resolvedModel = resolveInsightsModel(modelId, credentials);
+	const resolvedModel = resolveInsightsModel(modelId, credentials, {
+		opencodeSessionId: options?.opencodeSessionId,
+	});
 	if (!resolvedModel.success) {
 		return {
 			success: false as const,
@@ -380,7 +391,9 @@ async function resolveImportAiExecutionContext(
 			})
 		: credentials;
 	const resolvedFallback = fallbackModelId
-		? resolveInsightsModel(fallbackModelId, fallbackCredentials)
+		? resolveInsightsModel(fallbackModelId, fallbackCredentials, {
+				opencodeSessionId: options?.opencodeSessionId,
+			})
 		: null;
 
 	return {
@@ -547,7 +560,7 @@ export async function prepareImportAiAnalysisAction(
 			return resolved.result;
 		}
 
-		const { modelId, modelLabel, existingCandidates, existingSnapshots } =
+		const { modelId, modelLabel, existingCandidates, existingSnapshots, credentials } =
 			resolved.context;
 		const partitioned = partitionImportAiRows(
 			input.rows as ImportAiAnalysisRowInput[],
@@ -555,6 +568,11 @@ export async function prepareImportAiAnalysisAction(
 		const categoryBatches = chunkImportAiRowsAdaptive(partitioned.categoryRows);
 		const duplicateBatches = chunkImportAiRows(partitioned.duplicateRows);
 		const totalBatchCount = categoryBatches.length + duplicateBatches.length;
+		const opencodeSessionId =
+			getProviderFromModelId(modelId) === "opencode" &&
+			isOpenCodeGoBaseUrl(credentials.opencode.baseUrl)
+				? createOpenCodeGoSessionId()
+				: undefined;
 
 		console.info("Preparando análise de importação com IA", {
 			modelId,
@@ -578,7 +596,6 @@ export async function prepareImportAiAnalysisAction(
 				batchCount: totalBatchCount,
 				rowCount: input.rows.length,
 				candidateCount: existingCandidates.length,
-				existingCandidates,
 				existingSnapshots,
 				categoryRowCount: partitioned.categoryRows.length,
 				duplicateRowCount: partitioned.duplicateRows.length,
@@ -586,6 +603,7 @@ export async function prepareImportAiAnalysisAction(
 				categoryBatchCount: categoryBatches.length,
 				duplicateBatchCount: duplicateBatches.length,
 				totalBatchCount,
+				opencodeSessionId,
 			},
 		};
 	} catch (error) {
@@ -604,6 +622,7 @@ export async function analyzeImportAiBatchAction(
 		const resolved = await resolveImportAiExecutionContext(input, {
 			fetchCandidates: false,
 			preparedModelId: input.preparedModelId,
+			opencodeSessionId: input.opencodeSessionId,
 		});
 		if (!resolved.success) {
 			if ("skipped" in resolved.result) {
@@ -617,6 +636,7 @@ export async function analyzeImportAiBatchAction(
 		}
 
 		const {
+			userId,
 			modelId,
 			modelLabel: resolvedModelLabel,
 			resolvedModel,
@@ -624,6 +644,22 @@ export async function analyzeImportAiBatchAction(
 			fallbackModelLabel,
 		} = resolved.context;
 		modelLabel = resolvedModelLabel;
+
+		const existingCandidatesForBatch =
+			input.analysisMode === "duplicate"
+				? compactExistingCandidates(
+						(
+							await fetchExistingCandidatesForAi({
+								userId,
+								isCreditCard: input.isCreditCard,
+								cardId: input.cardId,
+								invoicePeriods: input.invoicePeriods,
+								accountId: input.accountId,
+								statementPeriod: input.statementPeriod,
+							})
+						).map(mapExistingSnapshotToAiCandidate),
+					)
+				: (input.existingCandidates ?? []);
 
 		if (input.preparedModelId !== modelId) {
 			return buildImportAiFailureResult(
@@ -665,7 +701,7 @@ export async function analyzeImportAiBatchAction(
 							context: promptContext,
 							existingCandidates: filterExistingCandidatesForBatch(
 								input.rows as ImportAiAnalysisRowInput[],
-								input.existingCandidates,
+								existingCandidatesForBatch,
 							),
 							rows: input.rows as ImportAiAnalysisRowInput[],
 							batchIndex: input.batchIndex,
@@ -746,13 +782,22 @@ export async function analyzeImportWithAiAction(
 
 		for (const job of batchJobs) {
 			const batchResult = await analyzeImportAiBatchAction({
-				...input,
+				modelId: input.modelId,
+				isCreditCard: input.isCreditCard,
+				cardId: input.cardId,
+				invoicePeriods: input.invoicePeriods,
+				accountId: input.accountId,
+				statementPeriod: input.statementPeriod,
+				cardName: input.cardName,
+				accountName: input.accountName,
+				categories: input.categories,
+				categoryCompatibility: input.categoryCompatibility,
 				rows: job.rows,
 				analysisMode: job.analysisMode,
 				batchIndex: job.phaseBatchIndex,
 				totalBatches: job.phaseTotalBatches,
 				preparedModelId: prepared.data.modelId,
-				existingCandidates: prepared.data.existingCandidates,
+				opencodeSessionId: prepared.data.opencodeSessionId,
 			});
 
 			if (!batchResult.success) {

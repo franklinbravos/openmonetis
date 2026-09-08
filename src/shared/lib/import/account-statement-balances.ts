@@ -107,10 +107,11 @@ export function expectedStatementMonthNet(
 	return roundMoney(balances.closingBalance - balances.openingBalance);
 }
 
-/** Soma líquida das linhas do extrato no mês declarado (exclui ajustes a relocar). */
+/** Soma líquida das linhas do extrato no intervalo declarado (exclui ajustes a relocar). */
 export function computeStatementMonthNetFromFileRows(
 	rows: ImportRowAmount[],
 	statementPeriod: string,
+	statementDateRange?: { start: string; end: string },
 ): number {
 	return roundMoney(
 		rows.reduce((total, row) => {
@@ -124,6 +125,13 @@ export function computeStatementMonthNetFromFileRows(
 				return total;
 			}
 			if (derivePeriodFromDate(row.date) !== statementPeriod) return total;
+			if (
+				statementDateRange &&
+				(row.date < statementDateRange.start ||
+					row.date > statementDateRange.end)
+			) {
+				return total;
+			}
 			return total + signedImportRowAmount(row);
 		}, 0),
 	);

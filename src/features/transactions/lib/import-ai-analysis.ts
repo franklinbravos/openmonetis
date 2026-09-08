@@ -790,6 +790,87 @@ export function mergeImportAiAnalysisStats(
 	};
 }
 
+export type ImportAiAnalysisPayload = ReturnType<
+	typeof buildImportAiAnalysisPayload
+>;
+
+export function buildImportAiBatchRequest(input: {
+	payload: ImportAiAnalysisPayload;
+	job: ImportAiBatchJob;
+	preparedModelId: string;
+	opencodeSessionId?: string;
+}) {
+	return {
+		modelId: input.payload.modelId,
+		isCreditCard: input.payload.isCreditCard,
+		cardId: input.payload.cardId,
+		invoicePeriods: input.payload.invoicePeriods,
+		accountId: input.payload.accountId,
+		statementPeriod: input.payload.statementPeriod,
+		cardName: input.payload.cardName,
+		accountName: input.payload.accountName,
+		categories: input.payload.categories,
+		categoryCompatibility: input.payload.categoryCompatibility,
+		rows: input.job.rows,
+		analysisMode: input.job.analysisMode,
+		batchIndex: input.job.phaseBatchIndex,
+		totalBatches: input.job.phaseTotalBatches,
+		preparedModelId: input.preparedModelId,
+		opencodeSessionId: input.opencodeSessionId,
+	};
+}
+
+export function formatImportAiClientError(error: unknown): {
+	message: string;
+	log: string;
+} {
+	if (
+		typeof error === "object" &&
+		error &&
+		"success" in error &&
+		(error as { success: unknown }).success === false &&
+		"error" in error &&
+		typeof (error as { error: unknown }).error === "string"
+	) {
+		const batchError = error as { error: string; errorLog?: string };
+		return {
+			message: batchError.error,
+			log: batchError.errorLog ?? batchError.error,
+		};
+	}
+
+	if (error instanceof Error) {
+		const message = error.message.trim();
+		return {
+			message: message || "Não foi possível concluir a análise com IA.",
+			log: message
+				? `${error.name}: ${message}`
+				: (error.stack ?? error.name),
+		};
+	}
+
+	if (typeof error === "string" && error.trim()) {
+		return { message: error.trim(), log: error.trim() };
+	}
+
+	try {
+		const serialized = JSON.stringify(error);
+		if (serialized && serialized !== "{}") {
+			return {
+				message: "Não foi possível concluir a análise com IA.",
+				log: serialized,
+			};
+		}
+	} catch {
+		// ignore
+	}
+
+	return {
+		message: "Não foi possível concluir a análise com IA.",
+		log: "erro desconhecido sem detalhes serializáveis",
+	};
+}
+
 export function buildImportAiAnalysisPayload(input: {
 	modelId?: string | null;
 	rows: ReviewRow[];

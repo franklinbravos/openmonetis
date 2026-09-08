@@ -52,6 +52,15 @@ function formatAiActionErrorCore(
 	}
 
 	if (APICallError.isInstance(error)) {
+		if (
+			error.statusCode === 400 &&
+			/MissingSessionID|x-opencode-session/i.test(
+				`${error.message} ${error.responseBody ?? ""}`,
+			)
+		) {
+			return "O OpenCode Go exige identificação de sessão. Atualize o OpenMonetis e tente novamente.";
+		}
+
 		if (error.statusCode === 401 || error.statusCode === 403) {
 			return "A chave foi rejeitada pela API do provedor. Salve-a novamente em Ajustes → Inteligência artificial.";
 		}

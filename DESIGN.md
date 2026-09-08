@@ -40,19 +40,21 @@ quieto. Se dois elementos disputam atenção, um dos dois está errado.
 
 ### Símbolo
 
-O símbolo é a **Moeda**: duas moedas empilhadas em perspectiva cilíndrica. É
-literalmente o que o produto guarda — valor acumulado — e sobrevive a 16 px porque
-é uma silhueta sólida, não um traçado fino.
+O símbolo é o **Ciclo**: um cifrão dentro de um círculo, cercado por três setas
+curvas em sentido horário — dinheiro em movimento, crescimento contínuo e atenção
+ao fluxo financeiro. Traços redondos, duas cores fixas no mark de app (índigo +
+cinza orbita).
 
-**Construção:** grid de 24×24. Moeda inferior (rx 8, ry 2,5) e superior (rx 6,5,
-ry 2,25), com faces superiores em elipse e laterais em arco. A moeda de cima é
-menor e mais alta — a hierarquia dá profundidade sem gradiente.
+**Construção:** grid de 24×24. Núcleo (círculo r 4,35 + cifrão em traço, índigo
+`#3556B1`), três arcos orbitais com ponta de seta (`#5C6370`) rotacionados de
+120°. Ícones PWA usam fundo preto `#000000`; favicon e aba usam fundo claro
+`#FAFCFE`.
 
 ### Arquivos obrigatórios
 
 | Arquivo | Uso | Observação |
 | --- | --- | --- |
-| `logo-mark.svg` | Símbolo isolado | `currentColor`, sem cor fixa |
+| `logo-mark.svg` | Símbolo isolado | cores fixas (`#3556B1` + `#5C6370`) |
 | `logo-wordmark.svg` | Horizontal, símbolo + nome | Texto convertido em curvas |
 | `logo-stacked.svg` | Vertical, para espaços estreitos | |
 | `logo-mono.svg` | Uma cor, para README e impressão | |
@@ -68,7 +70,8 @@ menor e mais alta — a hierarquia dá profundidade sem gradiente.
 - Tamanho mínimo do símbolo: 16 px. Do wordmark: 96 px de largura.
 - Sobre fundo claro, use `--foreground`. Sobre escuro, `--foreground` do tema
   escuro. O símbolo em `--primary` só na tela de login e no ícone do app.
-- Nunca: gradiente, sombra, contorno, rotação, esticar, recolorir por categoria.
+- Nunca: gradiente, sombra, rotação, esticar, recolorir por categoria. Contorno
+  fino (`stroke`) é parte do símbolo; não adicionar contorno extra ao redor do mark.
 
 ### Teste de aprovação
 

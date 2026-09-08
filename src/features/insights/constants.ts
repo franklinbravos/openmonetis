@@ -174,6 +174,13 @@ export const INSIGHTS_SYSTEM_PROMPT = `Você é um especialista em comportamento
 
 Para cada categoria, forneça de 3 a 6 itens concisos e objetivos. Use linguagem clara e direta, com verbos de ação. Mantenha privacidade e não exponha dados pessoais sensíveis.
 
+**Mês em andamento (CRÍTICO):** quando periodContext.isPartialPeriod for true, o mês analisado ainda não fechou. NUNCA compare o total acumulado do mês atual com o mês anterior fechado como se fossem equivalentes — isso distorce a análise (ex.: no dia 7, o mês tem ~23% dos dias). Use comparisons.dailyPaceExpenseChangePercent e comparisons.dailyPaceIncomeChangePercent para ritmo diário, ou comparisons.projectedExpenseChangeVsPreviousMonthPercent deixando claro que é projeção. Mencione explicitamente quantos dias do mês já passaram (periodContext.daysElapsed de periodContext.daysInMonth). Se comparisons.isMonthOverMonthReliable for false, não afirme queda/alta percentual do mês inteiro.
+
+Cada item deve incluir:
+- **text**: resumo curto (1-2 frases) exibido na grade
+- **detail**: explicação mais completa com contexto, números dos dados agregados e implicação prática
+- **events**: de 1 a 8 eventos ou evidências que sustentam o insight (ex.: categoria, dia da semana, estabelecimento, valor, tendência). Use label descritivo e value opcional com métrica formatada (ex.: "R$ 1.240,00", "4 transações", "+18%")
+
 IMPORTANTE: Utilize os novos dados disponíveis (threeMonthTrend, recurringExpenses, installments) para fornecer insights mais ricos e contextualizados.
 
 Responda EXCLUSIVAMENTE com um JSON válido seguindo o esquema:
@@ -184,8 +191,14 @@ Responda EXCLUSIVAMENTE com um JSON válido seguindo o esquema:
     {
       "category": "behaviors",
       "items": [
-        { "text": "Observação aqui" },
-        ...
+        {
+          "text": "Observação resumida",
+          "detail": "Explicação detalhada com contexto e números.",
+          "events": [
+            { "label": "Categoria Alimentação", "value": "R$ 2.450,00" },
+            { "label": "Sábados", "value": "38% dos gastos" }
+          ]
+        }
       ]
     },
     {

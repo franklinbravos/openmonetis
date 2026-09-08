@@ -1,20 +1,91 @@
 import type { SVGProps } from "react";
+import { useId } from "react";
+import { LOGO_MARK } from "@/shared/components/brand/logo-mark-paths";
+import { cn } from "@/shared/utils/ui";
 
-/** Moeda — pilha de duas moedas (grid 24×24). */
-export function LogoIcon(props: SVGProps<SVGSVGElement>) {
+/** Ciclo — disco sólido com cifrão recortado e três setas orbitais (grid 48×48). */
+export function LogoIcon({ className, ...props }: SVGProps<SVGSVGElement>) {
+	const maskId = useId();
+	const arrowId = useId();
+	const center = LOGO_MARK.viewBox / 2;
+	const dollarTransform = `translate(${center} ${center}) scale(${LOGO_MARK.dollarScale}) translate(-${LOGO_MARK.dollarOrigin} -${LOGO_MARK.dollarOrigin})`;
+
 	return (
 		<svg
 			xmlns="http://www.w3.org/2000/svg"
-			viewBox="0 0 24 24"
+			viewBox={`0 0 ${LOGO_MARK.viewBox} ${LOGO_MARK.viewBox}`}
 			role="img"
 			aria-label="OpenMonetis"
-			fill="currentColor"
+			fill="none"
+			className={cn("shrink-0", className)}
 			{...props}
 		>
-			<path d="M4 13.5C4 12.12 7.582 11 12 11s8 1.12 8 2.5v3c0 1.38-3.582 2.5-8 2.5s-8-1.12-8-2.5v-3z" />
-			<ellipse cx="12" cy="13.5" rx="8" ry="2.5" />
-			<path d="M5.5 7.75C5.5 6.51 8.41 5.5 12 5.5s6.5 1.01 6.5 2.25v2.5c0 1.24-2.91 2.25-6.5 2.25S5.5 11.49 5.5 10.25v-2.5z" />
-			<ellipse cx="12" cy="7.75" rx="6.5" ry="2.25" />
+			<defs>
+				<marker
+					id={arrowId}
+					markerWidth="10"
+					markerHeight="10"
+					refX="8"
+					refY="5"
+					orient="auto"
+					markerUnits="userSpaceOnUse"
+				>
+					<path
+						d={LOGO_MARK.orbitArrowMarker}
+						fill="none"
+						stroke="context-stroke"
+						strokeWidth="1.45"
+						strokeLinecap="round"
+						strokeLinejoin="round"
+					/>
+				</marker>
+				<mask id={maskId}>
+					<rect width={LOGO_MARK.viewBox} height={LOGO_MARK.viewBox} fill="white" />
+					<g
+						transform={dollarTransform}
+						stroke="black"
+						strokeWidth={LOGO_MARK.stroke.dollarKnockout}
+						strokeLinecap="round"
+						strokeLinejoin="round"
+						fill="none"
+					>
+						<path d={LOGO_MARK.dollar} />
+					</g>
+				</mask>
+			</defs>
+			<g
+				className="text-muted-foreground/85"
+				stroke="currentColor"
+				strokeWidth={LOGO_MARK.stroke.orbit}
+				strokeLinecap="round"
+			>
+				<g transform="rotate(0 24 24)">
+					<path
+						d={LOGO_MARK.orbitArc}
+						markerEnd={`url(#${arrowId})`}
+					/>
+				</g>
+				<g transform="rotate(120 24 24)">
+					<path
+						d={LOGO_MARK.orbitArc}
+						markerEnd={`url(#${arrowId})`}
+					/>
+				</g>
+				<g transform="rotate(240 24 24)">
+					<path
+						d={LOGO_MARK.orbitArc}
+						markerEnd={`url(#${arrowId})`}
+					/>
+				</g>
+			</g>
+			<circle
+				className="fill-primary"
+				cx={center}
+				cy={center}
+				r={LOGO_MARK.coreRadius}
+				fill="currentColor"
+				mask={`url(#${maskId})`}
+			/>
 		</svg>
 	);
 }

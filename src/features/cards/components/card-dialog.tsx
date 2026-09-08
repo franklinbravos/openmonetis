@@ -56,6 +56,10 @@ interface CardDialogProps {
 	open?: boolean;
 	onOpenChange?: (open: boolean) => void;
 	onCreated?: (card: CreatedCard) => void;
+	title?: string;
+	description?: string;
+	contentClassName?: string;
+	submitLabel?: string;
 }
 
 const buildInitialValues = ({
@@ -96,6 +100,10 @@ export function CardDialog({
 	open,
 	onOpenChange,
 	onCreated,
+	title: titleOverride,
+	description: descriptionOverride,
+	contentClassName,
+	submitLabel: submitLabelOverride,
 }: CardDialogProps) {
 	const router = useRouter();
 	const [logoDialogOpen, setLogoDialogOpen] = useState(false);
@@ -227,12 +235,15 @@ export function CardDialog({
 		});
 	};
 
-	const title = mode === "create" ? "Novo cartão" : "Atualizar cartão";
+	const title =
+		titleOverride ?? (mode === "create" ? "Novo cartão" : "Atualizar cartão");
 	const description =
-		mode === "create"
+		descriptionOverride ??
+		(mode === "create"
 			? "Inclua um novo cartão de crédito para acompanhar seus gastos."
-			: "Atualize as informações do cartão selecionado.";
-	const submitLabel = mode === "create" ? "Salvar" : "Atualizar";
+			: "Atualize as informações do cartão selecionado.");
+	const submitLabel =
+		submitLabelOverride ?? (mode === "create" ? "Salvar" : "Atualizar");
 
 	const handleMainDialogOpenChange = (open: boolean) => {
 		if (!open && logoDialogOpen) {
@@ -246,7 +257,7 @@ export function CardDialog({
 			<Dialog open={dialogOpen} onOpenChange={handleMainDialogOpenChange}>
 				{trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null}
 				<DialogContent
-					className=""
+					className={contentClassName}
 					onPointerDownOutside={(e) => {
 						if (logoDialogOpen) e.preventDefault();
 					}}

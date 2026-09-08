@@ -90,7 +90,7 @@ Gerenciar cartões de crédito e defaults de importação de fatura.
 2. `src/features/cards/queries.ts` — cards ativos/arquivados, contas, período da fatura atual
 3. `src/features/cards/components/cards-page.tsx` — lista de cards
 4. `src/features/cards/actions.ts` — mutations; `revalidateForEntity("cards", userId)`
-5. `src/features/cards/components/card-import-defaults-dialog.tsx` + `actions/import-pdf-password-action.ts` — senha de PDF de fatura
+5. `src/features/cards/components/card-dialog.tsx` + `actions/import-pdf-password-action.ts` — configurações do cartão e senha de PDF de fatura
 
 ---
 

@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { parseLocalDateString } from "@/shared/utils/date";
+import {
+	TRANSFER_ESTABLISHMENT_SAIDA,
+} from "@/shared/lib/transfers/constants";
 import {
 	computeProjectedStatementClosingBalance,
 	computeStatementMonthNetInCadastro,
 	isAccountStatementMovementImportRow,
+	isSyntheticTransferLegRow,
 	partitionStatementMonthDbRows,
+	resolveSyntheticTransferReconciliationAdjustments,
 } from "./statement-balance-reconciliation";
 
 describe("partitionStatementMonthDbRows", () => {
@@ -164,6 +170,317 @@ describe("computeStatementMonthNetInCadastro", () => {
 		});
 
 		expect(net).toBe(-50);
+	});
+
+	it("ignora perna sintética de transferência coberta por linha do extrato", () => {
+		const septemberPeriod = "2026-09";
+		const syntheticAdjustments = resolveSyntheticTransferReconciliationAdjustments({
+			accountId: "account-a",
+			statementPeriod: septemberPeriod,
+			inMonthByDateRows: [
+				{
+					id: "synthetic-leg",
+					amount: -1.23,
+					purchaseDate: parseLocalDateString("2026-09-04"),
+					name: TRANSFER_ESTABLISHMENT_SAIDA,
+					period: "2026-09",
+					transferId: "transfer-1",
+					ofxFitId: null,
+				},
+			],
+			fileRows: [
+				{
+					date: "2026-09-04",
+					description: "Transferência interna",
+					amount: 1.23,
+					transactionType: "expense",
+				},
+			],
+			peerLegsByTransferId: new Map([
+				[
+					"transfer-1",
+					[
+						{
+							id: "synthetic-leg",
+							ofxFitId: null,
+							accountId: "account-a",
+						},
+						{
+							id: "peer-leg",
+							ofxFitId: "fit-1",
+							accountId: "account-b",
+						},
+					],
+				],
+			]),
+		});
+
+		const net = computeStatementMonthNetInCadastro({
+			statementPeriod: "2026-09",
+			inMonthByDateRows: [
+				{
+					id: "synthetic-leg",
+					amount: -1.23,
+					purchaseDate: parseLocalDateString("2026-09-04"),
+					name: TRANSFER_ESTABLISHMENT_SAIDA,
+					period: "2026-09",
+					transferId: "transfer-1",
+					ofxFitId: null,
+				},
+			],
+			importRows: [],
+			fileRows: [
+				{
+					date: "2026-09-04",
+					description: "Transferência interna",
+					amount: 1.23,
+					transactionType: "expense",
+				},
+			],
+			yieldAmount: 0,
+			syntheticTransferAdjustments: syntheticAdjustments,
+		});
+
+		expect(syntheticAdjustments.orphanSyntheticLegIds.size).toBe(0);
+		expect(net).toBe(-1.23);
+	});
+
+	it("marca perna sintética órfã quando não há linha correspondente no extrato", () => {
+		const adjustments = resolveSyntheticTransferReconciliationAdjustments({
+			accountId: "account-a",
+			statementPeriod: "2026-09",
+			inMonthByDateRows: [
+				{
+					id: "synthetic-leg",
+					amount: -1.23,
+					purchaseDate: parseLocalDateString("2026-09-04"),
+					name: TRANSFER_ESTABLISHMENT_SAIDA,
+					period: "2026-09",
+					transferId: "transfer-1",
+					ofxFitId: null,
+				},
+			],
+			fileRows: [],
+			peerLegsByTransferId: new Map([
+				[
+					"transfer-1",
+					[
+						{
+							id: "synthetic-leg",
+							ofxFitId: null,
+							accountId: "account-a",
+						},
+						{
+							id: "peer-leg",
+							ofxFitId: "fit-1",
+							accountId: "account-b",
+						},
+					],
+				],
+			]),
+		});
+
+		expect(adjustments.orphanSyntheticLegIds).toEqual(new Set(["synthetic-leg"]));
+
+		const net = computeStatementMonthNetInCadastro({
+			statementPeriod: "2026-09",
+			inMonthByDateRows: [
+				{
+					id: "synthetic-leg",
+					amount: -1.23,
+					purchaseDate: parseLocalDateString("2026-09-04"),
+					name: TRANSFER_ESTABLISHMENT_SAIDA,
+					period: "2026-09",
+					transferId: "transfer-1",
+					ofxFitId: null,
+				},
+			],
+			importRows: [],
+			fileRows: [],
+			yieldAmount: 0,
+			syntheticTransferAdjustments: adjustments,
+		});
+
+		expect(net).toBe(0);
+	});
+
+	it("remove perna sintética duplicada quando o extrato está vinculado à perna importada", () => {
+		const adjustments = resolveSyntheticTransferReconciliationAdjustments({
+			accountId: "account-a",
+			statementPeriod: "2026-09",
+			inMonthByDateRows: [
+				{
+					id: "synthetic-leg",
+					amount: -1.23,
+					purchaseDate: parseLocalDateString("2026-09-04"),
+					name: TRANSFER_ESTABLISHMENT_SAIDA,
+					period: "2026-09",
+					transferId: "transfer-1",
+					ofxFitId: null,
+				},
+				{
+					id: "imported-leg",
+					amount: -1.23,
+					purchaseDate: parseLocalDateString("2026-09-04"),
+					name: TRANSFER_ESTABLISHMENT_SAIDA,
+					period: "2026-09",
+					transferId: "transfer-2",
+					ofxFitId: "fit-2",
+				},
+			],
+			fileRows: [
+				{
+					date: "2026-09-04",
+					description: "Transferência interna",
+					amount: 1.23,
+					transactionType: "expense",
+					existingTransactionId: "imported-leg",
+				},
+			],
+			importRows: [],
+			peerLegsByTransferId: new Map(),
+		});
+
+		expect(adjustments.matchedSyntheticLegIdsForCleanup).toEqual(
+			new Set(["synthetic-leg"]),
+		);
+		expect(adjustments.matchedUnlinkedFileNet).toBe(0);
+
+		const net = computeStatementMonthNetInCadastro({
+			statementPeriod: "2026-09",
+			inMonthByDateRows: [
+				{
+					id: "synthetic-leg",
+					amount: -1.23,
+					purchaseDate: parseLocalDateString("2026-09-04"),
+					name: TRANSFER_ESTABLISHMENT_SAIDA,
+					period: "2026-09",
+					transferId: "transfer-1",
+					ofxFitId: null,
+				},
+				{
+					id: "imported-leg",
+					amount: -1.23,
+					purchaseDate: parseLocalDateString("2026-09-04"),
+					name: TRANSFER_ESTABLISHMENT_SAIDA,
+					period: "2026-09",
+					transferId: "transfer-2",
+					ofxFitId: "fit-2",
+				},
+			],
+			importRows: [],
+			fileRows: [
+				{
+					date: "2026-09-04",
+					description: "Transferência interna",
+					amount: 1.23,
+					transactionType: "expense",
+					existingTransactionId: "imported-leg",
+				},
+			],
+			yieldAmount: 0,
+			syntheticTransferAdjustments: adjustments,
+		});
+
+		expect(net).toBe(-1.23);
+	});
+
+	it("não duplica transferência após inserir a perna real do extrato", () => {
+		const adjustments = resolveSyntheticTransferReconciliationAdjustments({
+			accountId: "account-a",
+			statementPeriod: "2026-09",
+			inMonthByDateRows: [
+				{
+					id: "synthetic-leg",
+					amount: -1.23,
+					purchaseDate: parseLocalDateString("2026-09-04"),
+					name: TRANSFER_ESTABLISHMENT_SAIDA,
+					period: "2026-09",
+					transferId: "transfer-1",
+					ofxFitId: null,
+				},
+				{
+					id: "imported-leg",
+					amount: -1.23,
+					purchaseDate: parseLocalDateString("2026-09-04"),
+					name: TRANSFER_ESTABLISHMENT_SAIDA,
+					period: "2026-09",
+					transferId: "transfer-2",
+					ofxFitId: "fit-2",
+				},
+			],
+			fileRows: [
+				{
+					date: "2026-09-04",
+					description: "Transferência interna",
+					amount: 1.23,
+					transactionType: "expense",
+				},
+			],
+			importRows: [],
+			peerLegsByTransferId: new Map(),
+		});
+
+		expect(adjustments.matchedSyntheticLegIdsForCleanup).toEqual(
+			new Set(["synthetic-leg"]),
+		);
+		expect(adjustments.matchedUnlinkedFileNet).toBe(0);
+
+		const net = computeStatementMonthNetInCadastro({
+			statementPeriod: "2026-09",
+			inMonthByDateRows: [
+				{
+					id: "synthetic-leg",
+					amount: -1.23,
+					purchaseDate: parseLocalDateString("2026-09-04"),
+					name: TRANSFER_ESTABLISHMENT_SAIDA,
+					period: "2026-09",
+					transferId: "transfer-1",
+					ofxFitId: null,
+				},
+				{
+					id: "imported-leg",
+					amount: -1.23,
+					purchaseDate: parseLocalDateString("2026-09-04"),
+					name: TRANSFER_ESTABLISHMENT_SAIDA,
+					period: "2026-09",
+					transferId: "transfer-2",
+					ofxFitId: "fit-2",
+				},
+			],
+			importRows: [],
+			fileRows: [
+				{
+					date: "2026-09-04",
+					description: "Transferência interna",
+					amount: 1.23,
+					transactionType: "expense",
+				},
+			],
+			yieldAmount: 0,
+			syntheticTransferAdjustments: adjustments,
+		});
+
+		expect(net).toBe(-1.23);
+	});
+});
+
+describe("isSyntheticTransferLegRow", () => {
+	it("identifica perna sem fitId em transferência entre contas", () => {
+		expect(
+			isSyntheticTransferLegRow({
+				transferId: "transfer-1",
+				ofxFitId: null,
+				name: TRANSFER_ESTABLISHMENT_SAIDA,
+			}),
+		).toBe(true);
+		expect(
+			isSyntheticTransferLegRow({
+				transferId: "transfer-1",
+				ofxFitId: "fit-1",
+				name: TRANSFER_ESTABLISHMENT_SAIDA,
+			}),
+		).toBe(false);
 	});
 });
 

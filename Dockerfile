@@ -74,6 +74,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # Definir variáveis de ambiente de produção
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
+    NODE_OPTIONS="--max-http-header-size=65536" \
     PORT=3000 \
     HOSTNAME="0.0.0.0"
 

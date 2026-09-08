@@ -9,7 +9,8 @@ import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { callRpc, type RpcParams } from "@/shared/lib/supabase/rpc";
 import { safeToNumber } from "@/shared/utils/number";
-import { getPreviousPeriod } from "@/shared/utils/period";
+import { getPeriodProgressContext, getPreviousPeriod } from "@/shared/utils/period";
+import { buildInsightsComparisons } from "@/features/insights/lib/period-comparisons";
 
 const TRANSFERENCIA = "Transferência";
 
@@ -320,8 +321,23 @@ async function aggregateMonthDataInternal(userId: string, period: string) {
 		return sum + tx.amount * remaining;
 	}, 0);
 
+	const periodContext = getPeriodProgressContext(period);
+	const comparisons = buildInsightsComparisons({
+		period,
+		periodContext,
+		currentIncome,
+		currentExpense,
+		previousIncome,
+		previousExpense,
+	});
+
+	const expenseForTrend =
+		comparisons.projectedMonthExpense ?? currentExpense;
+
 	return {
 		month: period,
+		periodContext,
+		comparisons,
 		totalIncome: currentIncome,
 		totalExpense: currentExpense,
 		balance: currentIncome - currentExpense,
@@ -339,6 +355,9 @@ async function aggregateMonthDataInternal(userId: string, period: string) {
 				previousExpense,
 				currentExpense,
 			],
+			currentPeriodIsPartial: periodContext.isPartialPeriod,
+			currentPeriodDaysElapsed: periodContext.daysElapsed,
+			projectedCurrentMonthExpense: comparisons.projectedMonthExpense,
 			avgIncome:
 				(threeMonthsAgoIncome +
 					twoMonthsAgoIncome +
@@ -352,24 +371,16 @@ async function aggregateMonthDataInternal(userId: string, period: string) {
 					currentExpense) /
 				4,
 			trend:
-				currentExpense > previousExpense &&
+				expenseForTrend > previousExpense &&
 				previousExpense > twoMonthsAgoExpense
 					? "crescente"
-					: currentExpense < previousExpense &&
+					: expenseForTrend < previousExpense &&
 							previousExpense < twoMonthsAgoExpense
 						? "decrescente"
 						: "estável",
 		},
 		previousMonthIncome: previousIncome,
 		previousMonthExpense: previousExpense,
-		monthOverMonthIncomeChange:
-			Math.abs(previousIncome) > 0.01
-				? ((currentIncome - previousIncome) / Math.abs(previousIncome)) * 100
-				: 0,
-		monthOverMonthExpenseChange:
-			Math.abs(previousExpense) > 0.01
-				? ((currentExpense - previousExpense) / Math.abs(previousExpense)) * 100
-				: 0,
 		savingsRate:
 			currentIncome > 0.01
 				? ((currentIncome - currentExpense) / currentIncome) * 100

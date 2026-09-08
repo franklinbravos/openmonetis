@@ -6,6 +6,11 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { LanguageModel } from "ai";
 import { createMinimax, minimax } from "vercel-minimax-ai-provider";
 import { getEnvProviderCredential } from "@/shared/lib/ai/env-credentials";
+import {
+	buildOpenCodeGoHeaders,
+	isOpenCodeGoBaseUrl,
+	resolveOpenCodeGoSessionId,
+} from "@/shared/lib/ai/opencode-go-client";
 import { resolveOpenCodePlanBaseUrl } from "@/shared/lib/ai/opencode-plans";
 import { getAiProviderNotConfiguredMessage } from "@/shared/lib/ai/provider-messages";
 import type { ResolvedAiCredentials } from "@/shared/lib/ai/types";
@@ -31,9 +36,15 @@ function getOpenCodeZenRoot(baseURL: string) {
 	return baseURL.replace(/\/v1\/?$/, "");
 }
 
+type ResolveInsightsModelOptions = {
+	/** Reutilizado entre lotes da mesma análise (OpenCode Go). */
+	opencodeSessionId?: string;
+};
+
 function resolveOpenCodeModel(
 	opencodeModelId: string,
 	credentials: ResolvedAiCredentials,
+	options?: ResolveInsightsModelOptions,
 ): ResolveInsightsModelResult {
 	const opencodeCredential = credentials.opencode;
 	const apiKey = opencodeCredential.apiKey;
@@ -54,11 +65,17 @@ function resolveOpenCodeModel(
 
 	const baseURL = resolveOpenCodePlanBaseUrl(opencodeCredential.baseUrl);
 	const zenRoot = getOpenCodeZenRoot(baseURL);
+	const goHeaders = isOpenCodeGoBaseUrl(baseURL)
+		? buildOpenCodeGoHeaders(
+				resolveOpenCodeGoSessionId(options?.opencodeSessionId) as string,
+			)
+		: undefined;
 
 	if (opencodeModelId.startsWith("claude-")) {
 		const anthropicProvider = createAnthropic({
 			baseURL: `${zenRoot}/v1`,
 			apiKey,
+			headers: goHeaders,
 		});
 
 		return { success: true, model: anthropicProvider(opencodeModelId) };
@@ -68,6 +85,7 @@ function resolveOpenCodeModel(
 		const openaiProvider = createOpenAI({
 			baseURL,
 			apiKey,
+			headers: goHeaders,
 		});
 
 		return { success: true, model: openaiProvider.chat(opencodeModelId) };
@@ -77,6 +95,7 @@ function resolveOpenCodeModel(
 		const googleProvider = createGoogleGenerativeAI({
 			baseURL: `${zenRoot}/v1beta`,
 			apiKey,
+			headers: goHeaders,
 		});
 
 		return { success: true, model: googleProvider(opencodeModelId) };
@@ -86,6 +105,7 @@ function resolveOpenCodeModel(
 		name: "opencode",
 		baseURL,
 		apiKey,
+		headers: goHeaders,
 		supportsStructuredOutputs: false,
 	});
 
@@ -174,6 +194,7 @@ function resolveMinimaxModel(
 export function resolveInsightsModel(
 	modelId: string,
 	credentials: ResolvedAiCredentials = resolveAllProviderCredentials(null),
+	options?: ResolveInsightsModelOptions,
 ): ResolveInsightsModelResult {
 	const normalizedModelId = modelId.trim();
 	const selectedModel = AVAILABLE_MODELS.find(
@@ -242,6 +263,7 @@ export function resolveInsightsModel(
 		return resolveOpenCodeModel(
 			stripProviderPrefix(normalizedModelId, "opencode"),
 			credentials,
+			options,
 		);
 	}
 

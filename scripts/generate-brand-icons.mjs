@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Gera ícones PWA e favicon a partir de public/images/logo-mark.svg.
+ * Gera ícones PWA, favicon e OG a partir de public/images/logo-mark.svg.
  * Uso: pnpm run icons:generate
  */
 import { readFileSync, writeFileSync } from "node:fs";
@@ -12,25 +12,23 @@ import toIco from "to-ico";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 
-const PRIMARY = { r: 53, g: 86, b: 177, alpha: 1 };
-const BACKGROUND = { r: 250, g: 252, b: 254, alpha: 1 };
+const COLORS = {
+	primary: "#3556B1",
+	orbit: "#5C6370",
+	appBackground: "#000000",
+	tabBackground: "#FAFCFE",
+	ogText: "#FAFCFE",
+};
 
 const markSvg = readFileSync(join(root, "public/images/logo-mark.svg"), "utf8");
+const markInner = markSvg.replace(/<svg[^>]*>|<\/svg>/g, "").trim();
 
-function whiteMarkSvg() {
-	return markSvg.replace('fill="currentColor"', 'fill="#FFFFFF"');
-}
-
-function primaryMarkSvg() {
-	return markSvg.replace('fill="currentColor"', 'fill="#3556B1"');
-}
-
-async function renderMarkPng(size, { fill = "white", background = null, paddingRatio = 0.18 } = {}) {
-	const svg = fill === "white" ? whiteMarkSvg() : primaryMarkSvg();
-	const canvas = size;
-	const inner = Math.round(canvas * (1 - paddingRatio * 2));
-	const padding = Math.round((canvas - inner) / 2);
-
+async function renderMarkPng(
+	size,
+	{ background = null, paddingRatio = 0.2, svg = markSvg } = {},
+) {
+	const inner = Math.round(size * (1 - paddingRatio * 2));
+	const padding = Math.round((size - inner) / 2);
 	const mark = await sharp(Buffer.from(svg)).resize(inner, inner).png().toBuffer();
 
 	if (!background) {
@@ -39,8 +37,8 @@ async function renderMarkPng(size, { fill = "white", background = null, paddingR
 
 	return sharp({
 		create: {
-			width: canvas,
-			height: canvas,
+			width: size,
+			height: size,
 			channels: 4,
 			background,
 		},
@@ -48,6 +46,45 @@ async function renderMarkPng(size, { fill = "white", background = null, paddingR
 		.composite([{ input: mark, left: padding, top: padding }])
 		.png()
 		.toBuffer();
+}
+
+function tabIconSvg() {
+	return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="OpenMonetis">
+  <rect width="32" height="32" rx="6" fill="${COLORS.tabBackground}"/>
+  <svg x="2.5" y="2.5" width="27" height="27" viewBox="0 0 48 48" fill="none">
+    ${markInner}
+  </svg>
+</svg>`;
+}
+
+function ogImageSvg() {
+	return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="OpenMonetis">
+  <rect width="1200" height="630" fill="${COLORS.appBackground}"/>
+  <svg x="552" y="168" width="96" height="96" viewBox="0 0 48 48" fill="none">
+    ${markInner}
+  </svg>
+  <text
+    x="600"
+    y="430"
+    text-anchor="middle"
+    fill="${COLORS.ogText}"
+    font-family="system-ui, -apple-system, 'Segoe UI', sans-serif"
+    font-size="52"
+    font-weight="600"
+    letter-spacing="-0.02em"
+  >OpenMonetis</text>
+  <text
+    x="600"
+    y="490"
+    text-anchor="middle"
+    fill="${COLORS.orbit}"
+    font-family="system-ui, -apple-system, 'Segoe UI', sans-serif"
+    font-size="24"
+    font-weight="400"
+  >Suas finanças, do seu jeito</text>
+</svg>`;
 }
 
 async function writePng(path, buffer) {
@@ -58,25 +95,33 @@ async function writePng(path, buffer) {
 async function main() {
 	const publicImages = join(root, "public/images");
 	const appDir = join(root, "src/app");
+	const appBackground = {
+		r: 0,
+		g: 0,
+		b: 0,
+		alpha: 1,
+	};
+	const tabBackground = {
+		r: 250,
+		g: 252,
+		b: 254,
+		alpha: 1,
+	};
 
 	const appIcon180 = await renderMarkPng(180, {
-		fill: "white",
-		background: PRIMARY,
+		background: appBackground,
 		paddingRatio: 0.2,
 	});
 	const appIcon192 = await renderMarkPng(192, {
-		fill: "white",
-		background: PRIMARY,
+		background: appBackground,
 		paddingRatio: 0.2,
 	});
 	const appIcon512 = await renderMarkPng(512, {
-		fill: "white",
-		background: PRIMARY,
+		background: appBackground,
 		paddingRatio: 0.2,
 	});
 	const maskable512 = await renderMarkPng(512, {
-		fill: "white",
-		background: PRIMARY,
+		background: appBackground,
 		paddingRatio: 0.28,
 	});
 
@@ -88,18 +133,15 @@ async function main() {
 	await writePng(join(appDir, "icon1.png"), appIcon180);
 
 	const favicon32 = await renderMarkPng(32, {
-		fill: "primary",
-		background: BACKGROUND,
+		background: tabBackground,
 		paddingRatio: 0.14,
 	});
 	const favicon16 = await renderMarkPng(16, {
-		fill: "primary",
-		background: BACKGROUND,
+		background: tabBackground,
 		paddingRatio: 0.12,
 	});
 	const favicon48 = await renderMarkPng(48, {
-		fill: "primary",
-		background: BACKGROUND,
+		background: tabBackground,
 		paddingRatio: 0.16,
 	});
 
@@ -107,15 +149,11 @@ async function main() {
 	writeFileSync(join(appDir, "favicon.ico"), ico);
 	console.log(`wrote ${join(appDir, "favicon.ico")}`);
 
-	const tabIconSvg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="OpenMonetis">
-  <rect width="32" height="32" rx="6" fill="#FAFCFE"/>
-  <g transform="translate(4 4)" fill="#3556B1">
-    ${markSvg.replace(/<svg[^>]*>|<\/svg>/g, "").replace(/fill="currentColor"/g, "")}
-  </g>
-</svg>`;
-	writeFileSync(join(appDir, "icon.svg"), tabIconSvg);
+	writeFileSync(join(appDir, "icon.svg"), tabIconSvg());
 	console.log(`wrote ${join(appDir, "icon.svg")}`);
+
+	const ogImage = await sharp(Buffer.from(ogImageSvg())).png().toBuffer();
+	await writePng(join(publicImages, "og-image.png"), ogImage);
 }
 
 main().catch((error) => {

@@ -1,4 +1,5 @@
 import { connection } from "next/server";
+import { InsightsAiConfigBanner } from "@/features/insights/components/insights-ai-config-banner";
 import { InsightsPage } from "@/features/insights/components/insights-page";
 import { DEFAULT_MODEL } from "@/features/insights/constants";
 import MonthNavigation from "@/shared/components/month-picker/month-navigation";
@@ -29,12 +30,18 @@ export default async function Page({ searchParams }: PageProps) {
 	const periodoParam = getSingleParam(resolvedSearchParams, "periodo");
 	const { period: selectedPeriod } = parsePeriodParam(periodoParam);
 
+	const defaultModelId = aiSettings.insightsDefaultModelId ?? DEFAULT_MODEL;
+
 	return (
 		<main className="flex flex-col gap-6">
+			<InsightsAiConfigBanner
+				selectedModelId={defaultModelId}
+				providerSettings={aiSettings.view.providers}
+			/>
 			<MonthNavigation />
 			<InsightsPage
 				period={selectedPeriod}
-				defaultModelId={aiSettings.insightsDefaultModelId ?? DEFAULT_MODEL}
+				defaultModelId={defaultModelId}
 				providerSettings={aiSettings.view.providers}
 			/>
 		</main>

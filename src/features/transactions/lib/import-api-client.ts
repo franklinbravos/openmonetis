@@ -55,10 +55,33 @@ async function importDispatch(
 
 	const contentType = response.headers.get("content-type") ?? "";
 	if (!contentType.includes("application/json")) {
+		if (response.status === 413) {
+			throw new Error(
+				"A requisição ficou grande demais. Tente importar menos linhas por vez.",
+			);
+		}
 		throw new Error(fallbackMessage);
 	}
 
-	return response.json();
+	const result = await response.json();
+	if (
+		!response.ok &&
+		(typeof result !== "object" ||
+			result === null ||
+			!("success" in result) ||
+			(result as { success?: boolean }).success !== false)
+	) {
+		throw new Error(
+			(typeof result === "object" &&
+			result &&
+			"error" in result &&
+			typeof (result as { error?: unknown }).error === "string"
+				? (result as { error: string }).error
+				: null) ?? fallbackMessage,
+		);
+	}
+
+	return result;
 }
 
 async function importDispatchArray<T>(

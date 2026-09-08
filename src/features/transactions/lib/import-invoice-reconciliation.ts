@@ -119,6 +119,10 @@ export function isImportRowCrossPeriod(
 	row: ReviewRow,
 	invoicePeriodExistingIdSet: Set<string>,
 ): boolean {
+	if (invoicePeriodExistingIdSet.size === 0) {
+		return false;
+	}
+
 	if (!isVerifiedImportDuplicate(row) && !isImportRowLinked(row)) {
 		return false;
 	}

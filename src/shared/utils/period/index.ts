@@ -76,6 +76,67 @@ export function getCurrentPeriod(date: Date = new Date()): string {
 	return formatPeriod(date.getFullYear(), date.getMonth() + 1);
 }
 
+export type PeriodProgressContext = {
+	isCurrentMonth: boolean;
+	isPartialPeriod: boolean;
+	dayOfMonth: number;
+	daysInMonth: number;
+	daysElapsed: number;
+	daysRemaining: number;
+	progressPercent: number;
+	referenceDate: string;
+};
+
+/**
+ * Contexto de progresso do período em relação à data de referência.
+ * Usado para evitar comparações enganosas quando o mês ainda está em andamento.
+ */
+export function getPeriodProgressContext(
+	period: string,
+	referenceDate: Date = new Date(),
+): PeriodProgressContext {
+	const { year, month } = parsePeriod(period);
+	const daysInMonth = new Date(year, month, 0).getDate();
+	const isCurrentMonth = period === getCurrentPeriod(referenceDate);
+
+	if (!isCurrentMonth) {
+		return {
+			isCurrentMonth: false,
+			isPartialPeriod: false,
+			dayOfMonth: daysInMonth,
+			daysInMonth,
+			daysElapsed: daysInMonth,
+			daysRemaining: 0,
+			progressPercent: 100,
+			referenceDate: `${period}-${String(daysInMonth).padStart(2, "0")}`,
+		};
+	}
+
+	const dayOfMonth = referenceDate.getDate();
+	const daysElapsed = dayOfMonth;
+	const daysRemaining = Math.max(daysInMonth - dayOfMonth, 0);
+	const progressPercent = (daysElapsed / daysInMonth) * 100;
+
+	return {
+		isCurrentMonth: true,
+		isPartialPeriod: daysElapsed < daysInMonth,
+		dayOfMonth,
+		daysInMonth,
+		daysElapsed,
+		daysRemaining,
+		progressPercent,
+		referenceDate: `${period}-${String(dayOfMonth).padStart(2, "0")}`,
+	};
+}
+
+/**
+ * Dias no mês de um período YYYY-MM.
+ */
+export function getDaysInPeriod(period: string): number {
+	const { year, month } = parsePeriod(period);
+	return new Date(year, month, 0).getDate();
+}
+
 /**
  * Gets the previous period
  * @param period - Current period in YYYY-MM format

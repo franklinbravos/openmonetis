@@ -1,12 +1,14 @@
 import type { SVGProps } from "react";
+import { cn } from "@/shared/utils/ui";
 
-export function LogoText(props: SVGProps<SVGSVGElement>) {
+export function LogoText({ className, ...props }: SVGProps<SVGSVGElement>) {
 	return (
 		<svg
 			xmlns="http://www.w3.org/2000/svg"
 			viewBox="0 0 220 32"
 			role="img"
 			aria-label="OpenMonetis"
+			className={cn("text-foreground", className)}
 			{...props}
 		>
 			<text

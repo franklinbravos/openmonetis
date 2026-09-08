@@ -94,8 +94,10 @@ import {
 	applyImportAiPatchesToRows,
 	buildImportAiAnalysisPayload,
 	buildImportAiBatchJobs,
+	buildImportAiBatchRequest,
 	buildImportAiPatchesFromResults,
 	buildImportAiRowEditSnapshots,
+	formatImportAiClientError,
 	IMPORT_AI_PARALLEL_BATCH_LIMIT,
 	type ImportAiBatchJob,
 	type ImportAiRowResult,
@@ -428,6 +430,30 @@ function mapSelectOptionsToCategories(options: SelectOption[]): Category[] {
 	}));
 }
 
+function resolveReconciliationExistingTransactionId(row: {
+	linked?: boolean;
+	linkedTransactionId?: string | null;
+	isDuplicate?: boolean;
+	duplicateValidation?: {
+		status: string;
+		existingTransactionId: string;
+	} | null;
+	reimported?: boolean;
+}): string | null {
+	if (row.linkedTransactionId) return row.linkedTransactionId;
+	if (row.linked) return row.linkedTransactionId ?? null;
+
+	if (
+		row.isDuplicate &&
+		row.duplicateValidation?.status === "match" &&
+		!row.reimported
+	) {
+		return row.duplicateValidation.existingTransactionId;
+	}
+
+	return null;
+}
+
 function mapAccountStatementReconciliationRows(rows: ReviewRow[]) {
 	return rows
 		.filter((row) => isAccountStatementMovementImportRow(row.kind))
@@ -436,12 +462,7 @@ function mapAccountStatementReconciliationRows(rows: ReviewRow[]) {
 			description: row.description,
 			amount: row.amount,
 			transactionType: row.transactionType,
-			existingTransactionId:
-				isImportRowResolved(row) || isImportRowLinked(row)
-					? (row.linkedTransactionId ??
-						row.duplicateValidation?.existingTransactionId ??
-						null)
-					: null,
+			existingTransactionId: resolveReconciliationExistingTransactionId(row),
 		}));
 }
 
@@ -1002,7 +1023,13 @@ export function ImportPage({
 					});
 				};
 
-				const processBatchJob = async (job: ImportAiBatchJob) => {
+				const processBatchJob = async (
+					job: ImportAiBatchJob,
+				): Promise<
+					| { status: "ok"; rows: ImportAiRowResult[] }
+					| { status: "failed"; error: string; errorLog: string | null }
+					| null
+				> => {
 					if (runId !== aiAnalysisRunIdRef.current) {
 						return null;
 					}
@@ -1029,25 +1056,60 @@ export function ImportPage({
 						skippedByAlgorithm: prepared.data.skippedRowCount,
 					});
 
-					const batchResult = await analyzeImportAiBatchAction({
-						...payload,
-						rows: job.rows,
-						analysisMode: job.analysisMode,
-						batchIndex: job.phaseBatchIndex,
-						totalBatches: job.phaseTotalBatches,
-						preparedModelId: prepared.data.modelId,
-						existingCandidates: prepared.data.existingCandidates,
-					});
+					const batchResult = await analyzeImportAiBatchAction(
+						buildImportAiBatchRequest({
+							payload,
+							job,
+							preparedModelId: prepared.data.modelId,
+							opencodeSessionId: prepared.data.opencodeSessionId,
+						}),
+					);
 
 					if (runId !== aiAnalysisRunIdRef.current) {
 						return null;
 					}
 
-					if (!batchResult.success) {
-						throw batchResult;
+					if (!batchResult || typeof batchResult !== "object") {
+						return {
+							status: "failed",
+							error: "Não foi possível concluir a análise com IA.",
+							errorLog: "resposta vazia do servidor",
+						};
 					}
 
-					return batchResult.data.rows;
+					if (!batchResult.success) {
+						return {
+							status: "failed",
+							error: batchResult.error,
+							errorLog: batchResult.errorLog ?? null,
+						};
+					}
+
+					return { status: "ok", rows: batchResult.data.rows };
+				};
+
+				const applyBatchJobResults = (
+					results: Array<
+						| { status: "ok"; rows: ImportAiRowResult[] }
+						| { status: "failed"; error: string; errorLog: string | null }
+						| null
+					>,
+				) => {
+					for (const result of results) {
+						if (!result) continue;
+						if (result.status === "failed") {
+							setAiAnalysisError(result.error);
+							setAiAnalysisErrorLog(result.errorLog);
+							setAiAnalysisStatus("error");
+							setAiAnalysisProgress(null);
+							toast.warning(result.error);
+							return false;
+						}
+						if (result.rows.length > 0) {
+							applyBatchResults(result.rows);
+						}
+					}
+					return true;
 				};
 
 				const categoryJobs = batchJobs.filter(
@@ -1067,10 +1129,7 @@ export function ImportPage({
 						index + IMPORT_AI_PARALLEL_BATCH_LIMIT,
 					);
 					const results = await Promise.all(slice.map(processBatchJob));
-					for (const batchRows of results) {
-						if (!batchRows || batchRows.length === 0) continue;
-						applyBatchResults(batchRows);
-					}
+					if (!applyBatchJobResults(results)) return;
 				}
 
 				for (
@@ -1083,10 +1142,7 @@ export function ImportPage({
 						index + IMPORT_AI_PARALLEL_BATCH_LIMIT,
 					);
 					const results = await Promise.all(slice.map(processBatchJob));
-					for (const batchRows of results) {
-						if (!batchRows || batchRows.length === 0) continue;
-						applyBatchResults(batchRows);
-					}
+					if (!applyBatchJobResults(results)) return;
 				}
 
 				if (runId !== aiAnalysisRunIdRef.current) return;
@@ -1096,34 +1152,11 @@ export function ImportPage({
 			} catch (error) {
 				if (runId !== aiAnalysisRunIdRef.current) return;
 
-				console.error("Erro na análise de importação com IA:", error);
+				const { message, log } = formatImportAiClientError(error);
+				console.error("Erro na análise de importação com IA:", log);
 
-				if (
-					typeof error === "object" &&
-					error &&
-					"success" in error &&
-					error.success === false &&
-					"error" in error
-				) {
-					const batchError = error as {
-						error: string;
-						errorLog?: string;
-					};
-					setAiAnalysisError(batchError.error);
-					setAiAnalysisErrorLog(batchError.errorLog ?? null);
-					setAiAnalysisStatus("error");
-					setAiAnalysisProgress(null);
-					toast.warning(batchError.error);
-					return;
-				}
-
-				const message = "Não foi possível concluir a análise com IA.";
 				setAiAnalysisError(message);
-				setAiAnalysisErrorLog(
-					error instanceof Error
-						? `${error.name}: ${error.message}`
-						: String(error),
-				);
+				setAiAnalysisErrorLog(log);
 				setAiAnalysisStatus("error");
 				setAiAnalysisProgress(null);
 				toast.warning(message);
@@ -3974,9 +4007,22 @@ export function ImportPage({
 		[invoicePeriodExistingSnapshots],
 	);
 
+	const invoiceCrossPeriodExistingIdSet = useMemo(() => {
+		if (!statement?.isCreditCard || !isCard) {
+			return undefined;
+		}
+
+		return invoicePeriodExistingIdSet.size > 0
+			? invoicePeriodExistingIdSet
+			: undefined;
+	}, [statement?.isCreditCard, isCard, invoicePeriodExistingIdSet]);
+
 	const crossPeriodReviewStats = useMemo(
-		() => collectCrossPeriodReviewStats(rows, invoicePeriodExistingIdSet),
-		[rows, invoicePeriodExistingIdSet],
+		() =>
+			invoiceCrossPeriodExistingIdSet
+				? collectCrossPeriodReviewStats(rows, invoiceCrossPeriodExistingIdSet)
+				: { count: 0, displayTotal: 0 },
+		[rows, invoiceCrossPeriodExistingIdSet],
 	);
 
 	const invoiceExtraReviewStats = useMemo(() => {
@@ -4061,7 +4107,9 @@ export function ImportPage({
 	const canConfirmImport =
 		canProceedToImport &&
 		(invoiceTotalBalanced || invoiceTotalOverrideConfirmed) &&
-		balancePreviewReady;
+		balancePreviewReady &&
+		(!hasAccountBalanceReconciliation ||
+			accountBalancePreview?.closingMatches === true);
 
 	const canSaveDraft =
 		!!statement &&
@@ -4778,7 +4826,7 @@ export function ImportPage({
 								transferAccountOptions={transferAccountOptions}
 								isCard={isCard}
 								invoicePeriod={invoicePeriod}
-								invoicePeriodExistingIdSet={invoicePeriodExistingIdSet}
+								invoicePeriodExistingIdSet={invoiceCrossPeriodExistingIdSet}
 								periodLockedExistingIds={periodLockedExistingIds}
 								onToggle={toggleRow}
 								onToggleAll={toggleAll}
@@ -5000,6 +5048,7 @@ export function ImportPage({
 											? {
 													date: currentInvoice.paymentTransactionDate,
 													amount: currentInvoice.paymentTransactionAmount,
+													fileTotal: invoiceSourceTotal?.amount ?? null,
 													reopened: invoicePaymentReopened,
 													onReopenedChange: setInvoicePaymentReopened,
 												}

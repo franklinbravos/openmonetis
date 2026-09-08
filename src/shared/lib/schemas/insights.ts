@@ -33,10 +33,20 @@ export const INSIGHT_CATEGORIES = {
 export type InsightCategoryId = keyof typeof INSIGHT_CATEGORIES;
 
 /**
+ * Schema para evento relacionado a um insight
+ */
+const InsightEventSchema = z.object({
+	label: z.string().min(1),
+	value: z.string().optional(),
+});
+
+/**
  * Schema para item individual de insight
  */
 const InsightItemSchema = z.object({
 	text: z.string().min(1),
+	detail: z.string().min(1).optional(),
+	events: z.array(InsightEventSchema).min(1).max(8).optional(),
 });
 
 /**
@@ -65,3 +75,5 @@ export const InsightsResponseSchema = z.object({
  * TypeScript types derived from schemas
  */
 export type InsightsResponse = z.infer<typeof InsightsResponseSchema>;
+export type InsightItem = z.infer<typeof InsightItemSchema>;
+export type InsightEvent = z.infer<typeof InsightEventSchema>;

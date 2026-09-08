@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { Suspense } from "react";
 import {
@@ -12,6 +12,14 @@ import { Toaster } from "@/shared/components/ui/sonner";
 import "./globals.css";
 import { mono, sans, signatureFont } from "@/public/fonts/font_index";
 
+export const viewport: Viewport = {
+	themeColor: [
+		{ media: "(prefers-color-scheme: light)", color: "#3556B1" },
+		{ media: "(prefers-color-scheme: dark)", color: "#000000" },
+	],
+	colorScheme: "light dark",
+};
+
 export const metadata: Metadata = {
 	title: {
 		default: "OpenMonetis | Suas finanças, do seu jeito",
@@ -19,6 +27,38 @@ export const metadata: Metadata = {
 	},
 	description:
 		"Controle suas finanças pessoais de forma simples e transparente.",
+	applicationName: "OpenMonetis",
+	appleWebApp: {
+		capable: true,
+		title: "OpenMonetis",
+		statusBarStyle: "black-translucent",
+	},
+	formatDetection: {
+		telephone: false,
+	},
+	openGraph: {
+		type: "website",
+		locale: "pt_BR",
+		siteName: "OpenMonetis",
+		title: "OpenMonetis | Suas finanças, do seu jeito",
+		description:
+			"Controle suas finanças pessoais de forma simples e transparente.",
+		images: [
+			{
+				url: "/images/og-image.png",
+				width: 1200,
+				height: 630,
+				alt: "OpenMonetis",
+			},
+		],
+	},
+	twitter: {
+		card: "summary_large_image",
+		title: "OpenMonetis | Suas finanças, do seu jeito",
+		description:
+			"Controle suas finanças pessoais de forma simples e transparente.",
+		images: ["/images/og-image.png"],
+	},
 };
 
 export default function RootLayout({

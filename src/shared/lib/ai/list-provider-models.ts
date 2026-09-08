@@ -13,6 +13,11 @@ import {
 	isOpenCodeZenBaseUrl,
 	OPENCODE_PLAN_ZEN_URL,
 } from "./opencode-plans";
+import {
+	buildOpenCodeGoHeaders,
+	createOpenCodeGoSessionId,
+	isOpenCodeGoBaseUrl,
+} from "./opencode-go-client";
 import type { ResolvedAiCredentials } from "./types";
 
 export type ModelContextLimits = {
@@ -283,6 +288,9 @@ async function listOpenCodeModels(
 	const headers: HeadersInit = {};
 	if (apiKey) {
 		headers.Authorization = `Bearer ${apiKey}`;
+	}
+	if (isOpenCodeGoBaseUrl(baseUrl)) {
+		Object.assign(headers, buildOpenCodeGoHeaders(createOpenCodeGoSessionId()));
 	}
 
 	const result = await fetchJson<{

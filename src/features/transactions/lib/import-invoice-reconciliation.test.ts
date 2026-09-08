@@ -128,7 +128,7 @@ describe("isImportRowCrossPeriod", () => {
 		expect(isImportRowCrossPeriod(row, idSet)).toBe(true);
 	});
 
-	it("retorna false quando o conjunto do período está ausente", () => {
+	it("retorna false quando o conjunto do período está vazio", () => {
 		const row = fileRow({
 			reviewKey: "no-set",
 			isDuplicate: true,
@@ -136,7 +136,7 @@ describe("isImportRowCrossPeriod", () => {
 			duplicateValidation: matchedValidation(OTHER_PERIOD_ID),
 		});
 
-		expect(isImportRowCrossPeriod(row, new Set())).toBe(true);
+		expect(isImportRowCrossPeriod(row, new Set())).toBe(false);
 	});
 });
 
