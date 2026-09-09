@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { TransferDialog } from "@/features/accounts/components/transfer-dialog";
 import type { AccountData } from "@/features/accounts/queries";
 import type { DashboardAccount } from "@/features/dashboard/lib/accounts-queries";
@@ -36,7 +37,17 @@ export function DashboardQuickActions({
 	accounts,
 	quickActionOptions,
 }: DashboardQuickActionsProps) {
+	const router = useRouter();
 	const transferAccounts = mapDashboardAccounts(accounts);
+
+	/*
+	 * A home é renderizada no servidor e os diálogos gravam por rota de API, então
+	 * nada no cliente sabe que os números mudaram. Sem este refresh, o lançamento
+	 * recém-criado só aparece na próxima navegação.
+	 */
+	const refreshDashboard = () => {
+		router.refresh();
+	};
 
 	const transactionDialogProps = {
 		mode: "create" as const,
@@ -48,6 +59,7 @@ export function DashboardQuickActions({
 		categoryOptions: quickActionOptions.categoryOptions,
 		estabelecimentos: quickActionOptions.estabelecimentos,
 		defaultPeriod: period,
+		onSuccess: refreshDashboard,
 	};
 
 	return (
@@ -65,6 +77,7 @@ export function DashboardQuickActions({
 			<TransferDialog
 				accounts={transferAccounts}
 				currentPeriod={period}
+				onSuccess={refreshDashboard}
 				trigger={<TransactionQuickActionTrigger kind="transfer" />}
 			/>
 		</div>

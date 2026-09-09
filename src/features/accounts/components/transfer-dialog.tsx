@@ -27,11 +27,11 @@ import {
 	SelectValue,
 } from "@/shared/components/ui/select";
 import { useControlledState } from "@/shared/hooks/use-controlled-state";
-import type { ActionResult } from "@/shared/lib/types/actions";
 import {
 	readLastTransactionDate,
 	writeLastTransactionDate,
 } from "@/shared/lib/transaction-last-date";
+import type { ActionResult } from "@/shared/lib/types/actions";
 
 interface TransferDialogProps {
 	trigger?: React.ReactNode;
@@ -40,6 +40,7 @@ interface TransferDialogProps {
 	currentPeriod: string;
 	open?: boolean;
 	onOpenChange?: (open: boolean) => void;
+	onSuccess?: (result?: { ids?: string[] }) => void;
 }
 
 export function TransferDialog({
@@ -49,6 +50,7 @@ export function TransferDialog({
 	currentPeriod,
 	open,
 	onOpenChange,
+	onSuccess,
 }: TransferDialogProps) {
 	const transactionsList = useTransactionsListOptional();
 	const [dialogOpen, setDialogOpen] = useControlledState(
@@ -157,6 +159,7 @@ export function TransferDialog({
 				toast.success(result.message);
 				writeLastTransactionDate(date);
 				const createdIds = result.data?.ids ?? [];
+				onSuccess?.({ ids: createdIds });
 				if (createdIds.length > 0) {
 					void transactionsList?.refreshByIds(createdIds);
 				}
