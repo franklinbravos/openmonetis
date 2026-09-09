@@ -1,13 +1,10 @@
 "use client";
 
 import {
-	RiAddFill,
 	RiCheckboxBlankCircleLine,
 	RiCheckboxCircleFill,
 } from "@remixicon/react";
 import { PAYMENT_METHODS } from "@/features/transactions/lib/constants";
-import { Button } from "@/shared/components/ui/button";
-import { Label } from "@/shared/components/ui/label";
 import {
 	Select,
 	SelectContent,
@@ -22,37 +19,8 @@ import {
 	PaymentMethodSelectContent,
 } from "../../select-items";
 import { PaymentSchedulingSection } from "./payment-scheduling-section";
+import { SelectFieldHeader } from "./select-field-header";
 import type { PaymentMethodSectionProps } from "./transaction-dialog-types";
-
-function SelectFieldHeader({
-	htmlFor,
-	label,
-	actionLabel,
-	onAction,
-}: {
-	htmlFor: string;
-	label: string;
-	actionLabel?: string;
-	onAction?: () => void;
-}) {
-	return (
-		<div className="flex items-center justify-between gap-2">
-			<Label htmlFor={htmlFor}>{label}</Label>
-			{onAction ? (
-				<Button
-					type="button"
-					variant="ghost"
-					size="icon-sm"
-					className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
-					aria-label={actionLabel}
-					onClick={onAction}
-				>
-					<RiAddFill className="size-4" />
-				</Button>
-			) : null}
-		</div>
-	);
-}
 
 export function PaymentMethodSection({
 	formState,
@@ -108,7 +76,10 @@ export function PaymentMethodSection({
 							hasSecondaryColumn ? "md:w-1/2" : "md:w-full",
 						)}
 					>
-						<Label htmlFor="paymentMethod">Forma de pagamento</Label>
+						<SelectFieldHeader
+							htmlFor="paymentMethod"
+							label="Forma de pagamento"
+						/>
 						<Select
 							value={formState.paymentMethod}
 							onValueChange={(value) => onFieldChange("paymentMethod", value)}

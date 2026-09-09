@@ -1,12 +1,10 @@
 "use client";
 
-import { RiAddFill } from "@remixicon/react";
 import { useEffect, useRef, useState } from "react";
 import { getCategoryBudgetSummaryClient } from "@/features/budgets/lib/budgets-api-client";
 import type { CategoryBudgetSummary } from "@/features/budgets/queries";
+import { CategorySearchSelect } from "@/features/transactions/components/category-search-select";
 import { TRANSACTION_TYPES } from "@/features/transactions/lib/constants";
-import { Button } from "@/shared/components/ui/button";
-import { Label } from "@/shared/components/ui/label";
 import {
 	Select,
 	SelectContent,
@@ -17,7 +15,7 @@ import {
 import { formatCurrency } from "@/shared/utils/currency";
 import { cn } from "@/shared/utils/ui";
 import { TransactionTypeSelectContent } from "../../select-items";
-import { CategorySearchSelect } from "@/features/transactions/components/category-search-select";
+import { SelectFieldHeader } from "./select-field-header";
 import type { CategorySectionProps } from "./transaction-dialog-types";
 
 const BUDGET_DANGER_RATIO = 1;
@@ -25,8 +23,7 @@ const BUDGET_WARNING_RATIO = 0.8;
 
 const getBudgetTone = (ratio: number) => {
 	if (ratio >= BUDGET_DANGER_RATIO) return "text-destructive";
-	if (ratio >= BUDGET_WARNING_RATIO)
-		return "text-warning";
+	if (ratio >= BUDGET_WARNING_RATIO) return "text-warning";
 	return "text-positive";
 };
 
@@ -35,36 +32,6 @@ const formatCompactCurrency = (value: number) =>
 		minimumFractionDigits: 0,
 		maximumFractionDigits: 0,
 	});
-
-function SelectFieldHeader({
-	htmlFor,
-	label,
-	actionLabel,
-	onAction,
-}: {
-	htmlFor: string;
-	label: string;
-	actionLabel?: string;
-	onAction?: () => void;
-}) {
-	return (
-		<div className="flex items-center justify-between gap-2">
-			<Label htmlFor={htmlFor}>{label}</Label>
-			{onAction ? (
-				<Button
-					type="button"
-					variant="ghost"
-					size="icon-sm"
-					className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
-					aria-label={actionLabel}
-					onClick={onAction}
-				>
-					<RiAddFill className="size-4" />
-				</Button>
-			) : null}
-		</div>
-	);
-}
 
 export function CategorySection({
 	formState,
@@ -143,7 +110,10 @@ export function CategorySection({
 		<div className="flex w-full flex-col gap-2 md:flex-row">
 			{showTransactionTypeField ? (
 				<div className="w-full space-y-1 md:w-1/2">
-					<Label htmlFor="transactionType">Tipo de transação</Label>
+					<SelectFieldHeader
+						htmlFor="transactionType"
+						label="Tipo de transação"
+					/>
 					<Select
 						value={formState.transactionType}
 						onValueChange={(value) => onFieldChange("transactionType", value)}
