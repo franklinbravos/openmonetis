@@ -423,6 +423,13 @@ function negateFilter(filter: Filter): Filter {
 	return filter;
 }
 
+function wrapAndGroup(filters: Filter[]): Filter[] {
+	if (filters.length <= 1) {
+		return filters;
+	}
+	return [{ type: "and", filters }];
+}
+
 function tryParseOrGroup(chunks: unknown[]): Filter[] | null {
 	if (chunks.length < 3) return null;
 	if (!chunkText(chunks[0]).includes("(")) return null;
@@ -434,12 +441,16 @@ function tryParseOrGroup(chunks: unknown[]): Filter[] | null {
 	);
 	if (orIndex === -1) return null;
 
-	const leftFilters = parseWhereChunk({
-		queryChunks: innerChunks.slice(0, orIndex),
-	} as SQL);
-	const rightFilters = parseWhereChunk({
-		queryChunks: innerChunks.slice(orIndex + 1),
-	} as SQL);
+	const leftFilters = wrapAndGroup(
+		parseWhereChunk({
+			queryChunks: innerChunks.slice(0, orIndex),
+		} as SQL),
+	);
+	const rightFilters = wrapAndGroup(
+		parseWhereChunk({
+			queryChunks: innerChunks.slice(orIndex + 1),
+		} as SQL),
+	);
 
 	return [{ type: "or", filters: [...leftFilters, ...rightFilters] }];
 }
@@ -1277,7 +1288,10 @@ function formatPostgrestFilterValue(value: unknown): string {
 	if (typeof value === "boolean") return String(value);
 	if (typeof value === "number" && Number.isFinite(value)) return String(value);
 	if (value instanceof Date) {
-		return `"${value.toISOString()}"`;
+		const year = value.getFullYear();
+		const month = String(value.getMonth() + 1).padStart(2, "0");
+		const day = String(value.getDate()).padStart(2, "0");
+		return `"${year}-${month}-${day}"`;
 	}
 
 	const str = String(value);
@@ -1389,15 +1403,37 @@ function normalizeOrderExprs(orderBy: unknown, table: Table): unknown[] {
 	return Array.isArray(resolved) ? resolved : [resolved];
 }
 
+function flattenOrBranchExprs(
+	filter: Filter,
+	mainTable?: string,
+): string[] {
+	if (filter.type === "or") {
+		return filter.filters.flatMap((entry) =>
+			flattenOrBranchExprs(entry, mainTable),
+		);
+	}
+
+	const expr = filterToOrExpr(filter, mainTable);
+	return expr ? [expr] : [];
+}
+
 function filterToOrExpr(filter: Filter, mainTable?: string): string | null {
 	if (filter.type === "matchNothing") {
 		return matchNothingOrExpr(MATCH_NOTHING_COLUMN);
 	}
-	if (
-		filter.type === "or" ||
-		filter.type === "and" ||
-		filter.type === "unsupported"
-	) {
+	if (filter.type === "and") {
+		const parts = filter.filters
+			.map((entry) => filterToOrExpr(entry, mainTable))
+			.filter((part): part is string => Boolean(part));
+		if (parts.length === 0) {
+			return null;
+		}
+		if (parts.length === 1) {
+			return parts[0];
+		}
+		return `and(${parts.join(",")})`;
+	}
+	if (filter.type === "or" || filter.type === "unsupported") {
 		return null;
 	}
 
@@ -1461,7 +1497,13 @@ function filterToOrExpr(filter: Filter, mainTable?: string): string | null {
 }
 
 function serializeFilterValue(value: unknown): unknown {
-	return value instanceof Date ? value.toISOString() : value;
+	if (value instanceof Date) {
+		const year = value.getFullYear();
+		const month = String(value.getMonth() + 1).padStart(2, "0");
+		const day = String(value.getDate()).padStart(2, "0");
+		return `${year}-${month}-${day}`;
+	}
+	return value;
 }
 
 // biome-ignore lint/complexity/noBannedTypes: métodos variados do builder PostgREST.
@@ -1496,16 +1538,8 @@ function applyFilters<
 			continue;
 		}
 		if (filter.type === "or") {
-			/*
-			 * Contar vírgulas para saber se todos os ramos traduziram era frágil: um
-			 * ramo pode legitimamente conter vírgula — `in.(a,b)` chunkado, ou a
-			 * contradição de "não casa nada". Aí a contagem não batia e o `or`
-			 * inteiro era descartado, **alargando** o resultado em silêncio.
-			 */
-			const parts = filter.filters.map((entry) =>
-				filterToOrExpr(entry, mainTable),
-			);
-			if (parts.length > 0 && parts.every((part) => Boolean(part))) {
+			const parts = flattenOrBranchExprs(filter, mainTable);
+			if (parts.length > 0) {
 				query = query.or(parts.join(",")) as T;
 			}
 			continue;

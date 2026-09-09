@@ -28,6 +28,8 @@ import { getFinancialDataOwnerId } from "@/shared/lib/payers/financial-context";
 import { noteSchema, uuidSchema } from "@/shared/lib/schemas/common";
 import { callRpcOne } from "@/shared/lib/supabase/rpc";
 import { addMonthsToDate, parseLocalDateString } from "@/shared/utils/date";
+import { resolveAccountTransactionPeriod } from "@/shared/lib/transactions/account-statement-date";
+import { formatDate } from "@/shared/utils/date";
 import { addMonthsToPeriod, MONTH_NAMES } from "@/shared/utils/period";
 
 // ============================================================================
@@ -285,6 +287,31 @@ export const resolvePeriod = (purchaseDate: string, period?: string | null) => {
 	const month = String(date.getMonth() + 1).padStart(2, "0");
 	return `${year}-${month}`;
 };
+
+type TransactionPeriodInput = {
+	cardId?: string | null;
+	purchaseDate: string;
+	period?: string | null;
+	paymentMethod: string;
+	isSettled?: boolean | null;
+	dueDate?: string | null;
+	boletoPaymentDate?: string | null;
+};
+
+/** Período de fatura para cartão; vencimento/pagamento para conta, Pix e débito. */
+export function resolveTransactionPeriod(input: TransactionPeriodInput): string {
+	if (input.cardId) {
+		return resolvePeriod(input.purchaseDate, input.period);
+	}
+
+	return resolveAccountTransactionPeriod({
+		paymentMethod: input.paymentMethod,
+		isSettled: input.isSettled ?? false,
+		purchaseDate: input.purchaseDate,
+		dueDate: input.dueDate,
+		boletoPaymentDate: input.boletoPaymentDate,
+	});
+}
 
 const isValidDateInput = (value: string) =>
 	!Number.isNaN(parseLocalDateString(value).getTime());
@@ -734,6 +761,34 @@ export const buildTransactionRecords = ({
 		return initialSettled;
 	};
 
+	const resolveRecordPeriod = ({
+		cardPeriodOffset,
+		settled,
+		occurrencePurchaseDate,
+		occurrenceDueDate,
+		occurrenceBoletoPaymentDate,
+	}: {
+		cardPeriodOffset: number;
+		settled: boolean | null;
+		occurrencePurchaseDate: Date;
+		occurrenceDueDate: Date | null;
+		occurrenceBoletoPaymentDate: Date | null;
+	}) => {
+		if (data.cardId) {
+			return addMonthsToPeriod(period, cardPeriodOffset);
+		}
+
+		return resolveAccountTransactionPeriod({
+			paymentMethod: data.paymentMethod,
+			isSettled: settled,
+			purchaseDate: formatDate(occurrencePurchaseDate),
+			dueDate: occurrenceDueDate ? formatDate(occurrenceDueDate) : null,
+			boletoPaymentDate: occurrenceBoletoPaymentDate
+				? formatDate(occurrenceBoletoPaymentDate)
+				: null,
+		});
+	};
+
 	if (data.condition === "Parcelado") {
 		const installmentTotal = data.installmentCount ?? 0;
 		const startInstallment = data.startInstallment ?? 1;
@@ -747,7 +802,6 @@ export const buildTransactionRecords = ({
 			index += 1
 		) {
 			const currentInstallment = startInstallment + index;
-			const installmentPeriod = addMonthsToPeriod(period, index);
 			const installmentDueDate = dueDate
 				? addMonthsToDate(dueDate, index)
 				: null;
@@ -757,12 +811,20 @@ export const buildTransactionRecords = ({
 				const amountCents =
 					amountsByShare[shareIndex]?.[currentInstallment - 1] ?? 0;
 				const settled = resolveSettledValue(index);
+				const installmentBoletoPaymentDate =
+					data.paymentMethod === "Boleto" && settled ? boletoPaymentDate : null;
 				records.push({
 					...basePayload,
 					amount: centsToDecimalString(amountCents * amountSign),
 					payerId: share.payerId,
 					purchaseDate,
-					period: installmentPeriod,
+					period: resolveRecordPeriod({
+						cardPeriodOffset: index,
+						settled,
+						occurrencePurchaseDate: purchaseDate,
+						occurrenceDueDate: installmentDueDate,
+						occurrenceBoletoPaymentDate: installmentBoletoPaymentDate,
+					}),
 					isSettled: settled,
 					installmentCount: installmentTotal,
 					currentInstallment,
@@ -785,7 +847,6 @@ export const buildTransactionRecords = ({
 		const iterationCount = recurrenceTotal ?? 1;
 
 		for (let index = 0; index < iterationCount; index += 1) {
-			const recurrencePeriod = addMonthsToPeriod(period, index);
 			const recurrencePurchaseDate = addMonthsToDate(purchaseDate, index);
 			const recurrenceDueDate = dueDate
 				? addMonthsToDate(dueDate, index)
@@ -794,12 +855,22 @@ export const buildTransactionRecords = ({
 
 			shares.forEach((share) => {
 				const settled = resolveSettledValue(index);
+				const recurrenceBoletoPaymentDate =
+					data.paymentMethod === "Boleto" && settled
+						? boletoPaymentDate
+						: null;
 				records.push({
 					...basePayload,
 					amount: centsToDecimalString(share.amountCents * amountSign),
 					payerId: share.payerId,
 					purchaseDate: recurrencePurchaseDate,
-					period: recurrencePeriod,
+					period: resolveRecordPeriod({
+						cardPeriodOffset: index,
+						settled,
+						occurrencePurchaseDate: recurrencePurchaseDate,
+						occurrenceDueDate: recurrenceDueDate,
+						occurrenceBoletoPaymentDate: recurrenceBoletoPaymentDate,
+					}),
 					isSettled: settled,
 					recurrenceCount: recurrenceTotal,
 					dueDate: recurrenceDueDate,
@@ -819,12 +890,20 @@ export const buildTransactionRecords = ({
 
 	shares.forEach((share) => {
 		const settled = resolveSettledValue(0);
+		const singleBoletoPaymentDate =
+			data.paymentMethod === "Boleto" && settled ? boletoPaymentDate : null;
 		records.push({
 			...basePayload,
 			amount: centsToDecimalString(share.amountCents * amountSign),
 			payerId: share.payerId,
 			purchaseDate,
-			period,
+			period: resolveRecordPeriod({
+				cardPeriodOffset: 0,
+				settled,
+				occurrencePurchaseDate: purchaseDate,
+				occurrenceDueDate: dueDate,
+				occurrenceBoletoPaymentDate: singleBoletoPaymentDate,
+			}),
 			isSettled: settled,
 			dueDate,
 			splitGroupId,

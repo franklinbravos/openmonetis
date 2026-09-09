@@ -41,7 +41,7 @@ import {
 	formatPaidInvoicePeriods,
 	getPaidInvoicePeriods,
 	isInitialBalanceTransaction,
-	resolvePeriod,
+	resolveTransactionPeriod,
 	resolveUserLabel,
 	revalidate,
 	type ToggleSettlementInput,
@@ -72,7 +72,15 @@ export async function createTransactionAction(
 			return { success: false, error: ownershipError };
 		}
 
-		const period = resolvePeriod(data.purchaseDate, data.period);
+		const period = resolveTransactionPeriod({
+			cardId: data.cardId,
+			purchaseDate: data.purchaseDate,
+			period: data.period,
+			paymentMethod: data.paymentMethod,
+			isSettled: data.isSettled,
+			dueDate: data.dueDate,
+			boletoPaymentDate: data.boletoPaymentDate,
+		});
 		const purchaseDate = parseLocalDateString(data.purchaseDate);
 		const dueDate = data.dueDate ? parseLocalDateString(data.dueDate) : null;
 		const shouldSetBoletoPaymentDate =
@@ -274,7 +282,15 @@ export async function updateTransactionAction(
 			};
 		}
 
-		const period = resolvePeriod(data.purchaseDate, data.period);
+		const period = resolveTransactionPeriod({
+			cardId: data.cardId,
+			purchaseDate: data.purchaseDate,
+			period: data.period,
+			paymentMethod: data.paymentMethod,
+			isSettled: data.isSettled,
+			dueDate: data.dueDate,
+			boletoPaymentDate: data.boletoPaymentDate,
+		});
 		const amountSign: 1 | -1 = data.transactionType === "Despesa" ? -1 : 1;
 		const amountCents = Math.round(Math.abs(data.amount) * 100);
 		const normalizedAmount = centsToDecimalString(amountCents * amountSign);
@@ -914,7 +930,15 @@ export async function updateTransactionSplitPairAction(
 			return { success: false, error: "Lançamento não encontrado." };
 		}
 
-		const period = resolvePeriod(data.purchaseDate, data.period);
+		const period = resolveTransactionPeriod({
+			cardId: data.cardId,
+			purchaseDate: data.purchaseDate,
+			period: data.period,
+			paymentMethod: data.paymentMethod,
+			isSettled: data.isSettled,
+			dueDate: data.dueDate,
+			boletoPaymentDate: data.boletoPaymentDate,
+		});
 		const amountSign: 1 | -1 = data.transactionType === "Despesa" ? -1 : 1;
 		const amountCents = Math.round(Math.abs(data.amount) * 100);
 		const normalizedAmount = centsToDecimalString(amountCents * amountSign);

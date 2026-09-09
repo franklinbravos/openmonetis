@@ -18,6 +18,7 @@ import {
 } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { importBatches, payers, transactions } from "@/db/schema";
+import { buildAccountTransactionDisplayDateInPeriodFilter } from "@/shared/lib/transactions/account-statement-date";
 import {
 	__applyFiltersForTests as applyFiltersForTests,
 	__decodeColumnValueForTests as decodeColumnValue,
@@ -450,6 +451,24 @@ describe("comparação com null não vira literal", () => {
 		expect(expr).toContain("and(pagador_id.is.null,pagador_id.not.is.null)");
 		expect(expr).toContain('id.eq."x"');
 		avisos.mockRestore();
+	});
+
+	it("or com ramos and() traduz todos os ramos (extrato de conta)", () => {
+		const builder = fakeBuilder();
+
+		applyFiltersForTests(
+			builder,
+			buildAccountTransactionDisplayDateInPeriodFilter("2026-10", {
+				settledOnly: true,
+			}),
+		);
+
+		expect(builder.calls).toHaveLength(1);
+		expect(builder.calls[0]?.method).toBe("or");
+		const expr = String(builder.calls[0]?.args[0]);
+		expect(expr).toContain("and(");
+		expect(expr).toContain("data_compra.gte.");
+		expect(expr).toContain("data_compra.lte.");
 	});
 
 	it("in descarta os nulos e mantém o resto", () => {

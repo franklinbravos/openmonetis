@@ -449,8 +449,17 @@ export const buildTransactionWhere = async ({
 	const isGeneralList = !cardId && !accountId && !payerId;
 	const usePurchaseDateMonthFilter =
 		isGeneralList && viewMode === "competencia";
+	const useAccountStatementDateFilter = Boolean(accountId);
 
 	if (usePurchaseDateMonthFilter) {
+		const { start, end } = getPeriodPurchaseDateBounds(period);
+		where.push(
+			gte(transactions.purchaseDate, parseLocalDateString(start)),
+			lte(transactions.purchaseDate, parseLocalDateString(end)),
+		);
+	} else if (useAccountStatementDateFilter) {
+		// Extrato lista só quitados: data_compra já é a data de pagamento (Pix, débito,
+		// transferência e boleto quitado). Evita or(and(...)) que o bridge achata mal.
 		const { start, end } = getPeriodPurchaseDateBounds(period);
 		where.push(
 			gte(transactions.purchaseDate, parseLocalDateString(start)),
