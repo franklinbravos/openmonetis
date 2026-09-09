@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { transactions } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import { addMonthsToDate } from "@/shared/utils/date";
@@ -10,6 +10,9 @@ import {
 } from "@/shared/utils/period";
 
 const CONDITION_RECURRING = "Recorrente";
+
+/** Evita materializar a mesma série em paralelo no mesmo processo. */
+const materializeSeriesLocks = new Map<string, Promise<void>>();
 
 type RecurrenceTemplate = {
 	id: string;
@@ -150,12 +153,15 @@ async function materializeOpenRecurrenceSeries(
 	seriesId: string,
 	targetPeriod: string,
 ): Promise<void> {
-	await db.transaction(async (tx) => {
-		await tx.execute(
-			sql`SELECT pg_advisory_xact_lock(hashtext(${seriesId}))`,
-		);
+	const lockKey = `${dataOwnerUserId}:${seriesId}`;
+	const inflight = materializeSeriesLocks.get(lockKey);
+	if (inflight) {
+		await inflight;
+		return;
+	}
 
-		const seriesTransactions = await tx.query.transactions.findMany({
+	const work = (async () => {
+		const seriesTransactions = await db.query.transactions.findMany({
 			where: and(
 				eq(transactions.userId, dataOwnerUserId),
 				eq(transactions.seriesId, seriesId),
@@ -202,13 +208,20 @@ async function materializeOpenRecurrenceSeries(
 				continue;
 			}
 
-			const inserted = await tx
+			const inserted = await db
 				.insert(transactions)
 				.values(rowsToInsert)
 				.returning();
 			knownRows.push(...inserted);
 		}
-	});
+	})();
+
+	materializeSeriesLocks.set(lockKey, work);
+	try {
+		await work;
+	} finally {
+		materializeSeriesLocks.delete(lockKey);
+	}
 }
 
 /**

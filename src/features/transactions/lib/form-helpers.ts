@@ -126,6 +126,60 @@ export function shouldShowBoletoPaymentDate(
 	return paymentMethod === "Boleto" && Boolean(isSettled);
 }
 
+function toTransactionDateOnlyString(
+	value: string | Date | null | undefined,
+): string | null {
+	if (!value) return null;
+	if (value instanceof Date) {
+		if (Number.isNaN(value.getTime())) return null;
+		return value.toISOString().slice(0, 10);
+	}
+	if (typeof value === "string" && value.length >= 10) {
+		return value.slice(0, 10);
+	}
+	return null;
+}
+
+/** Data em que o lançamento em conta foi quitado (quando aplicável). */
+export function resolveTransactionPaymentDate(input: {
+	paymentMethod: string;
+	isSettled: boolean | null | undefined;
+	purchaseDate: string | Date | null | undefined;
+	boletoPaymentDate?: string | Date | null | undefined;
+}): string | null {
+	if (input.paymentMethod === "Cartão de crédito" || !input.isSettled) {
+		return null;
+	}
+
+	if (input.paymentMethod === "Boleto") {
+		return (
+			toTransactionDateOnlyString(input.boletoPaymentDate) ??
+			toTransactionDateOnlyString(input.purchaseDate)
+		);
+	}
+
+	return toTransactionDateOnlyString(input.purchaseDate);
+}
+
+/**
+ * Lançamentos antigos podem ter sido pagos sem `dueDate` gravado.
+ * Para quitados em conta, assume vencimento = data de pagamento.
+ */
+export function resolveTransactionDueDate(input: {
+	dueDate?: string | Date | null | undefined;
+	paymentMethod: string;
+	isSettled: boolean | null | undefined;
+	purchaseDate: string | Date | null | undefined;
+	boletoPaymentDate?: string | Date | null | undefined;
+}): string | null {
+	const dueDate = toTransactionDateOnlyString(input.dueDate);
+	if (dueDate) {
+		return dueDate;
+	}
+
+	return resolveTransactionPaymentDate(input);
+}
+
 /**
  * Data gravada em `purchaseDate` para boletos: pagamento quando quitado,
  * vencimento quando ainda em aberto.
@@ -282,6 +336,15 @@ export function buildTransactionInitialState(
 		amountValue = (Math.round(baseAmount * 100) / 100).toFixed(2);
 	}
 
+	const resolvedDueDate =
+		resolveTransactionDueDate({
+			dueDate: transaction?.dueDate,
+			paymentMethod,
+			isSettled: transaction?.isSettled,
+			purchaseDate: transaction?.purchaseDate ?? purchaseDate,
+			boletoPaymentDate: transaction?.boletoPaymentDate ?? boletoPaymentDate,
+		}) ?? "";
+
 	return {
 		purchaseDate,
 		period:
@@ -333,7 +396,7 @@ export function buildTransactionInitialState(
 			? String(transaction.recurrenceCount)
 			: "",
 		installmentAmountMode: "total",
-		dueDate: transaction?.dueDate ?? "",
+		dueDate: resolvedDueDate,
 		boletoPaymentDate,
 		note: transaction?.note ?? "",
 		isSettled:
@@ -345,7 +408,7 @@ export function buildTransactionInitialState(
 					: getDefaultIsSettled(
 							paymentMethod,
 							purchaseDate,
-							transaction?.dueDate ?? "",
+							resolvedDueDate,
 						),
 	};
 }

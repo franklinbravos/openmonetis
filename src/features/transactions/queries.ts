@@ -284,11 +284,6 @@ export async function fetchTransactionsPage(
 	const [countRow] = await db
 		.select({ total: count() })
 		.from(transactions)
-		.leftJoin(
-			financialAccounts,
-			eq(transactions.accountId, financialAccounts.id),
-		)
-		.leftJoin(cards, eq(transactions.cardId, cards.id))
 		.where(buildTransactionsWhere({ filters }));
 
 	const totalItems = Number(countRow?.total ?? 0);
@@ -322,11 +317,6 @@ export async function fetchTransactionsPageWithRelations({
 	const [countRow] = await db
 		.select({ total: count() })
 		.from(transactions)
-		.leftJoin(
-			financialAccounts,
-			eq(transactions.accountId, financialAccounts.id),
-		)
-		.leftJoin(cards, eq(transactions.cardId, cards.id))
 		.where(
 			buildTransactionsWhere({
 				filters,

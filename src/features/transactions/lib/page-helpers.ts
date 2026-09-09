@@ -19,6 +19,7 @@ import {
 	TRANSACTION_CONDITIONS,
 	TRANSACTION_TYPES,
 } from "@/features/transactions/lib/constants";
+import { resolveTransactionDueDate } from "@/features/transactions/lib/form-helpers";
 import {
 	resolveInvoicePaymentTransactionMeta,
 	type InvoicePaymentCardSnapshot,
@@ -696,7 +697,13 @@ export const mapTransactionsData = (
 			installmentCount: item.installmentCount ?? null,
 			recurrenceCount: item.recurrenceCount ?? null,
 			currentInstallment: item.currentInstallment ?? null,
-			dueDate: item.dueDate ? item.dueDate.toISOString().slice(0, 10) : null,
+			dueDate: resolveTransactionDueDate({
+				dueDate: item.dueDate,
+				paymentMethod: item.paymentMethod,
+				isSettled: item.isSettled,
+				purchaseDate: item.purchaseDate,
+				boletoPaymentDate: item.boletoPaymentDate,
+			}),
 			boletoPaymentDate: item.boletoPaymentDate
 				? item.boletoPaymentDate.toISOString().slice(0, 10)
 				: null,

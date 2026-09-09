@@ -161,7 +161,7 @@ async function explainHeadlessPostgrestError(
 	}
 }
 
-const MAX_TRANSIENT_RETRIES = 2;
+const MAX_TRANSIENT_RETRIES = 3;
 const TRANSIENT_RETRY_DELAY_MS = 150;
 
 /**

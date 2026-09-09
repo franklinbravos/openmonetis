@@ -92,12 +92,14 @@ export default async function Page({ searchParams }: PageProps) {
 			? fetchTransactionsCashFlowMonthSummaries(userId)
 			: fetchTransactionsMonthSummaries(userId);
 
+	await ensureOpenRecurrenceInstancesForPeriod(
+		dataOwnerUserId,
+		selectedPeriod,
+	);
+
 	const [transactionsPage, estabelecimentos, monthSummaries] =
 		await Promise.all([
-			ensureOpenRecurrenceInstancesForPeriod(
-				dataOwnerUserId,
-				selectedPeriod,
-			).then(() => fetchTransactionsPage(filters, pagination)),
+			fetchTransactionsPage(filters, pagination),
 			fetchRecentEstablishments(dataOwnerUserId),
 			monthSummariesPromise,
 		]);
