@@ -3,21 +3,29 @@ import {
 	asc,
 	desc,
 	eq,
+	gt,
 	gte,
 	ilike,
 	inArray,
 	isNotNull,
 	isNull,
+	lt,
+	lte,
+	ne,
 	not,
 	or,
 	sql,
 } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { importBatches, payers, transactions } from "@/db/schema";
 import {
+	__applyFiltersForTests as applyFiltersForTests,
 	__decodeColumnValueForTests as decodeColumnValue,
+	describePostgrestError,
 	extractOrderSpec,
+	isTransientPostgrestFailure,
 	__parseWhereForTests as parseWhere,
+	runWithTransientRetry,
 } from "./drizzle-bridge";
 
 describe("extractOrderSpec", () => {
@@ -116,9 +124,18 @@ describe("parseWhere: condições traduzíveis", () => {
 	});
 
 	it("inArray vazio vira condição impossível", () => {
+		// Era `eq(id, null)`, e era exatamente daí que saía o `id=eq.null` que o
+		// PostgREST recusava com 22P02 numa coluna uuid. A condição impossível
+		// agora é atômica e não depende do tipo de nenhuma coluna.
 		expect(parseWhere(inArray(transactions.id, []))).toEqual([
-			{ type: "eq", column: "id", value: null },
+			{ type: "matchNothing" },
 		]);
+	});
+
+	it("sql`false` também vira condição impossível", () => {
+		// A busca sem resultado e o filtro "com anexo" sem anexos usam `sql`false``
+		// para dizer "nenhum resultado" — e derrubavam a página de Lançamentos.
+		expect(parseWhere(sql`false`)).toEqual([{ type: "matchNothing" }]);
 	});
 
 	it("and preserva todas as condições", () => {
@@ -210,5 +227,247 @@ describe("decodeColumnValue: fidelidade de tipo", () => {
 		expect(decodeColumnValue(transactions.purchaseDate, "sem data")).toBe(
 			"sem data",
 		);
+	});
+});
+
+describe("describePostgrestError", () => {
+	it("erro vazio é falha de transporte, não de consulta", () => {
+		// O supabase-js devolve `{}` quando o fetch falha. Antes o log dizia
+		// `error: Object` e a exceção dizia "Falha na consulta PostgREST" — as
+		// duas mandavam procurar SQL errado quando o problema era rede.
+		const described = describePostgrestError({});
+
+		expect(described.message).toMatch(/transporte/i);
+		expect(described.code).toBeNull();
+	});
+
+	it("erro de verdade chega inteiro no log", () => {
+		const described = describePostgrestError({
+			message: 'column "x" does not exist',
+			code: "42703",
+			details: null,
+			hint: "Perhaps you meant y",
+		});
+
+		expect(described).toEqual({
+			message: 'column "x" does not exist',
+			code: "42703",
+			details: null,
+			hint: "Perhaps you meant y",
+		});
+	});
+
+	it("cai para details e depois para hint quando não há message", () => {
+		expect(describePostgrestError({ details: "só detalhe" }).message).toBe(
+			"só detalhe",
+		);
+		expect(describePostgrestError({ hint: "só dica" }).message).toBe("só dica");
+	});
+});
+
+describe("isTransientPostgrestFailure", () => {
+	it("5xx e 429 são soluço de transporte", () => {
+		expect(isTransientPostgrestFailure({}, 502)).toBe(true);
+		expect(isTransientPostgrestFailure({}, 503)).toBe(true);
+		expect(isTransientPostgrestFailure({}, 429)).toBe(true);
+	});
+
+	it("erro sem corpo é soluço, mesmo sem status", () => {
+		expect(isTransientPostgrestFailure({})).toBe(true);
+	});
+
+	it("4xx nunca é retentado, mesmo sem corpo de erro", () => {
+		// O caso real: a contagem usa HEAD, e resposta HEAD não tem corpo — então
+		// um 400 chega sem mensagem e parecia soluço de transporte. Era repetido
+		// três vezes, sempre com o mesmo 400.
+		expect(isTransientPostgrestFailure({}, 400)).toBe(false);
+		expect(isTransientPostgrestFailure({}, 404)).toBe(false);
+		expect(isTransientPostgrestFailure({}, 401)).toBe(false);
+	});
+
+	it("erro de SQL nunca é retentado", () => {
+		// Repetir daria exatamente o mesmo erro — e esconderia o problema real
+		// atrás de três tentativas.
+		expect(
+			isTransientPostgrestFailure(
+				{ message: 'column "x" does not exist', code: "42703" },
+				400,
+			),
+		).toBe(false);
+		expect(isTransientPostgrestFailure({ message: "boom" }, 404)).toBe(false);
+	});
+});
+
+describe("runWithTransientRetry", () => {
+	it("repete o soluço e devolve o acerto", async () => {
+		let chamadas = 0;
+		const result = await runWithTransientRetry(() => {
+			chamadas++;
+			return Promise.resolve(
+				chamadas < 3
+					? { error: {}, status: 503 }
+					: { error: null, status: 200, count: 7 },
+			);
+		});
+
+		expect(chamadas).toBe(3);
+		expect(result).toMatchObject({ error: null, count: 7 });
+	});
+
+	it("não repete erro de consulta", async () => {
+		let chamadas = 0;
+		await runWithTransientRetry(() => {
+			chamadas++;
+			return Promise.resolve({
+				error: { message: "sintaxe", code: "42601" },
+				status: 400,
+			});
+		});
+
+		expect(chamadas).toBe(1);
+	});
+
+	it("desiste depois do limite, devolvendo o último erro", async () => {
+		let chamadas = 0;
+		const result = await runWithTransientRetry(() => {
+			chamadas++;
+			return Promise.resolve({ error: {}, status: 502 });
+		});
+
+		// A primeira mais duas tentativas.
+		expect(chamadas).toBe(3);
+		expect(result.error).toEqual({});
+	});
+});
+
+const BUILDER_METHODS = [
+	"eq",
+	"neq",
+	"gt",
+	"gte",
+	"lt",
+	"lte",
+	"is",
+	"in",
+	"or",
+	"ilike",
+	"like",
+	"not",
+] as const;
+
+type FakeBuilder = Record<
+	(typeof BUILDER_METHODS)[number],
+	(...args: unknown[]) => FakeBuilder
+> & { calls: Array<{ method: string; args: unknown[] }> };
+
+/** Builder falso que registra o que a ponte pediu ao PostgREST. */
+function fakeBuilder(): FakeBuilder {
+	const calls: Array<{ method: string; args: unknown[] }> = [];
+	const builder = { calls } as FakeBuilder;
+	for (const method of BUILDER_METHODS) {
+		builder[method] = (...args: unknown[]) => {
+			calls.push({ method, args });
+			return builder;
+		};
+	}
+	return builder;
+}
+
+describe("comparação com null não vira literal", () => {
+	// PostgREST manda converter o texto `null` para o tipo da coluna: em uuid é
+	// `22P02 invalid input syntax`, que volta 400. Era o que derrubava a página
+	// de Lançamentos.
+	it("eq(col, null) não emite eq.null e não casa nada", () => {
+		const avisos = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const builder = fakeBuilder();
+
+		applyFiltersForTests(builder, eq(transactions.payerId, null as never));
+
+		expect(builder.calls.map((call) => call.method)).toEqual(["is", "not"]);
+		expect(builder.calls[0]?.args).toEqual(["pagador_id", null]);
+		expect(builder.calls[1]?.args).toEqual(["pagador_id", "is", null]);
+		expect(avisos).toHaveBeenCalledOnce();
+		avisos.mockRestore();
+	});
+
+	it("o aviso nomeia coluna e operador", () => {
+		const avisos = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+		applyFiltersForTests(
+			fakeBuilder(),
+			eq(transactions.cardId, undefined as never),
+		);
+
+		expect(avisos.mock.calls[0]?.[1]).toMatchObject({
+			column: "cartao_id",
+			operator: "eq",
+		});
+		avisos.mockRestore();
+	});
+
+	it("neq, gt, gte, lt e lte recebem o mesmo tratamento", () => {
+		const avisos = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+		for (const where of [
+			ne(transactions.payerId, null as never),
+			gt(transactions.purchaseDate, null as never),
+			gte(transactions.purchaseDate, null as never),
+			lt(transactions.purchaseDate, null as never),
+			lte(transactions.purchaseDate, null as never),
+		]) {
+			const builder = fakeBuilder();
+			applyFiltersForTests(builder, where);
+			expect(builder.calls.map((call) => call.method)).toEqual(["is", "not"]);
+		}
+		avisos.mockRestore();
+	});
+
+	it("isNull continua virando is.null", () => {
+		const builder = fakeBuilder();
+
+		applyFiltersForTests(builder, isNull(transactions.payerId));
+
+		expect(builder.calls).toEqual([
+			{ method: "is", args: ["pagador_id", null] },
+		]);
+	});
+
+	it("dentro de or(), o ramo com null não derruba os outros", () => {
+		// Devolver null para o ramo faria a ponte descartar o `or` inteiro e
+		// alargar o resultado em silêncio.
+		const avisos = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const builder = fakeBuilder();
+
+		applyFiltersForTests(
+			builder,
+			or(eq(transactions.payerId, null as never), eq(transactions.id, "x")),
+		);
+
+		expect(builder.calls).toHaveLength(1);
+		const expr = String(builder.calls[0]?.args[0]);
+		expect(builder.calls[0]?.method).toBe("or");
+		expect(expr).not.toContain("eq.null");
+		expect(expr).toContain("and(pagador_id.is.null,pagador_id.not.is.null)");
+		expect(expr).toContain('id.eq."x"');
+		avisos.mockRestore();
+	});
+
+	it("in descarta os nulos e mantém o resto", () => {
+		const builder = fakeBuilder();
+
+		applyFiltersForTests(
+			builder,
+			inArray(transactions.id, ["a", null as never, "b"]),
+		);
+
+		expect(builder.calls).toEqual([{ method: "in", args: ["id", ["a", "b"]] }]);
+	});
+
+	it("in só de nulos não casa nada, em vez de quebrar a consulta", () => {
+		const builder = fakeBuilder();
+
+		applyFiltersForTests(builder, inArray(transactions.id, [null as never]));
+
+		expect(builder.calls.map((call) => call.method)).toEqual(["is", "not"]);
 	});
 });

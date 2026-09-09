@@ -33,6 +33,8 @@ type Filter =
 	| ({ type: "like" } & ColumnFilter & { value: string; negated?: boolean })
 	| { type: "or"; filters: Filter[] }
 	| { type: "and"; filters: Filter[] }
+	/** `sql`false`` — não casa nada, sem depender do tipo de nenhuma coluna. */
+	| { type: "matchNothing" }
 	| { type: "unsupported" };
 
 const DRIZZLE_QUERY_KEY = "queryChunks";
@@ -76,6 +78,123 @@ const HARMLESS_CHUNK_TEXT = new Set([
 	"is not null",
 ]);
 
+/**
+ * Erro do PostgREST sem mensagem é falha de transporte, não de consulta.
+ *
+ * O supabase-js devolve `{}` quando o `fetch` falha ou a resposta não é o JSON
+ * de erro esperado — sem `message`, `details`, `hint` nem `code`. Dizer "Falha
+ * na consulta" nesse caso manda quem investiga procurar SQL errado, quando o
+ * problema é rede. Aconteceu na página de Lançamentos: a página inteira caiu no
+ * error boundary e o log dizia apenas `error: Object`.
+ */
+const EMPTY_POSTGREST_ERROR_MESSAGE =
+	"Falha de transporte ao falar com o PostgREST (resposta sem corpo de erro).";
+
+/** Achata o erro do PostgREST para o log: as chaves dele não são enumeráveis. */
+export function describePostgrestError(error: unknown): {
+	message: string;
+	code: string | null;
+	details: string | null;
+	hint: string | null;
+} {
+	const record = (error ?? {}) as {
+		message?: unknown;
+		code?: unknown;
+		details?: unknown;
+		hint?: unknown;
+	};
+	const asText = (value: unknown) =>
+		typeof value === "string" && value.trim() ? value : null;
+
+	return {
+		message:
+			asText(record.message) ??
+			asText(record.details) ??
+			asText(record.hint) ??
+			EMPTY_POSTGREST_ERROR_MESSAGE,
+		code: asText(record.code),
+		details: asText(record.details),
+		hint: asText(record.hint),
+	};
+}
+
+/**
+ * Soluço de transporte, não erro de consulta.
+ *
+ * Vale para 5xx e 429 do CDN/PostgREST e para o erro sem corpo que o supabase-js
+ * devolve quando o `fetch` falha. Erro de SQL sempre traz `code` (o SQLSTATE) e
+ * mensagem — esse nunca é retentado, porque tentar de novo daria o mesmo erro.
+ */
+export function isTransientPostgrestFailure(
+	error: unknown,
+	status?: number,
+): boolean {
+	if (typeof status === "number") {
+		// 4xx é recusa determinística: repetir dá o mesmo 400 e só esconde o
+		// problema atrás de três tentativas. Só o 429 volta a valer a pena.
+		if (status === 429) return true;
+		if (status >= 400 && status < 500) return false;
+		if (status >= 500) return true;
+	}
+	const described = describePostgrestError(error);
+	return (
+		described.code === null &&
+		described.message === EMPTY_POSTGREST_ERROR_MESSAGE
+	);
+}
+
+/**
+ * Recupera a explicação que o HEAD engoliu, repetindo a consulta como GET.
+ *
+ * Só para log: o resultado é descartado. Se a releitura também falhar sem
+ * explicar, devolve o que já se sabia em vez de mascarar o erro original.
+ */
+async function explainHeadlessPostgrestError(
+	build: () => PromiseLike<{ error: unknown }>,
+): Promise<ReturnType<typeof describePostgrestError>> {
+	try {
+		const { error } = await build();
+		const described = describePostgrestError(error);
+		return error ? described : describePostgrestError(null);
+	} catch {
+		return describePostgrestError(null);
+	}
+}
+
+const MAX_TRANSIENT_RETRIES = 2;
+const TRANSIENT_RETRY_DELAY_MS = 150;
+
+/**
+ * Repete uma leitura que falhou por transporte.
+ *
+ * Recebe uma fábrica, e não a consulta pronta, porque o builder do supabase-js é
+ * de uso único: reaproveitá-lo devolveria a mesma resposta falha. Só leitura
+ * passa por aqui — repetir escrita sem chave de idempotência duplicaria dado.
+ *
+ * Um blip derrubava a página de Lançamentos inteira no error boundary, por uma
+ * contagem que é `HEAD` e idempotente.
+ */
+export async function runWithTransientRetry<
+	T extends { error: unknown; status?: number },
+>(build: () => PromiseLike<T>): Promise<T> {
+	let result = await build();
+
+	for (
+		let attempt = 1;
+		attempt <= MAX_TRANSIENT_RETRIES &&
+		result.error &&
+		isTransientPostgrestFailure(result.error, result.status);
+		attempt++
+	) {
+		await new Promise((resolve) =>
+			setTimeout(resolve, TRANSIENT_RETRY_DELAY_MS * attempt),
+		);
+		result = await build();
+	}
+
+	return result;
+}
+
 function toBridgeError(error: unknown): Error {
 	if (error instanceof Error) return error;
 	if (typeof error === "string") return new Error(error);
@@ -93,7 +212,7 @@ function toBridgeError(error: unknown): Error {
 					? record.details
 					: typeof record.hint === "string" && record.hint.trim()
 						? record.hint
-						: "Falha na consulta PostgREST.";
+						: EMPTY_POSTGREST_ERROR_MESSAGE;
 		const code =
 			typeof record.code === "string" && record.code.trim()
 				? record.code
@@ -390,7 +509,16 @@ function parseWhereChunk(chunk: unknown): Filter[] {
 		.trim();
 
 	if (text === "false") {
-		return [{ type: "eq", column: "id", value: null }];
+		/*
+		 * Era `{ type: "eq", column: "id", value: null }` — e é daqui que saía o
+		 * `id=eq.null` que o PostgREST recusava com `22P02 invalid input syntax
+		 * for type uuid: "null"`, derrubando a página de Lançamentos inteira.
+		 *
+		 * Basta um `sql`false`` no where para cair aqui, e a busca sem resultado e
+		 * o filtro "com anexo" sem anexos usam exatamente isso para dizer "nenhum
+		 * resultado".
+		 */
+		return [{ type: "matchNothing" }];
 	}
 
 	const filters: Filter[] = [];
@@ -493,6 +621,21 @@ function parseWhereChunk(chunk: unknown): Filter[] {
 	return filters;
 }
 
+/** Traduz filtros para o builder do PostgREST — exposto para teste. */
+export function __applyFiltersForTests<
+	T extends Parameters<typeof applyFilters>[0],
+>(query: T, where: SQL | undefined, mainTable?: string): T {
+	return applyFilters(query, parseWhere(where), mainTable) as T;
+}
+
+/** Uma condição como ela entra numa expressão `or=(…)` — exposto para teste. */
+export function __filterToOrExprForTests(
+	where: SQL | undefined,
+	mainTable?: string,
+): (string | null)[] {
+	return parseWhere(where).map((filter) => filterToOrExpr(filter, mainTable));
+}
+
 export function __parseWhereForTests(where: SQL | undefined): Filter[] {
 	return parseWhere(where);
 }
@@ -508,7 +651,9 @@ function filterHasForeignTable(filter: Filter, mainTable: string): boolean {
 			filterHasForeignTable(entry, mainTable),
 		);
 	}
-	if (filter.type === "unsupported") return false;
+	if (filter.type === "unsupported" || filter.type === "matchNothing") {
+		return false;
+	}
 	return Boolean(filter.table && filter.table !== mainTable);
 }
 
@@ -1067,6 +1212,65 @@ function qualifyColumn(filter: ColumnFilter, mainTable?: string): string {
 	return `${filter.table}.${filter.column}`;
 }
 
+/** Operadores de comparação: em todos eles o nulo é literal, não checagem. */
+const COMPARISON_FILTER_TYPES = new Set([
+	"eq",
+	"neq",
+	"gt",
+	"gte",
+	"lt",
+	"lte",
+]);
+
+/**
+ * Em SQL, `col = NULL` não é erro: é `UNKNOWN`, e a linha não casa.
+ *
+ * O PostgREST não tem esse meio-termo — `col=eq.null` manda converter o **texto**
+ * `null` para o tipo da coluna, e em `uuid` isso é `22P02 invalid input syntax`,
+ * que volta como 400. Foi o que derrubava a página de Lançamentos.
+ *
+ * Então a comparação com nulo é traduzida para uma contradição: a coluna é nula
+ * **e** não é nula. Não casa nada, como em SQL, e não depende do tipo da coluna
+ * — diferente do sentinela `00000000-…` que a ponte usava, que só funciona em
+ * `uuid` e quebraria numa coluna `text` ou `numeric` exatamente como o nulo
+ * quebrava.
+ */
+/** Toda tabela tem `id`, e a contradição sobre ela não depende do tipo. */
+const MATCH_NOTHING_COLUMN = "id";
+
+function matchNothingOrExpr(col: string): string {
+	return `and(${col}.is.null,${col}.not.is.null)`;
+}
+
+function applyMatchNothing<
+	T extends { is: FilterBuilderMethod; not: FilterBuilderMethod },
+>(query: T, col: string): T {
+	return (query.is(col, null) as T & { not: FilterBuilderMethod }).not(
+		col,
+		"is",
+		null,
+	) as T;
+}
+
+/**
+ * Avisa que um nulo chegou a uma comparação — quase sempre bug de quem chama.
+ *
+ * Não vira exceção de propósito: derrubar a página por um filtro que em SQL
+ * seria inócuo é pior que o sintoma. Mas o aviso nomeia tabela, coluna e
+ * operador, que é o que faltava para achar o chamador — o 400 não dizia nada.
+ */
+function warnNullComparison(
+	filter: ColumnFilter,
+	operator: string,
+	mainTable?: string,
+): void {
+	console.warn("[bridge] comparação com null não casa nada", {
+		table: filter.table ?? mainTable ?? null,
+		column: filter.column,
+		operator,
+	});
+}
+
 /** Literais para expressões `.or()` / `.in.()` do PostgREST (precisam de aspas). */
 function formatPostgrestFilterValue(value: unknown): string {
 	if (value === null || value === undefined) return "null";
@@ -1095,24 +1299,31 @@ function chunkFilterValues<T>(values: T[], size: number): T[][] {
 	return chunks;
 }
 
-function applyInFilter<T extends { eq: FilterBuilderMethod; in: FilterBuilderMethod; or: FilterBuilderMethod }>(
-	query: T,
-	col: string,
-	values: unknown[],
-): T {
-	if (values.length === 0) {
-		return query.eq(col, "00000000-0000-0000-0000-000000000000") as T;
+function applyInFilter<
+	T extends {
+		eq: FilterBuilderMethod;
+		in: FilterBuilderMethod;
+		is: FilterBuilderMethod;
+		not: FilterBuilderMethod;
+		or: FilterBuilderMethod;
+	},
+>(query: T, col: string, values: unknown[]): T {
+	// `IN` com NULL nunca casa em SQL, e no PostgREST o `null` no meio da lista
+	// quebra a consulta inteira com 22P02. Descartar é fiel e não perde linha.
+	const usable = values.filter(
+		(value) => value !== null && value !== undefined,
+	);
+
+	if (usable.length === 0) {
+		return applyMatchNothing(query, col);
 	}
 
-	if (values.length <= MAX_IN_FILTER_VALUES) {
-		return query.in(col, values) as T;
+	if (usable.length <= MAX_IN_FILTER_VALUES) {
+		return query.in(col, usable) as T;
 	}
 
-	const orExpr = chunkFilterValues(values, MAX_IN_FILTER_VALUES)
-		.map(
-			(chunk) =>
-				`${col}.in.(${formatPostgrestInList(chunk)})`,
-		)
+	const orExpr = chunkFilterValues(usable, MAX_IN_FILTER_VALUES)
+		.map((chunk) => `${col}.in.(${formatPostgrestInList(chunk)})`)
 		.join(",");
 
 	return query.or(orExpr) as T;
@@ -1179,6 +1390,9 @@ function normalizeOrderExprs(orderBy: unknown, table: Table): unknown[] {
 }
 
 function filterToOrExpr(filter: Filter, mainTable?: string): string | null {
+	if (filter.type === "matchNothing") {
+		return matchNothingOrExpr(MATCH_NOTHING_COLUMN);
+	}
 	if (
 		filter.type === "or" ||
 		filter.type === "and" ||
@@ -1188,6 +1402,22 @@ function filterToOrExpr(filter: Filter, mainTable?: string): string | null {
 	}
 
 	const col = qualifyColumn(filter, mainTable);
+
+	/*
+	 * Devolver `null` aqui faria o chamador descartar o `or` **inteiro** (ele
+	 * compara a contagem de ramos traduzidos), alargando o resultado em silêncio.
+	 * Por isso o ramo com nulo vira a contradição, e os outros ramos seguem
+	 * valendo.
+	 */
+	if (
+		COMPARISON_FILTER_TYPES.has(filter.type) &&
+		"value" in filter &&
+		(filter.value === null || filter.value === undefined)
+	) {
+		warnNullComparison(filter, filter.type, mainTable);
+		return matchNothingOrExpr(col);
+	}
+
 	switch (filter.type) {
 		case "eq":
 			return `${col}.eq.${formatPostgrestFilterValue(filter.value)}`;
@@ -1203,19 +1433,20 @@ function filterToOrExpr(filter: Filter, mainTable?: string): string | null {
 			return `${col}.lte.${formatPostgrestFilterValue(filter.value)}`;
 		case "is":
 			return filter.negated ? `${col}.not.is.null` : `${col}.is.null`;
-		case "in":
-			if (filter.values.length === 0) {
-				return `${col}.eq.00000000-0000-0000-0000-000000000000`;
+		case "in": {
+			const usable = filter.values.filter(
+				(entry) => entry !== null && entry !== undefined,
+			);
+			if (usable.length === 0) {
+				return matchNothingOrExpr(col);
 			}
-			if (filter.values.length > MAX_IN_FILTER_VALUES) {
-				return chunkFilterValues(filter.values, MAX_IN_FILTER_VALUES)
-					.map(
-						(chunk) =>
-							`${col}.in.(${formatPostgrestInList(chunk)})`,
-					)
+			if (usable.length > MAX_IN_FILTER_VALUES) {
+				return chunkFilterValues(usable, MAX_IN_FILTER_VALUES)
+					.map((chunk) => `${col}.in.(${formatPostgrestInList(chunk)})`)
 					.join(",");
 			}
-			return `${col}.in.(${formatPostgrestInList(filter.values)})`;
+			return `${col}.in.(${formatPostgrestInList(usable)})`;
+		}
 		case "ilike":
 			return filter.negated
 				? `${col}.not.ilike.${formatPostgrestFilterValue(filter.value)}`
@@ -1254,6 +1485,10 @@ function applyFilters<
 >(query: T, filters: Filter[], mainTable?: string): T {
 	for (const filter of filters) {
 		if (filter.type === "unsupported") continue;
+		if (filter.type === "matchNothing") {
+			query = applyMatchNothing(query, MATCH_NOTHING_COLUMN);
+			continue;
+		}
 		if (filter.type === "and") {
 			for (const nested of filter.filters) {
 				query = applyFilters(query, [nested], mainTable);
@@ -1261,12 +1496,17 @@ function applyFilters<
 			continue;
 		}
 		if (filter.type === "or") {
-			const orExpr = filter.filters
-				.map((entry) => filterToOrExpr(entry, mainTable))
-				.filter((entry): entry is string => Boolean(entry))
-				.join(",");
-			if (orExpr && orExpr.split(",").length === filter.filters.length) {
-				query = query.or(orExpr) as T;
+			/*
+			 * Contar vírgulas para saber se todos os ramos traduziram era frágil: um
+			 * ramo pode legitimamente conter vírgula — `in.(a,b)` chunkado, ou a
+			 * contradição de "não casa nada". Aí a contagem não batia e o `or`
+			 * inteiro era descartado, **alargando** o resultado em silêncio.
+			 */
+			const parts = filter.filters.map((entry) =>
+				filterToOrExpr(entry, mainTable),
+			);
+			if (parts.length > 0 && parts.every((part) => Boolean(part))) {
+				query = query.or(parts.join(",")) as T;
 			}
 			continue;
 		}
@@ -1274,6 +1514,16 @@ function applyFilters<
 		const col = qualifyColumn(filter, mainTable);
 		const value =
 			"value" in filter ? serializeFilterValue(filter.value) : undefined;
+
+		if (
+			COMPARISON_FILTER_TYPES.has(filter.type) &&
+			(value === null || value === undefined)
+		) {
+			warnNullComparison(filter, filter.type, mainTable);
+			query = applyMatchNothing(query, col);
+			continue;
+		}
+
 		switch (filter.type) {
 			case "eq":
 				query = query.eq(col, value) as T;
@@ -2116,23 +2366,56 @@ class SupabaseSelectBuilder {
 				(filter) => filter.type === "in" && filter.values.length === 0,
 			);
 			if (hasEmptyInFilter) {
-				return [
-					Object.fromEntries(
-						shapeEntries.map(([alias]) => [alias, 0]),
-					),
-				];
+				return [Object.fromEntries(shapeEntries.map(([alias]) => [alias, 0]))];
 			}
-			let countQuery = this.client
-				.from(tableName as keyof Database["public"]["Tables"])
-				.select("*", { count: "exact", head: true });
-			countQuery = applyFilters(countQuery, api, tableName);
-			const { count, error } = await countQuery;
+			const { count, error, status, statusText } = await runWithTransientRetry(
+				() =>
+					applyFilters(
+						this.client
+							.from(tableName as keyof Database["public"]["Tables"])
+							.select("*", { count: "exact", head: true }),
+						api,
+						tableName,
+					),
+			);
 			if (error) {
+				/*
+				 * `head: true` manda um HEAD, e resposta HEAD não tem corpo — então
+				 * o supabase-js não tem o JSON de erro para parsear e devolve um
+				 * objeto vazio, mesmo num 400 em que o PostgREST explicou tudo. Uma
+				 * releitura em GET recupera a explicação, e é só isso que ela faz.
+				 */
+				const explained = describePostgrestError(error);
+				const detailed =
+					explained.message === EMPTY_POSTGREST_ERROR_MESSAGE
+						? await explainHeadlessPostgrestError(() =>
+								applyFilters(
+									this.client
+										.from(tableName as keyof Database["public"]["Tables"])
+										.select("*", { count: "exact", head: false })
+										.limit(1),
+									api,
+									tableName,
+								),
+							)
+						: explained;
+
 				console.error("[bridge] count falhou", {
 					table: tableName,
-					error,
+					status,
+					statusText,
+					...detailed,
 				});
-				throw toBridgeError(error);
+				/*
+				 * Sobe a explicação recuperada, não o objeto vazio: é ela que aparece
+				 * no overlay do Next, que só mostra a mensagem do Error — com o erro
+				 * cru, a tela dizia apenas "Falha na consulta PostgREST".
+				 */
+				throw toBridgeError(
+					detailed.message === EMPTY_POSTGREST_ERROR_MESSAGE
+						? error
+						: { ...detailed },
+				);
 			}
 			return [
 				Object.fromEntries(
