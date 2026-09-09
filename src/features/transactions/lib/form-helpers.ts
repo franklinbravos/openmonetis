@@ -118,6 +118,49 @@ function getPaymentReferenceDate(
 	return purchaseDate;
 }
 
+/** Exibe data de pagamento no formulário de boleto quitado. */
+export function shouldShowBoletoPaymentDate(
+	paymentMethod: string,
+	isSettled: boolean | null,
+): boolean {
+	return paymentMethod === "Boleto" && Boolean(isSettled);
+}
+
+/**
+ * Data gravada em `purchaseDate` para boletos: pagamento quando quitado,
+ * vencimento quando ainda em aberto.
+ */
+export function resolvePurchaseDateForSubmit(
+	state: Pick<
+		TransactionFormState,
+		"paymentMethod" | "purchaseDate" | "dueDate" | "boletoPaymentDate" | "isSettled"
+	>,
+): string {
+	if (state.paymentMethod === "Cartão de crédito") {
+		return state.purchaseDate;
+	}
+
+	if (state.paymentMethod === "Boleto") {
+		if (state.isSettled && state.boletoPaymentDate) {
+			return state.boletoPaymentDate;
+		}
+		if (state.dueDate) {
+			return state.dueDate;
+		}
+		return state.purchaseDate;
+	}
+
+	if (state.isSettled && state.purchaseDate) {
+		return state.purchaseDate;
+	}
+
+	if (state.dueDate) {
+		return state.dueDate;
+	}
+
+	return state.purchaseDate;
+}
+
 /** Pago por padrão só quando a data de referência é hoje ou passado. */
 export function getDefaultIsSettled(
 	paymentMethod: string,
@@ -214,10 +257,12 @@ export function buildTransactionInitialState(
 		? (defaultPayerId ?? null)
 		: (transaction?.payerId ?? defaultPayerId ?? null);
 
+	const settledBoleto =
+		paymentMethod === "Boleto" && (transaction?.isSettled ?? false);
 	const boletoPaymentDate =
-		transaction?.boletoPaymentDate ??
-		(paymentMethod === "Boleto" && (transaction?.isSettled ?? false)
-			? getTodayDateString()
+		transaction?.boletoPaymentDate?.slice(0, 10) ??
+		(settledBoleto
+			? (transaction?.purchaseDate?.slice(0, 10) ?? getTodayDateString())
 			: "");
 
 	// Calcular o valor correto para importação de parcelados
@@ -417,7 +462,24 @@ export function applyFieldDependencies(
 				currentState.purchaseDate,
 				value,
 			);
+			if (!currentState.isSettled) {
+				updates.purchaseDate = value;
+			}
+		} else if (currentState.paymentMethod !== "Cartão de crédito") {
+			if (!currentState.isSettled) {
+				updates.purchaseDate = value;
+				updates.period = derivePeriodFromDate(value);
+			}
 		}
+	}
+
+	if (
+		key === "boletoPaymentDate" &&
+		typeof value === "string" &&
+		value &&
+		currentState.paymentMethod === "Boleto"
+	) {
+		updates.purchaseDate = value;
 	}
 
 	// Auto-derive period when cardId changes (credit card selected)
@@ -490,19 +552,21 @@ export function applyFieldDependencies(
 			updates.period = derivePeriodFromDate(currentState.purchaseDate);
 		}
 
-		// Clear boleto-specific fields if not boleto
+		// Clear boleto payment date when leaving boleto; keep due date for contas.
 		if (value !== "Boleto") {
-			updates.dueDate = "";
 			updates.boletoPaymentDate = "";
 		} else if (
 			currentState.isSettled ||
 			(updates.isSettled !== null && updates.isSettled !== undefined)
 		) {
-			// Set today's date for boleto payment if settled
 			const settled = updates.isSettled ?? currentState.isSettled;
 			if (settled) {
-				updates.boletoPaymentDate =
-					currentState.boletoPaymentDate || getTodayDateString();
+				const paymentDate =
+					currentState.boletoPaymentDate ||
+					currentState.purchaseDate ||
+					getTodayDateString();
+				updates.boletoPaymentDate = paymentDate;
+				updates.purchaseDate = paymentDate;
 			}
 		}
 	}
@@ -582,10 +646,17 @@ export function applyFieldDependencies(
 	// When isSettled changes and payment method is Boleto
 	if (key === "isSettled" && currentState.paymentMethod === "Boleto") {
 		if (value === true) {
-			updates.boletoPaymentDate =
-				currentState.boletoPaymentDate || getTodayDateString();
+			const paymentDate =
+				currentState.boletoPaymentDate ||
+				currentState.purchaseDate ||
+				getTodayDateString();
+			updates.boletoPaymentDate = paymentDate;
+			updates.purchaseDate = paymentDate;
 		} else if (value === false) {
 			updates.boletoPaymentDate = "";
+			if (currentState.dueDate) {
+				updates.purchaseDate = currentState.dueDate;
+			}
 		}
 	}
 

@@ -115,10 +115,6 @@ export interface PaymentMethodSectionProps extends BaseFieldSectionProps {
 	onCreateCard?: () => void;
 }
 
-export interface BoletoFieldsSectionProps extends BaseFieldSectionProps {
-	showPaymentDate: boolean;
-}
-
 export interface ConditionSectionProps extends BaseFieldSectionProps {
 	showInstallments: boolean;
 	showRecurrence: boolean;

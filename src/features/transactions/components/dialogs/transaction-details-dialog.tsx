@@ -407,10 +407,17 @@ export function TransactionDetailsDialog({
 									})()}
 								</li>
 
-								{isBoleto && details.dueDate && (
+								{details.dueDate && (
 									<DetailRow
 										label="Vencimento"
 										value={formatDate(details.dueDate)}
+									/>
+								)}
+
+								{isBoleto && details.boletoPaymentDate && (
+									<DetailRow
+										label="Pagamento"
+										value={formatDate(details.boletoPaymentDate)}
 									/>
 								)}
 

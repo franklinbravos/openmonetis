@@ -34,6 +34,7 @@ import {
 	enrichFormStateForSeriesBulkEdit,
 	getSelectedPayerIds,
 	normalizeSplitStateForSubmit,
+	resolvePurchaseDateForSubmit,
 } from "@/features/transactions/lib/form-helpers";
 import { writeLastTransactionDate } from "@/shared/lib/transaction-last-date";
 import { useAppPreferences } from "@/shared/components/providers/app-preferences-provider";
@@ -59,7 +60,6 @@ import { AttachmentFilePicker } from "../../attachments/attachment-file-picker";
 import { AttachmentSection } from "../../attachments/attachment-section";
 import type { SelectOption } from "../../types";
 import { BasicFieldsSection } from "./basic-fields-section";
-import { BoletoFieldsSection } from "./boleto-fields-section";
 import { CategorySection } from "./category-section";
 import { NoteSection } from "./note-section";
 import { PayerSection } from "./payer-section";
@@ -459,7 +459,36 @@ export function TransactionDialog({
 		event.preventDefault();
 		setErrorMessage(null);
 
-		if (!formState.purchaseDate) {
+		if (!formState.purchaseDate && formState.paymentMethod === "Cartão de crédito") {
+			const message = "Informe a data da transação.";
+			setErrorMessage(message);
+			toast.error(message);
+			return;
+		}
+
+		if (formState.paymentMethod === "Boleto" && !formState.dueDate) {
+			const message = "Informe a data de vencimento.";
+			setErrorMessage(message);
+			toast.error(message);
+			return;
+		}
+
+		const isAccountPayment = formState.paymentMethod !== "Cartão de crédito";
+		const paymentDateValue =
+			formState.paymentMethod === "Boleto"
+				? formState.boletoPaymentDate
+				: formState.purchaseDate;
+
+		if (isAccountPayment && formState.isSettled && !paymentDateValue) {
+			const message = "Informe a data de pagamento.";
+			setErrorMessage(message);
+			toast.error(message);
+			return;
+		}
+
+		const resolvedPurchaseDate = resolvePurchaseDateForSubmit(formState);
+
+		if (!resolvedPurchaseDate) {
 			const message = "Informe a data da transação.";
 			setErrorMessage(message);
 			toast.error(message);
@@ -549,7 +578,7 @@ export function TransactionDialog({
 		}
 
 		const payload: CreateTransactionInput = {
-			purchaseDate: formState.purchaseDate,
+			purchaseDate: resolvedPurchaseDate,
 			period: formState.period,
 			name: formState.name.trim(),
 			transactionType:
@@ -589,13 +618,10 @@ export function TransactionDialog({
 				formState.condition === "Recorrente" && formState.recurrenceCount
 					? Number(formState.recurrenceCount)
 					: undefined,
-			dueDate:
-				formState.paymentMethod === "Boleto" && formState.dueDate
-					? formState.dueDate
-					: undefined,
+			dueDate: formState.dueDate ? formState.dueDate : undefined,
 			boletoPaymentDate:
-				mode === "update" &&
 				formState.paymentMethod === "Boleto" &&
+				formState.isSettled &&
 				formState.boletoPaymentDate
 					? formState.boletoPaymentDate
 					: undefined,
@@ -673,7 +699,7 @@ export function TransactionDialog({
 				// o upload após o escopo ser escolhido (sem upload antecipado ao S3)
 				onBulkEditRequest({
 					id: transaction?.id ?? "",
-					purchaseDate: formState.purchaseDate,
+					purchaseDate: resolvedPurchaseDate,
 					period: formState.period,
 					name: formState.name.trim(),
 					categoryId: formState.categoryId,
@@ -682,13 +708,12 @@ export function TransactionDialog({
 					accountId: formState.accountId,
 					cardId: formState.cardId,
 					amount: bulkAmount,
-					dueDate:
-						formState.paymentMethod === "Boleto"
-							? formState.dueDate || null
-							: null,
+					dueDate: formState.dueDate || null,
 					boletoPaymentDate:
-						mode === "update" && formState.paymentMethod === "Boleto"
-							? formState.boletoPaymentDate || null
+						formState.paymentMethod === "Boleto" &&
+						formState.isSettled &&
+						formState.boletoPaymentDate
+							? formState.boletoPaymentDate
 							: null,
 					isSettled:
 						formState.paymentMethod === "Cartão de crédito"
@@ -703,7 +728,7 @@ export function TransactionDialog({
 			if (hasSplitPair && onSplitEditRequest) {
 				onSplitEditRequest({
 					id: transaction?.id ?? "",
-					purchaseDate: formState.purchaseDate,
+					purchaseDate: resolvedPurchaseDate,
 					period: formState.period,
 					name: formState.name.trim(),
 					transactionType: formState.transactionType,
@@ -719,13 +744,12 @@ export function TransactionDialog({
 						formState.paymentMethod === "Cartão de crédito"
 							? null
 							: Boolean(formState.isSettled),
-					dueDate:
-						formState.paymentMethod === "Boleto"
-							? formState.dueDate || null
-							: null,
+					dueDate: formState.dueDate || null,
 					boletoPaymentDate:
-						mode === "update" && formState.paymentMethod === "Boleto"
-							? formState.boletoPaymentDate || null
+						formState.paymentMethod === "Boleto" &&
+						formState.isSettled &&
+						formState.boletoPaymentDate
+							? formState.boletoPaymentDate
 							: null,
 					pendingDetachIds,
 					pendingUploadFiles,
@@ -889,8 +913,6 @@ export function TransactionDialog({
 			: "Atualize as informações do lançamento selecionado.";
 	const submitLabel = mode === "create" ? "Salvar" : "Atualizar";
 
-	const showDueDate = formState.paymentMethod === "Boleto";
-	const showPaymentDate = mode === "update" && showDueDate;
 	const showSettledToggle = formState.paymentMethod !== "Cartão de crédito";
 	const isUpdateMode = mode === "update";
 	const isSeriesBulkEdit =
@@ -967,13 +989,6 @@ export function TransactionDialog({
 								onCreateCard={() => setCardCreateOpen(true)}
 							/>
 
-							{showDueDate ? (
-								<BoletoFieldsSection
-									formState={formState}
-									onFieldChange={handleFieldChange}
-									showPaymentDate={showPaymentDate}
-								/>
-							) : null}
 						</div>
 
 						{/* Extras */}
