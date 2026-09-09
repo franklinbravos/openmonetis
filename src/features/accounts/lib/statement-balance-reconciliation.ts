@@ -20,18 +20,15 @@ import {
 	roundMoney,
 	SOURCE_ROUNDING_TOLERANCE,
 } from "@/shared/lib/import/invoice-total";
+import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import {
 	TRANSFER_ESTABLISHMENT_ENTRADA,
 	TRANSFER_ESTABLISHMENT_SAIDA,
 } from "@/shared/lib/transfers/constants";
-import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 import { parseLocalDateString, toDateOnlyString } from "@/shared/utils/date";
 import { safeToNumber } from "@/shared/utils/number";
-import {
-	comparePeriods,
-	derivePeriodFromDate,
-} from "@/shared/utils/period";
+import { comparePeriods, derivePeriodFromDate } from "@/shared/utils/period";
 
 const ACCOUNT_YIELD_CATEGORY_NAME = "Rendimentos";
 const ACCOUNT_YIELD_TRANSACTION_NAME = "Rendimento";
@@ -293,13 +290,22 @@ export function resolveSyntheticTransferReconciliationAdjustments(input: {
 
 		if (!leg.transferId) continue;
 		const peers = input.peerLegsByTransferId.get(leg.transferId) ?? [];
-		const peerOnOtherAccount = peers.some(
-			(peer) =>
-				peer.id !== leg.id &&
-				peer.accountId &&
-				peer.accountId !== input.accountId,
+		const otherLegs = peers.filter((peer) => peer.id !== leg.id);
+		const peerOnOtherAccount = otherLegs.some(
+			(peer) => peer.accountId && peer.accountId !== input.accountId,
 		);
-		if (!peerOnOtherAccount) continue;
+		/*
+		 * Perna sem par nenhum também é órfã — mais claramente, aliás:
+		 * transferência de uma ponta só não existe. Exigir par em outra conta
+		 * deixava passar a perna cujo outro lado foi apagado, e ela caía no balde
+		 * genérico de "lançamentos que não estão no extrato", que o app só sabe
+		 * apontar. No extrato Inter de setembro/2026 isso era R$ 1,23 travando a
+		 * conferência de um arquivo que fecha ao centavo.
+		 *
+		 * Perna cujo único par está nesta mesma conta continua de fora: aí há
+		 * transferência de verdade, ainda que malformada.
+		 */
+		if (otherLegs.length > 0 && !peerOnOtherAccount) continue;
 
 		excludedDbIds.add(leg.id);
 		orphanSyntheticLegIds.add(leg.id);
@@ -337,8 +343,9 @@ export function resolveSyntheticTransferReconciliationAdjustments(input: {
 			matchedSyntheticLegIdsForCleanup.add(leg.id);
 		}
 
+		// `Boolean(...)` não estreita o tipo; a comparação explícita, sim.
 		const canonicalStillCounts =
-			Boolean(canonicalLeg.id) &&
+			canonicalLeg.id !== undefined &&
 			!excludedDbIds.has(canonicalLeg.id) &&
 			!importingRowKeys.has(importKey);
 

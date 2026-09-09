@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { TRANSFER_ESTABLISHMENT_SAIDA } from "@/shared/lib/transfers/constants";
 import { parseLocalDateString } from "@/shared/utils/date";
-import {
-	TRANSFER_ESTABLISHMENT_SAIDA,
-} from "@/shared/lib/transfers/constants";
 import {
 	computeProjectedStatementClosingBalance,
 	computeStatementMonthNetInCadastro,
@@ -174,46 +172,47 @@ describe("computeStatementMonthNetInCadastro", () => {
 
 	it("ignora perna sintética de transferência coberta por linha do extrato", () => {
 		const septemberPeriod = "2026-09";
-		const syntheticAdjustments = resolveSyntheticTransferReconciliationAdjustments({
-			accountId: "account-a",
-			statementPeriod: septemberPeriod,
-			inMonthByDateRows: [
-				{
-					id: "synthetic-leg",
-					amount: -1.23,
-					purchaseDate: parseLocalDateString("2026-09-04"),
-					name: TRANSFER_ESTABLISHMENT_SAIDA,
-					period: "2026-09",
-					transferId: "transfer-1",
-					ofxFitId: null,
-				},
-			],
-			fileRows: [
-				{
-					date: "2026-09-04",
-					description: "Transferência interna",
-					amount: 1.23,
-					transactionType: "expense",
-				},
-			],
-			peerLegsByTransferId: new Map([
-				[
-					"transfer-1",
-					[
-						{
-							id: "synthetic-leg",
-							ofxFitId: null,
-							accountId: "account-a",
-						},
-						{
-							id: "peer-leg",
-							ofxFitId: "fit-1",
-							accountId: "account-b",
-						},
-					],
+		const syntheticAdjustments =
+			resolveSyntheticTransferReconciliationAdjustments({
+				accountId: "account-a",
+				statementPeriod: septemberPeriod,
+				inMonthByDateRows: [
+					{
+						id: "synthetic-leg",
+						amount: -1.23,
+						purchaseDate: parseLocalDateString("2026-09-04"),
+						name: TRANSFER_ESTABLISHMENT_SAIDA,
+						period: "2026-09",
+						transferId: "transfer-1",
+						ofxFitId: null,
+					},
 				],
-			]),
-		});
+				fileRows: [
+					{
+						date: "2026-09-04",
+						description: "Transferência interna",
+						amount: 1.23,
+						transactionType: "expense",
+					},
+				],
+				peerLegsByTransferId: new Map([
+					[
+						"transfer-1",
+						[
+							{
+								id: "synthetic-leg",
+								ofxFitId: null,
+								accountId: "account-a",
+							},
+							{
+								id: "peer-leg",
+								ofxFitId: "fit-1",
+								accountId: "account-b",
+							},
+						],
+					],
+				]),
+			});
 
 		const net = computeStatementMonthNetInCadastro({
 			statementPeriod: "2026-09",
@@ -243,6 +242,69 @@ describe("computeStatementMonthNetInCadastro", () => {
 
 		expect(syntheticAdjustments.orphanSyntheticLegIds.size).toBe(0);
 		expect(net).toBe(-1.23);
+	});
+
+	it("perna sem par nenhum também é órfã", () => {
+		// O caso real: uma perna de transferência cujo outro lado foi apagado.
+		// Exigir par em outra conta a deixava passar para o balde genérico de
+		// "lançamentos que não estão no extrato", que o app só sabe apontar — e
+		// eram R$ 1,23 travando o extrato Inter de setembro/2026.
+		const adjustments = resolveSyntheticTransferReconciliationAdjustments({
+			accountId: "account-a",
+			statementPeriod: "2026-09",
+			inMonthByDateRows: [
+				{
+					id: "orfa",
+					amount: -1.23,
+					purchaseDate: parseLocalDateString("2026-09-03"),
+					name: TRANSFER_ESTABLISHMENT_SAIDA,
+					period: "2026-09",
+					transferId: "transfer-sem-par",
+					ofxFitId: null,
+				},
+			],
+			fileRows: [],
+			peerLegsByTransferId: new Map([
+				[
+					"transfer-sem-par",
+					[{ id: "orfa", ofxFitId: null, accountId: "account-a" }],
+				],
+			]),
+		});
+
+		expect(adjustments.orphanSyntheticLegIds).toEqual(new Set(["orfa"]));
+	});
+
+	it("perna cujo único par está na mesma conta não é tratada como órfã", () => {
+		// Aí existe transferência de verdade, ainda que malformada — apagar seria
+		// perder dinheiro que se move.
+		const adjustments = resolveSyntheticTransferReconciliationAdjustments({
+			accountId: "account-a",
+			statementPeriod: "2026-09",
+			inMonthByDateRows: [
+				{
+					id: "perna",
+					amount: -50,
+					purchaseDate: parseLocalDateString("2026-09-03"),
+					name: TRANSFER_ESTABLISHMENT_SAIDA,
+					period: "2026-09",
+					transferId: "transfer-interno",
+					ofxFitId: null,
+				},
+			],
+			fileRows: [],
+			peerLegsByTransferId: new Map([
+				[
+					"transfer-interno",
+					[
+						{ id: "perna", ofxFitId: null, accountId: "account-a" },
+						{ id: "par", ofxFitId: null, accountId: "account-a" },
+					],
+				],
+			]),
+		});
+
+		expect(adjustments.orphanSyntheticLegIds.size).toBe(0);
 	});
 
 	it("marca perna sintética órfã quando não há linha correspondente no extrato", () => {
@@ -280,7 +342,9 @@ describe("computeStatementMonthNetInCadastro", () => {
 			]),
 		});
 
-		expect(adjustments.orphanSyntheticLegIds).toEqual(new Set(["synthetic-leg"]));
+		expect(adjustments.orphanSyntheticLegIds).toEqual(
+			new Set(["synthetic-leg"]),
+		);
 
 		const net = computeStatementMonthNetInCadastro({
 			statementPeriod: "2026-09",

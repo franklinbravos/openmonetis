@@ -12,17 +12,68 @@ import {
 	useTransition,
 } from "react";
 import { toast } from "sonner";
-import {
-	type CreatedAccount,
-} from "@/features/accounts/components/create-account-inline-dialog";
+import type { CreatedAccount } from "@/features/accounts/components/create-account-inline-dialog";
 import { isAccountStatementMovementImportRow } from "@/features/accounts/lib/statement-balance-reconciliation";
-import {
-	type CreatedCategory,
-} from "@/features/categories/components/create-category-inline-dialog";
+import type { CreatedCategory } from "@/features/categories/components/create-category-inline-dialog";
 import type { Category } from "@/features/categories/components/types";
 import type { CardLimitsSnapshot } from "@/features/transactions/actions/card-limits";
 import type { TransactionDialogOptions } from "@/features/transactions/actions/fetch-dialog-options";
 import type { InvoiceSnapshot } from "@/features/transactions/actions/previous-invoice-snapshot";
+import { CardLimitsCard } from "@/features/transactions/components/import/card-limits-card";
+import {
+	decodeAccountCard,
+	encodeAccountCard,
+	GlobalFields,
+} from "@/features/transactions/components/import/global-fields";
+import {
+	ImportAiAnalysisBanner,
+	type ImportAiAnalysisProgress,
+	type ImportAiAnalysisStatus,
+} from "@/features/transactions/components/import/import-ai-analysis-banner";
+import type { ImportAccountBalancePrompt } from "@/features/transactions/components/import/import-confirm-dialog";
+import { ImportFileHistory } from "@/features/transactions/components/import/import-file-history";
+import type { ImportLinkMergeMode } from "@/features/transactions/components/import/import-link-dialog";
+import {
+	ImportProgressDialog,
+	type ImportProgressStep,
+} from "@/features/transactions/components/import/import-progress-dialog";
+import { ImportSteps } from "@/features/transactions/components/import/import-steps";
+import { ImportSummary } from "@/features/transactions/components/import/import-summary";
+import { InvoiceTotalReconciliationBanner } from "@/features/transactions/components/import/invoice-total-reconciliation-banner";
+import { PreviousInvoiceSettlementCard } from "@/features/transactions/components/import/previous-invoice-settlement-card";
+import {
+	type ReviewRow,
+	ReviewTable,
+} from "@/features/transactions/components/import/review-table";
+import { UploadZone } from "@/features/transactions/components/import/upload-zone";
+import type {
+	SelectOption,
+	TransactionItem,
+} from "@/features/transactions/components/types";
+import {
+	applyImportAiPatchesToRows,
+	buildImportAiAnalysisPayload,
+	buildImportAiBatchJobs,
+	buildImportAiBatchRequest,
+	buildImportAiPatchesFromResults,
+	buildImportAiRowEditSnapshots,
+	formatImportAiClientError,
+	IMPORT_AI_PARALLEL_BATCH_LIMIT,
+	type ImportAiBatchJob,
+	type ImportAiRowResult,
+	mergeImportAiAnalysisStats,
+	partitionImportAiRows,
+} from "@/features/transactions/lib/import-ai-analysis";
+import {
+	applyExistingAmountEdits,
+	buildExistingAmountSnapshotMap,
+	collectExistingAmountEdits,
+	collectExistingInstallmentEdits,
+	countExistingAmountEdits,
+	countExistingInstallmentEdits,
+	enrichReviewRowsWithExistingAmount,
+	resolveExistingTransactionIdForAmountEdit,
+} from "@/features/transactions/lib/import-amount-edit";
 import {
 	analyzeImportAiBatchClient as analyzeImportAiBatchAction,
 	checkDuplicateFitIdsClient as checkDuplicateFitIds,
@@ -55,65 +106,6 @@ import {
 	updateImportExistingTransactionCategoryClient as updateImportExistingTransactionCategoryAction,
 	updatePreviousInvoicePaymentDateClient as updatePreviousInvoicePaymentDateAction,
 } from "@/features/transactions/lib/import-api-client";
-import {
-	fetchTransactionByIdClient,
-	fetchTransactionDialogOptionsClient,
-} from "@/features/transactions/lib/transactions-api-client";
-import { CardLimitsCard } from "@/features/transactions/components/import/card-limits-card";
-import {
-	decodeAccountCard,
-	encodeAccountCard,
-	GlobalFields,
-} from "@/features/transactions/components/import/global-fields";
-import {
-	ImportAiAnalysisBanner,
-	type ImportAiAnalysisProgress,
-	type ImportAiAnalysisStatus,
-} from "@/features/transactions/components/import/import-ai-analysis-banner";
-import type { ImportAccountBalancePrompt } from "@/features/transactions/components/import/import-confirm-dialog";
-import { ImportFileHistory } from "@/features/transactions/components/import/import-file-history";
-import type { ImportLinkMergeMode } from "@/features/transactions/components/import/import-link-dialog";
-import {
-	ImportProgressDialog,
-	type ImportProgressStep,
-} from "@/features/transactions/components/import/import-progress-dialog";
-import { ImportSteps } from "@/features/transactions/components/import/import-steps";
-import { ImportSummary } from "@/features/transactions/components/import/import-summary";
-import { InvoiceTotalReconciliationBanner } from "@/features/transactions/components/import/invoice-total-reconciliation-banner";
-import { PreviousInvoiceSettlementCard } from "@/features/transactions/components/import/previous-invoice-settlement-card";
-import {
-	ReviewTable,
-	type ReviewRow,
-} from "@/features/transactions/components/import/review-table";
-import { UploadZone } from "@/features/transactions/components/import/upload-zone";
-import type {
-	SelectOption,
-	TransactionItem,
-} from "@/features/transactions/components/types";
-import {
-	applyImportAiPatchesToRows,
-	buildImportAiAnalysisPayload,
-	buildImportAiBatchJobs,
-	buildImportAiBatchRequest,
-	buildImportAiPatchesFromResults,
-	buildImportAiRowEditSnapshots,
-	formatImportAiClientError,
-	IMPORT_AI_PARALLEL_BATCH_LIMIT,
-	type ImportAiBatchJob,
-	type ImportAiRowResult,
-	mergeImportAiAnalysisStats,
-	partitionImportAiRows,
-} from "@/features/transactions/lib/import-ai-analysis";
-import {
-	applyExistingAmountEdits,
-	buildExistingAmountSnapshotMap,
-	collectExistingAmountEdits,
-	collectExistingInstallmentEdits,
-	countExistingAmountEdits,
-	countExistingInstallmentEdits,
-	enrichReviewRowsWithExistingAmount,
-	resolveExistingTransactionIdForAmountEdit,
-} from "@/features/transactions/lib/import-amount-edit";
 import {
 	applyImportBatchDraftToExtraRows,
 	applyImportBatchDraftToRows,
@@ -199,6 +191,10 @@ import { isImportReviewRowImportable } from "@/features/transactions/lib/import-
 import { guessImportTransfer } from "@/features/transactions/lib/import-transfer-detection";
 import { normalizeDescriptionKey } from "@/features/transactions/lib/import-utils";
 import { parseImportFileClient } from "@/features/transactions/lib/parse-import-file-client";
+import {
+	fetchTransactionByIdClient,
+	fetchTransactionDialogOptionsClient,
+} from "@/features/transactions/lib/transactions-api-client";
 import { uploadImportSourceFile } from "@/features/transactions/lib/upload-import-source";
 import {
 	type InvoiceImportContext,
@@ -305,9 +301,9 @@ const PreviousInvoiceFixDialog = dynamic(
 
 const LazyCreateCategoryInlineDialog = dynamic(
 	() =>
-		import("@/features/categories/components/create-category-inline-dialog").then(
-			(mod) => mod.CreateCategoryInlineDialog,
-		),
+		import(
+			"@/features/categories/components/create-category-inline-dialog"
+		).then((mod) => mod.CreateCategoryInlineDialog),
 	{ ssr: false },
 );
 
@@ -1457,15 +1453,28 @@ export function ImportPage({
 				const duplicateSnapshotByFitId =
 					buildDuplicateSnapshotByFitId(duplicateSnapshots);
 
+				/*
+				 * `accountImportSnapshots` traz de propósito as pernas de
+				 * transferência que vivem em **outras** contas — é delas que sai o
+				 * mapa de conta-par. Mas elas não podem entrar na busca de
+				 * duplicata: o extrato do Inter de 01/09 tinha uma aplicação de
+				 * −R$ 200,00 que casou com a perna de −R$ 200,00 do Mercado Pago,
+				 * foi dada como já cadastrada e nunca entrou. Lançamento de outra
+				 * conta nunca é duplicata de uma linha desta.
+				 */
+				const transferPeerByTransactionId = buildTransferPeerAccountMap(
+					accountImportSnapshots,
+				);
+
 				const semanticCandidates = shouldFetchInvoiceSnapshots
 					? mergeImportDuplicateSnapshots(
 							invoicePeriodSnapshots,
 							cardInstallmentSnapshots,
 						)
-					: accountImportSnapshots;
-
-				const transferPeerByTransactionId =
-					buildTransferPeerAccountMap(semanticCandidates);
+					: accountImportSnapshots.filter(
+							(snapshot) =>
+								!snapshot.accountId || snapshot.accountId === resolvedAccountId,
+						);
 
 				setPeriodLockedExistingIds(
 					collectPeriodLockedTransactionIds(semanticCandidates),
@@ -4662,7 +4671,9 @@ export function ImportPage({
 									) : null}
 									{importPdfPasswordNeedsReconfigure && linkedCardId ? (
 										<Alert variant="destructive">
-											<AlertTitle>Senha automática do PDF indisponível</AlertTitle>
+											<AlertTitle>
+												Senha automática do PDF indisponível
+											</AlertTitle>
 											<AlertDescription className="text-sm">
 												{IMPORT_PDF_PASSWORD_UNREADABLE_MESSAGE}
 											</AlertDescription>
@@ -5071,9 +5082,7 @@ export function ImportPage({
 					onConfirm={() => void handleImport()}
 				/>
 			) : null}
-			{importProgress ? (
-				<ImportProgressDialog step={importProgress} />
-			) : null}
+			{importProgress ? <ImportProgressDialog step={importProgress} /> : null}
 
 			{previousInvoice?.paymentTransactionId &&
 			statement?.invoice?.paymentDate &&

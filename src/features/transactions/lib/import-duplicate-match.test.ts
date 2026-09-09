@@ -832,3 +832,54 @@ describe("perna de transferência já cadastrada", () => {
 		);
 	});
 });
+
+describe("direção da perna de transferência", () => {
+	const entradaNoCadastro = {
+		id: "perna-entrada",
+		ofxFitId: null,
+		name: "Entrada - Transf. entre contas",
+		amount: "200.00",
+		purchaseDate: new Date(2026, 8, 1),
+		transactionType: "Transferência",
+		currentInstallment: null,
+		installmentCount: null,
+		payerId: "payer-1",
+		categoryId: "cat-transf",
+	};
+
+	it("saída do arquivo não casa com entrada do cadastro no mesmo dia e valor", () => {
+		// O extrato Inter de 01/09 tem uma aplicação de −R$ 200,00 e um Pix
+		// recebido de +R$ 200,00. Casando só pelo módulo, a aplicação era dada
+		// como já cadastrada pela entrada — e nunca entrava.
+		const aplicacao = {
+			date: "2026-09-01",
+			amount: 200,
+			description: 'Aplicacao: "CDB CREDITO BANCO INTER S A"',
+			transactionType: "expense" as const,
+		};
+
+		const score = scoreImportAgainstSnapshot(aplicacao, entradaNoCadastro);
+
+		expect(score.amount).toBe(false);
+		expect(score.description).toBe(false);
+		expect(
+			buildImportDuplicateValidation(aplicacao, entradaNoCadastro).status,
+		).not.toBe("match");
+	});
+
+	it("entrada do arquivo continua casando com a entrada do cadastro", () => {
+		const pixRecebido = {
+			date: "2026-09-01",
+			amount: 200,
+			description: 'Pix recebido: "Cp :10573521-Franklin Diogo"',
+			transactionType: "income" as const,
+		};
+
+		const score = scoreImportAgainstSnapshot(pixRecebido, entradaNoCadastro);
+
+		expect(score).toEqual({ date: true, amount: true, description: true });
+		expect(
+			buildImportDuplicateValidation(pixRecebido, entradaNoCadastro).status,
+		).toBe("match");
+	});
+});

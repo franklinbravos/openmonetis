@@ -428,7 +428,15 @@ function amountsMatchForImportDuplicate(
 	}
 
 	if (isTransferDbTransactionType(existingType)) {
-		return true;
+		/*
+		 * "Transferência" não mapeia para receita/despesa, mas o **sinal** do valor
+		 * guardado diz a direção — e direção importa. No extrato Inter de 01/09
+		 * havia uma aplicação de −R$ 200,00 e um Pix recebido de +R$ 200,00 no
+		 * mesmo dia: casando só pelo módulo, a saída do arquivo era dada como já
+		 * cadastrada pela entrada do cadastro, e a aplicação nunca entrava.
+		 */
+		if (existingAmount === 0) return true;
+		return importedType === (existingAmount < 0 ? "expense" : "income");
 	}
 
 	return importedType === mapDbTransactionType(existingType);
